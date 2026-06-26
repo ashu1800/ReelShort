@@ -48,6 +48,30 @@ class RateLimitRuleTests {
 	}
 
 	@Test
+	void keyResolverIgnoresForwardedIpFromUntrustedRemoteAddress() {
+		RateLimitKeyResolver resolver = new RateLimitKeyResolver();
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/app/auth/login");
+		request.addHeader("X-Forwarded-For", "203.0.113.1");
+		request.setRemoteAddr("198.51.100.50");
+
+		String key = resolver.resolveKey("app-login", request);
+
+		assertThat(key).isEqualTo("app-login:IP:198.51.100.50");
+	}
+
+	@Test
+	void keyResolverUsesNearestUntrustedForwardedIpFromTrustedProxy() {
+		RateLimitKeyResolver resolver = new RateLimitKeyResolver();
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/app/auth/login");
+		request.addHeader("X-Forwarded-For", "198.51.100.200, 203.0.113.1, 10.0.0.2");
+		request.setRemoteAddr("127.0.0.1");
+
+		String key = resolver.resolveKey("app-login", request);
+
+		assertThat(key).isEqualTo("app-login:IP:203.0.113.1");
+	}
+
+	@Test
 	void keyResolverUsesAppPrincipalBeforeIp() {
 		RateLimitKeyResolver resolver = new RateLimitKeyResolver();
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/app/content/search");

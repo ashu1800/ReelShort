@@ -18,7 +18,7 @@
 - 已认证 App 请求按 `APP:<userId>` 限流。
 - 已认证 Admin 请求按 `ADMIN:<username>` 限流。
 - 未认证请求按客户端 IP 限流。
-- 存在 `X-Forwarded-For` 时取第一个 IP，否则使用 `remoteAddr`。
+- 请求来自本机、内网或链路本地代理地址时，若存在 `X-Forwarded-For`，从右向左选择首个非代理 IP；否则使用 `remoteAddr`。
 
 ## 超限响应
 
