@@ -36,6 +36,7 @@
 - `404`：接口路径不存在，或内容源明确返回资源不存在。
 - `502`：内容源返回非 404 的 HTTP 错误响应。
 - `503`：内容源连接失败、超时或请求无法完成。
+- `429`：请求命中后端限流规则。
 - `500`：未分类的后端内部错误。
 
 ## 已实现接口
@@ -80,3 +81,7 @@ reelshort.content-provider.base-url=http://127.0.0.1:5000
 spring.http.client.connect-timeout=2s
 spring.http.client.read-timeout=5s
 ```
+
+## 限流
+
+登录、内容读取、播放地址、观看进度和积分查询接口受后端限流保护。详见 `docs/api/rate-limit.md`。
