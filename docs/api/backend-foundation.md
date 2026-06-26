@@ -48,6 +48,14 @@
 
 通过 `ContentProvider` 调用 Flask ReelShort 内容源搜索剧集，并转换为平台内部内容模型。
 
+### `GET /api/app/home/recommend`
+
+通过内容缓存服务获取推荐货架。内容源调用成功后写入 PostgreSQL 缓存；内容源不可用且缓存存在时返回最后一次可用缓存。
+
+### `GET /api/app/content/shelves/{shelfType}`
+
+通过内容缓存服务获取指定货架。支持 `recommend`、`new-release`、`drama-dub`。
+
 ### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}`
 
 通过 `ContentProvider` 获取指定剧集的分集列表。
@@ -61,6 +69,7 @@
 `ContentProvider` 当前定义：
 
 - `search(String keywords)`
+- `getShelf(ContentShelfType shelfType)`
 - `getEpisodes(String bookId, String filteredTitle)`
 - `getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId)`
 

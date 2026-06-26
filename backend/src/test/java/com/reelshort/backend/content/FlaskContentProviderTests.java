@@ -53,6 +53,95 @@ class FlaskContentProviderTests {
 	}
 
 	@Test
+	void getShelfMapsRecommendResults() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/recommend"))
+				.andExpect(method(GET))
+				.andRespond(withSuccess("""
+						{
+						  "books": [
+						    {
+						      "book_id": "book-1",
+						      "book_title": "Recommended",
+						      "filtered_title": "recommended",
+						      "book_pic": "https://example.com/recommended.jpg",
+						      "chapter_count": 8
+						    }
+						  ]
+						}
+						""", MediaType.APPLICATION_JSON));
+
+		List<ContentBook> books = provider.getShelf(ContentShelfType.RECOMMEND);
+
+		assertThat(books).containsExactly(new ContentBook(
+				"book-1",
+				"Recommended",
+				"recommended",
+				"https://example.com/recommended.jpg",
+				8));
+		server.verify();
+	}
+
+	@Test
+	void getShelfMapsNewReleaseResults() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/newrelease"))
+				.andExpect(method(GET))
+				.andRespond(withSuccess("""
+						{
+						  "books": [
+						    {
+						      "book_id": "book-new",
+						      "book_title": "New Release",
+						      "filtered_title": "new-release",
+						      "book_pic": "https://example.com/new.jpg",
+						      "chapter_count": 3
+						    }
+						  ]
+						}
+						""", MediaType.APPLICATION_JSON));
+
+		List<ContentBook> books = provider.getShelf(ContentShelfType.NEW_RELEASE);
+
+		assertThat(books).extracting(ContentBook::bookId).containsExactly("book-new");
+		server.verify();
+	}
+
+	@Test
+	void getShelfMapsDramaDubResults() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/dramadub"))
+				.andExpect(method(GET))
+				.andRespond(withSuccess("""
+						{
+						  "books": [
+						    {
+						      "book_id": "book-dub",
+						      "book_title": "Drama Dub",
+						      "filtered_title": "drama-dub",
+						      "book_pic": "https://example.com/dub.jpg",
+						      "chapter_count": 5
+						    }
+						  ]
+						}
+						""", MediaType.APPLICATION_JSON));
+
+		List<ContentBook> books = provider.getShelf(ContentShelfType.DRAMA_DUB);
+
+		assertThat(books).extracting(ContentBook::bookId).containsExactly("book-dub");
+		server.verify();
+	}
+
+	@Test
 	void getEpisodesMapsFlaskEpisodeList() {
 		RestClient.Builder builder = RestClient.builder();
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

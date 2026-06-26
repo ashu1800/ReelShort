@@ -45,6 +45,14 @@ public class FlaskContentProvider implements ContentProvider {
 	}
 
 	@Override
+	public List<ContentBook> getShelf(ContentShelfType shelfType) {
+		ShelfResponse response = get(ShelfResponse.class, uri(shelfType.providerPath()).toUriString());
+		return response.books() == null
+				? List.of()
+				: response.books().stream().map(FlaskBook::toContentBook).toList();
+	}
+
+	@Override
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
 		EpisodesResponse response = get(EpisodesResponse.class,
 				uri("/api/v1/reelshort/episodes/{bookId}")
@@ -102,6 +110,9 @@ public class FlaskContentProvider implements ContentProvider {
 	}
 
 	private record SearchResponse(List<FlaskBook> results) {
+	}
+
+	private record ShelfResponse(List<FlaskBook> books) {
 	}
 
 	private record EpisodesResponse(List<FlaskEpisode> episodes) {

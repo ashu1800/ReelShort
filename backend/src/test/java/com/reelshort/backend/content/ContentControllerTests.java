@@ -22,7 +22,7 @@ import com.reelshort.backend.admin.AdminTokenRepository;
 import com.reelshort.backend.system.web.GlobalExceptionHandler;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
-@WebMvcTest(controllers = ContentController.class)
+@WebMvcTest(controllers = {ContentController.class, HomeController.class})
 @AutoConfigureMockMvc(addFilters = false)
 class ContentControllerTests {
 
@@ -30,7 +30,7 @@ class ContentControllerTests {
 	private MockMvc mockMvc;
 
 	@MockitoBean
-	private ContentProvider contentProvider;
+	private ContentCacheService contentCacheService;
 
 	@MockitoBean
 	private AccessTokenRepository accessTokenRepository;
@@ -43,7 +43,7 @@ class ContentControllerTests {
 
 	@Test
 	void searchReturnsBooksInUnifiedEnvelope() throws Exception {
-		when(contentProvider.search("love")).thenReturn(List.of(
+		when(contentCacheService.search("love")).thenReturn(List.of(
 				new ContentBook("book-1", "Love Story", "love-story", "https://example.com/cover.jpg", 12)));
 
 		mockMvc.perform(get("/api/app/content/search").param("keywords", "love"))
@@ -73,7 +73,7 @@ class ContentControllerTests {
 
 	@Test
 	void contentProviderFailureReturnsServiceUnavailable() throws Exception {
-		when(contentProvider.search(anyString()))
+		when(contentCacheService.search(anyString()))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		mockMvc.perform(get("/api/app/content/search").param("keywords", "love"))
@@ -85,7 +85,7 @@ class ContentControllerTests {
 
 	@Test
 	void episodesReturnsProviderEpisodesInUnifiedEnvelope() throws Exception {
-		when(contentProvider.getEpisodes("book-1", "love-story")).thenReturn(List.of(
+		when(contentCacheService.getEpisodes("book-1", "love-story")).thenReturn(List.of(
 				new ContentEpisode(1, "chapter-1"),
 				new ContentEpisode(2, "chapter-2")));
 
@@ -100,7 +100,7 @@ class ContentControllerTests {
 
 	@Test
 	void playReturnsProviderVideoInUnifiedEnvelope() throws Exception {
-		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+		when(contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
 				.thenReturn(new ContentVideo(
 						"https://cdn.example.com/video.m3u8",
 						1,
@@ -117,5 +117,35 @@ class ContentControllerTests {
 				.andExpect(jsonPath("$.data.duration").value(120))
 				.andExpect(jsonPath("$.data.nextEpisode.episode").value(2))
 				.andExpect(jsonPath("$.data.nextEpisode.chapterId").value("chapter-2"));
+	}
+
+	@Test
+	void homeRecommendReturnsRecommendShelf() throws Exception {
+		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND)).thenReturn(List.of(
+				new ContentBook("book-home", "Home Pick", "home-pick", "https://example.com/home.jpg", 6)));
+
+		mockMvc.perform(get("/api/app/home/recommend"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data", hasSize(1)))
+				.andExpect(jsonPath("$.data[0].bookId").value("book-home"));
+	}
+
+	@Test
+	void shelfEndpointReturnsSelectedShelf() throws Exception {
+		when(contentCacheService.getShelf(ContentShelfType.NEW_RELEASE)).thenReturn(List.of(
+				new ContentBook("book-new", "New", "new", "https://example.com/new.jpg", 2)));
+
+		mockMvc.perform(get("/api/app/content/shelves/new-release"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data", hasSize(1)))
+				.andExpect(jsonPath("$.data[0].bookId").value("book-new"));
+	}
+
+	@Test
+	void shelfEndpointRejectsUnknownShelf() throws Exception {
+		mockMvc.perform(get("/api/app/content/shelves/unknown"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
 	}
 }
