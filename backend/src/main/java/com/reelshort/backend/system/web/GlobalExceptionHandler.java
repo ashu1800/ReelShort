@@ -4,12 +4,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.method.MethodValidationException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.content.ContentProviderException;
 import com.reelshort.backend.system.api.ApiErrorResponse;
 
@@ -19,14 +22,17 @@ import jakarta.validation.ConstraintViolationException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-	@ExceptionHandler(NoHandlerFoundException.class)
-	public ResponseEntity<ApiErrorResponse> handleNoHandlerFound(NoHandlerFoundException exception,
-			HttpServletRequest request) {
+	@ExceptionHandler({
+			NoHandlerFoundException.class,
+			NoResourceFoundException.class
+	})
+	public ResponseEntity<ApiErrorResponse> handleNoHandlerFound(Exception exception, HttpServletRequest request) {
 		return error(HttpStatus.NOT_FOUND, "resource not found", request);
 	}
 
 	@ExceptionHandler({
 			MissingServletRequestParameterException.class,
+			MethodArgumentNotValidException.class,
 			MethodArgumentTypeMismatchException.class,
 			ConstraintViolationException.class,
 			HandlerMethodValidationException.class,
@@ -39,11 +45,17 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(ContentProviderException.class)
 	public ResponseEntity<ApiErrorResponse> handleContentProviderException(ContentProviderException exception,
 			HttpServletRequest request) {
-		HttpStatus status = HttpStatus.resolve(exception.statusCode());
-		if (status == null) {
-			status = HttpStatus.SERVICE_UNAVAILABLE;
-		}
-		return error(status, exception.getMessage(), request);
+		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(AuthException.class)
+	public ResponseEntity<ApiErrorResponse> handleAuthException(AuthException exception, HttpServletRequest request) {
+		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
+	}
+
+	private HttpStatus resolveStatus(int statusCode) {
+		HttpStatus status = HttpStatus.resolve(statusCode);
+		return status == null ? HttpStatus.SERVICE_UNAVAILABLE : status;
 	}
 
 	@ExceptionHandler(Exception.class)
