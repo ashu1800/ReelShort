@@ -103,6 +103,150 @@ class AdminUserControllerTests {
 				.andExpect(jsonPath("$.data[0].source").value("WATCH_REWARD"));
 	}
 
+	@Test
+	void adminCanAdjustUserPointsAndAuditOperation() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = registerAppUser("admin-adjust-alice");
+
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "amount": 10,
+						  "reason": "manual campaign grant"
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.pointBalance").value(10));
+
+		mockMvc.perform(get("/api/admin/users/{userId}/point-records", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data", hasSize(1)))
+				.andExpect(jsonPath("$.data[0].amount").value(10))
+				.andExpect(jsonPath("$.data[0].source").value("ADMIN_ADJUSTMENT"))
+				.andExpect(jsonPath("$.data[0].reason").value("manual campaign grant"));
+
+		mockMvc.perform(get("/api/admin/audit-logs")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[*].action", hasItem("POINTS_ADJUSTED")));
+	}
+
+	@Test
+	void adminPointAdjustmentRejectsInvalidAmountAndReason() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = registerAppUser("admin-adjust-invalid-alice");
+
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "amount": 0,
+						  "reason": "zero is invalid"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "amount": 1,
+						  "reason": " "
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+	}
+
+	@Test
+	void adminPointAdjustmentRejectsNegativeBalance() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = registerAppUser("admin-adjust-negative-alice");
+
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "amount": -1,
+						  "reason": "manual correction"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("insufficient point balance"));
+	}
+
+	@Test
+	void adminCanSubtractUserPointsWhenBalanceIsEnough() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = registerAppUser("admin-adjust-subtract-alice");
+		adjustPoints(adminToken, user.userId(), 10, "initial grant");
+
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "amount": -4,
+						  "reason": "manual correction"
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.pointBalance").value(6));
+
+		mockMvc.perform(get("/api/admin/users/{userId}/point-records", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[0].amount").value(-4))
+				.andExpect(jsonPath("$.data[0].balanceAfter").value(6));
+	}
+
+	@Test
+	void adminPointAdjustmentAcceptsMaxLengthReason() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = registerAppUser("admin-adjust-long-reason-alice");
+		String reason = "a".repeat(255);
+
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "amount": 1,
+						  "reason": "%s"
+						}
+						""".formatted(reason)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.pointBalance").value(1));
+	}
+
+	@Test
+	void adminStatusChangeWritesAuditLog() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = registerAppUser("admin-status-audit-alice");
+
+		mockMvc.perform(post("/api/admin/users/{userId}/status", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "status": "DISABLED"
+						}
+						"""))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(get("/api/admin/audit-logs")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[*].action", hasItem("USER_STATUS_CHANGED")));
+	}
+
 	private String adminLogin() throws Exception {
 		MvcResult result = mockMvc.perform(post("/api/admin/auth/login")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -150,6 +294,19 @@ class AdminUserControllerTests {
 						  "durationSeconds": %d
 						}
 						""".formatted(bookId, bookId, bookId, episodeNum, episodeNum, positionSeconds, durationSeconds)))
+				.andExpect(status().isOk());
+	}
+
+	private void adjustPoints(String adminToken, UUID userId, int amount, String reason) throws Exception {
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", userId)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "amount": %d,
+						  "reason": "%s"
+						}
+						""".formatted(amount, reason)))
 				.andExpect(status().isOk());
 	}
 

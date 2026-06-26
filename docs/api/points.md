@@ -45,6 +45,7 @@ Authorization: Bearer <token>
       "bookId": "book-1",
       "episodeNum": 1,
       "stage": 75,
+      "reason": null,
       "createdAt": "2026-06-26T17:30:00+08:00"
     }
   ],
@@ -59,7 +60,8 @@ Authorization: Bearer <token>
 - 每个阶段当前奖励 `1` 积分。
 - 同一用户、同一 `bookId`、同一 `episodeNum`、同一阶段只能发放一次。
 - 如果进度从低阶段直接跳到高阶段，会一次性补发所有已达到且未领取的阶段。
-- 当前阶段只实现观看奖励来源 `WATCH_REWARD`，后台调整、充值和权益类流水在后续阶段扩展。
+- 观看奖励来源为 `WATCH_REWARD`，后台积分调整来源为 `ADMIN_ADJUSTMENT`。
+- 非观看奖励流水的 `bookId`、`episodeNum`、`stage` 可以为空，`reason` 记录后台调整原因。
 
 错误：
 

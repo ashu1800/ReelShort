@@ -39,10 +39,19 @@ public class AdminUserController {
 	}
 
 	@PostMapping("/{userId}/status")
-	public ApiResponse<AdminUserDetailResponse> status(@PathVariable UUID userId,
+	public ApiResponse<AdminUserDetailResponse> status(CurrentAdmin currentAdmin, @PathVariable UUID userId,
 			@Valid @RequestBody AdminUserStatusRequest statusRequest,
 			HttpServletRequest request) {
-		return ApiResponse.success(adminUserService.changeStatus(userId, statusRequest.status()), requestId(request));
+		return ApiResponse.success(adminUserService.changeStatus(currentAdmin.username(), userId, statusRequest.status()),
+				requestId(request));
+	}
+
+	@PostMapping("/{userId}/points/adjust")
+	public ApiResponse<AdminUserDetailResponse> adjustPoints(CurrentAdmin currentAdmin, @PathVariable UUID userId,
+			@Valid @RequestBody AdminPointAdjustRequest adjustRequest,
+			HttpServletRequest request) {
+		return ApiResponse.success(adminUserService.adjustPoints(currentAdmin.username(), userId, adjustRequest.amount(),
+				adjustRequest.reason()), requestId(request));
 	}
 
 	@GetMapping("/{userId}/watch-records")

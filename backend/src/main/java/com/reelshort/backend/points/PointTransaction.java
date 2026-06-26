@@ -27,14 +27,15 @@ public class PointTransaction {
 	@Column(nullable = false, length = 64)
 	private String source;
 
-	@Column(nullable = false, length = 128)
+	@Column(length = 128)
 	private String bookId;
 
-	@Column(nullable = false)
-	private int episodeNum;
+	private Integer episodeNum;
 
-	@Column(nullable = false)
-	private int stage;
+	private Integer stage;
+
+	@Column(length = 255)
+	private String reason;
 
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
@@ -43,7 +44,7 @@ public class PointTransaction {
 	}
 
 	private PointTransaction(UUID id, UUID userId, int amount, int balanceAfter, String source, String bookId,
-			int episodeNum, int stage, OffsetDateTime createdAt) {
+			Integer episodeNum, Integer stage, String reason, OffsetDateTime createdAt) {
 		this.id = id;
 		this.userId = userId;
 		this.amount = amount;
@@ -52,13 +53,19 @@ public class PointTransaction {
 		this.bookId = bookId;
 		this.episodeNum = episodeNum;
 		this.stage = stage;
+		this.reason = reason;
 		this.createdAt = createdAt;
 	}
 
 	public static PointTransaction watchReward(UUID userId, int amount, int balanceAfter, String bookId, int episodeNum,
 			int stage) {
 		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "WATCH_REWARD", bookId, episodeNum,
-				stage, OffsetDateTime.now());
+				stage, null, OffsetDateTime.now());
+	}
+
+	public static PointTransaction adminAdjustment(UUID userId, int amount, int balanceAfter, String reason) {
+		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "ADMIN_ADJUSTMENT", null, null,
+				null, reason, OffsetDateTime.now());
 	}
 
 	public UUID id() {
@@ -85,12 +92,16 @@ public class PointTransaction {
 		return bookId;
 	}
 
-	public int episodeNum() {
+	public Integer episodeNum() {
 		return episodeNum;
 	}
 
-	public int stage() {
+	public Integer stage() {
 		return stage;
+	}
+
+	public String reason() {
+		return reason;
 	}
 
 	public OffsetDateTime createdAt() {

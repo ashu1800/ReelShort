@@ -7,9 +7,11 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.reelshort.backend.points.PointAccountResponse;
 import com.reelshort.backend.points.PointAccountRepository;
 import com.reelshort.backend.points.PointTransactionRepository;
 import com.reelshort.backend.points.PointTransactionResponse;
+import com.reelshort.backend.points.PointsService;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
@@ -22,14 +24,19 @@ public class AdminUserService {
 	private final UserAccountRepository userAccountRepository;
 	private final PointAccountRepository pointAccountRepository;
 	private final PointTransactionRepository pointTransactionRepository;
+	private final PointsService pointsService;
 	private final WatchRecordRepository watchRecordRepository;
+	private final AdminAuditService adminAuditService;
 
 	public AdminUserService(UserAccountRepository userAccountRepository, PointAccountRepository pointAccountRepository,
-			PointTransactionRepository pointTransactionRepository, WatchRecordRepository watchRecordRepository) {
+			PointTransactionRepository pointTransactionRepository, PointsService pointsService,
+			WatchRecordRepository watchRecordRepository, AdminAuditService adminAuditService) {
 		this.userAccountRepository = userAccountRepository;
 		this.pointAccountRepository = pointAccountRepository;
 		this.pointTransactionRepository = pointTransactionRepository;
+		this.pointsService = pointsService;
 		this.watchRecordRepository = watchRecordRepository;
+		this.adminAuditService = adminAuditService;
 	}
 
 	@Transactional(readOnly = true)
@@ -48,10 +55,27 @@ public class AdminUserService {
 	}
 
 	@Transactional
-	public AdminUserDetailResponse changeStatus(UUID userId, UserStatus status) {
+	public AdminUserDetailResponse changeStatus(String adminUsername, UUID userId, UserStatus status) {
 		UserAccount user = user(userId);
 		user.changeStatus(status);
-		return detailResponse(userAccountRepository.save(user));
+		UserAccount savedUser = userAccountRepository.save(user);
+		adminAuditService.record(adminUsername, "USER_STATUS_CHANGED", "USER", userId,
+				"Changed user status to " + status);
+		return detailResponse(savedUser);
+	}
+
+	@Transactional
+	public AdminUserDetailResponse adjustPoints(String adminUsername, UUID userId, int amount, String reason) {
+		if (amount == 0) {
+			throw new AdminException(400, "bad request");
+		}
+		UserAccount user = user(userId);
+		PointAccountResponse account = pointsService.adjustByAdmin(userId, amount, reason.trim());
+		adminAuditService.record(adminUsername, "POINTS_ADJUSTED", "USER", userId,
+				"Adjusted points by " + amount + ": " + reason.trim());
+		return new AdminUserDetailResponse(user.id(), user.username(), user.status(), account.balance(),
+				watchRecordRepository.countByUserId(user.id()), pointTransactionRepository.countByUserId(user.id()),
+				user.createdAt().toString());
 	}
 
 	@Transactional(readOnly = true)
