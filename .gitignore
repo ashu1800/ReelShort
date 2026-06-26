@@ -1,0 +1,43 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Java / Gradle
+.gradle/
+build/
+backend/.gradle/
+backend/build/
+backend/out/
+
+# Node / Vue
+node_modules/
+dist/
+admin-web/node_modules/
+admin-web/dist/
+admin-web/.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+content-provider/.venv/
+
+# Android
+android-app/.gradle/
+android-app/build/
+android-app/**/build/
+android-app/local.properties
+android-app/.idea/
+
+# Environment
+.env
+.env.*
+!.env.example
+

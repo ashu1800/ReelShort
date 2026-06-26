@@ -1,0 +1,330 @@
+ReelShort 聚合播放平台开发文档
+
+一、项目定位
+
+本项目建设一个长期单机部署的聚合播放平台，整体包含 Android 原生 App、后台管理网站、Spring Boot 模块化单体后端、同机自部署 Flask ReelShort 内容源服务、PostgreSQL 数据库和 Redis 缓存。
+
+项目不是只实现第一版临时功能，而是先搭建稳定的总体架构。后续功能应沿既定模块边界持续完善，避免因为新增充值、推荐、运营配置、内容源替换等能力而推倒重来。
+
+长期产品定位为“聚合播放平台”：系统主要消费外部内容源，重点建设用户、播放、观看记录、积分、后台运营、内容缓存、推荐编排和内容源适配能力。不建设自有视频上传、转码、媒资管理和 CDN 分发链路。
+
+第三方 API 文档：
+https://github.com/AmmarrBN/reelshort-api
+
+二、总体架构
+
+1. 客户端层
+
+Android App 使用 Kotlin 和 Jetpack Compose 开发，播放能力使用 Android 原生媒体播放方案。App 只访问 Spring Boot 后端 API，不直接访问 Flask ReelShort API，也不直接访问数据库或 Redis。
+
+App 核心能力包括：
+- 账号密码注册和登录。
+- 首页内容推荐。
+- 剧集搜索。
+- 剧集详情和分集列表。
+- HLS 视频播放。
+- 观看进度上报。
+- 观看记录查看。
+- 积分余额和积分流水查看。
+
+2. 后台管理层
+
+后台管理网站使用 Vue 和 Element Plus 开发，面向运营和管理员。后台只访问 Spring Boot Admin API，不直接访问数据库、Redis 或 Flask 内容源服务。
+
+后台核心能力包括：
+- 管理员登录。
+- 用户列表、用户详情、禁用/启用用户。
+- 用户观看记录查询。
+- 积分余额查看、积分流水查询、后台积分调整。
+- 内容缓存状态查看和缓存刷新。
+- 运营配置管理。
+- 系统日志和后台操作日志查看。
+
+3. 业务服务层
+
+后端采用 Spring Boot 模块化单体架构。单体部署，但内部必须按业务域划分清晰边界，避免代码混成一个大模块。
+
+建议模块划分：
+- `auth`：用户登录、管理员登录、JWT、密码加密、认证上下文。
+- `user`：用户资料、用户状态、账号生命周期。
+- `content`：内容搜索、剧集列表、播放地址、内容缓存、内容源适配。
+- `watch`：观看进度、观看记录、播放历史、阶段完成状态。
+- `points`：积分账户、积分流水、观看奖励、后台调整、未来充值预留。
+- `admin`：后台权限、后台接口、后台操作日志。
+- `system`：系统配置、统一异常、限流、审计、健康检查、任务调度。
+
+Spring Boot 是系统唯一业务入口。Android App、后台管理网站和未来其他客户端都必须通过 Spring Boot API 访问业务能力。
+
+4. 内容源层
+
+第三方 ReelShort API 使用同机自部署的 Flask 服务运行。Spring Boot 不直接把 Flask API 暴露给客户端，而是通过统一的 `ContentProvider` 适配接口调用。
+
+内容源适配接口应抽象以下能力：
+- `search`：搜索剧集。
+- `getEpisodes`：获取剧集分集列表。
+- `getVideoUrl`：获取单集播放地址。
+- `getShelf`：获取推荐、新剧、配音等分类内容。
+
+当前 Flask API 是第一个内容源实现。后续如果 Flask API 不稳定，可以新增 Java 原生内容源适配器或其他第三方内容源，但 App API 和后台 API 不应因此改变。
+
+5. 数据层
+
+PostgreSQL 用于持久化核心业务数据：
+- 用户账号和用户状态。
+- 管理员账号和后台权限。
+- 内容索引和剧集缓存。
+- 观看记录和观看进度。
+- 积分账户和积分流水。
+- 阶段式观看奖励发放记录。
+- 后台操作日志。
+- 系统配置。
+
+Redis 用于短期状态和性能优化：
+- 热点内容缓存。
+- Flask 内容源调用结果短缓存。
+- 登录会话或 Token 黑名单。
+- 限流计数。
+- 防重复提交。
+- 需要快速读写的临时状态。
+
+Redis 数据丢失不应影响核心业务正确性。所有关键账户、积分、观看记录和后台操作数据必须以 PostgreSQL 为准。
+
+6. 部署层
+
+长期部署形态为单机部署，不引入 K8s、服务网格、分布式事务或复杂微服务治理。
+
+建议单机组件：
+- Nginx：反向代理、静态资源托管、HTTPS 入口。
+- Spring Boot：核心业务服务。
+- Vue Admin：构建为静态文件后由 Nginx 托管。
+- Flask ReelShort API：同机内部服务，只允许 Spring Boot 访问。
+- PostgreSQL：核心业务数据库。
+- Redis：缓存和短期状态。
+
+可以使用 Docker Compose 或进程管理工具统一管理服务。即使采用单机部署，也应保留清晰的端口、日志、备份、健康检查和配置管理规范。
+
+三、关键业务设计
+
+1. 账号体系
+
+第一阶段采用账号密码注册和登录。密码必须加密存储，后端返回 Token 供 App 和后台访问。用户状态至少包含正常、禁用等状态。被禁用用户不能继续访问 App 业务接口。
+
+管理员账号与普通用户账号应隔离。后台接口必须校验管理员身份和权限，不能复用普通用户权限直接访问后台功能。
+
+2. 内容聚合
+
+内容数据来自同机 Flask ReelShort API。Spring Boot 负责统一封装外部内容源，处理缓存、错误、限流、字段转换和业务语义。
+
+内容相关接口不应直接返回第三方 API 的原始结构，而应转换为平台自己的响应结构。这样后续替换内容源时，客户端不需要重写。
+
+3. 播放链路
+
+App 请求播放某一集时，应先调用 Spring Boot。Spring Boot 根据 `book_id`、`filtered_title`、`episode_num`、`chapter_id` 等信息调用内容源，获取 HLS 播放地址后返回给 App。
+
+播放地址可以设置短缓存，但不能长期假设有效。播放失败时，App 应允许重新请求播放地址。
+
+4. 观看记录
+
+App 播放过程中定期上报观看进度。后端记录用户、剧集、分集、当前进度、总时长、最近观看时间等信息。
+
+观看记录应支持继续播放、最近观看列表和后台查询。
+
+5. 积分系统
+
+第一阶段不做充值，但积分模型必须支持未来充值和付费扩展。
+
+积分系统至少包含：
+- 积分账户：记录用户当前积分余额。
+- 积分流水：记录每一次增加或减少积分的原因、金额、来源和时间。
+- 观看奖励记录：记录同一用户、同一剧集、同一分集、同一阶段是否已经发放。
+- 后台调整：管理员可以手动增加或扣减积分，并生成流水。
+
+观看奖励采用阶段式发放：
+- 观看达到 25% 发放一次。
+- 观看达到 50% 发放一次。
+- 观看达到 75% 发放一次。
+- 观看达到 100% 发放一次。
+
+同一用户、同一剧集、同一分集、同一阶段只能发放一次。后端必须做幂等校验，不能依赖客户端保证不重复上报。
+
+6. 充值预留
+
+第一阶段不接支付渠道、不做充值页面、不处理真实支付回调。
+
+但积分账户和积分流水设计时应预留以下扩展方向：
+- 充值订单。
+- 支付渠道。
+- 支付回调。
+- 用户权益。
+- 风控审核。
+
+未来增加充值时，应新增订单和支付模块，不应重构观看奖励和积分流水基础模型。
+
+四、接口规划
+
+1. App API
+
+建议接口范围：
+- `POST /api/app/auth/register`：用户注册。
+- `POST /api/app/auth/login`：用户登录。
+- `GET /api/app/home/recommend`：首页推荐内容。
+- `GET /api/app/content/search`：搜索剧集。
+- `GET /api/app/content/books/{bookId}`：剧集详情。
+- `GET /api/app/content/books/{bookId}/episodes`：分集列表。
+- `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play`：获取播放地址。
+- `POST /api/app/watch/progress`：上报观看进度。
+- `GET /api/app/watch/history`：获取观看历史。
+- `GET /api/app/points/account`：获取积分余额。
+- `GET /api/app/points/records`：获取积分流水。
+
+2. Admin API
+
+建议接口范围：
+- `POST /api/admin/auth/login`：管理员登录。
+- `GET /api/admin/users`：用户列表。
+- `GET /api/admin/users/{userId}`：用户详情。
+- `PATCH /api/admin/users/{userId}/status`：修改用户状态。
+- `GET /api/admin/users/{userId}/watch-records`：用户观看记录。
+- `GET /api/admin/users/{userId}/points`：用户积分账户。
+- `GET /api/admin/points/records`：积分流水查询。
+- `POST /api/admin/points/adjustments`：后台积分调整。
+- `GET /api/admin/content/cache`：内容缓存状态。
+- `POST /api/admin/content/cache/refresh`：刷新内容缓存。
+- `GET /api/admin/system/configs`：系统配置列表。
+- `PUT /api/admin/system/configs/{key}`：更新系统配置。
+- `GET /api/admin/system/audit-logs`：后台操作日志。
+
+3. 内容源内部接口
+
+Spring Boot 内部通过 `ContentProvider` 接口访问内容源。接口能力包括：
+- 搜索剧集。
+- 获取分集列表。
+- 获取播放地址。
+- 获取分类内容。
+
+Flask ReelShort API 当前提供的主要端点：
+- `GET /api/v1/reelshort/search`
+- `GET /api/v1/reelshort/episodes/{book_id}`
+- `GET /api/v1/reelshort/video/{book_id}/{episode_num}`
+- `GET /api/v1/reelshort/dramadub`
+- `GET /api/v1/reelshort/newrelease`
+- `GET /api/v1/reelshort/recommend`
+
+五、数据模型规划
+
+建议核心表：
+- `users`：普通用户账号。
+- `admin_users`：后台管理员账号。
+- `roles`：后台角色。
+- `permissions`：后台权限。
+- `admin_user_roles`：管理员角色关系。
+- `content_books`：剧集索引缓存。
+- `content_episodes`：分集缓存。
+- `watch_records`：用户观看记录。
+- `watch_reward_claims`：观看阶段奖励发放记录。
+- `point_accounts`：用户积分账户。
+- `point_transactions`：积分流水。
+- `admin_audit_logs`：后台操作日志。
+- `system_configs`：系统配置。
+
+关键约束：
+- `watch_reward_claims` 应对用户、内容、分集、阶段建立唯一约束，保证奖励不重复发放。
+- `point_transactions` 必须记录业务来源，不能只改余额不留流水。
+- 内容缓存表不能成为唯一真相。内容源返回变化时，应允许刷新缓存。
+- 所有后台修改类操作应写入审计日志。
+
+六、错误处理和安全设计
+
+1. 统一错误响应
+
+Spring Boot 应提供统一错误结构，至少包含错误码、错误消息、请求标识和时间。App 和后台不应直接解析底层异常。
+
+2. 内容源错误
+
+Flask API 不可用、超时、返回空数据或返回异常时，Spring Boot 应返回明确业务错误。对可缓存内容，应优先使用未过期缓存或最后一次可用缓存。
+
+3. 认证和权限
+
+App API 使用普通用户 Token。Admin API 使用管理员 Token。两类 Token 权限隔离，不能互相访问。
+
+4. 限流和防刷
+
+以下接口应重点限流：
+- 登录接口。
+- 搜索接口。
+- 播放地址获取接口。
+- 观看进度上报接口。
+- 积分发放相关接口。
+
+观看奖励必须以后端记录为准，不能因为客户端重复上报而重复发放。
+
+七、阶段路线
+
+阶段 0：项目基础
+- 建立项目目录。
+- 建立 AGENTS.md。
+- 明确总体架构。
+- 明确模块边界。
+- 明确单机部署方案。
+
+阶段 1：核心闭环
+- 完成账号密码注册和登录。
+- 完成内容搜索、推荐、剧集列表和播放地址获取。
+- 完成 Android App 基础播放。
+- 完成观看进度上报和观看历史。
+- 完成 25%、50%、75%、100% 阶段式积分奖励。
+- 完成用户、观看记录、积分流水的基础后台管理。
+
+阶段 2：运营增强
+- 增加内容缓存刷新。
+- 增加推荐和运营配置。
+- 增加后台角色权限。
+- 增加后台审计日志。
+- 增加系统健康检查和异常告警。
+
+阶段 3：商业化预留落地
+- 在现有积分账户和积分流水基础上增加订单模块。
+- 增加充值记录和支付状态。
+- 增加支付回调处理。
+- 增加权益和风控规则。
+
+阶段 4：内容源扩展
+- 如果 Flask API 不稳定，新增 Java 原生内容源适配器。
+- 支持多个内容源并行。
+- 内容源切换不影响 App 和后台接口。
+
+八、验证标准
+
+架构和后续开发应满足以下验证标准：
+- Android App 只能通过 Spring Boot 获取内容和播放地址。
+- 后台管理网站只能通过 Spring Boot Admin API 操作业务数据。
+- 搜索、剧集、播放地址、推荐、新剧、配音分类可通过 Spring Boot 从 Flask API 获取并缓存。
+- 同一用户、同一分集、同一观看阶段重复上报时，不重复发放积分。
+- 后台积分调整必须生成积分流水。
+- 用户禁用后不能继续访问 App 业务接口。
+- 管理员和普通用户权限隔离。
+- Flask API 不可用时，Spring Boot 返回明确错误，并尽量使用可用缓存。
+- 单机重启后 PostgreSQL 数据保持正确，Redis 缓存丢失不影响核心业务数据。
+
+九、架构约束
+
+- 不把第三方 Flask API 直接暴露给 App 或后台。
+- 不在第一阶段接入真实支付。
+- 不建设自有视频上传、转码和 CDN 分发链路。
+- 不引入 K8s、服务网格和微服务治理。
+- 不让积分余额脱离积分流水单独修改。
+- 不让客户端决定积分是否发放，客户端只上报播放进度。
+- 不让后台绕过业务服务直接修改数据库。
+
+十、后续实施原则
+
+后续开发应先搭建基础目录和模块，再按阶段逐步实现。每个新增功能都必须归属到明确模块，不能因为开发方便跨模块直接访问数据。
+
+优先保证以下长期边界：
+- Spring Boot 是唯一业务入口。
+- 内容源通过适配器接入。
+- PostgreSQL 是核心数据真相。
+- Redis 只存缓存和短期状态。
+- 积分必须有流水。
+- 观看奖励必须幂等。
+- 后台操作必须可审计。
