@@ -6,25 +6,24 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.reelshort.backend.system.concurrency.UserActionLocks;
+
 @Service
 public class WatchService {
 
 	private final WatchRecordRepository watchRecordRepository;
+	private final WatchProgressTransaction watchProgressTransaction;
+	private final UserActionLocks userActionLocks;
 
-	public WatchService(WatchRecordRepository watchRecordRepository) {
+	public WatchService(WatchRecordRepository watchRecordRepository, WatchProgressTransaction watchProgressTransaction,
+			UserActionLocks userActionLocks) {
 		this.watchRecordRepository = watchRecordRepository;
+		this.watchProgressTransaction = watchProgressTransaction;
+		this.userActionLocks = userActionLocks;
 	}
 
-	@Transactional
 	public WatchRecordResponse reportProgress(UUID userId, WatchProgressRequest request) {
-		WatchRecord record = watchRecordRepository
-				.findByUserIdAndBookIdAndEpisodeNum(userId, request.bookId(), request.episodeNum())
-				.orElseGet(() -> WatchRecord.create(userId, request.bookId(), request.bookTitle(),
-						request.filteredTitle(), request.episodeNum(), request.chapterId()));
-		int clampedPosition = Math.min(request.positionSeconds(), request.durationSeconds());
-		record.update(request.bookTitle(), request.filteredTitle(), request.chapterId(), clampedPosition,
-				request.durationSeconds(), progressPercent(clampedPosition, request.durationSeconds()));
-		return WatchRecordResponse.from(watchRecordRepository.save(record));
+		return userActionLocks.withUserLock(userId, () -> watchProgressTransaction.reportProgress(userId, request));
 	}
 
 	@Transactional(readOnly = true)
@@ -32,9 +31,5 @@ public class WatchService {
 		return watchRecordRepository.findByUserIdOrderByUpdatedAtDesc(userId).stream()
 				.map(WatchRecordResponse::from)
 				.toList();
-	}
-
-	private int progressPercent(int positionSeconds, int durationSeconds) {
-		return Math.min(100, (int) Math.floor(positionSeconds * 100.0 / durationSeconds));
 	}
 }
