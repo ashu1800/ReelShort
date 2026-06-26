@@ -144,6 +144,14 @@ Authorization: Bearer <admin-token>
 
 更新后台系统配置。成功后写入审计日志 `SYSTEM_CONFIG_UPDATED`。
 
+## `GET /api/admin/content/cache`
+
+返回内容缓存状态。详见 `docs/api/content-cache.md`。
+
+## `POST /api/admin/content/cache/shelves/{shelfType}/refresh`
+
+刷新指定内容货架缓存。成功后写入审计日志 `CONTENT_CACHE_REFRESHED`。
+
 错误：
 
 - `400`：请求字段缺失、UUID 或状态格式不合法。

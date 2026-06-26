@@ -22,17 +22,24 @@ import jakarta.validation.constraints.NotBlank;
 @Validated
 public class ContentController {
 
-	private final ContentProvider contentProvider;
+	private final ContentCacheService contentCacheService;
 
-	public ContentController(ContentProvider contentProvider) {
-		this.contentProvider = contentProvider;
+	public ContentController(ContentCacheService contentCacheService) {
+		this.contentCacheService = contentCacheService;
 	}
 
 	@GetMapping("/search")
 	public ApiResponse<List<ContentBook>> search(@RequestParam @NotBlank String keywords, CurrentUser currentUser,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentProvider.search(keywords), requestId);
+		return ApiResponse.success(contentCacheService.search(keywords), requestId);
+	}
+
+	@GetMapping("/shelves/{shelfType}")
+	public ApiResponse<List<ContentBook>> shelf(@PathVariable @NotBlank String shelfType, CurrentUser currentUser,
+			HttpServletRequest request) {
+		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
+		return ApiResponse.success(contentCacheService.getShelf(ContentShelfType.fromApiValue(shelfType)), requestId);
 	}
 
 	@GetMapping("/books/{bookId}/episodes")
@@ -41,7 +48,7 @@ public class ContentController {
 			CurrentUser currentUser,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentProvider.getEpisodes(bookId, filteredTitle), requestId);
+		return ApiResponse.success(contentCacheService.getEpisodes(bookId, filteredTitle), requestId);
 	}
 
 	@GetMapping("/books/{bookId}/episodes/{episodeNum}/play")
@@ -52,6 +59,6 @@ public class ContentController {
 			CurrentUser currentUser,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentProvider.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId), requestId);
+		return ApiResponse.success(contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId), requestId);
 	}
 }
