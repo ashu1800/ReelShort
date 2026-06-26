@@ -11,12 +11,20 @@ import com.reelshort.backend.user.UserAccount;
 public class OpaqueTokenService implements TokenService {
 
 	private final SecureRandom secureRandom = new SecureRandom();
+	private final AccessTokenRepository accessTokenRepository;
+	private final TokenHasher tokenHasher;
+
+	public OpaqueTokenService(AccessTokenRepository accessTokenRepository, TokenHasher tokenHasher) {
+		this.accessTokenRepository = accessTokenRepository;
+		this.tokenHasher = tokenHasher;
+	}
 
 	@Override
 	public AuthToken issue(UserAccount user) {
 		byte[] tokenBytes = new byte[32];
 		secureRandom.nextBytes(tokenBytes);
-		return new AuthToken(user.id(), user.username(), Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes),
-				"Bearer");
+		String token = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
+		accessTokenRepository.save(AccessToken.issue(tokenHasher.hash(token), user));
+		return new AuthToken(user.id(), user.username(), token, "Bearer");
 	}
 }
