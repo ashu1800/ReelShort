@@ -1,0 +1,132 @@
+package com.reelshort.backend.auth;
+
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.content.ContentBook;
+import com.reelshort.backend.content.ContentProvider;
+import com.reelshort.backend.user.UserAccount;
+import com.reelshort.backend.user.UserAccountRepository;
+import com.reelshort.backend.user.UserStatus;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+class AppSecurityContractTests {
+
+	@Autowired
+	private MockMvc mockMvc;
+
+	@Autowired
+	private ObjectMapper objectMapper;
+
+	@Autowired
+	private UserAccountRepository userAccountRepository;
+
+	@Autowired
+	private PasswordHasher passwordHasher;
+
+	@Autowired
+	private TokenService tokenService;
+
+	@MockitoBean
+	private ContentProvider contentProvider;
+
+	@Test
+	void authEndpointsRemainPublic() throws Exception {
+		mockMvc.perform(post("/api/app/auth/register")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "security-public",
+						  "password": "Password123"
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.token").isNotEmpty());
+	}
+
+	@Test
+	void contentSearchRequiresBearerToken() throws Exception {
+		mockMvc.perform(get("/api/app/content/search").param("keywords", "love"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401))
+				.andExpect(jsonPath("$.requestId").isNotEmpty())
+				.andExpect(header().exists("X-Request-Id"));
+	}
+
+	@Test
+	void contentSearchRejectsInvalidBearerToken() throws Exception {
+		mockMvc.perform(get("/api/app/content/search")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer invalid-token")
+				.param("keywords", "love"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401));
+	}
+
+	@Test
+	void contentSearchRejectsDisabledUserToken() throws Exception {
+		UserAccount user = userAccountRepository.save(
+				UserAccount.create("security-disabled", passwordHasher.hash("Password123"), UserStatus.DISABLED));
+		String token = tokenService.issue(user).token();
+
+		mockMvc.perform(get("/api/app/content/search")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.param("keywords", "love"))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value(403));
+	}
+
+	@Test
+	void contentSearchAcceptsValidBearerToken() throws Exception {
+		String token = registerAndExtractToken("security-active");
+		when(contentProvider.search("love")).thenReturn(List.of(
+				new ContentBook("book-1", "Love Story", "love-story", "https://example.com/cover.jpg", 12)));
+
+		mockMvc.perform(get("/api/app/content/search")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.param("keywords", "love"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data[0].bookId").value("book-1"));
+	}
+
+	@Test
+	void adminApiIsDeniedUntilAdminSecurityExists() throws Exception {
+		mockMvc.perform(get("/api/admin/users"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401));
+	}
+
+	private String registerAndExtractToken(String username) throws Exception {
+		MvcResult result = mockMvc.perform(post("/api/app/auth/register")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "%s",
+						  "password": "Password123"
+						}
+						""".formatted(username)))
+				.andExpect(status().isOk())
+				.andReturn();
+		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+		return response.path("data").path("token").asText();
+	}
+}

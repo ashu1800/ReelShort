@@ -11,6 +11,7 @@ import org.springframework.validation.annotation.Validated;
 
 import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
+import com.reelshort.backend.auth.CurrentUser;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Min;
@@ -28,7 +29,8 @@ public class ContentController {
 	}
 
 	@GetMapping("/search")
-	public ApiResponse<List<ContentBook>> search(@RequestParam @NotBlank String keywords, HttpServletRequest request) {
+	public ApiResponse<List<ContentBook>> search(@RequestParam @NotBlank String keywords, CurrentUser currentUser,
+			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentProvider.search(keywords), requestId);
 	}
@@ -36,6 +38,7 @@ public class ContentController {
 	@GetMapping("/books/{bookId}/episodes")
 	public ApiResponse<List<ContentEpisode>> episodes(@PathVariable @NotBlank String bookId,
 			@RequestParam @NotBlank String filteredTitle,
+			CurrentUser currentUser,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentProvider.getEpisodes(bookId, filteredTitle), requestId);
@@ -46,6 +49,7 @@ public class ContentController {
 			@PathVariable @Min(1) int episodeNum,
 			@RequestParam @NotBlank String filteredTitle,
 			@RequestParam @NotBlank String chapterId,
+			CurrentUser currentUser,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentProvider.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId), requestId);

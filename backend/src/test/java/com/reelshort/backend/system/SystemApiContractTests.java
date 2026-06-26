@@ -43,10 +43,10 @@ class SystemApiContractTests {
 	}
 
 	@Test
-	void invalidControllerArgumentUsesBadRequestEnvelope() throws Exception {
+	void protectedAppApiWithoutTokenUsesUnauthorizedEnvelope() throws Exception {
 		mockMvc.perform(get("/api/app/content/search"))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value(400))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401))
 				.andExpect(jsonPath("$.message", not(blankOrNullString())))
 				.andExpect(jsonPath("$.path").value("/api/app/content/search"))
 				.andExpect(jsonPath("$.requestId", not(blankOrNullString())))

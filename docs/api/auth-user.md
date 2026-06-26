@@ -62,5 +62,6 @@
 
 - 密码使用 BCrypt 哈希保存，不保存明文密码。
 - 用户状态当前包含 `ACTIVE` 和 `DISABLED`。
-- 当前 Token 为第一阶段不透明访问令牌结构，后续可替换为 JWT；客户端只依赖 `token` 和 `tokenType` 字段。
-- 本阶段尚未实现全局鉴权过滤器，后续 App 业务接口保护会在 `auth/security` 子模块补齐。
+- 当前 Token 为不透明访问令牌结构，客户端通过 `Authorization: Bearer <token>` 访问 App 业务接口。
+- 数据库只保存 Token 哈希，不保存原始 Token。
+- 当前 Token 暂未实现过期和刷新，后续会在会话管理子模块补齐。

@@ -11,14 +11,18 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.reelshort.backend.auth.AccessTokenRepository;
+import com.reelshort.backend.auth.TokenHasher;
 import com.reelshort.backend.system.web.GlobalExceptionHandler;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
 @WebMvcTest(controllers = ContentController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class ContentControllerTests {
 
 	@Autowired
@@ -26,6 +30,12 @@ class ContentControllerTests {
 
 	@MockitoBean
 	private ContentProvider contentProvider;
+
+	@MockitoBean
+	private AccessTokenRepository accessTokenRepository;
+
+	@MockitoBean
+	private TokenHasher tokenHasher;
 
 	@Test
 	void searchReturnsBooksInUnifiedEnvelope() throws Exception {
