@@ -30,6 +30,14 @@
 
 请求可通过 `X-Request-Id` 传入请求标识；未传入时后端自动生成，并在响应头返回。
 
+当前错误分层：
+
+- `400`：请求参数缺失、空白或类型不正确。
+- `404`：接口路径不存在。
+- `502`：内容源返回 HTTP 错误响应。
+- `503`：内容源连接失败、超时或请求无法完成。
+- `500`：未分类的后端内部错误。
+
 ## 已实现接口
 
 ### `GET /api/system/health`
@@ -60,4 +68,6 @@
 
 ```properties
 reelshort.content-provider.base-url=http://127.0.0.1:5000
+spring.http.client.connect-timeout=2s
+spring.http.client.read-timeout=5s
 ```

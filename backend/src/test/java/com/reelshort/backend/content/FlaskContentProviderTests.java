@@ -1,10 +1,12 @@
 package com.reelshort.backend.content;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.util.List;
@@ -103,6 +105,39 @@ class FlaskContentProviderTests {
 				1,
 				120,
 				new ContentEpisode(2, "chapter-2")));
+		server.verify();
+	}
+
+	@Test
+	void upstreamHttpErrorBecomesContentProviderException() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/search?keywords=love"))
+				.andExpect(method(GET))
+				.andRespond(withServerError());
+
+		assertThatThrownBy(() -> provider.search("love"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content provider returned 500");
+		server.verify();
+	}
+
+	@Test
+	void emptyResponseBodyBecomesContentProviderException() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(),
+				requestTo("http://content-provider:5000/api/v1/reelshort/video/book-1/1?filtered_title=love-story&chapter_id=chapter-1"))
+				.andExpect(method(GET))
+				.andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+		assertThatThrownBy(() -> provider.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content provider returned empty response");
 		server.verify();
 	}
 }

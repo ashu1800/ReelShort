@@ -7,14 +7,18 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
 
 import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 
 @RestController
 @RequestMapping("/api/app/content")
+@Validated
 public class ContentController {
 
 	private final ContentProvider contentProvider;
@@ -24,24 +28,24 @@ public class ContentController {
 	}
 
 	@GetMapping("/search")
-	public ApiResponse<List<ContentBook>> search(@RequestParam String keywords, HttpServletRequest request) {
+	public ApiResponse<List<ContentBook>> search(@RequestParam @NotBlank String keywords, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentProvider.search(keywords), requestId);
 	}
 
 	@GetMapping("/books/{bookId}/episodes")
-	public ApiResponse<List<ContentEpisode>> episodes(@PathVariable String bookId,
-			@RequestParam String filteredTitle,
+	public ApiResponse<List<ContentEpisode>> episodes(@PathVariable @NotBlank String bookId,
+			@RequestParam @NotBlank String filteredTitle,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentProvider.getEpisodes(bookId, filteredTitle), requestId);
 	}
 
 	@GetMapping("/books/{bookId}/episodes/{episodeNum}/play")
-	public ApiResponse<ContentVideo> play(@PathVariable String bookId,
-			@PathVariable int episodeNum,
-			@RequestParam String filteredTitle,
-			@RequestParam String chapterId,
+	public ApiResponse<ContentVideo> play(@PathVariable @NotBlank String bookId,
+			@PathVariable @Min(1) int episodeNum,
+			@RequestParam @NotBlank String filteredTitle,
+			@RequestParam @NotBlank String chapterId,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentProvider.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId), requestId);

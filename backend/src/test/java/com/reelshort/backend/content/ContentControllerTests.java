@@ -1,6 +1,7 @@
 package com.reelshort.backend.content;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -38,6 +39,34 @@ class ContentControllerTests {
 				.andExpect(jsonPath("$.data", hasSize(1)))
 				.andExpect(jsonPath("$.data[0].bookId").value("book-1"))
 				.andExpect(jsonPath("$.data[0].title").value("Love Story"));
+	}
+
+	@Test
+	void searchRequiresKeywords() throws Exception {
+		mockMvc.perform(get("/api/app/content/search"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400))
+				.andExpect(jsonPath("$.path").value("/api/app/content/search"));
+	}
+
+	@Test
+	void searchRejectsBlankKeywords() throws Exception {
+		mockMvc.perform(get("/api/app/content/search").param("keywords", " "))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400))
+				.andExpect(jsonPath("$.path").value("/api/app/content/search"));
+	}
+
+	@Test
+	void contentProviderFailureReturnsServiceUnavailable() throws Exception {
+		when(contentProvider.search(anyString()))
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		mockMvc.perform(get("/api/app/content/search").param("keywords", "love"))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(jsonPath("$.code").value(503))
+				.andExpect(jsonPath("$.message").value("content provider unavailable"))
+				.andExpect(jsonPath("$.path").value("/api/app/content/search"));
 	}
 
 	@Test

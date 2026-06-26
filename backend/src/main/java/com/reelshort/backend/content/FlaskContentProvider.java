@@ -5,7 +5,10 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -34,43 +37,57 @@ public class FlaskContentProvider implements ContentProvider {
 
 	@Override
 	public List<ContentBook> search(String keywords) {
-		SearchResponse response = restClient.get()
-				.uri(uri("/api/v1/reelshort/search").queryParam("keywords", keywords).toUriString())
-				.retrieve()
-				.body(SearchResponse.class);
-		return response == null || response.results() == null
+		SearchResponse response = get(SearchResponse.class,
+				uri("/api/v1/reelshort/search").queryParam("keywords", keywords).toUriString());
+		return response.results() == null
 				? List.of()
 				: response.results().stream().map(FlaskBook::toContentBook).toList();
 	}
 
 	@Override
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
-		EpisodesResponse response = restClient.get()
-				.uri(uri("/api/v1/reelshort/episodes/{bookId}")
+		EpisodesResponse response = get(EpisodesResponse.class,
+				uri("/api/v1/reelshort/episodes/{bookId}")
 						.queryParam("filtered_title", filteredTitle)
 						.buildAndExpand(bookId)
-						.toUriString())
-				.retrieve()
-				.body(EpisodesResponse.class);
-		return response == null || response.episodes() == null
+						.toUriString());
+		return response.episodes() == null
 				? List.of()
 				: response.episodes().stream().map(FlaskEpisode::toContentEpisode).toList();
 	}
 
 	@Override
 	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId) {
-		FlaskVideo response = restClient.get()
-				.uri(uri("/api/v1/reelshort/video/{bookId}/{episodeNum}")
+		FlaskVideo response = get(FlaskVideo.class,
+				uri("/api/v1/reelshort/video/{bookId}/{episodeNum}")
 						.queryParam("filtered_title", filteredTitle)
 						.queryParam("chapter_id", chapterId)
 						.buildAndExpand(bookId, episodeNum)
-						.toUriString())
-				.retrieve()
-				.body(FlaskVideo.class);
-		if (response == null) {
-			throw new IllegalStateException("content provider returned empty video response");
-		}
+						.toUriString());
 		return response.toContentVideo();
+	}
+
+	private <T> T get(Class<T> responseType, String url) {
+		try {
+			T response = restClient.get()
+					.uri(url)
+					.retrieve()
+					.body(responseType);
+			if (response == null) {
+				throw new ContentProviderException(502, "content provider returned empty response");
+			}
+			return response;
+		}
+		catch (RestClientResponseException exception) {
+			throw new ContentProviderException(502,
+					"content provider returned " + exception.getStatusCode().value(), exception);
+		}
+		catch (ResourceAccessException exception) {
+			throw new ContentProviderException(503, "content provider unavailable", exception);
+		}
+		catch (RestClientException exception) {
+			throw new ContentProviderException(503, "content provider request failed", exception);
+		}
 	}
 
 	private UriComponentsBuilder uri(String path) {
