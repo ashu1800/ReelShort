@@ -79,6 +79,9 @@ public class FlaskContentProvider implements ContentProvider {
 			return response;
 		}
 		catch (RestClientResponseException exception) {
+			if (exception.getStatusCode().value() == 404) {
+				throw new ContentProviderException(404, "content provider returned 404", exception);
+			}
 			throw new ContentProviderException(502,
 					"content provider returned " + exception.getStatusCode().value(), exception);
 		}

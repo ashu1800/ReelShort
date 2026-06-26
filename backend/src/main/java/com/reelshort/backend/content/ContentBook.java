@@ -7,4 +7,3 @@ public record ContentBook(
 		String coverUrl,
 		int chapterCount) {
 }
-

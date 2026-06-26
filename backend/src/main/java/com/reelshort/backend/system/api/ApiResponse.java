@@ -13,4 +13,3 @@ public record ApiResponse<T>(
 		return new ApiResponse<>(0, "success", data, requestId, OffsetDateTime.now().toString());
 	}
 }
-

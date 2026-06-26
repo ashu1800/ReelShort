@@ -6,4 +6,3 @@ public record ContentVideo(
 		int duration,
 		ContentEpisode nextEpisode) {
 }
-

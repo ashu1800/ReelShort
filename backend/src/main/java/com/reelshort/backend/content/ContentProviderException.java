@@ -18,4 +18,3 @@ public class ContentProviderException extends RuntimeException {
 		return statusCode;
 	}
 }
-

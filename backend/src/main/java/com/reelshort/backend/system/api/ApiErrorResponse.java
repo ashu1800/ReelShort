@@ -13,4 +13,3 @@ public record ApiErrorResponse(
 		return new ApiErrorResponse(code, message, path, requestId, OffsetDateTime.now().toString());
 	}
 }
-

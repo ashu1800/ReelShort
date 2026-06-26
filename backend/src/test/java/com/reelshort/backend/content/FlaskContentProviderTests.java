@@ -6,6 +6,7 @@ import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -121,6 +122,23 @@ class FlaskContentProviderTests {
 		assertThatThrownBy(() -> provider.search("love"))
 				.isInstanceOf(ContentProviderException.class)
 				.hasMessage("content provider returned 500");
+		server.verify();
+	}
+
+	@Test
+	void upstreamNotFoundBecomesNotFoundContentProviderException() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/search?keywords=missing"))
+				.andExpect(method(GET))
+				.andRespond(withResourceNotFound());
+
+		assertThatThrownBy(() -> provider.search("missing"))
+				.isInstanceOf(ContentProviderException.class)
+				.extracting("statusCode")
+				.isEqualTo(404);
 		server.verify();
 	}
 

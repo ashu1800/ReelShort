@@ -10,4 +10,3 @@ public interface ContentProvider {
 
 	ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId);
 }
-
