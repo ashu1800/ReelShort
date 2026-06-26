@@ -12,6 +12,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.content.ContentProviderException;
 import com.reelshort.backend.system.api.ApiErrorResponse;
@@ -50,6 +51,11 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(AuthException.class)
 	public ResponseEntity<ApiErrorResponse> handleAuthException(AuthException exception, HttpServletRequest request) {
+		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(AdminException.class)
+	public ResponseEntity<ApiErrorResponse> handleAdminException(AdminException exception, HttpServletRequest request) {
 		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
 	}
 

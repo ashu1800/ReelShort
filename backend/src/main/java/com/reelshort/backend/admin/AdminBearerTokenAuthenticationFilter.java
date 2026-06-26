@@ -1,6 +1,7 @@
-package com.reelshort.backend.auth;
+package com.reelshort.backend.admin;
 
 import java.io.IOException;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.springframework.http.HttpHeaders;
@@ -9,8 +10,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import com.reelshort.backend.user.UserAccount;
-import com.reelshort.backend.user.UserStatus;
+import com.reelshort.backend.auth.TokenHasher;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -18,21 +18,21 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Component
-public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
+public class AdminBearerTokenAuthenticationFilter extends OncePerRequestFilter {
 
-	public static final String AUTH_FAILURE_ATTRIBUTE = "authFailure";
+	public static final String AUTH_FAILURE_ATTRIBUTE = "adminAuthFailure";
 
-	private final AccessTokenRepository accessTokenRepository;
+	private final AdminTokenRepository adminTokenRepository;
 	private final TokenHasher tokenHasher;
 
-	public BearerTokenAuthenticationFilter(AccessTokenRepository accessTokenRepository, TokenHasher tokenHasher) {
-		this.accessTokenRepository = accessTokenRepository;
+	public AdminBearerTokenAuthenticationFilter(AdminTokenRepository adminTokenRepository, TokenHasher tokenHasher) {
+		this.adminTokenRepository = adminTokenRepository;
 		this.tokenHasher = tokenHasher;
 	}
 
 	@Override
 	protected boolean shouldNotFilter(HttpServletRequest request) {
-		return !request.getRequestURI().startsWith("/api/app/");
+		return !request.getRequestURI().startsWith("/api/admin/");
 	}
 
 	@Override
@@ -46,17 +46,17 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
 	}
 
 	private void authenticateToken(HttpServletRequest request, String token) {
-		accessTokenRepository.findByTokenHash(tokenHasher.hash(token))
-				.ifPresentOrElse(accessToken -> authenticate(request, accessToken.user()),
+		adminTokenRepository.findByTokenHash(tokenHasher.hash(token))
+				.ifPresentOrElse(adminToken -> authenticateOrReject(request, adminToken),
 						() -> request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "invalid token"));
 	}
 
-	private void authenticate(HttpServletRequest request, UserAccount user) {
-		if (user.status() == UserStatus.DISABLED) {
-			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "user disabled");
+	private void authenticateOrReject(HttpServletRequest request, AdminToken adminToken) {
+		if (adminToken.expiresAt().isBefore(OffsetDateTime.now())) {
+			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "token expired");
 			return;
 		}
-		AppUserPrincipal principal = new AppUserPrincipal(user.id(), user.username(), user.status());
+		AdminPrincipal principal = new AdminPrincipal(adminToken.username());
 		UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
 				principal, null, List.of());
 		SecurityContextHolder.getContext().setAuthentication(authentication);

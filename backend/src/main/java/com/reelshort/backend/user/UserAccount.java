@@ -61,6 +61,10 @@ public class UserAccount {
 		return status;
 	}
 
+	public void changeStatus(UserStatus status) {
+		this.status = status;
+	}
+
 	public OffsetDateTime createdAt() {
 		return createdAt;
 	}
