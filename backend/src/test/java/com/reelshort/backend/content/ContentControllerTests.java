@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.reelshort.backend.auth.AccessTokenRepository;
 import com.reelshort.backend.auth.TokenHasher;
+import com.reelshort.backend.admin.AdminTokenRepository;
 import com.reelshort.backend.system.web.GlobalExceptionHandler;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
@@ -33,6 +34,9 @@ class ContentControllerTests {
 
 	@MockitoBean
 	private AccessTokenRepository accessTokenRepository;
+
+	@MockitoBean
+	private AdminTokenRepository adminTokenRepository;
 
 	@MockitoBean
 	private TokenHasher tokenHasher;

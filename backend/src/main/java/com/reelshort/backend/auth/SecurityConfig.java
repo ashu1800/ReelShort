@@ -3,6 +3,7 @@ package com.reelshort.backend.auth;
 import java.io.IOException;
 import java.util.UUID;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -12,6 +13,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.admin.AdminBearerTokenAuthenticationFilter;
+import com.reelshort.backend.admin.AdminProperties;
 import com.reelshort.backend.system.api.ApiErrorResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
@@ -19,13 +22,17 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
+@EnableConfigurationProperties(AdminProperties.class)
 public class SecurityConfig {
 
 	private final BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter;
+	private final AdminBearerTokenAuthenticationFilter adminBearerTokenAuthenticationFilter;
 	private final ObjectMapper objectMapper;
 
-	public SecurityConfig(BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter, ObjectMapper objectMapper) {
+	public SecurityConfig(BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter,
+			AdminBearerTokenAuthenticationFilter adminBearerTokenAuthenticationFilter, ObjectMapper objectMapper) {
 		this.bearerTokenAuthenticationFilter = bearerTokenAuthenticationFilter;
+		this.adminBearerTokenAuthenticationFilter = adminBearerTokenAuthenticationFilter;
 		this.objectMapper = objectMapper;
 	}
 
@@ -36,16 +43,18 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/api/app/auth/register", "/api/app/auth/login",
+								"/api/admin/auth/login",
 								"/api/system/health", "/actuator/health")
 						.permitAll()
 						.requestMatchers("/api/app/**").authenticated()
-						.requestMatchers("/api/admin/**").denyAll()
+						.requestMatchers("/api/admin/**").authenticated()
 						.anyRequest().permitAll())
 				.exceptionHandling(exceptions -> exceptions
 						.authenticationEntryPoint((request, response, exception) -> writeAuthError(request, response))
 						.accessDeniedHandler((request, response, exception) ->
 								writeError(request, response, HttpStatus.FORBIDDEN, "forbidden")))
 				.addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+		http.addFilterBefore(adminBearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 		return http.build();
 	}
 
