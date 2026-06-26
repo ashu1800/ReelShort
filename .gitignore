@@ -3,6 +3,7 @@
 Thumbs.db
 .idea/
 .vscode/
+.worktrees/
 
 # Logs
 *.log
@@ -40,4 +41,3 @@ android-app/.idea/
 .env
 .env.*
 !.env.example
-
