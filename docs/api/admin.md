@@ -136,6 +136,14 @@ Authorization: Bearer <admin-token>
 - `summary`
 - `createdAt`
 
+## `GET /api/admin/system/configs`
+
+返回后台支持的系统配置。详见 `docs/api/system-config.md`。
+
+## `POST /api/admin/system/configs/{configKey}`
+
+更新后台系统配置。成功后写入审计日志 `SYSTEM_CONFIG_UPDATED`。
+
 错误：
 
 - `400`：请求字段缺失、UUID 或状态格式不合法。
