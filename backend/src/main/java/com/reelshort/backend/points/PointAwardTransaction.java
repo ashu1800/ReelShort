@@ -31,9 +31,11 @@ class PointAwardTransaction {
 		List<Integer> awardedStages = new ArrayList<>();
 		for (int stage : rewardStages) {
 			if (progressPercent >= stage && claimReward(userId, bookId, episodeNum, stage)) {
-				account.add(stagePoints);
-				pointTransactionRepository.save(PointTransaction.watchReward(userId, stagePoints,
-						account.balance(), bookId, episodeNum, stage));
+				if (stagePoints > 0) {
+					account.add(stagePoints);
+					pointTransactionRepository.save(PointTransaction.watchReward(userId, stagePoints,
+							account.balance(), bookId, episodeNum, stage));
+				}
 				awardedStages.add(stage);
 			}
 		}

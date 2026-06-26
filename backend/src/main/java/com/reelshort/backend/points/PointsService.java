@@ -7,22 +7,25 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.reelshort.backend.system.concurrency.UserActionLocks;
+import com.reelshort.backend.system.config.SystemConfigRegistry;
+import com.reelshort.backend.system.config.SystemConfigService;
 
 @Service
 public class PointsService {
 
 	private static final List<Integer> REWARD_STAGES = List.of(25, 50, 75, 100);
-	private static final int WATCH_STAGE_POINTS = 1;
 
 	private final PointTransactionRepository pointTransactionRepository;
 	private final UserActionLocks userActionLocks;
 	private final PointAwardTransaction pointAwardTransaction;
+	private final SystemConfigService systemConfigService;
 
 	public PointsService(PointTransactionRepository pointTransactionRepository, UserActionLocks userActionLocks,
-			PointAwardTransaction pointAwardTransaction) {
+			PointAwardTransaction pointAwardTransaction, SystemConfigService systemConfigService) {
 		this.pointTransactionRepository = pointTransactionRepository;
 		this.userActionLocks = userActionLocks;
 		this.pointAwardTransaction = pointAwardTransaction;
+		this.systemConfigService = systemConfigService;
 	}
 
 	public PointAccountResponse account(UUID userId) {
@@ -37,8 +40,9 @@ public class PointsService {
 	}
 
 	public WatchRewardResult awardWatchProgress(UUID userId, String bookId, int episodeNum, int progressPercent) {
+		int stagePoints = systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_STAGE_POINTS);
 		return userActionLocks.withUserLock(userId, () -> pointAwardTransaction.awardWatchProgress(userId, bookId,
-				episodeNum, progressPercent, REWARD_STAGES, WATCH_STAGE_POINTS));
+				episodeNum, progressPercent, REWARD_STAGES, stagePoints));
 	}
 
 	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason) {
