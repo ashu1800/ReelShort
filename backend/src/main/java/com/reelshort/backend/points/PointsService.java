@@ -40,4 +40,9 @@ public class PointsService {
 		return userActionLocks.withUserLock(userId, () -> pointAwardTransaction.awardWatchProgress(userId, bookId,
 				episodeNum, progressPercent, REWARD_STAGES, WATCH_STAGE_POINTS));
 	}
+
+	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason) {
+		return userActionLocks.withUserLock(userId,
+				() -> PointAccountResponse.from(pointAwardTransaction.adjustByAdmin(userId, amount, reason)));
+	}
 }

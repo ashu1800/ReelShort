@@ -8,13 +8,14 @@ public record PointTransactionResponse(
 		int balanceAfter,
 		String source,
 		String bookId,
-		int episodeNum,
-		int stage,
+		Integer episodeNum,
+		Integer stage,
+		String reason,
 		String createdAt) {
 
 	public static PointTransactionResponse from(PointTransaction transaction) {
 		return new PointTransactionResponse(transaction.id(), transaction.amount(), transaction.balanceAfter(),
 				transaction.source(), transaction.bookId(), transaction.episodeNum(), transaction.stage(),
-				transaction.createdAt().toString());
+				transaction.reason(), transaction.createdAt().toString());
 	}
 }

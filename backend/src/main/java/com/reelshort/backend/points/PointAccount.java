@@ -43,6 +43,11 @@ public class PointAccount {
 		this.updatedAt = OffsetDateTime.now();
 	}
 
+	public boolean canAdjust(int amount) {
+		long adjustedBalance = (long) this.balance + amount;
+		return adjustedBalance >= 0 && adjustedBalance <= Integer.MAX_VALUE;
+	}
+
 	public UUID id() {
 		return id;
 	}

@@ -74,6 +74,16 @@ class AdminAuthControllerTests {
 	}
 
 	@Test
+	void appTokenCannotAccessAdminAuditLogs() throws Exception {
+		String appToken = registerAndExtractAppToken("admin-audit-boundary-user");
+
+		mockMvc.perform(get("/api/admin/audit-logs")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + appToken))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401));
+	}
+
+	@Test
 	void adminTokenCannotAccessAppApi() throws Exception {
 		String adminToken = adminLogin();
 

@@ -7,6 +7,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.reelshort.backend.admin.AdminException;
+
 @Service
 class PointAwardTransaction {
 
@@ -43,6 +45,17 @@ class PointAwardTransaction {
 	public PointAccount accountEntity(UUID userId) {
 		return pointAccountRepository.findByUserId(userId)
 				.orElseGet(() -> pointAccountRepository.saveAndFlush(PointAccount.create(userId)));
+	}
+
+	@Transactional
+	public PointAccount adjustByAdmin(UUID userId, int amount, String reason) {
+		PointAccount account = accountEntity(userId);
+		if (!account.canAdjust(amount)) {
+			throw new AdminException(400, "insufficient point balance");
+		}
+		account.add(amount);
+		pointTransactionRepository.save(PointTransaction.adminAdjustment(userId, amount, account.balance(), reason));
+		return pointAccountRepository.save(account);
 	}
 
 	private boolean claimReward(UUID userId, String bookId, int episodeNum, int stage) {

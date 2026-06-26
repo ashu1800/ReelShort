@@ -92,6 +92,28 @@ Authorization: Bearer <admin-token>
 
 用户禁用后，既有 App Token 后续访问 `/api/app/**` 会返回 `403`。
 
+该操作会写入后台审计日志，动作为 `USER_STATUS_CHANGED`。
+
+## `POST /api/admin/users/{userId}/points/adjust`
+
+后台调整用户积分。
+
+请求：
+
+```json
+{
+  "amount": 10,
+  "reason": "manual campaign grant"
+}
+```
+
+规则：
+
+- `amount` 不能为 `0`，可为正数或负数。
+- 调整后余额不能小于 `0`。
+- `reason` 必填，最长 255。
+- 成功后生成 `ADMIN_ADJUSTMENT` 积分流水，并写入后台审计日志 `POINTS_ADJUSTED`。
+
 ## `GET /api/admin/users/{userId}/watch-records`
 
 返回指定用户观看记录，按更新时间倒序排列。
@@ -99,6 +121,20 @@ Authorization: Bearer <admin-token>
 ## `GET /api/admin/users/{userId}/point-records`
 
 返回指定用户积分流水，按创建时间倒序排列。
+
+## `GET /api/admin/audit-logs`
+
+返回后台操作审计日志，按创建时间倒序排列。
+
+日志字段：
+
+- `id`
+- `adminUsername`
+- `action`
+- `targetType`
+- `targetId`
+- `summary`
+- `createdAt`
 
 错误：
 
