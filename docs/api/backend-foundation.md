@@ -40,6 +40,14 @@
 
 通过 `ContentProvider` 调用 Flask ReelShort 内容源搜索剧集，并转换为平台内部内容模型。
 
+### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}`
+
+通过 `ContentProvider` 获取指定剧集的分集列表。
+
+### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}`
+
+通过 `ContentProvider` 获取指定分集的 HLS 播放地址、时长和下一集信息。
+
 ## 内容源适配契约
 
 `ContentProvider` 当前定义：
@@ -53,4 +61,3 @@
 ```properties
 reelshort.content-provider.base-url=http://127.0.0.1:5000
 ```
-

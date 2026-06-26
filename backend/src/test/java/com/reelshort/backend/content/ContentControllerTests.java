@@ -39,4 +39,40 @@ class ContentControllerTests {
 				.andExpect(jsonPath("$.data[0].bookId").value("book-1"))
 				.andExpect(jsonPath("$.data[0].title").value("Love Story"));
 	}
+
+	@Test
+	void episodesReturnsProviderEpisodesInUnifiedEnvelope() throws Exception {
+		when(contentProvider.getEpisodes("book-1", "love-story")).thenReturn(List.of(
+				new ContentEpisode(1, "chapter-1"),
+				new ContentEpisode(2, "chapter-2")));
+
+		mockMvc.perform(get("/api/app/content/books/book-1/episodes")
+				.param("filteredTitle", "love-story"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data", hasSize(2)))
+				.andExpect(jsonPath("$.data[0].episode").value(1))
+				.andExpect(jsonPath("$.data[0].chapterId").value("chapter-1"));
+	}
+
+	@Test
+	void playReturnsProviderVideoInUnifiedEnvelope() throws Exception {
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+				.thenReturn(new ContentVideo(
+						"https://cdn.example.com/video.m3u8",
+						1,
+						120,
+						new ContentEpisode(2, "chapter-2")));
+
+		mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
+				.param("filteredTitle", "love-story")
+				.param("chapterId", "chapter-1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data.videoUrl").value("https://cdn.example.com/video.m3u8"))
+				.andExpect(jsonPath("$.data.episode").value(1))
+				.andExpect(jsonPath("$.data.duration").value(120))
+				.andExpect(jsonPath("$.data.nextEpisode.episode").value(2))
+				.andExpect(jsonPath("$.data.nextEpisode.chapterId").value("chapter-2"));
+	}
 }
