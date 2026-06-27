@@ -25,4 +25,8 @@ interface AppDataSource {
     suspend fun loadPointAccount(): PointAccount
 
     suspend fun loadOrders(): List<RechargeOrderSummary>
+
+    suspend fun restoreSession(): AuthSession?
+
+    suspend fun clearSession()
 }

@@ -35,7 +35,7 @@ class OkHttpReelShortApiClient(
     private val config: ApiConfig = ApiConfig.default(),
     private val httpClient: OkHttpClient = OkHttpClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
-    private val tokenProvider: () -> String? = { null },
+    private val tokenProvider: suspend () -> String? = { null },
 ) : ReelShortApiClient {
 
     override suspend fun login(username: String, password: String): AuthSession =
@@ -166,7 +166,7 @@ class OkHttpReelShortApiClient(
     private fun RechargeOrderDto.toDomain(): RechargeOrderSummary =
         RechargeOrderSummary(orderNo, amountCents, pointAmount, status)
 
-    private fun Request.Builder.applyAuthentication(authenticated: Boolean): Request.Builder {
+    private suspend fun Request.Builder.applyAuthentication(authenticated: Boolean): Request.Builder {
         if (!authenticated) {
             return this
         }

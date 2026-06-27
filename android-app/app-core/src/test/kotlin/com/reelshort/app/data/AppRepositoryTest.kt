@@ -1,10 +1,14 @@
 package com.reelshort.app.data
 
 import com.reelshort.app.network.FakeReelShortApiClient
+import com.reelshort.app.session.InMemorySessionStore
+import com.reelshort.app.session.SessionStore
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AppRepositoryTest {
@@ -17,6 +21,55 @@ class AppRepositoryTest {
         assertEquals("demo", session.username)
         assertEquals("Bearer", session.tokenType)
         assertEquals(session.token, repository.currentToken)
+    }
+
+    @Test
+    fun loginPersistsSessionForRepositoryRecreation() = runTest {
+        val sessionStore = InMemorySessionStore()
+        val firstRepository = AppRepository(FakeReelShortApiClient(), sessionStore)
+
+        val session = firstRepository.login("demo", "Password123")
+        val restoredRepository = AppRepository(FakeReelShortApiClient(), sessionStore)
+
+        val restored = restoredRepository.restoreSession()
+
+        assertEquals(session, restored)
+        assertEquals(session.token, restoredRepository.currentToken)
+        assertEquals(session, sessionStore.loadSession())
+    }
+
+    @Test
+    fun registerPersistsSession() = runTest {
+        val sessionStore = InMemorySessionStore()
+        val repository = AppRepository(FakeReelShortApiClient(), sessionStore)
+
+        val session = repository.register("new-user", "Password123")
+
+        assertEquals(session, sessionStore.loadSession())
+        assertEquals(session.token, repository.currentToken)
+    }
+
+    @Test
+    fun clearSessionRemovesStoredSessionAndMemoryToken() = runTest {
+        val sessionStore = InMemorySessionStore()
+        val repository = AppRepository(FakeReelShortApiClient(), sessionStore)
+        repository.login("demo", "Password123")
+
+        repository.clearSession()
+
+        assertNull(repository.currentToken)
+        assertNull(sessionStore.loadSession())
+    }
+
+    @Test
+    fun loginDoesNotSetMemoryTokenWhenSessionPersistenceFails() = runTest {
+        val repository = AppRepository(FakeReelShortApiClient(), FailingSessionStore())
+
+        assertFailsWith<IllegalStateException> {
+            repository.login("demo", "Password123")
+        }
+
+        assertNull(repository.currentToken)
     }
 
     @Test
@@ -58,5 +111,15 @@ class AppRepositoryTest {
         assertNotNull(history.firstOrNull { it.bookId == "book-1" })
         assertEquals(18, points.balance)
         assertEquals("RO202606270001", orders.single().orderNo)
+    }
+
+    private class FailingSessionStore : SessionStore {
+        override suspend fun loadSession(): AuthSession? = null
+
+        override suspend fun saveSession(session: AuthSession) {
+            throw IllegalStateException("session persistence failed")
+        }
+
+        override suspend fun clearSession() = Unit
     }
 }
