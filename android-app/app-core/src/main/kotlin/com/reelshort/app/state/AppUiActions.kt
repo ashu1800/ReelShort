@@ -23,6 +23,11 @@ class AppUiActions(private val controller: AppStateController) {
 
     suspend fun openPlayer(episode: EpisodeSummary) = controller.openPlayer(episode)
 
+    fun updatePlaybackPosition(positionSeconds: Int, durationSeconds: Int) =
+        controller.updatePlaybackPosition(positionSeconds, durationSeconds)
+
+    suspend fun refreshPlaybackUrl() = controller.refreshPlaybackUrl()
+
     suspend fun reportProgress(positionSeconds: Int, durationSeconds: Int) =
         controller.reportProgress(positionSeconds, durationSeconds)
 
