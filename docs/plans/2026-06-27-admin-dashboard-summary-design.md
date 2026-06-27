@@ -15,7 +15,7 @@
 
 ## Options
 
-推荐方案：新增 `GET /api/admin/dashboard/summary`，由后端聚合统计和最近审计日志。前端控制台只调用该接口。后端第一阶段使用现有 repository 的 `count`、`findAll` 和少量内存聚合，保持实现简单；后续数据增长后再把热点指标替换为专用 count query。
+推荐方案：新增 `GET /api/admin/dashboard/summary`，由后端聚合统计和最近审计日志。前端控制台只调用该接口。后端第一阶段复用现有 repository，并为热点指标补充 `countByStatus`、`sumAmountCents` 和 `findTop5ByOrderByCreatedAtDesc` 等轻量查询，避免控制台为了摘要加载全量列表。
 
 备选方案 1：继续前端并行请求，但加容错。改动小，但仍保留全量拉列表和指标口径分散的问题。
 
