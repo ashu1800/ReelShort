@@ -57,27 +57,28 @@ import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.network.OkHttpReelShortApiClient
-import com.reelshort.app.session.InMemorySessionStore
+import com.reelshort.app.session.FileSessionStore
 import com.reelshort.app.state.AppScreen
 import com.reelshort.app.state.AppStateController
 import com.reelshort.app.state.AppUiActions
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.state.PlaybackStatus
+import java.io.File
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val actions = remember { AndroidAppFactory.createActions() }
+            val actions = remember { AndroidAppFactory.createActions(filesDir) }
             ReelShortApp(actions)
         }
     }
 }
 
 private object AndroidAppFactory {
-    fun createActions(): AppUiActions {
-        val sessionStore = InMemorySessionStore()
+    fun createActions(filesDir: File): AppUiActions {
+        val sessionStore = FileSessionStore(File(filesDir, "reelshort-session.json"))
         lateinit var repository: AppRepository
         val apiClient = OkHttpReelShortApiClient(
             config = ApiConfig.default(),
