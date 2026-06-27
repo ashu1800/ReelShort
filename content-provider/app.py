@@ -190,6 +190,13 @@ def create_app(client=None) -> Flask:
     return app
 
 
+def run_app():
+    create_app().run(
+        host=os.getenv("CONTENT_PROVIDER_HOST", "127.0.0.1"),
+        port=int(os.getenv("CONTENT_PROVIDER_PORT", "5000")),
+    )
+
+
 if __name__ == "__main__":
-    create_app().run(host="127.0.0.1", port=5000)
+    run_app()
 
