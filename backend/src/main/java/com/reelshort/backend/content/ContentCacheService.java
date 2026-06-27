@@ -16,16 +16,23 @@ public class ContentCacheService {
 	private static final TypeReference<List<ContentBook>> CONTENT_BOOK_LIST = new TypeReference<>() {
 	};
 
+	private static final TypeReference<List<ContentEpisode>> CONTENT_EPISODE_LIST = new TypeReference<>() {
+	};
+
 	private final ContentProvider contentProvider;
 	private final ContentShelfCacheRepository contentShelfCacheRepository;
 	private final ContentBookCacheRepository contentBookCacheRepository;
+	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 	private final ObjectMapper objectMapper;
 
 	public ContentCacheService(ContentProvider contentProvider, ContentShelfCacheRepository contentShelfCacheRepository,
-			ContentBookCacheRepository contentBookCacheRepository, ObjectMapper objectMapper) {
+			ContentBookCacheRepository contentBookCacheRepository,
+			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
+			ObjectMapper objectMapper) {
 		this.contentProvider = contentProvider;
 		this.contentShelfCacheRepository = contentShelfCacheRepository;
 		this.contentBookCacheRepository = contentBookCacheRepository;
+		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
 		this.objectMapper = objectMapper;
 	}
 
@@ -67,9 +74,16 @@ public class ContentCacheService {
 				.orElseThrow(() -> new ContentProviderException(404, "content book not cached"));
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
-		return contentProvider.getEpisodes(bookId, filteredTitle);
+		try {
+			List<ContentEpisode> episodes = contentProvider.getEpisodes(bookId, filteredTitle);
+			saveEpisodes(bookId, filteredTitle, episodes);
+			return episodes;
+		}
+		catch (ContentProviderException exception) {
+			return cachedEpisodesOrThrow(bookId, filteredTitle, exception);
+		}
 	}
 
 	@Transactional(readOnly = true)
@@ -128,6 +142,25 @@ public class ContentCacheService {
 		}
 	}
 
+	private void saveEpisodes(String bookId, String filteredTitle, List<ContentEpisode> episodes) {
+		String episodesJson = writeEpisodes(episodes);
+		ContentEpisodeCache cache = contentEpisodeCacheRepository.findByBookIdAndFilteredTitle(bookId, filteredTitle)
+				.orElseGet(() -> ContentEpisodeCache.create(bookId, filteredTitle, episodesJson, episodes.size()));
+		cache.update(episodesJson, episodes.size());
+		contentEpisodeCacheRepository.save(cache);
+	}
+
+	private List<ContentEpisode> cachedEpisodesOrThrow(String bookId, String filteredTitle,
+			ContentProviderException exception) {
+		return contentEpisodeCacheRepository.findByBookIdAndFilteredTitle(bookId, filteredTitle)
+				.map(cache -> {
+					cache.markFailure(exception.getMessage());
+					contentEpisodeCacheRepository.save(cache);
+					return readEpisodes(cache.episodesJson());
+				})
+				.orElseThrow(() -> exception);
+	}
+
 	private String writeBooks(List<ContentBook> books) {
 		try {
 			return objectMapper.writeValueAsString(books);
@@ -137,12 +170,30 @@ public class ContentCacheService {
 		}
 	}
 
+	private String writeEpisodes(List<ContentEpisode> episodes) {
+		try {
+			return objectMapper.writeValueAsString(episodes);
+		}
+		catch (JsonProcessingException exception) {
+			throw new IllegalStateException("failed to write content episode cache", exception);
+		}
+	}
+
 	private List<ContentBook> readBooks(String booksJson) {
 		try {
 			return objectMapper.readValue(booksJson, CONTENT_BOOK_LIST);
 		}
 		catch (JsonProcessingException exception) {
 			throw new IllegalStateException("failed to read content shelf cache", exception);
+		}
+	}
+
+	private List<ContentEpisode> readEpisodes(String episodesJson) {
+		try {
+			return objectMapper.readValue(episodesJson, CONTENT_EPISODE_LIST);
+		}
+		catch (JsonProcessingException exception) {
+			throw new IllegalStateException("failed to read content episode cache", exception);
 		}
 	}
 }

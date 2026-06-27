@@ -24,6 +24,9 @@ class ContentCacheServiceTests {
 	@Autowired
 	private ContentBookCacheRepository contentBookCacheRepository;
 
+	@Autowired
+	private ContentEpisodeCacheRepository contentEpisodeCacheRepository;
+
 	@MockitoBean
 	private ContentProvider contentProvider;
 
@@ -31,6 +34,7 @@ class ContentCacheServiceTests {
 	void cleanCache() {
 		contentShelfCacheRepository.deleteAll();
 		contentBookCacheRepository.deleteAll();
+		contentEpisodeCacheRepository.deleteAll();
 	}
 
 	@Test
@@ -107,6 +111,48 @@ class ContentCacheServiceTests {
 		assertThatThrownBy(() -> contentCacheService.getBook("missing-book"))
 				.isInstanceOf(ContentProviderException.class)
 				.hasMessage("content book not cached");
+	}
+
+	@Test
+	void getEpisodesPersistsEpisodeCacheWhenProviderSucceeds() {
+		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1"));
+		when(contentProvider.getEpisodes("book-1", "love-story")).thenReturn(episodes);
+
+		List<ContentEpisode> response = contentCacheService.getEpisodes("book-1", "love-story");
+
+		assertThat(response).containsExactlyElementsOf(episodes);
+		assertThat(contentEpisodeCacheRepository.findByBookIdAndFilteredTitle("book-1", "love-story")).isPresent()
+				.get()
+				.satisfies(cache -> {
+					assertThat(cache.episodeCount()).isEqualTo(1);
+					assertThat(cache.lastError()).isNull();
+				});
+	}
+
+	@Test
+	void getEpisodesFallsBackToCachedEpisodesWhenProviderFails() {
+		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1"));
+		when(contentProvider.getEpisodes("book-1", "love-story"))
+				.thenReturn(episodes)
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		contentCacheService.getEpisodes("book-1", "love-story");
+		List<ContentEpisode> cached = contentCacheService.getEpisodes("book-1", "love-story");
+
+		assertThat(cached).containsExactlyElementsOf(episodes);
+		assertThat(contentEpisodeCacheRepository.findByBookIdAndFilteredTitle("book-1", "love-story")).isPresent()
+				.get()
+				.satisfies(cache -> assertThat(cache.lastError()).isEqualTo("content provider unavailable"));
+	}
+
+	@Test
+	void getEpisodesPropagatesProviderFailureWhenNoCacheExists() {
+		when(contentProvider.getEpisodes("book-1", "love-story"))
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		assertThatThrownBy(() -> contentCacheService.getEpisodes("book-1", "love-story"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content provider unavailable");
 	}
 
 	@Test
