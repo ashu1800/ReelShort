@@ -18,13 +18,16 @@ interface ReelShortApiClient {
 
     suspend fun search(query: String): List<BookSummary>
 
-    suspend fun getEpisodes(bookId: String): List<EpisodeSummary>
+    suspend fun getEpisodes(bookId: String, filteredTitle: String): List<EpisodeSummary>
 
-    suspend fun getVideoUrl(bookId: String, episode: Int): VideoUrl
+    suspend fun getVideoUrl(bookId: String, episode: Int, filteredTitle: String, chapterId: String): VideoUrl
 
     suspend fun reportWatchProgress(
         bookId: String,
+        bookTitle: String,
+        filteredTitle: String,
         episode: Int,
+        chapterId: String,
         positionSeconds: Int,
         durationSeconds: Int,
     ): WatchProgressReport

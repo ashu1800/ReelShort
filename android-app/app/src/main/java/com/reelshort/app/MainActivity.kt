@@ -312,7 +312,7 @@ private fun PointsScreen(balance: Int, records: List<PointRecord>) {
         items(records) { record ->
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(record.reason, modifier = Modifier.weight(1f))
+                    Text(record.reason ?: "积分变动", modifier = Modifier.weight(1f))
                     Text(if (record.amount > 0) "+${record.amount}" else "${record.amount}")
                 }
             }
@@ -406,11 +406,11 @@ private data class AppState(
             selectedBook = null,
             selectedEpisode = null,
             books = listOf(
-                BookSummary("book-1", "Fated to My Forbidden Alpha", "狼人、契约和短剧高能反转", 62),
-                BookSummary("book-2", "The Billionaire's Secret", "都市爱情与身份反转", 48),
-                BookSummary("book-3", "My Mafia Protector", "动作、悬疑和快节奏剧情", 55),
+                BookSummary("book-1", "Fated to My Forbidden Alpha", "fated-alpha", null, "狼人、契约和短剧高能反转", 62),
+                BookSummary("book-2", "The Billionaire's Secret", "billionaire-secret", null, "都市爱情与身份反转", 48),
+                BookSummary("book-3", "My Mafia Protector", "mafia-protector", null, "动作、悬疑和快节奏剧情", 55),
             ),
-            episodes = (1..8).map { EpisodeSummary(it, 180 + it * 12) },
+            episodes = (1..8).map { EpisodeSummary(it, "chapter-$it", 180 + it * 12) },
             watchRecords = listOf(WatchRecord("book-1", "Fated to My Forbidden Alpha", 3, 58)),
             pointBalance = 18,
             pointRecords = listOf(
@@ -418,7 +418,7 @@ private data class AppState(
                 PointRecord(1, "观看达到 50%"),
                 PointRecord(10, "后台活动赠送"),
             ),
-            orders = listOf(RechargeOrderSummary("RO202606270001", 990, "CREATED")),
+            orders = listOf(RechargeOrderSummary("RO202606270001", 990, 99, "CREATED")),
         )
     }
 }
