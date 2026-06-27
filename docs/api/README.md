@@ -9,6 +9,7 @@
 - `backend-foundation.md`：后端基础响应和健康检查。
 - `content-cache.md`：内容缓存、货架和剧集详情。
 - `orders.md`：充值订单创建和查询。
+- `payment-callback.md`：内部模拟支付回调和订单结算入口。
 - `points.md`：积分账户、流水和观看奖励。
 - `rate-limit.md`：后端限流规则。
 - `system-config.md`：后台系统配置。

@@ -88,7 +88,7 @@ Authorization: Bearer <app-token>
 - `CANCELLED`、`FAILED`、`REFUNDED` 订单不能结算入账。
 - 结算入账生成 `RECHARGE_ORDER` 积分流水，`reason` 记录订单号。
 
-真实支付、回调验签、退款和风控流程仍属于后续支付模块范围。
+当前内部模拟支付回调见 `docs/api/payment-callback.md`。真实支付平台下单、平台验签、退款和风控流程仍属于后续支付模块范围。
 
 ## 错误
 
