@@ -37,7 +37,7 @@ public class AuthService {
 		}
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional
 	public AuthToken login(String username, String password) {
 		String normalizedUsername = normalizeUsername(username);
 		UserAccount user = userAccountRepository.findByUsername(normalizedUsername)
@@ -49,6 +49,11 @@ public class AuthService {
 			throw new AuthException(401, "invalid username or password");
 		}
 		return tokenService.issue(user);
+	}
+
+	@Transactional
+	public void logout(String token) {
+		tokenService.revoke(token);
 	}
 
 	private String normalizeUsername(String username) {

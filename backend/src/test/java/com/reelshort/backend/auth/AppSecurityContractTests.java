@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,12 @@ class AppSecurityContractTests {
 
 	@Autowired
 	private TokenService tokenService;
+
+	@Autowired
+	private TokenHasher tokenHasher;
+
+	@Autowired
+	private AccessTokenRepository accessTokenRepository;
 
 	@MockitoBean
 	private ContentProvider contentProvider;
@@ -92,6 +99,46 @@ class AppSecurityContractTests {
 				.param("keywords", "love"))
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.code").value(403));
+	}
+
+	@Test
+	void contentSearchRejectsExpiredBearerToken() throws Exception {
+		UserAccount user = userAccountRepository.save(
+				UserAccount.create("security-expired", passwordHasher.hash("Password123"), UserStatus.ACTIVE));
+		String rawToken = "expired-token";
+		accessTokenRepository.save(AccessToken.issue(
+				tokenHasher.hash(rawToken),
+				user,
+				OffsetDateTime.now().minusDays(2),
+				OffsetDateTime.now().minusDays(1)));
+
+		mockMvc.perform(get("/api/app/content/search")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + rawToken)
+				.param("keywords", "love"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401))
+				.andExpect(jsonPath("$.message").value("token expired"));
+	}
+
+	@Test
+	void contentSearchRejectsRevokedBearerToken() throws Exception {
+		UserAccount user = userAccountRepository.save(
+				UserAccount.create("security-revoked", passwordHasher.hash("Password123"), UserStatus.ACTIVE));
+		String rawToken = "revoked-token";
+		AccessToken accessToken = AccessToken.issue(
+				tokenHasher.hash(rawToken),
+				user,
+				OffsetDateTime.now().minusHours(1),
+				OffsetDateTime.now().plusDays(1));
+		accessToken.revoke(OffsetDateTime.now().minusMinutes(1));
+		accessTokenRepository.save(accessToken);
+
+		mockMvc.perform(get("/api/app/content/search")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + rawToken)
+				.param("keywords", "love"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401))
+				.andExpect(jsonPath("$.message").value("token revoked"));
 	}
 
 	@Test

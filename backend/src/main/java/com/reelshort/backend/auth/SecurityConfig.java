@@ -22,7 +22,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
-@EnableConfigurationProperties(AdminProperties.class)
+@EnableConfigurationProperties({AdminProperties.class, AuthSessionProperties.class})
 public class SecurityConfig {
 
 	private final BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter;
@@ -63,6 +63,10 @@ public class SecurityConfig {
 		String failure = (String) request.getAttribute(BearerTokenAuthenticationFilter.AUTH_FAILURE_ATTRIBUTE);
 		if ("user disabled".equals(failure)) {
 			writeError(request, response, HttpStatus.FORBIDDEN, "user disabled");
+			return;
+		}
+		if ("token expired".equals(failure) || "token revoked".equals(failure)) {
+			writeError(request, response, HttpStatus.UNAUTHORIZED, failure);
 			return;
 		}
 		writeError(request, response, HttpStatus.UNAUTHORIZED, "unauthorized");

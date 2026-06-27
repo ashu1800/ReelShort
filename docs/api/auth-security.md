@@ -15,6 +15,8 @@ Token 来源于：
 - `POST /api/app/auth/register`
 - `POST /api/app/auth/login`
 
+Token 默认为 7 天有效期，可通过 `reelshort.auth.session.access-token-ttl` 配置调整。
+
 ## 公开接口
 
 以下接口不需要 Token：
@@ -23,6 +25,8 @@ Token 来源于：
 - `POST /api/app/auth/login`
 - `GET /api/system/health`
 - `GET /actuator/health`
+
+`POST /api/app/auth/logout` 属于受保护接口，必须携带当前 Bearer Token。
 
 ## 受保护接口
 
@@ -60,9 +64,34 @@ Token 有效但用户已禁用：
 }
 ```
 
+Token 已过期：
+
+```json
+{
+  "code": 401,
+  "message": "token expired",
+  "path": "/api/app/content/search",
+  "requestId": "uuid",
+  "timestamp": "2026-06-27T14:00:00+08:00"
+}
+```
+
+Token 已撤销：
+
+```json
+{
+  "code": 401,
+  "message": "token revoked",
+  "path": "/api/app/content/search",
+  "requestId": "uuid",
+  "timestamp": "2026-06-27T14:00:00+08:00"
+}
+```
+
 ## 当前约束
 
 - 数据库只保存 Token 的 SHA-256 哈希，不保存原始 Token。
-- 当前 Token 暂不设置过期时间，后续会在会话管理子模块增加过期、撤销和清理策略。
-- 当前实现仅覆盖普通 App 用户，不覆盖管理员后台鉴权。
-- `/api/admin/**` 在管理员鉴权模块实现前默认拒绝访问；未认证请求返回 `401`。
+- App Token 具备过期时间和主动登出撤销能力；`revokedAt` 非空即视为无效。
+- 过期或撤销 Token 会由 `AuthSessionCleanupService` 定期清理，默认保留 1 天，可通过 `reelshort.auth.session.cleanup-retention` 调整；清理初始延迟和间隔分别由 `reelshort.auth.session.cleanup-initial-delay`、`reelshort.auth.session.cleanup-interval` 控制。
+- 当前 App Token 不提供 refresh token、多设备会话列表或 Redis blacklist；后续可在 `auth/session` 边界内扩展。
+- 管理员后台使用独立后台 Token 鉴权，不复用 App Token。
