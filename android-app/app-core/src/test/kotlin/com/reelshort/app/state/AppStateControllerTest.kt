@@ -1,0 +1,266 @@
+package com.reelshort.app.state
+
+import com.reelshort.app.data.AppDataSource
+import com.reelshort.app.data.AuthSession
+import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.PointAccount
+import com.reelshort.app.data.PointRecord
+import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.VideoUrl
+import com.reelshort.app.data.WatchProgressReport
+import com.reelshort.app.data.WatchRecord
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertFailsWith
+
+class AppStateControllerTest {
+    @Test
+    fun initialStateStartsOnLoginScreen() {
+        val controller = AppStateController(FakeAppDataSource())
+
+        val state = controller.state.value
+
+        assertEquals(AppScreen.LOGIN, state.screen)
+        assertFalse(state.isLoading)
+        assertNull(state.session)
+        assertNull(state.errorMessage)
+    }
+
+    @Test
+    fun loginSuccessStoresSessionAndLoadsHomeShelf() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.login("demo", "Password123")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("demo", state.session?.username)
+        assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
+        assertFalse(state.isLoading)
+        assertNull(state.errorMessage)
+        assertEquals(listOf("login:demo", "home"), dataSource.calls)
+    }
+
+    @Test
+    fun loginFailureKeepsLoginScreenAndRecordsError() = runTest {
+        val dataSource = FakeAppDataSource(loginError = IllegalStateException("bad credentials"))
+        val controller = AppStateController(dataSource)
+
+        controller.login("demo", "wrong")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.LOGIN, state.screen)
+        assertNull(state.session)
+        assertEquals("bad credentials", state.errorMessage)
+        assertFalse(state.isLoading)
+    }
+
+    @Test
+    fun searchUpdatesQueryResultsAndScreen() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.search("Alpha")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.SEARCH, state.screen)
+        assertEquals("Alpha", state.searchQuery)
+        assertEquals(listOf("book-1"), state.searchResults.map { it.id })
+        assertEquals(listOf("search:Alpha"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookSelectsBookAndLoadsEpisodes() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        val book = dataSource.books.first()
+
+        controller.openBook(book)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.DETAIL, state.screen)
+        assertSame(book, state.selectedBook)
+        assertEquals(listOf(1, 2), state.episodes.map { it.number })
+        assertNull(state.selectedEpisode)
+        assertNull(state.currentVideoUrl)
+        assertEquals(listOf("episodes:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openPlayerSelectsEpisodeAndLoadsVideoUrl() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        val book = dataSource.books.first()
+
+        controller.openBook(book)
+        controller.openPlayer(dataSource.episodes.first())
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(1, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
+        assertEquals(listOf("episodes:book-1", "video:book-1:1"), dataSource.calls)
+    }
+
+    @Test
+    fun reportProgressRefreshesHistoryAndPointAccount() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(dataSource.episodes.first())
+        controller.reportProgress(positionSeconds = 150, durationSeconds = 200)
+
+        val state = controller.state.value
+        assertEquals(75, dataSource.lastProgress?.progressPercent)
+        assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
+        assertEquals(25, state.pointAccount?.balance)
+        assertEquals(
+            listOf("episodes:book-1", "video:book-1:1", "progress:book-1:1:150", "history", "points"),
+            dataSource.calls,
+        )
+    }
+
+    @Test
+    fun loadAccountSnapshotRefreshesHistoryPointsAndOrders() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.loadAccountSnapshot()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertEquals(25, state.pointAccount?.balance)
+        assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
+        assertEquals(listOf("history", "points", "orders"), dataSource.calls)
+    }
+
+    @Test
+    fun cancellationIsNotConvertedIntoUiError() = runTest {
+        val dataSource = FakeAppDataSource(loginError = CancellationException("cancelled"))
+        val controller = AppStateController(dataSource)
+
+        assertFailsWith<CancellationException> {
+            controller.login("demo", "Password123")
+        }
+
+        val state = controller.state.value
+        assertEquals(AppScreen.LOGIN, state.screen)
+        assertNull(state.errorMessage)
+    }
+
+    private class FakeAppDataSource(
+        private val loginError: Throwable? = null,
+    ) : AppDataSource {
+        val books = listOf(
+            BookSummary(
+                id = "book-1",
+                title = "Alpha",
+                filteredTitle = "alpha",
+                coverUrl = null,
+                description = "First book",
+                chapterCount = 2,
+            ),
+            BookSummary(
+                id = "book-2",
+                title = "Beta",
+                filteredTitle = "beta",
+                coverUrl = null,
+                description = "Second book",
+                chapterCount = 1,
+            ),
+        )
+        val episodes = listOf(
+            EpisodeSummary(number = 1, chapterId = "chapter-1", durationSeconds = 200),
+            EpisodeSummary(number = 2, chapterId = "chapter-2", durationSeconds = 180),
+        )
+        val calls = mutableListOf<String>()
+        var lastProgress: WatchProgressReport? = null
+
+        override suspend fun login(username: String, password: String): AuthSession {
+            calls += "login:$username"
+            loginError?.let { throw it }
+            return AuthSession(username = username, token = "token-$username", tokenType = "Bearer")
+        }
+
+        override suspend fun register(username: String, password: String): AuthSession {
+            calls += "register:$username"
+            return AuthSession(username = username, token = "token-$username", tokenType = "Bearer")
+        }
+
+        override suspend fun loadHomeShelf(): List<BookSummary> {
+            calls += "home"
+            return books
+        }
+
+        override suspend fun search(query: String): List<BookSummary> {
+            calls += "search:$query"
+            return books.filter { it.title.contains(query, ignoreCase = true) }
+        }
+
+        override suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary> {
+            calls += "episodes:${book.id}"
+            return episodes
+        }
+
+        override suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl {
+            calls += "video:${book.id}:${episode.number}"
+            return VideoUrl(
+                url = "https://media.local/${book.id}/${episode.number}.m3u8",
+                contentType = "application/vnd.apple.mpegurl",
+                episode = episode.number,
+                durationSeconds = episode.durationSeconds,
+            )
+        }
+
+        override suspend fun reportWatchProgress(
+            book: BookSummary,
+            episode: EpisodeSummary,
+            positionSeconds: Int,
+            durationSeconds: Int,
+        ): WatchProgressReport {
+            calls += "progress:${book.id}:${episode.number}:$positionSeconds"
+            val progress = WatchProgressReport(
+                bookId = book.id,
+                bookTitle = book.title,
+                filteredTitle = book.filteredTitle,
+                episode = episode.number,
+                chapterId = episode.chapterId,
+                positionSeconds = positionSeconds,
+                durationSeconds = durationSeconds,
+                progressPercent = 75,
+            )
+            lastProgress = progress
+            return progress
+        }
+
+        override suspend fun loadWatchHistory(): List<WatchRecord> {
+            calls += "history"
+            return listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 1, progressPercent = 75))
+        }
+
+        override suspend fun loadPointAccount(): PointAccount {
+            calls += "points"
+            return PointAccount(balance = 25, records = listOf(PointRecord(amount = 5, reason = "WATCH_REWARD")))
+        }
+
+        override suspend fun loadOrders(): List<RechargeOrderSummary> {
+            calls += "orders"
+            return listOf(
+                RechargeOrderSummary(
+                    orderNo = "RO202606270001",
+                    amountCents = 100,
+                    pointAmount = 10,
+                    status = "CREATED",
+                ),
+            )
+        }
+    }
+}
