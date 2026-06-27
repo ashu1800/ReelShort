@@ -57,6 +57,7 @@ public class AdminRbacBootstrapService implements ApplicationRunner {
 
 	private Map<String, String> permissionDescriptions() {
 		Map<String, String> descriptions = new LinkedHashMap<>();
+		descriptions.put(AdminPermissions.DASHBOARD_READ, "Read admin dashboard summary");
 		descriptions.put(AdminPermissions.USER_READ, "Read app users and user activity");
 		descriptions.put(AdminPermissions.USER_WRITE, "Change app user status");
 		descriptions.put(AdminPermissions.POINTS_ADJUST, "Adjust app user points");

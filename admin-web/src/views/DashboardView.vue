@@ -1,47 +1,36 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { fetchAuditLogs, fetchContentCacheStatus, fetchOrders, fetchUsers } from '../services/adminApi'
-import type {
-  AdminAuditLog,
-  AdminUserSummary,
-  ContentCacheStatus,
-  RechargeOrder,
-} from '../services/adminApi'
+import { fetchDashboardSummary } from '../services/adminApi'
+import type { AdminAuditLog, AdminDashboardSummary } from '../services/adminApi'
 
 const loading = ref(false)
 const error = ref('')
-const users = ref<AdminUserSummary[]>([])
-const cacheStatus = ref<ContentCacheStatus | null>(null)
+const summary = ref<AdminDashboardSummary | null>(null)
 const auditLogs = ref<AdminAuditLog[]>([])
-const orders = ref<RechargeOrder[]>([])
 
-const disabledUsers = computed(() => users.value.filter((user) => user.status === 'DISABLED').length)
-const createdOrders = computed(() => orders.value.filter((order) => order.status === 'CREATED').length)
+function formatMoney(cents: number) {
+  return `¥${(cents / 100).toFixed(2)}`
+}
 
 const metrics = computed(() => [
-  { label: '用户总数', value: users.value.length },
-  { label: '禁用用户', value: disabledUsers.value },
-  { label: '充值订单', value: orders.value.length },
-  { label: '创建中订单', value: createdOrders.value },
-  { label: '剧集缓存', value: cacheStatus.value?.bookCount ?? 0 },
-  { label: '分集缓存', value: cacheStatus.value?.episodeCacheCount ?? 0 },
+  { label: '用户总数', value: summary.value?.users.total ?? 0 },
+  { label: '禁用用户', value: summary.value?.users.disabled ?? 0 },
+  { label: '充值订单', value: summary.value?.orders.total ?? 0 },
+  { label: '已支付订单', value: summary.value?.orders.paid ?? 0 },
+  { label: '充值金额', value: formatMoney(summary.value?.orders.totalAmountCents ?? 0) },
+  { label: '支付事件', value: summary.value?.payments.total ?? 0 },
+  { label: '拒绝支付', value: summary.value?.payments.rejected ?? 0 },
+  { label: '剧集缓存', value: summary.value?.content.bookCount ?? 0 },
+  { label: '分集缓存', value: summary.value?.content.episodeCacheCount ?? 0 },
 ])
 
 async function loadDashboard() {
   loading.value = true
   error.value = ''
   try {
-    const orderDataPromise = fetchOrders().catch(() => [] as RechargeOrder[])
-    const [userData, cacheData, auditData, orderData] = await Promise.all([
-      fetchUsers(),
-      fetchContentCacheStatus(),
-      fetchAuditLogs(),
-      orderDataPromise,
-    ])
-    users.value = userData
-    cacheStatus.value = cacheData
-    auditLogs.value = auditData.slice(0, 5)
-    orders.value = orderData
+    const data = await fetchDashboardSummary()
+    summary.value = data
+    auditLogs.value = data.auditLogs.latest
   } catch {
     error.value = '控制台数据加载失败'
   } finally {

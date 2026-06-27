@@ -17,6 +17,7 @@
 
 当前权限代码：
 
+- `DASHBOARD_READ`：读取后台控制台摘要。
 - `USER_READ`：读取用户、用户详情、观看记录和积分流水。
 - `USER_WRITE`：变更用户状态。
 - `POINTS_ADJUST`：后台调整用户积分。
@@ -97,6 +98,40 @@ Authorization: Bearer <admin-token>
 普通 App Token 不能访问 `/api/admin/**`。后台 Token 只用于后台接口。
 
 后台接口会校验接口所需权限。管理员已登录但缺少权限时返回 `403 forbidden`。后台 Token 已过期时返回 `401 token expired`，已登出撤销时返回 `401 token revoked`。
+
+## `GET /api/admin/dashboard/summary`
+
+返回后台控制台聚合摘要，需要 `DASHBOARD_READ` 权限。
+
+响应数据：
+
+```json
+{
+  "users": {
+    "total": 10,
+    "disabled": 1
+  },
+  "orders": {
+    "total": 5,
+    "created": 2,
+    "paid": 3,
+    "totalAmountCents": 9900
+  },
+  "payments": {
+    "total": 4,
+    "processed": 3,
+    "rejected": 1
+  },
+  "content": {
+    "bookCount": 120,
+    "episodeCacheCount": 80,
+    "shelfCount": 3
+  },
+  "auditLogs": {
+    "latest": []
+  }
+}
+```
 
 ## `GET /api/admin/users`
 
