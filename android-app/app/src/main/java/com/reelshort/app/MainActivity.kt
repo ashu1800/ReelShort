@@ -43,6 +43,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.PointRecord
+import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.WatchRecord
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,6 +86,7 @@ fun ReelShortApp() {
                     onReportProgress = {
                         val episode = appState.selectedEpisode ?: return@MainShell
                         val updatedRecord = WatchRecord(
+                            bookId = appState.selectedBook?.id ?: "unknown",
                             bookTitle = appState.selectedBook?.title ?: "Unknown",
                             episode = episode.number,
                             progressPercent = 75,
@@ -405,7 +411,7 @@ private data class AppState(
                 BookSummary("book-3", "My Mafia Protector", "动作、悬疑和快节奏剧情", 55),
             ),
             episodes = (1..8).map { EpisodeSummary(it, 180 + it * 12) },
-            watchRecords = listOf(WatchRecord("Fated to My Forbidden Alpha", 3, 58)),
+            watchRecords = listOf(WatchRecord("book-1", "Fated to My Forbidden Alpha", 3, 58)),
             pointBalance = 18,
             pointRecords = listOf(
                 PointRecord(1, "观看达到 25%"),
@@ -416,26 +422,3 @@ private data class AppState(
         )
     }
 }
-
-private data class BookSummary(
-    val id: String,
-    val title: String,
-    val description: String,
-    val chapterCount: Int,
-)
-
-private data class EpisodeSummary(val number: Int, val durationSeconds: Int)
-
-private data class WatchRecord(
-    val bookTitle: String,
-    val episode: Int,
-    val progressPercent: Int,
-)
-
-private data class PointRecord(val amount: Int, val reason: String)
-
-private data class RechargeOrderSummary(
-    val orderNo: String,
-    val amountCents: Int,
-    val status: String,
-)

@@ -16,4 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "ReelShortAndroid"
 include(":app")
+include(":app-core")
 
