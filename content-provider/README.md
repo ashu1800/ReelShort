@@ -6,7 +6,7 @@ Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProv
 
 - `REELSHORT_SITE_URL`：ReelShort 站点根地址，默认 `https://www.reelshort.com`。
 - `REELSHORT_SITE_ID`：ReelShort Next.js 数据路径中的站点 ID，默认 `37`。
-- `REELSHORT_NEXT_BUILD_ID`：可选。Next.js build id；未配置时启动后请求会从首页 HTML 自动发现并缓存。
+- `REELSHORT_NEXT_BUILD_ID`：可选。Next.js build id；未配置时请求会从站点页面自动发现并缓存。自动发现的 build id 如果在 `_next/data` 请求中返回 404，会清空后重新发现并重试一次；显式配置的 build id 会保持固定，不自动刷新。
 - `REELSHORT_REQUEST_TIMEOUT_SECONDS`：上游请求超时时间，默认 `10`。
 
 ## 本地运行

@@ -19,6 +19,7 @@ class ReelShortClient:
         self.site_id = site_id
         self.timeout_seconds = timeout_seconds
         self.build_id = build_id
+        self.fixed_build_id = build_id is not None
 
     @classmethod
     def from_env(cls):
@@ -78,7 +79,17 @@ class ReelShortClient:
 
     def _get_data(self, data_path: str, params=None):
         build_id = self.build_id or self._discover_build_id()
-        return self._get(f"/_next/data/{quote(build_id, safe='')}/{self.site_id}{data_path}", params=params)
+        try:
+            return self._get(f"/_next/data/{quote(build_id, safe='')}/{self.site_id}{data_path}", params=params)
+        except UpstreamError as exception:
+            if exception.status_code != 404 or self.fixed_build_id:
+                raise
+            self.build_id = None
+            fresh_build_id = self._discover_build_id()
+            return self._get(
+                f"/_next/data/{quote(fresh_build_id, safe='')}/{self.site_id}{data_path}",
+                params=params,
+            )
 
     def _get(self, path: str, params=None):
         try:
