@@ -9,4 +9,3 @@ public interface AdminPermissionRepository extends JpaRepository<AdminPermission
 
 	Optional<AdminPermission> findByCode(String code);
 }
-

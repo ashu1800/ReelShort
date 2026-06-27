@@ -68,4 +68,3 @@ public class AdminRbacBootstrapService implements ApplicationRunner {
 		return descriptions;
 	}
 }
-

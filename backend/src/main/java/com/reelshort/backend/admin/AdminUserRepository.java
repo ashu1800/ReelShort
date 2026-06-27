@@ -14,4 +14,3 @@ public interface AdminUserRepository extends JpaRepository<AdminUser, UUID> {
 	@EntityGraph(attributePaths = { "roles", "roles.permissions" })
 	Optional<AdminUser> findWithRolesById(UUID id);
 }
-

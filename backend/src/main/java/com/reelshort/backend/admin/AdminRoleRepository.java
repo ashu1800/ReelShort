@@ -11,4 +11,3 @@ public interface AdminRoleRepository extends JpaRepository<AdminRole, UUID> {
 	@EntityGraph(attributePaths = "permissions")
 	Optional<AdminRole> findByCode(String code);
 }
-

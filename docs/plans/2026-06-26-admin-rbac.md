@@ -102,4 +102,3 @@
 **Step 4:** Merge into `master` with a merge commit or fast-forward according to current branch state.
 
 **Step 5:** Run full backend tests again on `master`, confirm clean status, then remove the worktree and delete the feature branch if merged.
-

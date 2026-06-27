@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+
 @SpringBootTest
 @Transactional
 class AdminRbacBootstrapServiceTests {
@@ -25,6 +27,9 @@ class AdminRbacBootstrapServiceTests {
 
 	@Autowired
 	private AdminPermissionRepository adminPermissionRepository;
+
+	@Autowired
+	private EntityManager entityManager;
 
 	@Test
 	void bootstrapsDefaultAdminWithSuperAdminRoleAndPermissions() {
@@ -43,7 +48,10 @@ class AdminRbacBootstrapServiceTests {
 	@Test
 	void bootstrapCanRunRepeatedlyWithoutDuplicatingRecords() {
 		bootstrapService.bootstrap();
+		entityManager.flush();
+		entityManager.clear();
 		bootstrapService.bootstrap();
+		entityManager.flush();
 
 		assertThat(adminUserRepository.count()).isEqualTo(1);
 		assertThat(adminRoleRepository.count()).isEqualTo(1);
@@ -51,5 +59,12 @@ class AdminRbacBootstrapServiceTests {
 				.map(AdminPermission::code)
 				.collect(Collectors.toSet());
 		assertThat(permissionCodes).isEqualTo(AdminPermissions.ALL);
+		assertThat(joinCount("admin_user_roles")).isEqualTo(1);
+		assertThat(joinCount("role_permissions")).isEqualTo(AdminPermissions.ALL.size());
+	}
+
+	private long joinCount(String tableName) {
+		return ((Number) entityManager.createNativeQuery("select count(*) from " + tableName)
+				.getSingleResult()).longValue();
 	}
 }

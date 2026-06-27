@@ -16,6 +16,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
 @Table(name = "admin_users")
@@ -37,7 +38,8 @@ public class AdminUser {
 	@ManyToMany(fetch = FetchType.LAZY)
 	@JoinTable(name = "admin_user_roles",
 			joinColumns = @JoinColumn(name = "admin_user_id", nullable = false),
-			inverseJoinColumns = @JoinColumn(name = "role_id", nullable = false))
+			inverseJoinColumns = @JoinColumn(name = "role_id", nullable = false),
+			uniqueConstraints = @UniqueConstraint(columnNames = { "admin_user_id", "role_id" }))
 	private Set<AdminRole> roles = new HashSet<>();
 
 	@Column(nullable = false)
@@ -93,4 +95,3 @@ public class AdminUser {
 		return createdAt;
 	}
 }
-

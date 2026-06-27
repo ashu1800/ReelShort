@@ -13,6 +13,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
 @Table(name = "roles")
@@ -30,7 +31,8 @@ public class AdminRole {
 	@ManyToMany(fetch = FetchType.LAZY)
 	@JoinTable(name = "role_permissions",
 			joinColumns = @JoinColumn(name = "role_id", nullable = false),
-			inverseJoinColumns = @JoinColumn(name = "permission_id", nullable = false))
+			inverseJoinColumns = @JoinColumn(name = "permission_id", nullable = false),
+			uniqueConstraints = @UniqueConstraint(columnNames = { "role_id", "permission_id" }))
 	private Set<AdminPermission> permissions = new HashSet<>();
 
 	@Column(nullable = false)
@@ -74,4 +76,3 @@ public class AdminRole {
 		return createdAt;
 	}
 }
-
