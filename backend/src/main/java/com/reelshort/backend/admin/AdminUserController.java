@@ -29,16 +29,19 @@ public class AdminUserController {
 	}
 
 	@GetMapping
+	@RequireAdminPermission(AdminPermissions.USER_READ)
 	public ApiResponse<List<AdminUserSummaryResponse>> users(HttpServletRequest request) {
 		return ApiResponse.success(adminUserService.users(), requestId(request));
 	}
 
 	@GetMapping("/{userId}")
+	@RequireAdminPermission(AdminPermissions.USER_READ)
 	public ApiResponse<AdminUserDetailResponse> detail(@PathVariable UUID userId, HttpServletRequest request) {
 		return ApiResponse.success(adminUserService.detail(userId), requestId(request));
 	}
 
 	@PostMapping("/{userId}/status")
+	@RequireAdminPermission(AdminPermissions.USER_WRITE)
 	public ApiResponse<AdminUserDetailResponse> status(CurrentAdmin currentAdmin, @PathVariable UUID userId,
 			@Valid @RequestBody AdminUserStatusRequest statusRequest,
 			HttpServletRequest request) {
@@ -47,6 +50,7 @@ public class AdminUserController {
 	}
 
 	@PostMapping("/{userId}/points/adjust")
+	@RequireAdminPermission(AdminPermissions.POINTS_ADJUST)
 	public ApiResponse<AdminUserDetailResponse> adjustPoints(CurrentAdmin currentAdmin, @PathVariable UUID userId,
 			@Valid @RequestBody AdminPointAdjustRequest adjustRequest,
 			HttpServletRequest request) {
@@ -55,11 +59,13 @@ public class AdminUserController {
 	}
 
 	@GetMapping("/{userId}/watch-records")
+	@RequireAdminPermission(AdminPermissions.USER_READ)
 	public ApiResponse<List<WatchRecordResponse>> watchRecords(@PathVariable UUID userId, HttpServletRequest request) {
 		return ApiResponse.success(adminUserService.watchRecords(userId), requestId(request));
 	}
 
 	@GetMapping("/{userId}/point-records")
+	@RequireAdminPermission(AdminPermissions.USER_READ)
 	public ApiResponse<List<PointTransactionResponse>> pointRecords(@PathVariable UUID userId, HttpServletRequest request) {
 		return ApiResponse.success(adminUserService.pointRecords(userId), requestId(request));
 	}
