@@ -14,6 +14,7 @@ public final class AdminPermissions {
 	public static final String CONTENT_CACHE_WRITE = "CONTENT_CACHE_WRITE";
 	public static final String SYSTEM_CONFIG_READ = "SYSTEM_CONFIG_READ";
 	public static final String SYSTEM_CONFIG_WRITE = "SYSTEM_CONFIG_WRITE";
+	public static final String SYSTEM_RUNTIME_READ = "SYSTEM_RUNTIME_READ";
 	public static final String ORDER_READ = "ORDER_READ";
 	public static final String PAYMENT_EVENT_READ = "PAYMENT_EVENT_READ";
 
@@ -27,6 +28,7 @@ public final class AdminPermissions {
 			CONTENT_CACHE_WRITE,
 			SYSTEM_CONFIG_READ,
 			SYSTEM_CONFIG_WRITE,
+			SYSTEM_RUNTIME_READ,
 			ORDER_READ,
 			PAYMENT_EVENT_READ)));
 

@@ -29,4 +29,5 @@ npm run build
 - 内容货架刷新：`POST /api/admin/content/cache/shelves/{shelfType}/refresh`
 - 系统配置：`GET /api/admin/system/configs`
 - 系统配置更新：`POST /api/admin/system/configs/{configKey}`
+- 运行诊断：`GET /api/admin/system/runtime`
 - 审计日志：`GET /api/admin/audit-logs`

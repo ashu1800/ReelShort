@@ -141,6 +141,28 @@ export type AdminDashboardSummary = {
   }
 }
 
+export type RuntimeDependencyStatus = {
+  name: string
+  status: 'UP' | 'DOWN'
+  detail: string
+}
+
+export type SystemRuntimeResponse = {
+  status: 'UP' | 'DEGRADED'
+  checkedAt: string
+  application: {
+    service: string
+    version: string
+    javaVersion: string
+    uptimeSeconds: number
+  }
+  memory: {
+    usedBytes: number
+    maxBytes: number
+  }
+  dependencies: RuntimeDependencyStatus[]
+}
+
 export async function login(username: string, password: string) {
   const response = await http.post<ApiResponse<AdminLoginResponse>>('/auth/login', {
     username,
@@ -211,6 +233,11 @@ export async function fetchAuditLogs() {
 
 export async function fetchSystemConfigs() {
   const response = await http.get<ApiResponse<SystemConfig[]>>('/system/configs')
+  return response.data.data
+}
+
+export async function fetchSystemRuntime() {
+  const response = await http.get<ApiResponse<SystemRuntimeResponse>>('/system/runtime')
   return response.data.data
 }
 
