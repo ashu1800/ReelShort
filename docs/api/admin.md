@@ -22,6 +22,7 @@
 - `CONTENT_CACHE_WRITE`：刷新内容缓存。
 - `SYSTEM_CONFIG_READ`：读取系统配置。
 - `SYSTEM_CONFIG_WRITE`：更新系统配置。
+- `ORDER_READ`：读取充值订单。
 
 ## `POST /api/admin/auth/login`
 
@@ -152,6 +153,10 @@ Authorization: Bearer <admin-token>
 - `targetId`
 - `summary`
 - `createdAt`
+
+## `GET /api/admin/orders`
+
+返回所有用户充值订单，按创建时间倒序排列。详见 `docs/api/orders.md`。
 
 ## `GET /api/admin/system/configs`
 
