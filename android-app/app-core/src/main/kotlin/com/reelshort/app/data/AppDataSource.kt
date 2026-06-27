@@ -1,0 +1,28 @@
+package com.reelshort.app.data
+
+interface AppDataSource {
+    suspend fun login(username: String, password: String): AuthSession
+
+    suspend fun register(username: String, password: String): AuthSession
+
+    suspend fun loadHomeShelf(): List<BookSummary>
+
+    suspend fun search(query: String): List<BookSummary>
+
+    suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary>
+
+    suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl
+
+    suspend fun reportWatchProgress(
+        book: BookSummary,
+        episode: EpisodeSummary,
+        positionSeconds: Int,
+        durationSeconds: Int,
+    ): WatchProgressReport
+
+    suspend fun loadWatchHistory(): List<WatchRecord>
+
+    suspend fun loadPointAccount(): PointAccount
+
+    suspend fun loadOrders(): List<RechargeOrderSummary>
+}
