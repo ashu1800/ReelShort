@@ -20,10 +20,18 @@
 
 返回指定货架内容。`shelfType` 必须是 `recommend`、`new-release` 或 `drama-dub`。
 
+### `GET /api/app/content/books/{bookId}`
+
+返回已缓存剧集详情。详情来自搜索、推荐或货架写入的 PostgreSQL 内容书缓存；没有缓存时返回 `404`。
+
+### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}`
+
+返回剧集分集列表。后端优先调用 Flask 内容源；调用成功后写入 PostgreSQL 分集缓存；内容源不可用且已有缓存时返回最后一次可用分集缓存。
+
 错误：
 
 - `400`：未知货架类型。
-- `404`：内容源明确返回资源不存在且无可用缓存。
+- `404`：内容源明确返回资源不存在且无可用缓存，或剧集详情未缓存。
 - `502`：内容源返回非 404 HTTP 错误且无可用缓存。
 - `503`：内容源不可用且无可用缓存。
 
@@ -36,6 +44,7 @@
 响应字段：
 
 - `bookCount`：当前缓存的剧集索引数量。
+- `episodeCacheCount`：当前缓存的剧集分集列表数量。
 - `shelves`：每个货架的缓存状态。
 - `shelves[].shelfType`
 - `shelves[].itemCount`

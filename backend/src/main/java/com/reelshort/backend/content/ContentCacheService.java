@@ -96,7 +96,8 @@ public class ContentCacheService {
 		List<ContentCacheStatusResponse.ShelfStatus> shelves = Arrays.stream(ContentShelfType.values())
 				.map(this::shelfStatus)
 				.toList();
-		return new ContentCacheStatusResponse(contentBookCacheRepository.count(), shelves);
+		return new ContentCacheStatusResponse(contentBookCacheRepository.count(), contentEpisodeCacheRepository.count(),
+				shelves);
 	}
 
 	private ContentCacheStatusResponse.ShelfStatus shelfStatus(ContentShelfType shelfType) {

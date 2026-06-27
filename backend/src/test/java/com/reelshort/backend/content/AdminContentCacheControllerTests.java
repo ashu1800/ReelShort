@@ -40,6 +40,9 @@ class AdminContentCacheControllerTests {
 	@Autowired
 	private ContentBookCacheRepository contentBookCacheRepository;
 
+	@Autowired
+	private ContentEpisodeCacheRepository contentEpisodeCacheRepository;
+
 	@MockitoBean
 	private ContentProvider contentProvider;
 
@@ -47,6 +50,7 @@ class AdminContentCacheControllerTests {
 	void cleanCache() {
 		contentShelfCacheRepository.deleteAll();
 		contentBookCacheRepository.deleteAll();
+		contentEpisodeCacheRepository.deleteAll();
 	}
 
 	@Test
@@ -58,6 +62,7 @@ class AdminContentCacheControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value(0))
 				.andExpect(jsonPath("$.data.bookCount").value(0))
+				.andExpect(jsonPath("$.data.episodeCacheCount").value(0))
 				.andExpect(jsonPath("$.data.shelves", hasSize(3)))
 				.andExpect(jsonPath("$.data.shelves[*].shelfType", hasItem("recommend")))
 				.andExpect(jsonPath("$.data.shelves[*].shelfType", hasItem("new-release")))
@@ -85,6 +90,24 @@ class AdminContentCacheControllerTests {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data[*].action", hasItem("CONTENT_CACHE_REFRESHED")));
+	}
+
+	@Test
+	void contentCacheStatusIncludesEpisodeCacheCount() throws Exception {
+		String adminToken = adminLogin();
+		String appToken = registerAndExtractAppToken("episode-cache-user");
+		when(contentProvider.getEpisodes("book-episodes", "episodes"))
+				.thenReturn(List.of(new ContentEpisode(1, "chapter-1")));
+
+		mockMvc.perform(get("/api/app/content/books/book-episodes/episodes")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + appToken)
+				.param("filteredTitle", "episodes"))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(get("/api/admin/content/cache")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.episodeCacheCount").value(1));
 	}
 
 	@Test

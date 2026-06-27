@@ -57,9 +57,13 @@
 
 通过内容缓存服务获取指定货架。支持 `recommend`、`new-release`、`drama-dub`。
 
+### `GET /api/app/content/books/{bookId}`
+
+从 PostgreSQL 内容书缓存返回剧集详情。客户端应先通过搜索、推荐或货架发现剧集；如果剧集尚未缓存，返回 `404`。
+
 ### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}`
 
-通过 `ContentProvider` 获取指定剧集的分集列表。
+通过 `ContentProvider` 获取指定剧集的分集列表。内容源调用成功后写入 PostgreSQL 分集缓存；内容源不可用且已有缓存时返回最后一次可用缓存。
 
 ### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}`
 
