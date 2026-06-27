@@ -12,6 +12,7 @@ import {
 } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { logout as logoutAdminSession } from './services/adminApi'
 import { useSessionStore } from './stores/session'
 
 const route = useRoute()
@@ -20,9 +21,15 @@ const session = useSessionStore()
 
 const isLoginRoute = computed(() => route.name === 'login')
 
-function logout() {
-  session.clearSession()
-  router.push({ name: 'login' })
+async function logout() {
+  try {
+    if (session.isAuthenticated) {
+      await logoutAdminSession()
+    }
+  } finally {
+    session.clearSession()
+    router.push({ name: 'login' })
+  }
 }
 </script>
 

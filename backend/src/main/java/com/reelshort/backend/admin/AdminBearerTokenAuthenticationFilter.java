@@ -55,7 +55,11 @@ public class AdminBearerTokenAuthenticationFilter extends OncePerRequestFilter {
 	}
 
 	private void authenticateOrReject(HttpServletRequest request, AdminToken adminToken) {
-		if (adminToken.expiresAt().isBefore(OffsetDateTime.now())) {
+		if (adminToken.isRevoked()) {
+			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "token revoked");
+			return;
+		}
+		if (adminToken.isExpired(OffsetDateTime.now())) {
 			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "token expired");
 			return;
 		}

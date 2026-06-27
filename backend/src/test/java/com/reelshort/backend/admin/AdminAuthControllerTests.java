@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.OffsetDateTime;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,6 +18,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.auth.TokenHasher;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -26,6 +29,15 @@ class AdminAuthControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private AdminTokenRepository adminTokenRepository;
+
+	@Autowired
+	private AdminUserRepository adminUserRepository;
+
+	@Autowired
+	private TokenHasher tokenHasher;
 
 	@Test
 	void adminLoginReturnsAdminToken() throws Exception {
@@ -61,6 +73,58 @@ class AdminAuthControllerTests {
 		mockMvc.perform(get("/api/admin/users"))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value(401));
+	}
+
+	@Test
+	void adminLogoutRequiresAdminToken() throws Exception {
+		mockMvc.perform(post("/api/admin/auth/logout"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401));
+	}
+
+	@Test
+	void adminLogoutRevokesCurrentToken() throws Exception {
+		String adminToken = adminLogin();
+
+		mockMvc.perform(post("/api/admin/auth/logout")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data").value("logged out"));
+
+		mockMvc.perform(get("/api/admin/users")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("token revoked"));
+	}
+
+	@Test
+	void revokedAdminTokenIsRejected() throws Exception {
+		String adminToken = adminLogin();
+		AdminToken storedToken = adminTokenRepository.findByTokenHash(tokenHasher.hash(adminToken)).orElseThrow();
+		storedToken.revoke(OffsetDateTime.now().minusMinutes(1));
+		adminTokenRepository.save(storedToken);
+
+		mockMvc.perform(get("/api/admin/users")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("token revoked"));
+	}
+
+	@Test
+	void expiredAdminTokenIsRejectedWithSpecificMessage() throws Exception {
+		AdminUser admin = adminUserRepository.findByUsername("admin").orElseThrow();
+		String rawToken = "expired-admin-token";
+		adminTokenRepository.save(AdminToken.issue(
+				tokenHasher.hash(rawToken),
+				admin.id(),
+				admin.username(),
+				OffsetDateTime.now().minusHours(1)));
+
+		mockMvc.perform(get("/api/admin/users")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + rawToken))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("token expired"));
 	}
 
 	@Test
