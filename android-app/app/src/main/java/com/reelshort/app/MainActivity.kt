@@ -62,6 +62,7 @@ import com.reelshort.app.state.AppScreen
 import com.reelshort.app.state.AppStateController
 import com.reelshort.app.state.AppUiActions
 import com.reelshort.app.state.AppUiState
+import com.reelshort.app.state.PlaybackStatus
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -123,9 +124,11 @@ fun ReelShortApp(actions: AppUiActions) {
                     onSearch = { query -> scope.launch { actions.search(query) } },
                     onOpenBook = { book -> scope.launch { actions.openBook(book) } },
                     onOpenPlayer = { episode -> scope.launch { actions.openPlayer(episode) } },
+                    onUpdatePlaybackPosition = { position, duration -> actions.updatePlaybackPosition(position, duration) },
+                    onRefreshPlaybackUrl = { scope.launch { actions.refreshPlaybackUrl() } },
                     onReportProgress = {
-                        val duration = state.currentVideoUrl?.durationSeconds ?: state.selectedEpisode?.durationSeconds ?: 200
-                        scope.launch { actions.reportProgress((duration * 75) / 100, duration) }
+                        val playback = state.playback
+                        scope.launch { actions.reportProgress(playback.positionSeconds, playback.durationSeconds) }
                     },
                 )
             }
@@ -199,6 +202,8 @@ private fun MainShell(
     onSearch: (String) -> Unit,
     onOpenBook: (BookSummary) -> Unit,
     onOpenPlayer: (EpisodeSummary) -> Unit,
+    onUpdatePlaybackPosition: (Int, Int) -> Unit,
+    onRefreshPlaybackUrl: () -> Unit,
     onReportProgress: () -> Unit,
 ) {
     Scaffold(
@@ -236,7 +241,7 @@ private fun MainShell(
                     AppScreen.HOME -> HomeScreen(state.homeShelf, onOpenBook)
                     AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
                     AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, onOpenPlayer)
-                    AppScreen.PLAYER -> PlayerScreen(state.selectedBook, state.selectedEpisode, state.currentVideoUrl?.url, onReportProgress)
+                    AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onRefreshPlaybackUrl, onReportProgress)
                     AppScreen.ACCOUNT -> AccountScreen(state.watchHistory, state.pointAccount?.balance ?: 0, state.pointAccount?.records ?: emptyList(), state.orders)
                 }
             }
@@ -357,11 +362,19 @@ private fun DetailScreen(
 
 @Composable
 private fun PlayerScreen(
-    book: BookSummary?,
-    episode: EpisodeSummary?,
-    videoUrl: String?,
+    state: AppUiState,
+    onUpdatePlaybackPosition: (Int, Int) -> Unit,
+    onRefreshPlaybackUrl: () -> Unit,
     onReportProgress: () -> Unit,
 ) {
+    val playback = state.playback
+    val book = playback.book ?: state.selectedBook
+    val episode = playback.episode ?: state.selectedEpisode
+    val videoUrl = playback.videoUrl?.url
+    val ready = playback.status == PlaybackStatus.READY && episode != null && videoUrl != null
+    val duration = playback.durationSeconds.takeIf { it > 0 } ?: episode?.durationSeconds ?: 0
+    val simulatedPosition = if (duration > 0) duration / 4 else 0
+
     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(
             modifier = Modifier
@@ -374,9 +387,23 @@ private fun PlayerScreen(
         }
         Text(book?.title ?: "未选择剧集", style = MaterialTheme.typography.titleLarge)
         Text("第 ${episode?.number ?: 0} 集")
+        Text("播放地址", fontWeight = FontWeight.SemiBold)
         Text(videoUrl ?: "暂无播放地址", maxLines = 2, overflow = TextOverflow.Ellipsis, color = Color.Gray)
-        Button(onClick = onReportProgress, enabled = episode != null && videoUrl != null) {
-            Text("上报 75% 观看进度")
+        Text("时长 ${duration.formatSeconds()} · 当前 ${playback.positionSeconds.formatSeconds()} · 进度 ${playback.progressPercent}%")
+        Text("已上报 ${playback.lastReportedProgressPercent}% · 位置 ${playback.lastReportedPositionSeconds.formatSeconds()}", color = Color.Gray)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { onUpdatePlaybackPosition(simulatedPosition, duration) },
+                enabled = ready && duration > 0,
+            ) {
+                Text("模拟 25%")
+            }
+            OutlinedButton(onClick = onRefreshPlaybackUrl, enabled = ready) {
+                Text("刷新地址")
+            }
+        }
+        Button(onClick = onReportProgress, enabled = ready && playback.durationSeconds > 0 && playback.positionSeconds > 0) {
+            Text("上报当前进度")
         }
     }
 }
@@ -490,3 +517,10 @@ private val AppScreen.icon: String
         AppScreen.PLAYER -> "播"
         AppScreen.ACCOUNT -> "账"
     }
+
+private fun Int.formatSeconds(): String {
+    val safeValue = coerceAtLeast(0)
+    val minutes = safeValue / 60
+    val seconds = safeValue % 60
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
+}
