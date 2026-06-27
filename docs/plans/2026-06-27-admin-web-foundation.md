@@ -78,4 +78,3 @@
 **Step 4:** Review diff for scope and UX consistency.
 
 **Step 5:** Commit, merge into `master`, rerun `npm run build` on `master`, then clean worktree and branch.
-
