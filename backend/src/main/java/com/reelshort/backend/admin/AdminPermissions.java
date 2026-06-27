@@ -6,6 +6,7 @@ import java.util.Set;
 public final class AdminPermissions {
 
 	public static final String USER_READ = "USER_READ";
+	public static final String DASHBOARD_READ = "DASHBOARD_READ";
 	public static final String USER_WRITE = "USER_WRITE";
 	public static final String POINTS_ADJUST = "POINTS_ADJUST";
 	public static final String AUDIT_READ = "AUDIT_READ";
@@ -18,6 +19,7 @@ public final class AdminPermissions {
 
 	public static final Set<String> ALL = Set.copyOf(new LinkedHashSet<>(Set.of(
 			USER_READ,
+			DASHBOARD_READ,
 			USER_WRITE,
 			POINTS_ADJUST,
 			AUDIT_READ,

@@ -115,6 +115,32 @@ export type PaymentEventFilters = {
   paymentChannel?: string
 }
 
+export type AdminDashboardSummary = {
+  users: {
+    total: number
+    disabled: number
+  }
+  orders: {
+    total: number
+    created: number
+    paid: number
+    totalAmountCents: number
+  }
+  payments: {
+    total: number
+    processed: number
+    rejected: number
+  }
+  content: {
+    bookCount: number
+    episodeCacheCount: number
+    shelfCount: number
+  }
+  auditLogs: {
+    latest: AdminAuditLog[]
+  }
+}
+
 export async function login(username: string, password: string) {
   const response = await http.post<ApiResponse<AdminLoginResponse>>('/auth/login', {
     username,
@@ -130,6 +156,11 @@ export async function logout() {
 
 export async function fetchUsers() {
   const response = await http.get<ApiResponse<AdminUserSummary[]>>('/users')
+  return response.data.data
+}
+
+export async function fetchDashboardSummary() {
+  const response = await http.get<ApiResponse<AdminDashboardSummary>>('/dashboard/summary')
   return response.data.data
 }
 

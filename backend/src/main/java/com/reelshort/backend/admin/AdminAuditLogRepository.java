@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface AdminAuditLogRepository extends JpaRepository<AdminAuditLog, UUID> {
 
 	List<AdminAuditLog> findAllByOrderByCreatedAtDesc();
+
+	List<AdminAuditLog> findTop5ByOrderByCreatedAtDesc();
 }

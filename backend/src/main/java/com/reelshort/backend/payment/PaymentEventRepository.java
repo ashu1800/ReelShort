@@ -10,4 +10,6 @@ public interface PaymentEventRepository extends JpaRepository<PaymentEvent, UUID
 		JpaSpecificationExecutor<PaymentEvent> {
 
 	Optional<PaymentEvent> findByProviderEventId(String providerEventId);
+
+	long countByStatus(PaymentEventStatus status);
 }

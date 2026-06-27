@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 public interface RechargeOrderRepository extends JpaRepository<RechargeOrder, UUID> {
 
@@ -13,4 +14,9 @@ public interface RechargeOrderRepository extends JpaRepository<RechargeOrder, UU
 	List<RechargeOrder> findAllByOrderByCreatedAtDescIdDesc();
 
 	Optional<RechargeOrder> findByOrderNo(String orderNo);
+
+	long countByStatus(RechargeOrderStatus status);
+
+	@Query("select coalesce(sum(order.amountCents), 0) from RechargeOrder order")
+	long sumAmountCents();
 }
