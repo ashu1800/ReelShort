@@ -46,6 +46,17 @@ Retry-After: 60
 reelshort.rate-limit.enabled=true
 ```
 
+限流计数存储：
+
+```properties
+reelshort.rate-limit.store=memory
+```
+
+可选值：
+
+- `memory`：默认值，使用单机内存计数，适合本地开发和测试。
+- `redis`：使用 Redis 计数，适合 Docker Compose 单机部署。Redis 连接使用 Spring Boot 标准配置，例如 `spring.data.redis.host` 和 `spring.data.redis.port`。
+
 默认规则可通过环境变量覆盖限制值和窗口，例如：
 
 ```properties
@@ -53,4 +64,4 @@ REELSHORT_RATE_LIMIT_APP_AUTH_LIMIT=20
 REELSHORT_RATE_LIMIT_APP_AUTH_WINDOW=1m
 ```
 
-当前实现为单机内存计数，后续可以在不改变 Controller 和客户端接口的情况下替换为 Redis 计数。
+Docker Compose 默认将 `REELSHORT_RATE_LIMIT_STORE` 设为 `redis`，并把后端连接到 Compose 内部的 `redis` 服务。即使 Redis 缓存丢失，限流窗口也只会重置，不影响 PostgreSQL 中的核心业务数据。
