@@ -94,6 +94,10 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
+    fun showSearch() {
+        mutableState.update { it.copy(screen = AppScreen.SEARCH, errorMessage = null) }
+    }
+
     suspend fun openBook(book: BookSummary) = runWithLoading {
         val episodes = dataSource.loadEpisodes(book)
         mutableState.update {
