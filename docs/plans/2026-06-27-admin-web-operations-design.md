@@ -55,8 +55,8 @@
 内容缓存页面增加货架刷新按钮。第一阶段使用固定候选值：
 
 - `recommend`
-- `new`
-- `dubbed`
+- `new-release`
+- `drama-dub`
 
 如果后端不支持某个值，错误由后端返回并在前端显示。
 
@@ -73,4 +73,3 @@
 - `npm run build` 验证 TypeScript 和生产构建。
 - `git diff --check` 验证格式空白。
 - 人工审查 API 路径、DTO 字段和后端文档/控制器一致性。
-

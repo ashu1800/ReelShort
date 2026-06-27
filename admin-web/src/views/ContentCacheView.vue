@@ -1,11 +1,19 @@
 <script setup lang="ts">
+import { ElMessage } from 'element-plus'
 import { onMounted, ref } from 'vue'
-import { fetchContentCacheStatus } from '../services/adminApi'
+import { fetchContentCacheStatus, refreshContentShelf } from '../services/adminApi'
 import type { ContentCacheStatus } from '../services/adminApi'
 
 const loading = ref(false)
+const refreshing = ref(false)
 const error = ref('')
 const status = ref<ContentCacheStatus | null>(null)
+const shelfType = ref('recommend')
+const shelfOptions = [
+  { label: '推荐', value: 'recommend' },
+  { label: '新剧', value: 'new-release' },
+  { label: '配音', value: 'drama-dub' },
+]
 
 async function loadStatus() {
   loading.value = true
@@ -19,6 +27,23 @@ async function loadStatus() {
   }
 }
 
+async function refreshShelf() {
+  refreshing.value = true
+  try {
+    await refreshContentShelf(shelfType.value)
+    ElMessage.success('内容货架刷新完成')
+  } catch {
+    ElMessage.error('内容货架刷新失败')
+    refreshing.value = false
+    return
+  }
+  try {
+    await loadStatus()
+  } finally {
+    refreshing.value = false
+  }
+}
+
 onMounted(loadStatus)
 </script>
 
@@ -29,7 +54,18 @@ onMounted(loadStatus)
         <h1>内容缓存</h1>
         <p>查看剧集索引、分集缓存和货架刷新状态</p>
       </div>
-      <el-button @click="loadStatus">刷新</el-button>
+      <div class="toolbar-actions">
+        <el-select v-model="shelfType" class="shelf-select" placeholder="选择货架">
+          <el-option
+            v-for="option in shelfOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+        <el-button :loading="refreshing" type="primary" @click="refreshShelf">刷新货架</el-button>
+        <el-button @click="loadStatus">刷新状态</el-button>
+      </div>
     </div>
     <el-alert v-if="error" :title="error" show-icon type="error" />
     <div class="metric-grid">

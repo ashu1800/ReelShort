@@ -61,7 +61,7 @@
 - Modify: `admin-web/src/views/ContentCacheView.vue`
 - Modify: `admin-web/src/style.css`
 
-**Step 1:** Add shelf selector with `recommend`, `new`, and `dubbed`.
+**Step 1:** Add shelf selector with `recommend`, `new-release`, and `drama-dub`.
 
 **Step 2:** Add refresh action calling `POST /api/admin/content/cache/shelves/{shelfType}/refresh`.
 
@@ -86,4 +86,3 @@
 **Step 5:** Fix review findings and repeat review until no obvious issues remain.
 
 **Step 6:** Commit, merge into `master`, verify build on `master`, then remove worktree and branch.
-

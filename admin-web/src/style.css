@@ -81,6 +81,17 @@ h1 {
   color: #6b7280;
 }
 
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.shelf-select {
+  width: 140px;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -115,6 +126,54 @@ h1 {
 .panel-title {
   margin-bottom: 16px;
   font-weight: 700;
+}
+
+.drawer-body {
+  display: grid;
+  gap: 18px;
+}
+
+.detail-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.muted {
+  margin-bottom: 6px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.operation-block {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  padding: 16px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.operation-block h2 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.operation-block p {
+  margin: 6px 0 0;
+  color: #6b7280;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: 140px minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: start;
 }
 
 .login-page {
@@ -169,7 +228,16 @@ h1 {
     flex-direction: column;
   }
 
+  .toolbar-actions {
+    justify-content: flex-start;
+  }
+
   .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .operation-block,
+  .inline-form {
     grid-template-columns: 1fr;
   }
 }

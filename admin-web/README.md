@@ -19,5 +19,13 @@ npm run build
 - 登录页：`POST /api/admin/auth/login`
 - 控制台：用户、缓存和审计摘要
 - 用户管理：`GET /api/admin/users`
+- 用户详情：`GET /api/admin/users/{userId}`
+- 用户状态：`POST /api/admin/users/{userId}/status`
+- 积分调整：`POST /api/admin/users/{userId}/points/adjust`
+- 用户观看记录：`GET /api/admin/users/{userId}/watch-records`
+- 用户积分流水：`GET /api/admin/users/{userId}/point-records`
 - 内容缓存：`GET /api/admin/content/cache`
+- 内容货架刷新：`POST /api/admin/content/cache/shelves/{shelfType}/refresh`
+- 系统配置：`GET /api/admin/system/configs`
+- 系统配置更新：`POST /api/admin/system/configs/{configKey}`
 - 审计日志：`GET /api/admin/audit-logs`
