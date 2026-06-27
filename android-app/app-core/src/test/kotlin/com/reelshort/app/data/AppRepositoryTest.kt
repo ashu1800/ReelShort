@@ -1,9 +1,12 @@
 package com.reelshort.app.data
 
 import com.reelshort.app.network.FakeReelShortApiClient
+import com.reelshort.app.session.FileSessionStore
 import com.reelshort.app.session.InMemorySessionStore
 import com.reelshort.app.session.SessionStore
 import kotlinx.coroutines.test.runTest
+import java.io.File
+import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -36,6 +39,20 @@ class AppRepositoryTest {
         assertEquals(session, restored)
         assertEquals(session.token, restoredRepository.currentToken)
         assertEquals(session, sessionStore.loadSession())
+    }
+
+    @Test
+    fun loginPersistsSessionAcrossFileBackedRepositoryRecreation() = runTest {
+        val sessionFile = File(createTempDirectory(prefix = "reelshort-repository-session-test").toFile(), "session.json")
+        val firstRepository = AppRepository(FakeReelShortApiClient(), FileSessionStore(sessionFile))
+
+        val session = firstRepository.login("demo", "Password123")
+        val restoredRepository = AppRepository(FakeReelShortApiClient(), FileSessionStore(sessionFile))
+
+        val restored = restoredRepository.restoreSession()
+
+        assertEquals(session, restored)
+        assertEquals(session.token, restoredRepository.currentToken)
     }
 
     @Test

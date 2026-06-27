@@ -4,7 +4,7 @@ Android 原生客户端骨架，规划使用 Kotlin、Jetpack Compose 和 Androi
 
 当前已建立阶段 1 的核心页面边界、API 接入边界和纯 Kotlin UI 状态控制边界，Compose UI 已接入 `AppStateController`/`AppUiState`：
 
-- 登录页：通过 `AppStateController` 调用 Spring Boot 登录/注册接口，并写入共享状态和 `SessionStore`。
+- 登录页：通过 `AppStateController` 调用 Spring Boot 登录/注册接口，并写入共享状态和文件型 `SessionStore`。
 - 首页：通过 `AppStateController` 加载 Spring Boot 首页货架接口数据。
 - 搜索页：通过 `AppStateController` 调用 Spring Boot 搜索接口并维护搜索状态。
 - 详情页：通过 `AppStateController` 加载剧集信息和分集列表。
@@ -14,22 +14,30 @@ Android 原生客户端骨架，规划使用 Kotlin、Jetpack Compose 和 Androi
 ## 模块结构
 
 - `app`：Android Compose UI 模块，负责页面骨架和本地交互。
-- `app-core`：纯 Kotlin JVM 核心模块，包含 Spring Boot API 配置、统一响应模型、App 数据模型、`ReelShortApiClient` 边界、`FakeReelShortApiClient`、`OkHttpReelShortApiClient`、`SessionStore`、`AppDataSource`、`AppRepository`、`AppUiState`、`PlaybackState`、`AppStateController` 和 `AppUiActions`。
+- `app-core`：纯 Kotlin JVM 核心模块，包含 Spring Boot API 配置、统一响应模型、App 数据模型、`ReelShortApiClient` 边界、`FakeReelShortApiClient`、`OkHttpReelShortApiClient`、`SessionStore`、`InMemorySessionStore`、`FileSessionStore`、`AppDataSource`、`AppRepository`、`AppUiState`、`PlaybackState`、`AppStateController` 和 `AppUiActions`。
 
-App 只访问 Spring Boot API，不直接访问 Flask 内容源服务。当前 `FakeReelShortApiClient` 用于无 Android SDK 环境下的结构验证；`OkHttpReelShortApiClient` 用于真实 Spring Boot API 访问，并通过 token provider 为受保护 App 业务接口添加 Bearer Token。`SessionStore` 提供纯 Kotlin 会话存储边界，当前 Android 组合根仍使用 `InMemorySessionStore`，后续平台层可替换为 DataStore 或加密 SharedPreferences。`AppStateController` 以 `StateFlow<AppUiState>` 暴露登录、启动恢复、登出、首页、搜索、详情、播放、观看上报、积分、观看记录和订单状态，Compose UI 只负责展示状态和触发动作。`PlaybackState` 保存当前剧集、分集、播放 URL、播放位置、进度百分比、已上报进度和播放地址刷新结果，当前播放页已经绑定这些状态；后续 Android 平台播放器只需要持续调用进度更新并消费 URL。
+App 只访问 Spring Boot API，不直接访问 Flask 内容源服务。当前 `FakeReelShortApiClient` 用于无 Android SDK 环境下的结构验证；`OkHttpReelShortApiClient` 用于真实 Spring Boot API 访问，并通过 token provider 为受保护 App 业务接口添加 Bearer Token。`SessionStore` 提供纯 Kotlin 会话存储边界，`FileSessionStore` 使用本地 JSON 文件保存登录会话，当前 Android 组合根使用 `filesDir/reelshort-session.json` 恢复登录状态；后续平台层可替换为 DataStore 或加密 SharedPreferences。`AppStateController` 以 `StateFlow<AppUiState>` 暴露登录、启动恢复、登出、首页、搜索、详情、播放、观看上报、积分、观看记录和订单状态，Compose UI 只负责展示状态和触发动作。`PlaybackState` 保存当前剧集、分集、播放 URL、播放位置、进度百分比、已上报进度和播放地址刷新结果，当前播放页已经绑定这些状态；后续 Android 平台播放器只需要持续调用进度更新并消费 URL。
 
-当前机器未配置 Android SDK，因此本阶段只执行 `app-core` 的 JVM 单元测试，不声明 Android UI 模块编译通过。
+当前机器已配置 Android SDK，可构建 debug APK 并安装到雷电模拟器进行基础启动验证。
 
 ## 可运行验证
 
 ```powershell
 cd android-app
 .\gradlew.bat :app-core:test --no-daemon
+.\gradlew.bat :app:assembleDebug --no-daemon
+```
+
+雷电模拟器安装验证：
+
+```powershell
+C:\leidian\LDPlayer14\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
+C:\leidian\LDPlayer14\adb.exe shell am start -n com.reelshort.app/.MainActivity
 ```
 
 ## 后续开发环境
 
-- 安装 Android Studio。
-- 安装 Android SDK 和 Android SDK Build-Tools。
-- 在 `local.properties` 中配置 `sdk.dir`，或由 Android Studio 自动生成。
+- Android SDK 默认安装在 `%LOCALAPPDATA%\Android\Sdk`。
+- `local.properties` 中配置 `sdk.dir`，或由 Android Studio 自动生成。
+- 后续可接入 Media3/ExoPlayer 替换当前播放器占位。
 
