@@ -106,7 +106,56 @@ class AppStateControllerTest {
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(1, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
+        assertEquals(PlaybackStatus.READY, state.playback.status)
+        assertEquals(book, state.playback.book)
+        assertEquals(dataSource.episodes.first(), state.playback.episode)
+        assertEquals("https://media.local/book-1/1.m3u8", state.playback.videoUrl?.url)
+        assertEquals(200, state.playback.durationSeconds)
+        assertEquals(0, state.playback.positionSeconds)
+        assertEquals(0, state.playback.progressPercent)
         assertEquals(listOf("episodes:book-1", "video:book-1:1"), dataSource.calls)
+    }
+
+    @Test
+    fun updatePlaybackPositionStoresClampedLocalProgressWithoutCallingBackend() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(dataSource.episodes.first())
+        controller.updatePlaybackPosition(positionSeconds = 240, durationSeconds = 200)
+
+        val state = controller.state.value
+        assertEquals(200, state.playback.positionSeconds)
+        assertEquals(200, state.playback.durationSeconds)
+        assertEquals(100, state.playback.progressPercent)
+        assertEquals(listOf("episodes:book-1", "video:book-1:1"), dataSource.calls)
+    }
+
+    @Test
+    fun updatePlaybackPositionClampsNegativePositionToZero() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(dataSource.episodes.first())
+        controller.updatePlaybackPosition(positionSeconds = -10, durationSeconds = 200)
+
+        val state = controller.state.value
+        assertEquals(0, state.playback.positionSeconds)
+        assertEquals(0, state.playback.progressPercent)
+    }
+
+    @Test
+    fun updatePlaybackPositionBeforeOpeningPlayerDoesNotCreatePlaybackState() {
+        val controller = AppStateController(FakeAppDataSource())
+
+        controller.updatePlaybackPosition(positionSeconds = 20, durationSeconds = 100)
+
+        val state = controller.state.value
+        assertEquals(PlaybackStatus.IDLE, state.playback.status)
+        assertEquals(0, state.playback.positionSeconds)
+        assertEquals(0, state.playback.progressPercent)
     }
 
     @Test
@@ -120,12 +169,38 @@ class AppStateControllerTest {
 
         val state = controller.state.value
         assertEquals(75, dataSource.lastProgress?.progressPercent)
+        assertEquals(150, state.playback.positionSeconds)
+        assertEquals(200, state.playback.durationSeconds)
+        assertEquals(75, state.playback.progressPercent)
+        assertEquals(150, state.playback.lastReportedPositionSeconds)
+        assertEquals(75, state.playback.lastReportedProgressPercent)
         assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(
             listOf("episodes:book-1", "video:book-1:1", "progress:book-1:1:150", "history", "points"),
             dataSource.calls,
         )
+    }
+
+    @Test
+    fun refreshPlaybackUrlReloadsCurrentEpisodeUrlAndKeepsPosition() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(dataSource.episodes.first())
+        controller.updatePlaybackPosition(positionSeconds = 80, durationSeconds = 200)
+        dataSource.videoUrlVersion = 2
+        dataSource.videoDurationSeconds = 400
+        controller.refreshPlaybackUrl()
+
+        val state = controller.state.value
+        assertEquals("https://media.local/book-1/1-v2.m3u8", state.currentVideoUrl?.url)
+        assertEquals("https://media.local/book-1/1-v2.m3u8", state.playback.videoUrl?.url)
+        assertEquals(80, state.playback.positionSeconds)
+        assertEquals(400, state.playback.durationSeconds)
+        assertEquals(20, state.playback.progressPercent)
+        assertEquals(listOf("episodes:book-1", "video:book-1:1", "video:book-1:1"), dataSource.calls)
     }
 
     @Test
@@ -246,6 +321,8 @@ class AppStateControllerTest {
         )
         val calls = mutableListOf<String>()
         var lastProgress: WatchProgressReport? = null
+        var videoUrlVersion: Int = 1
+        var videoDurationSeconds: Int? = null
 
         override suspend fun login(username: String, password: String): AuthSession {
             calls += "login:$username"
@@ -276,11 +353,12 @@ class AppStateControllerTest {
 
         override suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl {
             calls += "video:${book.id}:${episode.number}"
+            val suffix = if (videoUrlVersion == 1) "" else "-v$videoUrlVersion"
             return VideoUrl(
-                url = "https://media.local/${book.id}/${episode.number}.m3u8",
+                url = "https://media.local/${book.id}/${episode.number}$suffix.m3u8",
                 contentType = "application/vnd.apple.mpegurl",
                 episode = episode.number,
-                durationSeconds = episode.durationSeconds,
+                durationSeconds = videoDurationSeconds ?: episode.durationSeconds,
             )
         }
 

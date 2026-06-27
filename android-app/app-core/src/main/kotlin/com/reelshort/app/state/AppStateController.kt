@@ -107,6 +107,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 episodes = episodes,
                 selectedEpisode = null,
                 currentVideoUrl = null,
+                playback = PlaybackState(),
                 isLoading = false,
             )
         }
@@ -120,8 +121,19 @@ class AppStateController(private val dataSource: AppDataSource) {
                 screen = AppScreen.PLAYER,
                 selectedEpisode = episode,
                 currentVideoUrl = videoUrl,
+                playback = PlaybackState.ready(book, episode, videoUrl),
                 isLoading = false,
             )
+        }
+    }
+
+    fun updatePlaybackPosition(positionSeconds: Int, durationSeconds: Int) {
+        mutableState.update {
+            if (it.playback.status != PlaybackStatus.READY) {
+                it
+            } else {
+                it.copy(playback = it.playback.withPosition(positionSeconds, durationSeconds))
+            }
         }
     }
 
@@ -129,13 +141,33 @@ class AppStateController(private val dataSource: AppDataSource) {
         val current = state.value
         val book = current.selectedBook ?: throw IllegalStateException("未选择剧集")
         val episode = current.selectedEpisode ?: throw IllegalStateException("未选择分集")
-        dataSource.reportWatchProgress(book, episode, positionSeconds, durationSeconds)
+        val progress = dataSource.reportWatchProgress(book, episode, positionSeconds, durationSeconds)
         val history = dataSource.loadWatchHistory()
         val points = dataSource.loadPointAccount()
         mutableState.update {
             it.copy(
                 watchHistory = history,
                 pointAccount = points,
+                playback = it.playback
+                    .withPosition(progress.positionSeconds, progress.durationSeconds)
+                    .withReportedProgress(
+                        positionSeconds = progress.positionSeconds,
+                        progressPercent = progress.progressPercent,
+                    ),
+                isLoading = false,
+            )
+        }
+    }
+
+    suspend fun refreshPlaybackUrl() = runWithLoading {
+        val current = state.value
+        val book = current.selectedBook ?: throw IllegalStateException("未选择剧集")
+        val episode = current.selectedEpisode ?: throw IllegalStateException("未选择分集")
+        val videoUrl = dataSource.loadVideoUrl(book, episode)
+        mutableState.update {
+            it.copy(
+                currentVideoUrl = videoUrl,
+                playback = it.playback.withVideoUrl(videoUrl),
                 isLoading = false,
             )
         }

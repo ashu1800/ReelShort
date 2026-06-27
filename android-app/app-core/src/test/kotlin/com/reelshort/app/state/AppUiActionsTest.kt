@@ -70,6 +70,24 @@ class AppUiActionsTest {
     }
 
     @Test
+    fun playbackActionsDelegateToController() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        val actions = AppUiActions(controller)
+
+        actions.openBook(dataSource.books.first())
+        actions.openPlayer(dataSource.episodes.first())
+        actions.updatePlaybackPosition(positionSeconds = 100, durationSeconds = 200)
+        dataSource.videoUrlVersion = 2
+        actions.refreshPlaybackUrl()
+
+        val state = controller.state.value
+        assertEquals(50, state.playback.progressPercent)
+        assertEquals("https://media.local/book-1/1-v2.m3u8", state.playback.videoUrl?.url)
+        assertEquals(listOf("episodes:book-1", "video:book-1:1", "video:book-1:1"), dataSource.calls)
+    }
+
+    @Test
     fun logoutDelegatesToControllerAndResetsState() = runTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
@@ -102,11 +120,12 @@ class AppUiActionsTest {
                 chapterCount = 1,
             ),
         )
-        private val episodes = listOf(
+        val episodes = listOf(
             EpisodeSummary(number = 1, chapterId = "chapter-1", durationSeconds = 200),
             EpisodeSummary(number = 2, chapterId = "chapter-2", durationSeconds = 180),
         )
         val calls = mutableListOf<String>()
+        var videoUrlVersion: Int = 1
 
         override suspend fun login(username: String, password: String): AuthSession {
             calls += "login:$username"
@@ -133,8 +152,11 @@ class AppUiActionsTest {
             return episodes
         }
 
-        override suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl =
-            VideoUrl("https://media.local/${book.id}/${episode.number}.m3u8", "application/vnd.apple.mpegurl", episode.number, episode.durationSeconds)
+        override suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl {
+            calls += "video:${book.id}:${episode.number}"
+            val suffix = if (videoUrlVersion == 1) "" else "-v$videoUrlVersion"
+            return VideoUrl("https://media.local/${book.id}/${episode.number}$suffix.m3u8", "application/vnd.apple.mpegurl", episode.number, episode.durationSeconds)
+        }
 
         override suspend fun reportWatchProgress(
             book: BookSummary,
