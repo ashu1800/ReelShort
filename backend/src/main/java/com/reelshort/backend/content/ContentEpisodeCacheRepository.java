@@ -9,4 +9,3 @@ public interface ContentEpisodeCacheRepository extends JpaRepository<ContentEpis
 
 	Optional<ContentEpisodeCache> findByBookIdAndFilteredTitle(String bookId, String filteredTitle);
 }
-

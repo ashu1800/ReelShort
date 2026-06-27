@@ -74,7 +74,7 @@ public class ContentCacheService {
 				.orElseThrow(() -> new ContentProviderException(404, "content book not cached"));
 	}
 
-	@Transactional
+	@Transactional(noRollbackFor = ContentProviderException.class)
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
 		try {
 			List<ContentEpisode> episodes = contentProvider.getEpisodes(bookId, filteredTitle);
