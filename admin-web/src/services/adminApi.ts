@@ -82,6 +82,20 @@ export type SystemConfig = {
   updatedAt: string | null
 }
 
+export type RechargeOrderStatus = 'CREATED' | 'PAID' | 'CANCELLED' | 'FAILED' | 'REFUNDED'
+
+export type RechargeOrder = {
+  id: string
+  userId: string
+  orderNo: string
+  amountCents: number
+  pointAmount: number
+  status: RechargeOrderStatus
+  paymentChannel: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export async function login(username: string, password: string) {
   const response = await http.post<ApiResponse<AdminLoginResponse>>('/auth/login', {
     username,
@@ -150,5 +164,10 @@ export async function updateSystemConfig(configKey: string, value: string) {
     `/system/configs/${configKey}`,
     { value },
   )
+  return response.data.data
+}
+
+export async function fetchOrders() {
+  const response = await http.get<ApiResponse<RechargeOrder[]>>('/orders')
   return response.data.data
 }

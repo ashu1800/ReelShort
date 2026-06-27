@@ -1,19 +1,28 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { fetchAuditLogs, fetchContentCacheStatus, fetchUsers } from '../services/adminApi'
-import type { AdminAuditLog, AdminUserSummary, ContentCacheStatus } from '../services/adminApi'
+import { fetchAuditLogs, fetchContentCacheStatus, fetchOrders, fetchUsers } from '../services/adminApi'
+import type {
+  AdminAuditLog,
+  AdminUserSummary,
+  ContentCacheStatus,
+  RechargeOrder,
+} from '../services/adminApi'
 
 const loading = ref(false)
 const error = ref('')
 const users = ref<AdminUserSummary[]>([])
 const cacheStatus = ref<ContentCacheStatus | null>(null)
 const auditLogs = ref<AdminAuditLog[]>([])
+const orders = ref<RechargeOrder[]>([])
 
 const disabledUsers = computed(() => users.value.filter((user) => user.status === 'DISABLED').length)
+const createdOrders = computed(() => orders.value.filter((order) => order.status === 'CREATED').length)
 
 const metrics = computed(() => [
   { label: '用户总数', value: users.value.length },
   { label: '禁用用户', value: disabledUsers.value },
+  { label: '充值订单', value: orders.value.length },
+  { label: '创建中订单', value: createdOrders.value },
   { label: '剧集缓存', value: cacheStatus.value?.bookCount ?? 0 },
   { label: '分集缓存', value: cacheStatus.value?.episodeCacheCount ?? 0 },
 ])
@@ -22,14 +31,17 @@ async function loadDashboard() {
   loading.value = true
   error.value = ''
   try {
-    const [userData, cacheData, auditData] = await Promise.all([
+    const orderDataPromise = fetchOrders().catch(() => [] as RechargeOrder[])
+    const [userData, cacheData, auditData, orderData] = await Promise.all([
       fetchUsers(),
       fetchContentCacheStatus(),
       fetchAuditLogs(),
+      orderDataPromise,
     ])
     users.value = userData
     cacheStatus.value = cacheData
     auditLogs.value = auditData.slice(0, 5)
+    orders.value = orderData
   } catch {
     error.value = '控制台数据加载失败'
   } finally {
