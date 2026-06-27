@@ -60,6 +60,14 @@ class PointAwardTransaction {
 		return pointAccountRepository.save(account);
 	}
 
+	@Transactional
+	public PointAccount creditRechargeOrder(UUID userId, String orderNo, int amount) {
+		PointAccount account = accountEntity(userId);
+		account.add(amount);
+		pointTransactionRepository.save(PointTransaction.rechargeOrder(userId, amount, account.balance(), orderNo));
+		return pointAccountRepository.save(account);
+	}
+
 	private boolean claimReward(UUID userId, String bookId, int episodeNum, int stage) {
 		if (watchRewardClaimRepository.existsByUserIdAndBookIdAndEpisodeNumAndStage(userId, bookId, episodeNum, stage)) {
 			return false;

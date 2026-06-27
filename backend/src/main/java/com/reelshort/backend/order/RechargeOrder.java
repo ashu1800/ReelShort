@@ -67,6 +67,24 @@ public class RechargeOrder {
 				RechargeOrderStatus.CREATED, null, now, now);
 	}
 
+	public boolean isPaid() {
+		return status == RechargeOrderStatus.PAID;
+	}
+
+	public void markPaid(String paymentChannel) {
+		if (status != RechargeOrderStatus.CREATED) {
+			throw new IllegalStateException("order cannot be settled from status " + status);
+		}
+		this.status = RechargeOrderStatus.PAID;
+		this.paymentChannel = paymentChannel;
+		this.updatedAt = OffsetDateTime.now();
+	}
+
+	void cancel() {
+		this.status = RechargeOrderStatus.CANCELLED;
+		this.updatedAt = OffsetDateTime.now();
+	}
+
 	public UUID id() {
 		return id;
 	}

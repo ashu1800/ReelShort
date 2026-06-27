@@ -49,4 +49,9 @@ public class PointsService {
 		return userActionLocks.withUserLock(userId,
 				() -> PointAccountResponse.from(pointAwardTransaction.adjustByAdmin(userId, amount, reason)));
 	}
+
+	public PointAccountResponse creditRechargeOrder(UUID userId, String orderNo, int amount) {
+		return userActionLocks.withUserLock(userId,
+				() -> PointAccountResponse.from(pointAwardTransaction.creditRechargeOrder(userId, orderNo, amount)));
+	}
 }

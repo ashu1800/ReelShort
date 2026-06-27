@@ -68,6 +68,11 @@ public class PointTransaction {
 				null, reason, OffsetDateTime.now());
 	}
 
+	public static PointTransaction rechargeOrder(UUID userId, int amount, int balanceAfter, String orderNo) {
+		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "RECHARGE_ORDER", null, null,
+				null, orderNo, OffsetDateTime.now());
+	}
+
 	public UUID id() {
 		return id;
 	}
