@@ -50,6 +50,7 @@ docker compose --env-file .env logs -f backend
 - `NGINX_PORT`
 - `POSTGRES_PORT`
 - `REDIS_PORT`
+- `REELSHORT_RATE_LIMIT_STORE`
 - `REELSHORT_SITE_URL`
 - `REELSHORT_SITE_ID`
 - `REELSHORT_REQUEST_TIMEOUT_SECONDS`
@@ -61,6 +62,7 @@ docker compose --env-file .env logs -f backend
 - `backend` 只在 Compose 内部暴露 `8080`。
 - `content-provider` 只在 Compose 内部暴露 `5000`。
 - PostgreSQL 和 Redis 的宿主机端口映射主要用于单机维护，生产可移除。
+- Compose 默认使用 Redis 存储后端限流计数；本地直接运行 Spring Boot 时默认使用内存计数。
 
 ## 当前限制
 

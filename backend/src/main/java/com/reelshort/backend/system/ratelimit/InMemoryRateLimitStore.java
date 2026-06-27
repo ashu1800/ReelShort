@@ -7,9 +7,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-import org.springframework.stereotype.Component;
-
-@Component
 public class InMemoryRateLimitStore implements RateLimitStore {
 
 	private final Clock clock;

@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class RateLimitProperties {
 
 	private boolean enabled = true;
+	private StoreType store = StoreType.MEMORY;
 	private List<RuleProperties> rules = new ArrayList<>();
 
 	public boolean isEnabled() {
@@ -18,6 +19,14 @@ public class RateLimitProperties {
 
 	public void setEnabled(boolean enabled) {
 		this.enabled = enabled;
+	}
+
+	public StoreType getStore() {
+		return store;
+	}
+
+	public void setStore(StoreType store) {
+		this.store = store;
 	}
 
 	public List<RuleProperties> getRules() {
@@ -82,5 +91,10 @@ public class RateLimitProperties {
 		public void setWindow(Duration window) {
 			this.window = window;
 		}
+	}
+
+	public enum StoreType {
+		MEMORY,
+		REDIS
 	}
 }

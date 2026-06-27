@@ -6,7 +6,7 @@
 - `backend`：Spring Boot 核心业务服务。
 - `content-provider`：Flask ReelShort 内容源服务，仅供后端内部访问。
 - `postgres`：核心业务数据库。
-- `redis`：缓存和短期状态预留。
+- `redis`：缓存和短期状态，当前用于 Docker Compose 部署下的后端限流计数。
 
 ## 本地启动
 
@@ -26,3 +26,4 @@ docker compose --env-file .env up -d --build
 - 本地开发可以暂时留空 `REELSHORT_ADMIN_PASSWORD_HASH`，后端会使用默认管理员密码哈希。
 - 默认 Compose 只把 Nginx 暴露到外部；PostgreSQL 和 Redis 的端口映射仅用于单机开发和维护，可按生产网络策略移除。
 - Flask 内容源通过 Compose 内部网络访问，不应直接暴露给公网。
+- Compose 默认设置 `REELSHORT_RATE_LIMIT_STORE=redis`，后端通过内部服务名 `redis` 访问 Redis；本地直接运行后端时默认仍使用内存限流。
