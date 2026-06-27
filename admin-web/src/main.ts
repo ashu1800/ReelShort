@@ -7,3 +7,9 @@ import { router } from './router'
 import './style.css'
 
 createApp(App).use(createPinia()).use(router).use(ElementPlus).mount('#app')
+
+window.addEventListener('admin-session-expired', () => {
+  if (router.currentRoute.value.name !== 'login') {
+    router.push({ name: 'login' })
+  }
+})
