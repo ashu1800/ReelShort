@@ -22,16 +22,25 @@ class AppRepository(private val apiClient: ReelShortApiClient) {
 
     suspend fun search(query: String): List<BookSummary> = apiClient.search(query)
 
-    suspend fun loadEpisodes(bookId: String): List<EpisodeSummary> = apiClient.getEpisodes(bookId)
+    suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary> = apiClient.getEpisodes(book.id, book.filteredTitle)
 
-    suspend fun loadVideoUrl(bookId: String, episode: Int): VideoUrl = apiClient.getVideoUrl(bookId, episode)
+    suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl =
+        apiClient.getVideoUrl(book.id, episode.number, book.filteredTitle, episode.chapterId)
 
     suspend fun reportWatchProgress(
-        bookId: String,
-        episode: Int,
+        book: BookSummary,
+        episode: EpisodeSummary,
         positionSeconds: Int,
         durationSeconds: Int,
-    ): WatchProgressReport = apiClient.reportWatchProgress(bookId, episode, positionSeconds, durationSeconds)
+    ): WatchProgressReport = apiClient.reportWatchProgress(
+        book.id,
+        book.title,
+        book.filteredTitle,
+        episode.number,
+        episode.chapterId,
+        positionSeconds,
+        durationSeconds,
+    )
 
     suspend fun loadWatchHistory(): List<WatchRecord> = apiClient.getWatchHistory()
 

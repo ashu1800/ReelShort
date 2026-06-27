@@ -33,9 +33,10 @@ class AppRepositoryTest {
     @Test
     fun episodesAndVideoUrlAreLoadedThroughRepository() = runTest {
         val repository = AppRepository(FakeReelShortApiClient())
+        val book = repository.loadHomeShelf().first()
 
-        val episodes = repository.loadEpisodes("book-1")
-        val videoUrl = repository.loadVideoUrl("book-1", 1)
+        val episodes = repository.loadEpisodes(book)
+        val videoUrl = repository.loadVideoUrl(book, episodes.first())
 
         assertEquals(8, episodes.size)
         assertEquals(1, episodes.first().number)
@@ -45,8 +46,10 @@ class AppRepositoryTest {
     @Test
     fun watchProgressPointsAndOrdersAreDelegatedToClient() = runTest {
         val repository = AppRepository(FakeReelShortApiClient())
+        val book = repository.loadHomeShelf().first()
+        val episode = repository.loadEpisodes(book).first()
 
-        val report = repository.reportWatchProgress("book-1", 1, 135, 180)
+        val report = repository.reportWatchProgress(book, episode, 135, 180)
         val history = repository.loadWatchHistory()
         val points = repository.loadPointAccount()
         val orders = repository.loadOrders()

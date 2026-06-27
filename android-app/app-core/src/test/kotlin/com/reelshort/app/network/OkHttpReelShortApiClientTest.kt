@@ -1,0 +1,252 @@
+package com.reelshort.app.network
+
+import com.reelshort.app.config.ApiConfig
+import kotlinx.coroutines.test.runTest
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.OkHttpClient
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+
+class OkHttpReelShortApiClientTest {
+    @Test
+    fun backendErrorCodeThrowsApiClientException() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""
+                        {
+                          "code": 401,
+                          "message": "invalid credentials",
+                          "data": null,
+                          "requestId": "req-1",
+                          "timestamp": "2026-06-27T15:30:00+08:00"
+                        }
+                    """.trimIndent())
+            )
+            val client = OkHttpReelShortApiClient(
+                config = ApiConfig(server.url("/api/app").toString()),
+                httpClient = OkHttpClient(),
+            )
+
+            val error = assertFailsWith<ApiClientException> {
+                client.login("demo", "bad-password")
+            }
+
+            assertEquals(200, error.statusCode)
+            assertEquals(401, error.code)
+            assertEquals("invalid credentials", error.message)
+        }
+    }
+
+    @Test
+    fun loginPostsCredentialsAndParsesSession() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                {
+                  "username": "demo",
+                  "token": "token-123",
+                  "tokenType": "Bearer"
+                }
+            """.trimIndent()))
+            val client = client(server)
+
+            val session = client.login("demo", "Password123")
+            val request = server.takeRequest()
+
+            assertEquals("/api/app/auth/login", request.path)
+            assertEquals("POST", request.method)
+            assertEquals("""{"username":"demo","password":"Password123"}""", request.body.readUtf8())
+            assertEquals("demo", session.username)
+            assertEquals("token-123", session.token)
+        }
+    }
+
+    @Test
+    fun homeShelfParsesBooksFromSpringBootResponse() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                [
+                  {
+                    "bookId": "book-1",
+                    "title": "Alpha",
+                    "filteredTitle": "alpha",
+                    "coverUrl": "https://example.com/alpha.jpg",
+                    "chapterCount": 12
+                  }
+                ]
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val books = client.getHomeShelf()
+            val request = server.takeRequest()
+
+            assertEquals("/api/app/home/recommend", request.path)
+            assertEquals("Bearer token-123", request.getHeader("Authorization"))
+            assertEquals("book-1", books.single().id)
+            assertEquals("alpha", books.single().filteredTitle)
+            assertEquals("https://example.com/alpha.jpg", books.single().coverUrl)
+        }
+    }
+
+    @Test
+    fun searchEncodesKeywordQueryParameter() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("[]"))
+            val client = client(server, token = "token-123")
+
+            val result = client.search("Alpha Love")
+            val request = server.takeRequest()
+
+            assertEquals("/api/app/content/search?keywords=Alpha%20Love", request.path)
+            assertEquals("Bearer token-123", request.getHeader("Authorization"))
+            assertEquals(emptyList(), result)
+        }
+    }
+
+    @Test
+    fun protectedContentRequestsIncludeBearerTokenAndMapEpisodesAndVideo() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                [
+                  { "episode": 1, "chapterId": "chapter-1" }
+                ]
+            """.trimIndent()))
+            server.enqueue(successBody("""
+                {
+                  "videoUrl": "https://cdn.example.com/book-1/1.m3u8",
+                  "episode": 1,
+                  "duration": 180,
+                  "nextEpisode": { "episode": 2, "chapterId": "chapter-2" }
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val episodes = client.getEpisodes("book 1", "alpha")
+            val video = client.getVideoUrl("book 1", 1, "alpha", "chapter 1")
+            val episodesRequest = server.takeRequest()
+            val videoRequest = server.takeRequest()
+
+            assertEquals("/api/app/content/books/book%201/episodes?filteredTitle=alpha", episodesRequest.path)
+            assertEquals("Bearer token-123", episodesRequest.getHeader("Authorization"))
+            assertEquals(1, episodes.single().number)
+            assertEquals("chapter-1", episodes.single().chapterId)
+            assertEquals("/api/app/content/books/book%201/episodes/1/play?filteredTitle=alpha&chapterId=chapter%201", videoRequest.path)
+            assertEquals("https://cdn.example.com/book-1/1.m3u8", video.url)
+            assertEquals(180, video.durationSeconds)
+        }
+    }
+
+    @Test
+    fun watchProgressPostsBackendContractFields() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                {
+                  "id": "00000000-0000-0000-0000-000000000001",
+                  "bookId": "book-1",
+                  "bookTitle": "Alpha",
+                  "filteredTitle": "alpha",
+                  "episodeNum": 1,
+                  "chapterId": "chapter-1",
+                  "positionSeconds": 90,
+                  "durationSeconds": 180,
+                  "progressPercent": 50,
+                  "awardedStages": [25, 50],
+                  "awardedPoints": 2,
+                  "updatedAt": "2026-06-27T15:30:00+08:00"
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val report = client.reportWatchProgress(
+                bookId = "book-1",
+                bookTitle = "Alpha",
+                filteredTitle = "alpha",
+                episode = 1,
+                chapterId = "chapter-1",
+                positionSeconds = 90,
+                durationSeconds = 180,
+            )
+            val request = server.takeRequest()
+
+            assertEquals("/api/app/watch/progress", request.path)
+            assertEquals("Bearer token-123", request.getHeader("Authorization"))
+            assertEquals(
+                """{"bookId":"book-1","bookTitle":"Alpha","filteredTitle":"alpha","episodeNum":1,"chapterId":"chapter-1","positionSeconds":90,"durationSeconds":180}""",
+                request.body.readUtf8(),
+            )
+            assertEquals(50, report.progressPercent)
+            assertEquals("chapter-1", report.chapterId)
+        }
+    }
+
+    @Test
+    fun pointsAndOrdersAreMappedFromProtectedEndpoints() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""{ "balance": 18 }"""))
+            server.enqueue(successBody("""
+                [
+                  {
+                    "id": "00000000-0000-0000-0000-000000000002",
+                    "amount": 1,
+                    "balanceAfter": 18,
+                    "source": "WATCH_REWARD",
+                    "bookId": "book-1",
+                    "episodeNum": 1,
+                    "stage": 50,
+                    "reason": "watch",
+                    "createdAt": "2026-06-27T15:30:00+08:00"
+                  }
+                ]
+            """.trimIndent()))
+            server.enqueue(successBody("""
+                [
+                  {
+                    "id": "00000000-0000-0000-0000-000000000003",
+                    "userId": "00000000-0000-0000-0000-000000000004",
+                    "orderNo": "RO202606270001",
+                    "amountCents": 990,
+                    "pointAmount": 99,
+                    "status": "CREATED",
+                    "paymentChannel": null,
+                    "createdAt": "2026-06-27T15:30:00+08:00",
+                    "updatedAt": "2026-06-27T15:30:00+08:00"
+                  }
+                ]
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val account = client.getPointAccount()
+            val orders = client.getOrders()
+
+            assertEquals(18, account.balance)
+            assertEquals(1, account.records.single().amount)
+            assertEquals("RO202606270001", orders.single().orderNo)
+            assertEquals(99, orders.single().pointAmount)
+            assertEquals("/api/app/points/account", server.takeRequest().path)
+            assertEquals("/api/app/points/records", server.takeRequest().path)
+            assertEquals("/api/app/orders", server.takeRequest().path)
+        }
+    }
+
+    private fun client(server: MockWebServer, token: String? = null): OkHttpReelShortApiClient =
+        OkHttpReelShortApiClient(
+            config = ApiConfig(server.url("/api/app").toString()),
+            httpClient = OkHttpClient(),
+            tokenProvider = { token },
+        )
+
+    private fun successBody(dataJson: String): MockResponse = MockResponse()
+        .setResponseCode(200)
+        .setBody("""
+            {
+              "code": 0,
+              "message": "success",
+              "data": $dataJson,
+              "requestId": "req-1",
+              "timestamp": "2026-06-27T15:30:00+08:00"
+            }
+        """.trimIndent())
+}
