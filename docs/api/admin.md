@@ -2,11 +2,26 @@
 
 当前文档记录阶段 1 后台管理基础接口。后台接口使用独立管理员 Bearer Token，不能复用 App 用户 Token。
 
-管理员账号配置：
+## 管理员账号与 RBAC
+
+后台管理员账号、角色和权限持久化在 PostgreSQL 中。启动时后端会根据配置引导默认管理员：
 
 - `reelshort.admin.username`：默认 `admin`。
 - `reelshort.admin.password-hash`：默认对应测试密码 `Admin123`，生产部署必须通过环境变量覆盖。
 - `reelshort.admin.token-ttl`：默认 `8h`。
+
+默认管理员会绑定 `SUPER_ADMIN` 角色，并获得当前所有后台权限。以上配置只用于默认管理员引导和 Token 有效期，不再表示后台系统只能存在一个管理员账号。
+
+当前权限代码：
+
+- `USER_READ`：读取用户、用户详情、观看记录和积分流水。
+- `USER_WRITE`：变更用户状态。
+- `POINTS_ADJUST`：后台调整用户积分。
+- `AUDIT_READ`：读取后台审计日志。
+- `CONTENT_CACHE_READ`：读取内容缓存状态。
+- `CONTENT_CACHE_WRITE`：刷新内容缓存。
+- `SYSTEM_CONFIG_READ`：读取系统配置。
+- `SYSTEM_CONFIG_WRITE`：更新系统配置。
 
 ## `POST /api/admin/auth/login`
 
@@ -46,6 +61,8 @@ Authorization: Bearer <admin-token>
 ```
 
 普通 App Token 不能访问 `/api/admin/**`。后台 Token 只用于后台接口。
+
+后台接口会校验接口所需权限。管理员已登录但缺少权限时返回 `403 forbidden`。
 
 ## `GET /api/admin/users`
 
@@ -156,4 +173,5 @@ Authorization: Bearer <admin-token>
 
 - `400`：请求字段缺失、UUID 或状态格式不合法。
 - `401`：未提供有效后台 Token，或使用了 App Token。
+- `403`：后台账号已登录但缺少接口所需权限。
 - `404`：用户不存在。
