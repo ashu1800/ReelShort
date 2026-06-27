@@ -56,6 +56,17 @@ docker compose --env-file .env logs -f backend
 - `REELSHORT_REQUEST_TIMEOUT_SECONDS`
 - `REELSHORT_JPA_DDL_AUTO`
 
+## 数据库迁移
+
+后端数据库 schema 由 Flyway 管理，迁移脚本位于 `backend/src/main/resources/db/migration`。后端启动时会自动执行未应用的迁移，然后由 JPA 校验实体和数据库结构是否一致。
+
+默认配置为：
+
+- `spring.flyway.enabled=true`
+- `spring.jpa.hibernate.ddl-auto=validate`
+
+`REELSHORT_JPA_DDL_AUTO` 仅作为开发/应急覆盖项保留，长期部署不要改回 `update`，后续表结构变化应新增 `V2__*.sql`、`V3__*.sql` 等迁移脚本。
+
 ## 网络边界
 
 - Nginx 是唯一公网入口。
