@@ -80,11 +80,21 @@ class AppUiActionsTest {
         actions.updatePlaybackPosition(positionSeconds = 100, durationSeconds = 200)
         dataSource.videoUrlVersion = 2
         actions.refreshPlaybackUrl()
+        actions.reportProgress(
+            positionSeconds = controller.state.value.playback.positionSeconds,
+            durationSeconds = controller.state.value.playback.durationSeconds,
+        )
 
         val state = controller.state.value
+        assertEquals(100, state.playback.positionSeconds)
         assertEquals(50, state.playback.progressPercent)
+        assertEquals(100, state.playback.lastReportedPositionSeconds)
+        assertEquals(50, dataSource.lastProgress?.progressPercent)
         assertEquals("https://media.local/book-1/1-v2.m3u8", state.playback.videoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "video:book-1:1", "video:book-1:1"), dataSource.calls)
+        assertEquals(
+            listOf("episodes:book-1", "video:book-1:1", "video:book-1:1", "progress:book-1:1:100", "history", "points"),
+            dataSource.calls,
+        )
     }
 
     @Test
@@ -126,6 +136,7 @@ class AppUiActionsTest {
         )
         val calls = mutableListOf<String>()
         var videoUrlVersion: Int = 1
+        var lastProgress: WatchProgressReport? = null
 
         override suspend fun login(username: String, password: String): AuthSession {
             calls += "login:$username"
@@ -163,14 +174,32 @@ class AppUiActionsTest {
             episode: EpisodeSummary,
             positionSeconds: Int,
             durationSeconds: Int,
-        ): WatchProgressReport =
-            WatchProgressReport(book.id, book.title, book.filteredTitle, episode.number, episode.chapterId, positionSeconds, durationSeconds, 75)
+        ): WatchProgressReport {
+            calls += "progress:${book.id}:${episode.number}:$positionSeconds"
+            val percent = if (durationSeconds <= 0) 0 else ((positionSeconds.toDouble() / durationSeconds) * 100).toInt()
+            val progress = WatchProgressReport(
+                book.id,
+                book.title,
+                book.filteredTitle,
+                episode.number,
+                episode.chapterId,
+                positionSeconds,
+                durationSeconds,
+                percent,
+            )
+            lastProgress = progress
+            return progress
+        }
 
-        override suspend fun loadWatchHistory(): List<WatchRecord> =
-            listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 1, progressPercent = 75))
+        override suspend fun loadWatchHistory(): List<WatchRecord> {
+            calls += "history"
+            return listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 1, progressPercent = 75))
+        }
 
-        override suspend fun loadPointAccount(): PointAccount =
-            PointAccount(balance = 25, records = listOf(PointRecord(amount = 5, reason = "WATCH_REWARD")))
+        override suspend fun loadPointAccount(): PointAccount {
+            calls += "points"
+            return PointAccount(balance = 25, records = listOf(PointRecord(amount = 5, reason = "WATCH_REWARD")))
+        }
 
         override suspend fun loadOrders(): List<RechargeOrderSummary> =
             listOf(RechargeOrderSummary(orderNo = "RO202606270001", amountCents = 100, pointAmount = 10, status = "CREATED"))
