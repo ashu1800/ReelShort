@@ -128,6 +128,12 @@ h1 {
   font-weight: 700;
 }
 
+.mono {
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+}
+
 .drawer-body {
   display: grid;
   gap: 18px;

@@ -24,6 +24,7 @@ npm run build
 - 积分调整：`POST /api/admin/users/{userId}/points/adjust`
 - 用户观看记录：`GET /api/admin/users/{userId}/watch-records`
 - 用户积分流水：`GET /api/admin/users/{userId}/point-records`
+- 订单管理：`GET /api/admin/orders`
 - 内容缓存：`GET /api/admin/content/cache`
 - 内容货架刷新：`POST /api/admin/content/cache/shelves/{shelfType}/refresh`
 - 系统配置：`GET /api/admin/system/configs`
