@@ -96,6 +96,25 @@ export type RechargeOrder = {
   updatedAt: string
 }
 
+export type PaymentEventStatus = 'PROCESSED' | 'REJECTED'
+
+export type PaymentEvent = {
+  providerEventId: string
+  orderNo: string
+  paymentChannel: string
+  amountCents: number
+  status: PaymentEventStatus
+  failureReason: string | null
+  createdAt: string
+  processedAt: string
+}
+
+export type PaymentEventFilters = {
+  status?: PaymentEventStatus
+  orderNo?: string
+  paymentChannel?: string
+}
+
 export async function login(username: string, password: string) {
   const response = await http.post<ApiResponse<AdminLoginResponse>>('/auth/login', {
     username,
@@ -169,5 +188,12 @@ export async function updateSystemConfig(configKey: string, value: string) {
 
 export async function fetchOrders() {
   const response = await http.get<ApiResponse<RechargeOrder[]>>('/orders')
+  return response.data.data
+}
+
+export async function fetchPaymentEvents(filters: PaymentEventFilters = {}) {
+  const response = await http.get<ApiResponse<PaymentEvent[]>>('/payments/events', {
+    params: filters,
+  })
   return response.data.data
 }

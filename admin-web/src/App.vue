@@ -4,6 +4,7 @@ import {
   DataAnalysis,
   Document,
   FolderOpened,
+  Money,
   Tickets,
   Setting,
   SwitchButton,
@@ -42,6 +43,10 @@ function logout() {
         <el-menu-item index="/orders">
           <el-icon><Tickets /></el-icon>
           <span>订单管理</span>
+        </el-menu-item>
+        <el-menu-item index="/payments/events">
+          <el-icon><Money /></el-icon>
+          <span>支付事件</span>
         </el-menu-item>
         <el-menu-item index="/content-cache">
           <el-icon><FolderOpened /></el-icon>
