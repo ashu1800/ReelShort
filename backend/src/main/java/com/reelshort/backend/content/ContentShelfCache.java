@@ -7,7 +7,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 @Entity
@@ -19,8 +18,7 @@ public class ContentShelfCache {
 	@Column(name = "shelf_type", length = 32)
 	private ContentShelfType shelfType;
 
-	@Lob
-	@Column(name = "books_json", nullable = false)
+	@Column(name = "books_json", nullable = false, columnDefinition = "text")
 	private String booksJson;
 
 	@Column(name = "item_count", nullable = false)
