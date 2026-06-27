@@ -22,6 +22,7 @@ public class AdminAuditController {
 	}
 
 	@GetMapping
+	@RequireAdminPermission(AdminPermissions.AUDIT_READ)
 	public ApiResponse<List<AdminAuditLogResponse>> auditLogs(HttpServletRequest request) {
 		return ApiResponse.success(adminAuditService.logs(), requestId(request));
 	}

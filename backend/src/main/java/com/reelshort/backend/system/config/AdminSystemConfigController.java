@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.reelshort.backend.admin.AdminAuditService;
+import com.reelshort.backend.admin.AdminPermissions;
 import com.reelshort.backend.admin.CurrentAdmin;
+import com.reelshort.backend.admin.RequireAdminPermission;
 import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
@@ -32,11 +34,13 @@ public class AdminSystemConfigController {
 	}
 
 	@GetMapping
+	@RequireAdminPermission(AdminPermissions.SYSTEM_CONFIG_READ)
 	public ApiResponse<List<SystemConfigResponse>> configs(HttpServletRequest request) {
 		return ApiResponse.success(systemConfigService.configs(), requestId(request));
 	}
 
 	@PostMapping("/{configKey}")
+	@RequireAdminPermission(AdminPermissions.SYSTEM_CONFIG_WRITE)
 	public ApiResponse<SystemConfigResponse> update(CurrentAdmin currentAdmin, @PathVariable String configKey,
 			@Valid @RequestBody SystemConfigUpdateRequest updateRequest,
 			HttpServletRequest request) {
