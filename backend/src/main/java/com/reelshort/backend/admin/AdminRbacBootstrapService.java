@@ -66,6 +66,7 @@ public class AdminRbacBootstrapService implements ApplicationRunner {
 		descriptions.put(AdminPermissions.CONTENT_CACHE_WRITE, "Refresh content cache");
 		descriptions.put(AdminPermissions.SYSTEM_CONFIG_READ, "Read system configs");
 		descriptions.put(AdminPermissions.SYSTEM_CONFIG_WRITE, "Update system configs");
+		descriptions.put(AdminPermissions.SYSTEM_RUNTIME_READ, "Read system runtime diagnostics");
 		descriptions.put(AdminPermissions.ORDER_READ, "Read recharge orders");
 		descriptions.put(AdminPermissions.PAYMENT_EVENT_READ, "Read payment callback events");
 		return descriptions;

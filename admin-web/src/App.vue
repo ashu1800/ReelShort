@@ -5,6 +5,7 @@ import {
   Document,
   FolderOpened,
   Money,
+  Monitor,
   Tickets,
   Setting,
   SwitchButton,
@@ -62,6 +63,10 @@ async function logout() {
         <el-menu-item index="/system-configs">
           <el-icon><Setting /></el-icon>
           <span>系统配置</span>
+        </el-menu-item>
+        <el-menu-item index="/system-runtime">
+          <el-icon><Monitor /></el-icon>
+          <span>运行诊断</span>
         </el-menu-item>
         <el-menu-item index="/audit-logs">
           <el-icon><Document /></el-icon>

@@ -26,7 +26,9 @@
 - `CONTENT_CACHE_WRITE`：刷新内容缓存。
 - `SYSTEM_CONFIG_READ`：读取系统配置。
 - `SYSTEM_CONFIG_WRITE`：更新系统配置。
+- `SYSTEM_RUNTIME_READ`：读取后台运行诊断。
 - `ORDER_READ`：读取充值订单。
+- `PAYMENT_EVENT_READ`：读取支付回调事件。
 
 ## `POST /api/admin/auth/login`
 
@@ -233,6 +235,53 @@ Authorization: Bearer <admin-token>
 ## `POST /api/admin/system/configs/{configKey}`
 
 更新后台系统配置。成功后写入审计日志 `SYSTEM_CONFIG_UPDATED`。
+
+## `GET /api/admin/system/runtime`
+
+返回后端运行诊断摘要，需要 `SYSTEM_RUNTIME_READ` 权限。该接口只返回脱敏后的运行状态，不返回数据库 URL、账号密码、Redis 地址、环境变量或异常堆栈。
+
+响应数据：
+
+```json
+{
+  "status": "DEGRADED",
+  "checkedAt": "2026-06-27T09:30:00Z",
+  "application": {
+    "service": "reelshort-backend",
+    "version": "0.0.1-SNAPSHOT",
+    "javaVersion": "17.0.12",
+    "uptimeSeconds": 3600
+  },
+  "memory": {
+    "usedBytes": 12345678,
+    "maxBytes": 536870912
+  },
+  "dependencies": [
+    {
+      "name": "database",
+      "status": "UP",
+      "detail": "validated"
+    },
+    {
+      "name": "redis",
+      "status": "DOWN",
+      "detail": "unavailable"
+    },
+    {
+      "name": "content-provider",
+      "status": "UP",
+      "detail": "reachable"
+    }
+  ]
+}
+```
+
+总体状态规则：
+
+- `UP`：所有依赖检查均为 `UP`。
+- `DEGRADED`：至少一个依赖检查为 `DOWN`。
+
+依赖异常不会导致接口整体失败；接口仍返回 `200` 和统一成功响应，具体异常由 `dependencies[].status` 和脱敏 `detail` 表达。
 
 ## `GET /api/admin/content/cache`
 
