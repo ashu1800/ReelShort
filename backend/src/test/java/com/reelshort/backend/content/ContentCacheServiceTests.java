@@ -94,6 +94,22 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
+	void getBookReturnsCachedBookDetail() {
+		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(book("book-detail", "Detail")));
+
+		ContentBook book = contentCacheService.getBook("book-detail");
+
+		assertThat(book).isEqualTo(book("book-detail", "Detail"));
+	}
+
+	@Test
+	void getBookThrowsNotFoundWhenBookIsNotCached() {
+		assertThatThrownBy(() -> contentCacheService.getBook("missing-book"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content book not cached");
+	}
+
+	@Test
 	void cacheStatusIncludesAllShelvesAndBookCount() {
 		when(contentProvider.getShelf(ContentShelfType.DRAMA_DUB)).thenReturn(List.of(book("book-dub", "Dub")));
 		contentCacheService.getShelf(ContentShelfType.DRAMA_DUB);

@@ -61,6 +61,13 @@ public class ContentCacheService {
 	}
 
 	@Transactional(readOnly = true)
+	public ContentBook getBook(String bookId) {
+		return contentBookCacheRepository.findById(bookId)
+				.map(ContentBookCache::toContentBook)
+				.orElseThrow(() -> new ContentProviderException(404, "content book not cached"));
+	}
+
+	@Transactional(readOnly = true)
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
 		return contentProvider.getEpisodes(bookId, filteredTitle);
 	}
