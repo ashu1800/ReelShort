@@ -1,5 +1,6 @@
 import pytest
 
+import app as app_module
 from app import ReelShortClient, UpstreamError, create_app
 
 
@@ -330,4 +331,24 @@ def test_reelshort_client_discovers_build_id_from_site_id_page(monkeypatch):
     assert captured == {
         "url": "https://site.example/id",
         "timeout": 7,
+    }
+
+
+def test_content_provider_runtime_host_and_port_are_environment_driven(monkeypatch):
+    captured = {}
+
+    class FakeApp:
+        def run(self, host, port):
+            captured["host"] = host
+            captured["port"] = port
+
+    monkeypatch.setattr(app_module, "create_app", lambda: FakeApp())
+    monkeypatch.setenv("CONTENT_PROVIDER_HOST", "0.0.0.0")
+    monkeypatch.setenv("CONTENT_PROVIDER_PORT", "5050")
+
+    app_module.run_app()
+
+    assert captured == {
+        "host": "0.0.0.0",
+        "port": 5050,
     }
