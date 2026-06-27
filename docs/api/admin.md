@@ -28,6 +28,8 @@
 - `SYSTEM_CONFIG_WRITE`：更新系统配置。
 - `SYSTEM_RUNTIME_READ`：读取后台运行诊断。
 - `SYSTEM_LOG_READ`：读取后端应用日志。
+- `SYSTEM_ALERT_READ`：读取系统异常告警。
+- `SYSTEM_ALERT_WRITE`：确认系统异常告警。
 - `ORDER_READ`：读取充值订单。
 - `PAYMENT_EVENT_READ`：读取支付回调事件。
 
@@ -282,7 +284,50 @@ Authorization: Bearer <admin-token>
 - `UP`：所有依赖检查均为 `UP`。
 - `DEGRADED`：至少一个依赖检查为 `DOWN`。
 
-依赖异常不会导致接口整体失败；接口仍返回 `200` 和统一成功响应，具体异常由 `dependencies[].status` 和脱敏 `detail` 表达。
+依赖异常不会导致接口整体失败；接口仍返回 `200` 和统一成功响应，具体异常由 `dependencies[].status` 和脱敏 `detail` 表达。该接口保持只读；需要沉淀异常告警时调用 `POST /api/admin/system/alerts/evaluate`。
+
+## `GET /api/admin/system/alerts`
+
+返回系统异常告警列表，需要 `SYSTEM_ALERT_READ` 权限。
+
+查询参数：
+
+- `status`：可选，`OPEN`、`ACKNOWLEDGED` 或 `RESOLVED`。
+
+响应数据：
+
+```json
+[
+  {
+    "id": "uuid",
+    "alertKey": "runtime:dependency:redis",
+    "severity": "WARNING",
+    "status": "OPEN",
+    "title": "Runtime dependency down: redis",
+    "detail": "unavailable",
+    "firstSeenAt": "2026-06-27T10:00:00Z",
+    "lastSeenAt": "2026-06-27T10:05:00Z",
+    "acknowledgedAt": null,
+    "acknowledgedBy": null,
+    "resolvedAt": null
+  }
+]
+```
+
+## `POST /api/admin/system/alerts/evaluate`
+
+主动执行一次运行诊断并评估告警，需要 `SYSTEM_ALERT_READ` 权限。该接口返回评估后的告警列表。
+
+告警规则：
+
+- 每个 `DOWN` 依赖生成或更新一条告警。
+- 告警唯一键为 `runtime:dependency:<name>`。
+- `database` 依赖为 `CRITICAL`，其他依赖为 `WARNING`。
+- 依赖恢复为 `UP` 后，对应 `OPEN` 或 `ACKNOWLEDGED` 告警会转为 `RESOLVED`。
+
+## `POST /api/admin/system/alerts/{alertId}/acknowledge`
+
+确认一条未处理告警，需要 `SYSTEM_ALERT_WRITE` 权限。成功后告警状态从 `OPEN` 变为 `ACKNOWLEDGED`，并写入后台审计日志 `SYSTEM_ALERT_ACKNOWLEDGED`。已恢复告警重复确认不会改变状态。
 
 ## `GET /api/admin/system/logs`
 

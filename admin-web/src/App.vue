@@ -7,6 +7,7 @@ import {
   Money,
   Monitor,
   Notebook,
+  Warning,
   Tickets,
   Setting,
   SwitchButton,
@@ -68,6 +69,10 @@ async function logout() {
         <el-menu-item index="/system-runtime">
           <el-icon><Monitor /></el-icon>
           <span>运行诊断</span>
+        </el-menu-item>
+        <el-menu-item index="/system-alerts">
+          <el-icon><Warning /></el-icon>
+          <span>异常告警</span>
         </el-menu-item>
         <el-menu-item index="/system-logs">
           <el-icon><Notebook /></el-icon>
