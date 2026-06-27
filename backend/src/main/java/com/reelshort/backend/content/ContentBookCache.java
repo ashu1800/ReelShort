@@ -77,4 +77,8 @@ public class ContentBookCache {
 	public OffsetDateTime updatedAt() {
 		return updatedAt;
 	}
+
+	public ContentBook toContentBook() {
+		return new ContentBook(bookId, title, filteredTitle, coverUrl, chapterCount);
+	}
 }

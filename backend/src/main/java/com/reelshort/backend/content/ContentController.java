@@ -42,6 +42,13 @@ public class ContentController {
 		return ApiResponse.success(contentCacheService.getShelf(ContentShelfType.fromApiValue(shelfType)), requestId);
 	}
 
+	@GetMapping("/books/{bookId}")
+	public ApiResponse<ContentBook> detail(@PathVariable @NotBlank String bookId, CurrentUser currentUser,
+			HttpServletRequest request) {
+		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
+		return ApiResponse.success(contentCacheService.getBook(bookId), requestId);
+	}
+
 	@GetMapping("/books/{bookId}/episodes")
 	public ApiResponse<List<ContentEpisode>> episodes(@PathVariable @NotBlank String bookId,
 			@RequestParam @NotBlank String filteredTitle,

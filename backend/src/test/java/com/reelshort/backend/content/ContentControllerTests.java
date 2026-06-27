@@ -103,6 +103,21 @@ class ContentControllerTests {
 	}
 
 	@Test
+	void detailReturnsCachedBookInUnifiedEnvelope() throws Exception {
+		when(contentCacheService.getBook("book-1"))
+				.thenReturn(new ContentBook("book-1", "Love Story", "love-story",
+						"https://example.com/cover.jpg", 12));
+
+		mockMvc.perform(get("/api/app/content/books/book-1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data.bookId").value("book-1"))
+				.andExpect(jsonPath("$.data.title").value("Love Story"))
+				.andExpect(jsonPath("$.data.filteredTitle").value("love-story"))
+				.andExpect(jsonPath("$.data.chapterCount").value(12));
+	}
+
+	@Test
 	void playReturnsProviderVideoInUnifiedEnvelope() throws Exception {
 		when(contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
 				.thenReturn(new ContentVideo(
