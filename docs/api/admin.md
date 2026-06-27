@@ -27,6 +27,7 @@
 - `SYSTEM_CONFIG_READ`：读取系统配置。
 - `SYSTEM_CONFIG_WRITE`：更新系统配置。
 - `SYSTEM_RUNTIME_READ`：读取后台运行诊断。
+- `SYSTEM_LOG_READ`：读取后端应用日志。
 - `ORDER_READ`：读取充值订单。
 - `PAYMENT_EVENT_READ`：读取支付回调事件。
 
@@ -282,6 +283,36 @@ Authorization: Bearer <admin-token>
 - `DEGRADED`：至少一个依赖检查为 `DOWN`。
 
 依赖异常不会导致接口整体失败；接口仍返回 `200` 和统一成功响应，具体异常由 `dependencies[].status` 和脱敏 `detail` 表达。
+
+## `GET /api/admin/system/logs`
+
+返回后端应用日志最近内容，需要 `SYSTEM_LOG_READ` 权限。该接口只读取 `reelshort.system.logs.root` 配置目录下的普通 `.log` 文件，不接受绝对路径、子目录路径、`..` 路径或非 `.log` 文件。
+
+查询参数：
+
+- `file`：可选，日志文件名，例如 `backend.log`；未传时读取可用文件列表中的第一个文件。
+- `lines`：可选，读取最近多少行；默认 `200`，最大受 `reelshort.system.logs.max-lines` 限制，默认 `500`。
+
+后端只读取日志文件尾部内容，单次读取字节数受 `reelshort.system.logs.max-bytes` 限制，默认 `1048576`。
+
+响应数据：
+
+```json
+{
+  "files": ["backend.log"],
+  "selectedFile": "backend.log",
+  "requestedLines": 200,
+  "lineCount": 2,
+  "truncated": false,
+  "updatedAt": "2026-06-27T09:30:00Z",
+  "lines": [
+    "2026-06-27 INFO started",
+    "2026-06-27 INFO ready"
+  ]
+}
+```
+
+当日志目录不存在或没有可读 `.log` 文件时，接口返回空 `files` 和空 `lines`。非法文件名返回 `400 bad request`，不会泄漏服务器实际路径。
 
 ## `GET /api/admin/content/cache`
 

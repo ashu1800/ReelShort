@@ -30,4 +30,5 @@ npm run build
 - 系统配置：`GET /api/admin/system/configs`
 - 系统配置更新：`POST /api/admin/system/configs/{configKey}`
 - 运行诊断：`GET /api/admin/system/runtime`
+- 系统日志：`GET /api/admin/system/logs`
 - 审计日志：`GET /api/admin/audit-logs`
