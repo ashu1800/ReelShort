@@ -7,7 +7,7 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
+/logs/
 infra/backups/
 
 # Java / Gradle
