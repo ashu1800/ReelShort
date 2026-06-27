@@ -173,6 +173,23 @@ export type SystemLogResponse = {
   lines: string[]
 }
 
+export type SystemAlertStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED'
+export type SystemAlertSeverity = 'WARNING' | 'CRITICAL'
+
+export type SystemAlert = {
+  id: string
+  alertKey: string
+  severity: SystemAlertSeverity
+  status: SystemAlertStatus
+  title: string
+  detail: string
+  firstSeenAt: string
+  lastSeenAt: string
+  acknowledgedAt: string | null
+  acknowledgedBy: string | null
+  resolvedAt: string | null
+}
+
 export async function login(username: string, password: string) {
   const response = await http.post<ApiResponse<AdminLoginResponse>>('/auth/login', {
     username,
@@ -255,6 +272,23 @@ export async function fetchSystemLogs(file?: string, lines = 200) {
   const response = await http.get<ApiResponse<SystemLogResponse>>('/system/logs', {
     params: { file, lines },
   })
+  return response.data.data
+}
+
+export async function fetchSystemAlerts(status?: SystemAlertStatus) {
+  const response = await http.get<ApiResponse<SystemAlert[]>>('/system/alerts', {
+    params: { status },
+  })
+  return response.data.data
+}
+
+export async function evaluateSystemAlerts() {
+  const response = await http.post<ApiResponse<SystemAlert[]>>('/system/alerts/evaluate')
+  return response.data.data
+}
+
+export async function acknowledgeSystemAlert(alertId: string) {
+  const response = await http.post<ApiResponse<SystemAlert>>(`/system/alerts/${alertId}/acknowledge`)
   return response.data.data
 }
 
