@@ -18,6 +18,9 @@ public class AdminToken {
 	@Column(nullable = false, unique = true, length = 64)
 	private String tokenHash;
 
+	@Column(name = "admin_user_id")
+	private UUID adminUserId;
+
 	@Column(nullable = false, length = 64)
 	private String username;
 
@@ -30,16 +33,22 @@ public class AdminToken {
 	protected AdminToken() {
 	}
 
-	private AdminToken(UUID id, String tokenHash, String username, OffsetDateTime issuedAt, OffsetDateTime expiresAt) {
+	private AdminToken(UUID id, String tokenHash, UUID adminUserId, String username, OffsetDateTime issuedAt,
+			OffsetDateTime expiresAt) {
 		this.id = id;
 		this.tokenHash = tokenHash;
+		this.adminUserId = adminUserId;
 		this.username = username;
 		this.issuedAt = issuedAt;
 		this.expiresAt = expiresAt;
 	}
 
-	public static AdminToken issue(String tokenHash, String username, OffsetDateTime expiresAt) {
-		return new AdminToken(UUID.randomUUID(), tokenHash, username, OffsetDateTime.now(), expiresAt);
+	public static AdminToken issue(String tokenHash, UUID adminUserId, String username, OffsetDateTime expiresAt) {
+		return new AdminToken(UUID.randomUUID(), tokenHash, adminUserId, username, OffsetDateTime.now(), expiresAt);
+	}
+
+	public UUID adminUserId() {
+		return adminUserId;
 	}
 
 	public String username() {

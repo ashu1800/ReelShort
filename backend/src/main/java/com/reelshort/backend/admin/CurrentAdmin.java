@@ -1,4 +1,11 @@
 package com.reelshort.backend.admin;
 
-public record CurrentAdmin(String username) {
+import java.util.Set;
+import java.util.UUID;
+
+public record CurrentAdmin(UUID adminUserId, String username, Set<String> permissions) {
+
+	public CurrentAdmin {
+		permissions = Set.copyOf(permissions);
+	}
 }

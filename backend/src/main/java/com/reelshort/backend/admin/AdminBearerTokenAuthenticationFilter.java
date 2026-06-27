@@ -23,10 +23,13 @@ public class AdminBearerTokenAuthenticationFilter extends OncePerRequestFilter {
 	public static final String AUTH_FAILURE_ATTRIBUTE = "adminAuthFailure";
 
 	private final AdminTokenRepository adminTokenRepository;
+	private final AdminUserRepository adminUserRepository;
 	private final TokenHasher tokenHasher;
 
-	public AdminBearerTokenAuthenticationFilter(AdminTokenRepository adminTokenRepository, TokenHasher tokenHasher) {
+	public AdminBearerTokenAuthenticationFilter(AdminTokenRepository adminTokenRepository,
+			AdminUserRepository adminUserRepository, TokenHasher tokenHasher) {
 		this.adminTokenRepository = adminTokenRepository;
+		this.adminUserRepository = adminUserRepository;
 		this.tokenHasher = tokenHasher;
 	}
 
@@ -56,7 +59,21 @@ public class AdminBearerTokenAuthenticationFilter extends OncePerRequestFilter {
 			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "token expired");
 			return;
 		}
-		AdminPrincipal principal = new AdminPrincipal(adminToken.username());
+		if (adminToken.adminUserId() == null) {
+			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "legacy token");
+			return;
+		}
+		adminUserRepository.findWithRolesById(adminToken.adminUserId())
+				.ifPresentOrElse(admin -> authenticateAdmin(request, admin),
+						() -> request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "admin missing"));
+	}
+
+	private void authenticateAdmin(HttpServletRequest request, AdminUser admin) {
+		if (admin.status() != AdminUserStatus.ACTIVE) {
+			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "admin disabled");
+			return;
+		}
+		AdminPrincipal principal = new AdminPrincipal(admin.id(), admin.username(), admin.permissionCodes());
 		UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
 				principal, null, List.of());
 		SecurityContextHolder.getContext().setAuthentication(authentication);

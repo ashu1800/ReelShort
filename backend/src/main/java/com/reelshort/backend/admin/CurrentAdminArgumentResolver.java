@@ -24,6 +24,6 @@ public class CurrentAdminArgumentResolver implements HandlerMethodArgumentResolv
 		if (authentication == null || !(authentication.getPrincipal() instanceof AdminPrincipal principal)) {
 			return null;
 		}
-		return new CurrentAdmin(principal.username());
+		return new CurrentAdmin(principal.adminUserId(), principal.username(), principal.permissions());
 	}
 }
