@@ -17,6 +17,7 @@ import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.content.ContentProviderException;
 import com.reelshort.backend.payment.PaymentException;
 import com.reelshort.backend.system.api.ApiErrorResponse;
+import com.reelshort.backend.system.logs.SystemLogException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
@@ -62,6 +63,12 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(PaymentException.class)
 	public ResponseEntity<ApiErrorResponse> handlePaymentException(PaymentException exception,
+			HttpServletRequest request) {
+		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(SystemLogException.class)
+	public ResponseEntity<ApiErrorResponse> handleSystemLogException(SystemLogException exception,
 			HttpServletRequest request) {
 		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
 	}

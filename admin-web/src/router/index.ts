@@ -7,6 +7,7 @@ import LoginView from '../views/LoginView.vue'
 import OrdersView from '../views/OrdersView.vue'
 import PaymentEventsView from '../views/PaymentEventsView.vue'
 import SystemConfigsView from '../views/SystemConfigsView.vue'
+import SystemLogsView from '../views/SystemLogsView.vue'
 import SystemRuntimeView from '../views/SystemRuntimeView.vue'
 import UsersView from '../views/UsersView.vue'
 
@@ -53,6 +54,11 @@ export const router = createRouter({
       path: '/system-runtime',
       name: 'system-runtime',
       component: SystemRuntimeView,
+    },
+    {
+      path: '/system-logs',
+      name: 'system-logs',
+      component: SystemLogsView,
     },
     {
       path: '/audit-logs',

@@ -12,11 +12,12 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.reelshort.backend.admin.AdminPermissionInterceptor;
 import com.reelshort.backend.admin.CurrentAdminArgumentResolver;
 import com.reelshort.backend.auth.CurrentUserArgumentResolver;
+import com.reelshort.backend.system.logs.SystemLogProperties;
 import com.reelshort.backend.system.ratelimit.RateLimitInterceptor;
 import com.reelshort.backend.system.ratelimit.RateLimitProperties;
 
 @Configuration
-@EnableConfigurationProperties(RateLimitProperties.class)
+@EnableConfigurationProperties({RateLimitProperties.class, SystemLogProperties.class})
 public class WebMvcConfig implements WebMvcConfigurer {
 
 	private final CurrentUserArgumentResolver currentUserArgumentResolver;

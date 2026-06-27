@@ -163,6 +163,16 @@ export type SystemRuntimeResponse = {
   dependencies: RuntimeDependencyStatus[]
 }
 
+export type SystemLogResponse = {
+  files: string[]
+  selectedFile: string | null
+  requestedLines: number
+  lineCount: number
+  truncated: boolean
+  updatedAt: string | null
+  lines: string[]
+}
+
 export async function login(username: string, password: string) {
   const response = await http.post<ApiResponse<AdminLoginResponse>>('/auth/login', {
     username,
@@ -238,6 +248,13 @@ export async function fetchSystemConfigs() {
 
 export async function fetchSystemRuntime() {
   const response = await http.get<ApiResponse<SystemRuntimeResponse>>('/system/runtime')
+  return response.data.data
+}
+
+export async function fetchSystemLogs(file?: string, lines = 200) {
+  const response = await http.get<ApiResponse<SystemLogResponse>>('/system/logs', {
+    params: { file, lines },
+  })
   return response.data.data
 }
 
