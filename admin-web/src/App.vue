@@ -4,6 +4,7 @@ import {
   DataAnalysis,
   Document,
   FolderOpened,
+  Setting,
   SwitchButton,
   User,
 } from '@element-plus/icons-vue'
@@ -40,6 +41,10 @@ function logout() {
         <el-menu-item index="/content-cache">
           <el-icon><FolderOpened /></el-icon>
           <span>内容缓存</span>
+        </el-menu-item>
+        <el-menu-item index="/system-configs">
+          <el-icon><Setting /></el-icon>
+          <span>系统配置</span>
         </el-menu-item>
         <el-menu-item index="/audit-logs">
           <el-icon><Document /></el-icon>

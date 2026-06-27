@@ -22,6 +22,38 @@ export type AdminUserSummary = {
   createdAt: string
 }
 
+export type AdminUserDetail = AdminUserSummary & {
+  watchRecordCount: number
+  pointRecordCount: number
+}
+
+export type WatchRecord = {
+  id: string
+  bookId: string
+  bookTitle: string
+  filteredTitle: string
+  episodeNum: number
+  chapterId: string
+  positionSeconds: number
+  durationSeconds: number
+  progressPercent: number
+  awardedStages: number[]
+  awardedPoints: number
+  updatedAt: string
+}
+
+export type PointRecord = {
+  id: string
+  amount: number
+  balanceAfter: number
+  source: string
+  bookId: string | null
+  episodeNum: number | null
+  stage: number | null
+  reason: string | null
+  createdAt: string
+}
+
 export type ContentCacheStatus = {
   bookCount: number
   episodeCacheCount: number
@@ -43,6 +75,13 @@ export type AdminAuditLog = {
   createdAt: string
 }
 
+export type SystemConfig = {
+  key: string
+  value: string
+  description: string
+  updatedAt: string | null
+}
+
 export async function login(username: string, password: string) {
   const response = await http.post<ApiResponse<AdminLoginResponse>>('/auth/login', {
     username,
@@ -56,12 +95,60 @@ export async function fetchUsers() {
   return response.data.data
 }
 
+export async function fetchUserDetail(userId: string) {
+  const response = await http.get<ApiResponse<AdminUserDetail>>(`/users/${userId}`)
+  return response.data.data
+}
+
+export async function updateUserStatus(userId: string, status: AdminUserSummary['status']) {
+  const response = await http.post<ApiResponse<AdminUserDetail>>(`/users/${userId}/status`, {
+    status,
+  })
+  return response.data.data
+}
+
+export async function adjustUserPoints(userId: string, amount: number, reason: string) {
+  const response = await http.post<ApiResponse<AdminUserDetail>>(`/users/${userId}/points/adjust`, {
+    amount,
+    reason,
+  })
+  return response.data.data
+}
+
+export async function fetchUserWatchRecords(userId: string) {
+  const response = await http.get<ApiResponse<WatchRecord[]>>(`/users/${userId}/watch-records`)
+  return response.data.data
+}
+
+export async function fetchUserPointRecords(userId: string) {
+  const response = await http.get<ApiResponse<PointRecord[]>>(`/users/${userId}/point-records`)
+  return response.data.data
+}
+
 export async function fetchContentCacheStatus() {
   const response = await http.get<ApiResponse<ContentCacheStatus>>('/content/cache')
   return response.data.data
 }
 
+export async function refreshContentShelf(shelfType: string) {
+  const response = await http.post<ApiResponse<unknown[]>>(`/content/cache/shelves/${shelfType}/refresh`)
+  return response.data.data
+}
+
 export async function fetchAuditLogs() {
   const response = await http.get<ApiResponse<AdminAuditLog[]>>('/audit-logs')
+  return response.data.data
+}
+
+export async function fetchSystemConfigs() {
+  const response = await http.get<ApiResponse<SystemConfig[]>>('/system/configs')
+  return response.data.data
+}
+
+export async function updateSystemConfig(configKey: string, value: string) {
+  const response = await http.post<ApiResponse<SystemConfig>>(
+    `/system/configs/${configKey}`,
+    { value },
+  )
   return response.data.data
 }

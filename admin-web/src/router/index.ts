@@ -4,6 +4,7 @@ import AuditLogsView from '../views/AuditLogsView.vue'
 import ContentCacheView from '../views/ContentCacheView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import LoginView from '../views/LoginView.vue'
+import SystemConfigsView from '../views/SystemConfigsView.vue'
 import UsersView from '../views/UsersView.vue'
 
 export const router = createRouter({
@@ -29,6 +30,11 @@ export const router = createRouter({
       path: '/content-cache',
       name: 'content-cache',
       component: ContentCacheView,
+    },
+    {
+      path: '/system-configs',
+      name: 'system-configs',
+      component: SystemConfigsView,
     },
     {
       path: '/audit-logs',
