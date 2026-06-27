@@ -15,6 +15,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.admin.AdminBearerTokenAuthenticationFilter;
 import com.reelshort.backend.admin.AdminProperties;
+import com.reelshort.backend.admin.AdminSessionProperties;
 import com.reelshort.backend.system.api.ApiErrorResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
@@ -22,7 +23,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
-@EnableConfigurationProperties({AdminProperties.class, AuthSessionProperties.class})
+@EnableConfigurationProperties({AdminProperties.class, AdminSessionProperties.class, AuthSessionProperties.class})
 public class SecurityConfig {
 
 	private final BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter;
@@ -67,6 +68,11 @@ public class SecurityConfig {
 		}
 		if ("token expired".equals(failure) || "token revoked".equals(failure)) {
 			writeError(request, response, HttpStatus.UNAUTHORIZED, failure);
+			return;
+		}
+		String adminFailure = (String) request.getAttribute(AdminBearerTokenAuthenticationFilter.AUTH_FAILURE_ATTRIBUTE);
+		if ("token expired".equals(adminFailure) || "token revoked".equals(adminFailure)) {
+			writeError(request, response, HttpStatus.UNAUTHORIZED, adminFailure);
 			return;
 		}
 		writeError(request, response, HttpStatus.UNAUTHORIZED, "unauthorized");

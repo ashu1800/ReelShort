@@ -30,21 +30,28 @@ public class AdminToken {
 	@Column(nullable = false)
 	private OffsetDateTime expiresAt;
 
+	private OffsetDateTime revokedAt;
+
 	protected AdminToken() {
 	}
 
 	private AdminToken(UUID id, String tokenHash, UUID adminUserId, String username, OffsetDateTime issuedAt,
-			OffsetDateTime expiresAt) {
+			OffsetDateTime expiresAt, OffsetDateTime revokedAt) {
 		this.id = id;
 		this.tokenHash = tokenHash;
 		this.adminUserId = adminUserId;
 		this.username = username;
 		this.issuedAt = issuedAt;
 		this.expiresAt = expiresAt;
+		this.revokedAt = revokedAt;
 	}
 
 	public static AdminToken issue(String tokenHash, UUID adminUserId, String username, OffsetDateTime expiresAt) {
-		return new AdminToken(UUID.randomUUID(), tokenHash, adminUserId, username, OffsetDateTime.now(), expiresAt);
+		return new AdminToken(UUID.randomUUID(), tokenHash, adminUserId, username, OffsetDateTime.now(), expiresAt, null);
+	}
+
+	public UUID id() {
+		return id;
 	}
 
 	public UUID adminUserId() {
@@ -57,5 +64,21 @@ public class AdminToken {
 
 	public OffsetDateTime expiresAt() {
 		return expiresAt;
+	}
+
+	public OffsetDateTime revokedAt() {
+		return revokedAt;
+	}
+
+	public void revoke(OffsetDateTime revokedAt) {
+		this.revokedAt = revokedAt;
+	}
+
+	public boolean isRevoked() {
+		return revokedAt != null;
+	}
+
+	public boolean isExpired(OffsetDateTime now) {
+		return !expiresAt.isAfter(now);
 	}
 }

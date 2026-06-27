@@ -46,4 +46,15 @@ public class AdminAuthService {
 				OffsetDateTime.now().plus(adminProperties.tokenTtl())));
 		return new AdminAuthTokenResponse(normalizedUsername, token, "Bearer");
 	}
+
+	@Transactional
+	public void logout(String token) {
+		adminTokenRepository.findByTokenHash(tokenHasher.hash(token))
+				.ifPresent(adminToken -> {
+					if (!adminToken.isRevoked()) {
+						adminToken.revoke(OffsetDateTime.now());
+						adminTokenRepository.save(adminToken);
+					}
+				});
+	}
 }

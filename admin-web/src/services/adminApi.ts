@@ -123,6 +123,11 @@ export async function login(username: string, password: string) {
   return response.data.data
 }
 
+export async function logout() {
+  const response = await http.post<ApiResponse<string>>('/auth/logout')
+  return response.data.data
+}
+
 export async function fetchUsers() {
   const response = await http.get<ApiResponse<AdminUserSummary[]>>('/users')
   return response.data.data

@@ -9,6 +9,9 @@
 - `reelshort.admin.username`：默认 `admin`。
 - `reelshort.admin.password-hash`：默认对应测试密码 `Admin123`，生产部署必须通过环境变量覆盖。
 - `reelshort.admin.token-ttl`：默认 `8h`。
+- `reelshort.admin.session.cleanup-retention`：后台过期/撤销 Token 清理保留期，默认 `1d`。
+- `reelshort.admin.session.cleanup-initial-delay`：后台 Token 清理任务首次延迟，默认 `1h`。
+- `reelshort.admin.session.cleanup-interval`：后台 Token 清理任务间隔，默认 `1h`。
 
 默认管理员会绑定 `SUPER_ADMIN` 角色，并获得当前所有后台权限。以上配置只用于默认管理员引导和 Token 有效期，不再表示后台系统只能存在一个管理员账号。
 
@@ -53,6 +56,36 @@
 }
 ```
 
+## `POST /api/admin/auth/logout`
+
+撤销当前后台 Bearer Token。该接口必须携带 `Authorization: Bearer <admin-token>` 请求头。
+
+请求体：无。
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": "logged out",
+  "requestId": "uuid",
+  "timestamp": "2026-06-27T14:30:00+08:00"
+}
+```
+
+登出后同一后台 Token 继续访问 `/api/admin/**` 会返回：
+
+```json
+{
+  "code": 401,
+  "message": "token revoked",
+  "path": "/api/admin/users",
+  "requestId": "uuid",
+  "timestamp": "2026-06-27T14:30:00+08:00"
+}
+```
+
 ## 鉴权
 
 除登录接口外，所有后台接口都需要：
@@ -63,7 +96,7 @@ Authorization: Bearer <admin-token>
 
 普通 App Token 不能访问 `/api/admin/**`。后台 Token 只用于后台接口。
 
-后台接口会校验接口所需权限。管理员已登录但缺少权限时返回 `403 forbidden`。
+后台接口会校验接口所需权限。管理员已登录但缺少权限时返回 `403 forbidden`。后台 Token 已过期时返回 `401 token expired`，已登出撤销时返回 `401 token revoked`。
 
 ## `GET /api/admin/users`
 
