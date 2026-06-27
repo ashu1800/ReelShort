@@ -30,18 +30,32 @@ public class AccessToken {
 	@Column(nullable = false)
 	private OffsetDateTime issuedAt;
 
+	@Column(nullable = false)
+	private OffsetDateTime expiresAt;
+
+	private OffsetDateTime revokedAt;
+
 	protected AccessToken() {
 	}
 
-	private AccessToken(UUID id, String tokenHash, UserAccount user, OffsetDateTime issuedAt) {
+	private AccessToken(UUID id, String tokenHash, UserAccount user, OffsetDateTime issuedAt,
+			OffsetDateTime expiresAt, OffsetDateTime revokedAt) {
 		this.id = id;
 		this.tokenHash = tokenHash;
 		this.user = user;
 		this.issuedAt = issuedAt;
+		this.expiresAt = expiresAt;
+		this.revokedAt = revokedAt;
 	}
 
 	public static AccessToken issue(String tokenHash, UserAccount user) {
-		return new AccessToken(UUID.randomUUID(), tokenHash, user, OffsetDateTime.now());
+		OffsetDateTime issuedAt = OffsetDateTime.now();
+		return issue(tokenHash, user, issuedAt, issuedAt.plusDays(7));
+	}
+
+	public static AccessToken issue(String tokenHash, UserAccount user, OffsetDateTime issuedAt,
+			OffsetDateTime expiresAt) {
+		return new AccessToken(UUID.randomUUID(), tokenHash, user, issuedAt, expiresAt, null);
 	}
 
 	public UUID id() {
@@ -58,5 +72,25 @@ public class AccessToken {
 
 	public OffsetDateTime issuedAt() {
 		return issuedAt;
+	}
+
+	public OffsetDateTime expiresAt() {
+		return expiresAt;
+	}
+
+	public OffsetDateTime revokedAt() {
+		return revokedAt;
+	}
+
+	public void revoke(OffsetDateTime revokedAt) {
+		this.revokedAt = revokedAt;
+	}
+
+	public boolean isRevoked() {
+		return revokedAt != null;
+	}
+
+	public boolean isExpired(OffsetDateTime now) {
+		return !expiresAt.isAfter(now);
 	}
 }

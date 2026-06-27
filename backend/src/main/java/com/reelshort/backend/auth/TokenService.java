@@ -5,4 +5,6 @@ import com.reelshort.backend.user.UserAccount;
 public interface TokenService {
 
 	AuthToken issue(UserAccount user);
+
+	void revoke(String token);
 }

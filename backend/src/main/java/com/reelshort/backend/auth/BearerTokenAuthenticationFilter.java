@@ -1,6 +1,7 @@
 package com.reelshort.backend.auth;
 
 import java.io.IOException;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.springframework.http.HttpHeaders;
@@ -47,11 +48,20 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
 
 	private void authenticateToken(HttpServletRequest request, String token) {
 		accessTokenRepository.findByTokenHash(tokenHasher.hash(token))
-				.ifPresentOrElse(accessToken -> authenticate(request, accessToken.user()),
+				.ifPresentOrElse(accessToken -> authenticate(request, accessToken),
 						() -> request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "invalid token"));
 	}
 
-	private void authenticate(HttpServletRequest request, UserAccount user) {
+	private void authenticate(HttpServletRequest request, AccessToken accessToken) {
+		if (accessToken.isRevoked()) {
+			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "token revoked");
+			return;
+		}
+		if (accessToken.isExpired(OffsetDateTime.now())) {
+			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "token expired");
+			return;
+		}
+		UserAccount user = accessToken.user();
 		if (user.status() == UserStatus.DISABLED) {
 			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "user disabled");
 			return;
