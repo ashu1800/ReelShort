@@ -20,6 +20,28 @@ docker compose --env-file .env up -d --build
 - 后台 Web：`http://localhost`
 - 后端健康检查：`http://localhost/actuator/health`
 
+## 备份与恢复
+
+备份 PostgreSQL 和部署配置：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/backup.ps1
+```
+
+恢复指定备份前必须停止 backend/nginx 写入：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/restore.ps1 -BackupDir backups/YYYYMMDD-HHMMSS -ConfirmRestore
+```
+
+备份文件默认写入 `infra/backups/`，该目录已被 Git 忽略。完整流程和恢复演练清单见 `docs/deploy/backup-restore.md`。
+
+当前开发机没有 Docker 时，可在仓库根目录执行静态校验：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/scripts/verify-backup-scripts.ps1
+```
+
 ## 生产部署注意
 
 - 生产必须替换 `POSTGRES_PASSWORD`、`REELSHORT_ADMIN_PASSWORD_HASH` 和 `REELSHORT_PAYMENT_CALLBACK_SECRET`。

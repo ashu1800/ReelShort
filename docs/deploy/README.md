@@ -67,6 +67,12 @@ docker compose --env-file .env logs -f backend
 
 `REELSHORT_JPA_DDL_AUTO` 仅作为开发/应急覆盖项保留，长期部署不要改回 `update`，后续表结构变化应新增 `V2__*.sql`、`V3__*.sql` 等迁移脚本。
 
+## 备份与恢复
+
+长期单机部署必须定期备份 PostgreSQL 业务数据和部署配置。备份脚本位于 `infra/scripts/backup.ps1`，恢复脚本位于 `infra/scripts/restore.ps1`，详细步骤见 `docs/deploy/backup-restore.md`。
+
+恢复数据库前必须先停止 backend 和 nginx，避免恢复过程中继续写入。Redis 只保存缓存、限流计数和短期状态，不作为核心持久化数据恢复对象。
+
 ## 网络边界
 
 - Nginx 是唯一公网入口。
