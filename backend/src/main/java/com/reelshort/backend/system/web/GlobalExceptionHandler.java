@@ -15,6 +15,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.content.ContentProviderException;
+import com.reelshort.backend.payment.PaymentException;
 import com.reelshort.backend.system.api.ApiErrorResponse;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -56,6 +57,12 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(AdminException.class)
 	public ResponseEntity<ApiErrorResponse> handleAdminException(AdminException exception, HttpServletRequest request) {
+		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(PaymentException.class)
+	public ResponseEntity<ApiErrorResponse> handlePaymentException(PaymentException exception,
+			HttpServletRequest request) {
 		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
 	}
 

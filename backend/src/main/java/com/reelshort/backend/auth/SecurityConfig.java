@@ -44,6 +44,7 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/api/app/auth/register", "/api/app/auth/login",
 								"/api/admin/auth/login",
+								"/api/internal/payments/recharge/callback",
 								"/api/system/health", "/actuator/health")
 						.permitAll()
 						.requestMatchers("/api/app/**").authenticated()

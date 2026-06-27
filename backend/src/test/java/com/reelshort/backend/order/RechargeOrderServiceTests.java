@@ -117,6 +117,19 @@ class RechargeOrderServiceTests {
 	}
 
 	@Test
+	void settlePaidWithExpectedAmountRejectsMismatchBeforeCreditingPoints() {
+		UUID userId = UUID.randomUUID();
+		RechargeOrderResponse created = rechargeOrderService.create(userId, new CreateRechargeOrderRequest(990, 99));
+
+		assertThatThrownBy(() -> rechargeOrderService.settlePaid(created.orderNo(), "test-channel", 1990))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("payment amount mismatch");
+
+		assertThat(rechargeOrderService.userOrders(userId).get(0).status()).isEqualTo(RechargeOrderStatus.CREATED);
+		assertThat(pointsService.records(userId)).isEmpty();
+	}
+
+	@Test
 	void concurrentSettlePaidOrderOnlyCreditsPointsOnce() throws Exception {
 		UUID userId = UUID.randomUUID();
 		RechargeOrderResponse created = rechargeOrderService.create(userId, new CreateRechargeOrderRequest(990, 99));

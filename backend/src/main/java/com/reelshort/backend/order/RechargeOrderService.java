@@ -50,9 +50,25 @@ public class RechargeOrderService {
 		return orderSettlementLocks.withOrderLock(orderNo, () -> settlePaidLocked(orderNo, paymentChannel));
 	}
 
+	@Transactional
+	public RechargeOrderResponse settlePaid(String orderNo, String paymentChannel, int expectedAmountCents) {
+		return orderSettlementLocks.withOrderLock(orderNo, () -> {
+			RechargeOrder order = rechargeOrderRepository.findByOrderNo(orderNo)
+					.orElseThrow(() -> new IllegalArgumentException("order not found"));
+			if (order.amountCents() != expectedAmountCents) {
+				throw new IllegalArgumentException("payment amount mismatch");
+			}
+			return settlePaid(order, paymentChannel);
+		});
+	}
+
 	private RechargeOrderResponse settlePaidLocked(String orderNo, String paymentChannel) {
 		RechargeOrder order = rechargeOrderRepository.findByOrderNo(orderNo)
 				.orElseThrow(() -> new IllegalArgumentException("order not found"));
+		return settlePaid(order, paymentChannel);
+	}
+
+	private RechargeOrderResponse settlePaid(RechargeOrder order, String paymentChannel) {
 		if (order.isPaid()) {
 			return RechargeOrderResponse.from(order);
 		}
