@@ -156,8 +156,71 @@ class AppStateControllerTest {
         assertNull(state.errorMessage)
     }
 
+    @Test
+    fun restoreSessionWithoutStoredSessionStaysOnLoginScreen() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.LOGIN, state.screen)
+        assertNull(state.session)
+        assertNull(state.errorMessage)
+        assertEquals(listOf("restore"), dataSource.calls)
+    }
+
+    @Test
+    fun restoreSessionWithStoredSessionLoadsHomeShelf() = runTest {
+        val session = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer")
+        val dataSource = FakeAppDataSource(restoredSession = session)
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals(session, state.session)
+        assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
+        assertEquals(listOf("restore", "home"), dataSource.calls)
+    }
+
+    @Test
+    fun restoreSessionFailureClearsSessionAndRecordsError() = runTest {
+        val session = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer")
+        val dataSource = FakeAppDataSource(restoredSession = session, homeError = IllegalStateException("expired"))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.LOGIN, state.screen)
+        assertNull(state.session)
+        assertEquals("expired", state.errorMessage)
+        assertEquals(listOf("restore", "home", "clear"), dataSource.calls)
+    }
+
+    @Test
+    fun logoutClearsSessionAndResetsState() = runTest {
+        val session = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer")
+        val dataSource = FakeAppDataSource(restoredSession = session)
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+
+        controller.logout()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.LOGIN, state.screen)
+        assertNull(state.session)
+        assertEquals(emptyList(), state.homeShelf)
+        assertNull(state.errorMessage)
+        assertEquals(listOf("restore", "home", "clear"), dataSource.calls)
+    }
+
     private class FakeAppDataSource(
         private val loginError: Throwable? = null,
+        private var restoredSession: AuthSession? = null,
+        private val homeError: Throwable? = null,
     ) : AppDataSource {
         val books = listOf(
             BookSummary(
@@ -197,6 +260,7 @@ class AppStateControllerTest {
 
         override suspend fun loadHomeShelf(): List<BookSummary> {
             calls += "home"
+            homeError?.let { throw it }
             return books
         }
 
@@ -261,6 +325,16 @@ class AppStateControllerTest {
                     status = "CREATED",
                 ),
             )
+        }
+
+        override suspend fun restoreSession(): AuthSession? {
+            calls += "restore"
+            return restoredSession
+        }
+
+        override suspend fun clearSession() {
+            calls += "clear"
+            restoredSession = null
         }
     }
 }

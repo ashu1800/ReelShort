@@ -1,6 +1,8 @@
 package com.reelshort.app.network
 
 import com.reelshort.app.config.ApiConfig
+import com.reelshort.app.data.AuthSession
+import com.reelshort.app.session.InMemorySessionStore
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -88,6 +90,26 @@ class OkHttpReelShortApiClientTest {
             assertEquals("book-1", books.single().id)
             assertEquals("alpha", books.single().filteredTitle)
             assertEquals("https://example.com/alpha.jpg", books.single().coverUrl)
+        }
+    }
+
+    @Test
+    fun protectedRequestsCanReadBearerTokenFromSessionStore() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("[]"))
+            val sessionStore = InMemorySessionStore(
+                AuthSession(username = "demo", token = "stored-token", tokenType = "Bearer"),
+            )
+            val client = OkHttpReelShortApiClient(
+                config = ApiConfig(server.url("/api/app").toString()),
+                httpClient = OkHttpClient(),
+                tokenProvider = { sessionStore.loadSession()?.token },
+            )
+
+            client.getHomeShelf()
+            val request = server.takeRequest()
+
+            assertEquals("Bearer stored-token", request.getHeader("Authorization"))
         }
     }
 

@@ -1,19 +1,26 @@
 package com.reelshort.app.data
 
 import com.reelshort.app.network.ReelShortApiClient
+import com.reelshort.app.session.InMemorySessionStore
+import com.reelshort.app.session.SessionStore
 
-class AppRepository(private val apiClient: ReelShortApiClient) : AppDataSource {
+class AppRepository(
+    private val apiClient: ReelShortApiClient,
+    private val sessionStore: SessionStore = InMemorySessionStore(),
+) : AppDataSource {
     var currentToken: String? = null
         private set
 
     override suspend fun login(username: String, password: String): AuthSession {
         val session = apiClient.login(username, password)
+        sessionStore.saveSession(session)
         currentToken = session.token
         return session
     }
 
     override suspend fun register(username: String, password: String): AuthSession {
         val session = apiClient.register(username, password)
+        sessionStore.saveSession(session)
         currentToken = session.token
         return session
     }
@@ -47,4 +54,15 @@ class AppRepository(private val apiClient: ReelShortApiClient) : AppDataSource {
     override suspend fun loadPointAccount(): PointAccount = apiClient.getPointAccount()
 
     override suspend fun loadOrders(): List<RechargeOrderSummary> = apiClient.getOrders()
+
+    override suspend fun restoreSession(): AuthSession? {
+        val session = sessionStore.loadSession()
+        currentToken = session?.token
+        return session
+    }
+
+    override suspend fun clearSession() {
+        sessionStore.clearSession()
+        currentToken = null
+    }
 }

@@ -14,6 +14,37 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
+    suspend fun restoreSession() = runWithLoading {
+        val session = dataSource.restoreSession()
+        if (session == null) {
+            mutableState.update {
+                it.copy(
+                    screen = AppScreen.LOGIN,
+                    session = null,
+                    isLoading = false,
+                )
+            }
+            return@runWithLoading
+        }
+
+        try {
+            val homeShelf = dataSource.loadHomeShelf()
+            mutableState.update {
+                it.copy(
+                    screen = AppScreen.HOME,
+                    session = session,
+                    homeShelf = homeShelf,
+                    isLoading = false,
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            dataSource.clearSession()
+            throw error
+        }
+    }
+
     suspend fun login(username: String, password: String) = runWithLoading {
         val session = dataSource.login(username, password)
         val homeShelf = dataSource.loadHomeShelf()
@@ -123,6 +154,11 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     fun clearError() {
         mutableState.update { it.copy(errorMessage = null) }
+    }
+
+    suspend fun logout() = runWithLoading {
+        dataSource.clearSession()
+        mutableState.value = AppUiState()
     }
 
     private suspend fun runWithLoading(block: suspend () -> Unit) {
