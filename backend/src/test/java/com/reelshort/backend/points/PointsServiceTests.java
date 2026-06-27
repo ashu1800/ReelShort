@@ -63,6 +63,23 @@ class PointsServiceTests {
 	}
 
 	@Test
+	void rechargeOrderCreditCreatesTransactionAndBalance() {
+		UUID userId = UUID.randomUUID();
+
+		PointAccountResponse account = pointsService.creditRechargeOrder(userId, "RO-test-1", 99);
+
+		assertThat(account.balance()).isEqualTo(99);
+		assertThat(pointsService.records(userId))
+				.singleElement()
+				.satisfies(record -> {
+					assertThat(record.amount()).isEqualTo(99);
+					assertThat(record.balanceAfter()).isEqualTo(99);
+					assertThat(record.source()).isEqualTo("RECHARGE_ORDER");
+					assertThat(record.reason()).isEqualTo("RO-test-1");
+				});
+	}
+
+	@Test
 	void concurrentSameStageRewardIsIdempotent() throws Exception {
 		UUID userId = UUID.randomUUID();
 		CountDownLatch ready = new CountDownLatch(2);

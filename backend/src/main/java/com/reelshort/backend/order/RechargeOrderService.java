@@ -8,13 +8,20 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.reelshort.backend.points.PointsService;
+
 @Service
 public class RechargeOrderService {
 
 	private final RechargeOrderRepository rechargeOrderRepository;
+	private final PointsService pointsService;
+	private final OrderSettlementLocks orderSettlementLocks;
 
-	public RechargeOrderService(RechargeOrderRepository rechargeOrderRepository) {
+	public RechargeOrderService(RechargeOrderRepository rechargeOrderRepository, PointsService pointsService,
+			OrderSettlementLocks orderSettlementLocks) {
 		this.rechargeOrderRepository = rechargeOrderRepository;
+		this.pointsService = pointsService;
+		this.orderSettlementLocks = orderSettlementLocks;
 	}
 
 	@Transactional
@@ -36,6 +43,22 @@ public class RechargeOrderService {
 		return rechargeOrderRepository.findAllByOrderByCreatedAtDescIdDesc().stream()
 				.map(RechargeOrderResponse::from)
 				.toList();
+	}
+
+	@Transactional
+	public RechargeOrderResponse settlePaid(String orderNo, String paymentChannel) {
+		return orderSettlementLocks.withOrderLock(orderNo, () -> settlePaidLocked(orderNo, paymentChannel));
+	}
+
+	private RechargeOrderResponse settlePaidLocked(String orderNo, String paymentChannel) {
+		RechargeOrder order = rechargeOrderRepository.findByOrderNo(orderNo)
+				.orElseThrow(() -> new IllegalArgumentException("order not found"));
+		if (order.isPaid()) {
+			return RechargeOrderResponse.from(order);
+		}
+		order.markPaid(paymentChannel);
+		pointsService.creditRechargeOrder(order.userId(), order.orderNo(), order.pointAmount());
+		return RechargeOrderResponse.from(rechargeOrderRepository.save(order));
 	}
 
 	private void validate(CreateRechargeOrderRequest request) {
