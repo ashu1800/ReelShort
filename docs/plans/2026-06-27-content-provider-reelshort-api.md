@@ -78,4 +78,3 @@
 **Step 5:** Review implementation for API contract alignment and error handling.
 
 **Step 6:** Fix findings, repeat review, commit, merge to `master`, and clean worktree.
-
