@@ -310,6 +310,117 @@ def test_reelshort_client_fetches_video_episode_page(monkeypatch):
     }
 
 
+def test_reelshort_client_refreshes_auto_discovered_build_id_after_data_404(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        ok = True
+        text = '{"buildId":"fresh-build"}'
+
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self.payload = payload or {}
+            self.ok = 200 <= status_code < 300
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append({"url": url, "params": params})
+        if "stale-build" in url:
+            return FakeResponse(404)
+        if url == "https://site.example/id":
+            return FakeResponse(200)
+        return FakeResponse(200, {"pageProps": {"books": [BOOK]}})
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+
+    client = ReelShortClient("https://site.example", "id", 3)
+    client.build_id = "stale-build"
+
+    results = client.search("love")
+
+    assert results == [BOOK]
+    assert client.build_id == "fresh-build"
+    assert calls == [
+        {
+            "url": "https://site.example/_next/data/stale-build/id/search.json",
+            "params": {"keywords": "love"},
+        },
+        {"url": "https://site.example/id", "params": None},
+        {
+            "url": "https://site.example/_next/data/fresh-build/id/search.json",
+            "params": {"keywords": "love"},
+        },
+    ]
+
+
+def test_reelshort_client_does_not_refresh_explicit_build_id_after_data_404(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        status_code = 404
+        ok = False
+
+        def json(self):
+            return {}
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+
+    client = ReelShortClient("https://site.example", "id", 3, build_id="fixed-build")
+
+    with pytest.raises(UpstreamError) as error:
+        client.search("love")
+
+    assert error.value.status_code == 404
+    assert calls == ["https://site.example/_next/data/fixed-build/id/search.json"]
+
+
+def test_reelshort_client_retries_auto_build_id_404_only_once(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        text = '{"buildId":"fresh-build"}'
+
+        def __init__(self, status_code):
+            self.status_code = status_code
+            self.ok = 200 <= status_code < 300
+
+        def json(self):
+            return {}
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append({"url": url, "params": params})
+        if url == "https://site.example/id":
+            return FakeResponse(200)
+        return FakeResponse(404)
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+
+    client = ReelShortClient("https://site.example", "id", 3)
+    client.build_id = "stale-build"
+
+    with pytest.raises(UpstreamError) as error:
+        client.search("missing")
+
+    assert error.value.status_code == 404
+    assert calls == [
+        {
+            "url": "https://site.example/_next/data/stale-build/id/search.json",
+            "params": {"keywords": "missing"},
+        },
+        {"url": "https://site.example/id", "params": None},
+        {
+            "url": "https://site.example/_next/data/fresh-build/id/search.json",
+            "params": {"keywords": "missing"},
+        },
+    ]
+
+
 def test_reelshort_client_discovers_build_id_from_site_id_page(monkeypatch):
     captured = {}
 
