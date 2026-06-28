@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -92,6 +93,7 @@ import com.reelshort.app.state.AppUiActions
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.state.PlaybackStatus
 import java.io.File
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val AppBackgroundColor = Color(0xFF080A0F)
@@ -111,6 +113,16 @@ internal fun String?.playableMediaUrlOrNull(): String? =
     this
         ?.trim()
         ?.takeIf { it.startsWith("https://", ignoreCase = true) || it.startsWith("http://", ignoreCase = true) }
+
+internal fun mediaPositionSeconds(positionMs: Long): Int =
+    (maxOf(positionMs, 0L) / 1_000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
+internal fun mediaDurationSeconds(durationMs: Long, fallbackDurationSeconds: Int): Int =
+    if (durationMs == C.TIME_UNSET) {
+        maxOf(fallbackDurationSeconds, 0)
+    } else {
+        (maxOf(durationMs, 0L) / 1_000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
 
 internal data class ContentEmptyState(
     val title: String,
@@ -600,7 +612,12 @@ private fun PlayerScreen(
 
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            MediaPlayerSurface(videoUrl = videoUrl, episodeNumber = episode?.number)
+            MediaPlayerSurface(
+                videoUrl = videoUrl,
+                episodeNumber = episode?.number,
+                fallbackDurationSeconds = duration,
+                onProgress = onUpdatePlaybackPosition,
+            )
         }
         item {
             SectionHeader(book?.title ?: "未选择剧集", "时长 ${duration.formatSeconds()} · 进度 ${playback.progressPercent}%")
@@ -618,7 +635,7 @@ private fun PlayerScreen(
                             border = BorderStroke(1.dp, Divider),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                         ) {
-                            Text("模拟 25%")
+                            Text("同步 25%")
                         }
                         OutlinedButton(
                             onClick = onRefreshPlaybackUrl,
@@ -641,7 +658,12 @@ private fun PlayerScreen(
 }
 
 @Composable
-private fun MediaPlayerSurface(videoUrl: String?, episodeNumber: Int?) {
+private fun MediaPlayerSurface(
+    videoUrl: String?,
+    episodeNumber: Int?,
+    fallbackDurationSeconds: Int,
+    onProgress: (positionSeconds: Int, durationSeconds: Int) -> Unit,
+) {
     val playableUrl = videoUrl.playableMediaUrlOrNull()
 
     Box(
@@ -670,6 +692,15 @@ private fun MediaPlayerSurface(videoUrl: String?, episodeNumber: Int?) {
             }
             DisposableEffect(player) {
                 onDispose { player.release() }
+            }
+            LaunchedEffect(player, fallbackDurationSeconds) {
+                while (true) {
+                    val durationSeconds = mediaDurationSeconds(player.duration, fallbackDurationSeconds)
+                    if (durationSeconds > 0) {
+                        onProgress(mediaPositionSeconds(player.currentPosition), durationSeconds)
+                    }
+                    delay(1_000)
+                }
             }
             AndroidView(
                 factory = { viewContext ->

@@ -8,7 +8,7 @@ Android 原生客户端骨架，规划使用 Kotlin、Jetpack Compose 和 Androi
 - 首页：通过 `AppStateController` 加载 Spring Boot 首页货架接口数据。
 - 搜索页：通过 `AppStateController` 调用 Spring Boot 搜索接口并维护搜索状态。
 - 详情页：通过 `AppStateController` 加载剧集信息和分集列表。
-- 播放页：通过 `AppStateController` 获取播放地址并维护纯 Kotlin `PlaybackState`；Compose 页面使用 Media3/ExoPlayer 播放 Spring Boot 返回的媒体 URL，并保留播放地址、进度、刷新地址和当前进度上报入口。
+- 播放页：通过 `AppStateController` 获取播放地址并维护纯 Kotlin `PlaybackState`；Compose 页面使用 Media3/ExoPlayer 播放 Spring Boot 返回的媒体 URL，将播放器进度同步到 `PlaybackState`，并保留播放地址、刷新地址和当前进度上报入口。
 - 账户页：通过 `AppStateController` 刷新观看记录、积分和订单快照，保留后续核心闭环和商业化接口边界。
 
 ## 模块结构
@@ -16,7 +16,7 @@ Android 原生客户端骨架，规划使用 Kotlin、Jetpack Compose 和 Androi
 - `app`：Android Compose UI 模块，负责页面骨架和本地交互。
 - `app-core`：纯 Kotlin JVM 核心模块，包含 Spring Boot API 配置、统一响应模型、App 数据模型、`ReelShortApiClient` 边界、`FakeReelShortApiClient`、`OkHttpReelShortApiClient`、`SessionStore`、`InMemorySessionStore`、`FileSessionStore`、`AppDataSource`、`AppRepository`、`AppUiState`、`PlaybackState`、`AppStateController` 和 `AppUiActions`。
 
-App 只访问 Spring Boot API，不直接访问 Flask 内容源服务。当前 `FakeReelShortApiClient` 用于无 Android SDK 环境下的结构验证；`OkHttpReelShortApiClient` 用于真实 Spring Boot API 访问，并通过 token provider 为受保护 App 业务接口添加 Bearer Token。`SessionStore` 提供纯 Kotlin 会话存储边界，`FileSessionStore` 使用本地 JSON 文件保存登录会话，当前 Android 组合根使用 `filesDir/reelshort-session.json` 恢复登录状态；后续平台层可替换为 DataStore 或加密 SharedPreferences。`AppStateController` 以 `StateFlow<AppUiState>` 暴露登录、启动恢复、登出、首页、搜索、详情、播放、观看上报、积分、观看记录和订单状态，Compose UI 只负责展示状态和触发动作。`PlaybackState` 保存当前剧集、分集、播放 URL、播放位置、进度百分比、已上报进度和播放地址刷新结果，播放页通过 Media3 消费合法 HTTP/HTTPS 媒体 URL。
+App 只访问 Spring Boot API，不直接访问 Flask 内容源服务。当前 `FakeReelShortApiClient` 用于无 Android SDK 环境下的结构验证；`OkHttpReelShortApiClient` 用于真实 Spring Boot API 访问，并通过 token provider 为受保护 App 业务接口添加 Bearer Token。`SessionStore` 提供纯 Kotlin 会话存储边界，`FileSessionStore` 使用本地 JSON 文件保存登录会话，当前 Android 组合根使用 `filesDir/reelshort-session.json` 恢复登录状态；后续平台层可替换为 DataStore 或加密 SharedPreferences。`AppStateController` 以 `StateFlow<AppUiState>` 暴露登录、启动恢复、登出、首页、搜索、详情、播放、观看上报、积分、观看记录和订单状态，Compose UI 只负责展示状态和触发动作。`PlaybackState` 保存当前剧集、分集、播放 URL、播放位置、进度百分比、已上报进度和播放地址刷新结果，播放页通过 Media3 消费合法 HTTP/HTTPS 媒体 URL，并定时同步播放器当前位置。
 
 当前机器已配置 Android SDK，可构建 debug APK 并安装到雷电模拟器进行基础启动验证。
 
