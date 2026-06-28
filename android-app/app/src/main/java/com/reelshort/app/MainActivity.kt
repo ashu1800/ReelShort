@@ -53,6 +53,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,10 +67,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.reelshort.app.config.ApiConfig
 import com.reelshort.app.data.AppRepository
@@ -100,6 +106,11 @@ private val DangerSurface = Color(0xFF37191D)
 private val DangerText = Color(0xFFFFB4BC)
 
 internal fun String?.coverUrlOrNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+
+internal fun String?.playableMediaUrlOrNull(): String? =
+    this
+        ?.trim()
+        ?.takeIf { it.startsWith("https://", ignoreCase = true) || it.startsWith("http://", ignoreCase = true) }
 
 internal data class ContentEmptyState(
     val title: String,
@@ -589,24 +600,7 @@ private fun PlayerScreen(
 
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color(0xFF2B1E12), Color(0xFF07080C)),
-                        ),
-                    )
-                    .border(1.dp, Divider, RoundedCornerShape(24.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("HLS 播放器待接入", color = TextPrimary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("第 ${episode?.number ?: 0} 集", color = TextSecondary)
-                }
-            }
+            MediaPlayerSurface(videoUrl = videoUrl, episodeNumber = episode?.number)
         }
         item {
             SectionHeader(book?.title ?: "未选择剧集", "时长 ${duration.formatSeconds()} · 进度 ${playback.progressPercent}%")
@@ -643,6 +637,60 @@ private fun PlayerScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MediaPlayerSurface(videoUrl: String?, episodeNumber: Int?) {
+    val playableUrl = videoUrl.playableMediaUrlOrNull()
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(240.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF2B1E12), Color(0xFF07080C)),
+                ),
+            )
+            .border(1.dp, Divider, RoundedCornerShape(24.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (playableUrl == null) {
+            PlayerPlaceholder(episodeNumber)
+        } else {
+            val context = LocalContext.current
+            val player = remember(playableUrl) {
+                ExoPlayer.Builder(context).build().apply {
+                    setMediaItem(MediaItem.fromUri(playableUrl))
+                    playWhenReady = false
+                    prepare()
+                }
+            }
+            DisposableEffect(player) {
+                onDispose { player.release() }
+            }
+            AndroidView(
+                factory = { viewContext ->
+                    PlayerView(viewContext).apply {
+                        useController = true
+                        this.player = player
+                    }
+                },
+                update = { view -> view.player = player },
+                onRelease = { view -> view.player = null },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerPlaceholder(episodeNumber: Int?) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("等待播放地址", color = TextPrimary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("第 ${episodeNumber ?: 0} 集", color = TextSecondary)
     }
 }
 
