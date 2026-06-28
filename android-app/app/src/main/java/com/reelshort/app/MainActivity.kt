@@ -65,10 +65,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.reelshort.app.config.ApiConfig
 import com.reelshort.app.data.AppRepository
 import com.reelshort.app.data.BookSummary
@@ -96,6 +98,8 @@ private val TextPrimary = Color(0xFFF8FAFC)
 private val TextSecondary = Color(0xFFA7B0C0)
 private val DangerSurface = Color(0xFF37191D)
 private val DangerText = Color(0xFFFFB4BC)
+
+internal fun String?.coverUrlOrNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -618,7 +622,7 @@ private fun AccountScreen(
 private fun BookHero(book: BookSummary) {
     SurfacePanel {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            PosterBlock(book.title, Modifier.size(width = 92.dp, height = 124.dp))
+            PosterBlock(book.title, book.coverUrl, Modifier.size(width = 92.dp, height = 124.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(book.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(book.description.ifBlank { "${book.chapterCount} 集短剧" }, color = TextSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -703,7 +707,7 @@ private fun BookRow(book: BookSummary, onClick: () -> Unit) {
         shape = RoundedCornerShape(22.dp),
     ) {
         Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            PosterBlock(book.title, Modifier.size(width = 76.dp, height = 104.dp))
+            PosterBlock(book.title, book.coverUrl, Modifier.size(width = 76.dp, height = 104.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text(book.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(book.description.ifBlank { "${book.chapterCount} 集短剧" }, color = TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -717,7 +721,10 @@ private fun BookRow(book: BookSummary, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PosterBlock(title: String, modifier: Modifier = Modifier) {
+private fun PosterBlock(title: String, coverUrl: String?, modifier: Modifier = Modifier) {
+    val normalizedCoverUrl = coverUrl.coverUrlOrNull()
+    var showFallback by remember(normalizedCoverUrl) { mutableStateOf(true) }
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
@@ -726,11 +733,29 @@ private fun PosterBlock(title: String, modifier: Modifier = Modifier) {
                     colors = listOf(Color(0xFFFFD38B), PrimaryGoldDark, Color(0xFF24130A)),
                 ),
             )
-            .border(1.dp, Color(0x55FFFFFF), RoundedCornerShape(18.dp))
-            .padding(10.dp),
+            .border(1.dp, Color(0x55FFFFFF), RoundedCornerShape(18.dp)),
         contentAlignment = Alignment.BottomStart,
     ) {
-        Text(title.posterInitials(), color = Color(0xFF1C1004), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+        if (normalizedCoverUrl != null) {
+            AsyncImage(
+                model = normalizedCoverUrl,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+                onLoading = { showFallback = true },
+                onError = { showFallback = true },
+                onSuccess = { showFallback = false },
+            )
+        }
+        if (showFallback) {
+            Text(
+                title.posterInitials(),
+                modifier = Modifier.padding(10.dp),
+                color = Color(0xFF1C1004),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Black,
+            )
+        }
     }
 }
 

@@ -48,8 +48,7 @@ Expected: fail until `coverUrlOrNull` exists.
 Add:
 
 ```kotlin
-implementation("io.coil-kt.coil3:coil-compose:3.5.0")
-implementation("io.coil-kt.coil3:coil-network-okhttp:3.5.0")
+implementation("io.coil-kt:coil-compose:2.7.0")
 ```
 
 **Step 2: Add Android network permission**
