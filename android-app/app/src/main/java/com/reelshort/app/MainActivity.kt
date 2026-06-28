@@ -124,6 +124,41 @@ internal fun mediaDurationSeconds(durationMs: Long, fallbackDurationSeconds: Int
         (maxOf(durationMs, 0L) / 1_000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
+private val WatchRewardStages = listOf(25, 50, 75, 100)
+
+internal data class WatchRewardHint(
+    val title: String,
+    val message: String,
+    val actionReady: Boolean,
+)
+
+internal fun watchRewardHint(progressPercent: Int, lastReportedProgressPercent: Int): WatchRewardHint {
+    val progress = progressPercent.coerceIn(0, 100)
+    val reported = lastReportedProgressPercent.coerceIn(0, 100)
+    val readyStages = WatchRewardStages.filter { it > reported && it <= progress }
+    val nextStage = WatchRewardStages.firstOrNull { it > reported }
+        ?: return WatchRewardHint(
+            title = "本集奖励已完成",
+            message = "25%、50%、75%、100% 阶段都已上报，继续观看不会重复发放。",
+            actionReady = false,
+        )
+
+    return if (readyStages.isNotEmpty()) {
+        val readyStageLabel = readyStages.joinToString("、") { "$it%" }
+        WatchRewardHint(
+            title = "可上报领取 $readyStageLabel 奖励",
+            message = "本次上报可结算 $readyStageLabel 观看阶段，后端会自动跳过已领取阶段。",
+            actionReady = true,
+        )
+    } else {
+        WatchRewardHint(
+            title = "下一奖励：${nextStage}%",
+            message = "继续观看，距离 ${nextStage}% 阶段还差 ${nextStage - progress}%。",
+            actionReady = false,
+        )
+    }
+}
+
 internal data class ContentEmptyState(
     val title: String,
     val message: String,
@@ -609,6 +644,7 @@ private fun PlayerScreen(
     val ready = playback.status == PlaybackStatus.READY && episode != null && videoUrl != null
     val duration = playback.durationSeconds.takeIf { it > 0 } ?: episode?.durationSeconds ?: 0
     val simulatedPosition = if (duration > 0) duration / 4 else 0
+    val rewardHint = watchRewardHint(playback.progressPercent, playback.lastReportedProgressPercent)
 
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -621,6 +657,9 @@ private fun PlayerScreen(
         }
         item {
             SectionHeader(book?.title ?: "未选择剧集", "时长 ${duration.formatSeconds()} · 进度 ${playback.progressPercent}%")
+        }
+        item {
+            WatchRewardHintPanel(rewardHint)
         }
         item {
             SurfacePanel {
@@ -653,6 +692,17 @@ private fun PlayerScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WatchRewardHintPanel(hint: WatchRewardHint) {
+    SurfacePanel {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(hint.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text(hint.message, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            MetaPill(if (hint.actionReady) "可上报" else "继续观看")
         }
     }
 }
