@@ -6,9 +6,15 @@ plugins {
 
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+fun String.asBuildConfigString(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "com.reelshort.app"
     compileSdk = 35
+
+    val reelshortApiBaseUrl = providers.gradleProperty("reelshortApiBaseUrl")
+        .orElse("http://10.0.2.2:8080/api/app")
 
     defaultConfig {
         applicationId = "com.reelshort.app"
@@ -16,10 +22,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "REELSHORT_API_BASE_URL", reelshortApiBaseUrl.get().asBuildConfigString())
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
