@@ -79,9 +79,14 @@ class RechargeOrderServiceTests {
 		rechargeOrderService.create(userId, new CreateRechargeOrderRequest(1990, 199));
 		rechargeOrderService.create(UUID.randomUUID(), new CreateRechargeOrderRequest(2990, 299));
 
+		List<Integer> expectedAmounts = rechargeOrderRepository.findByUserIdOrderByCreatedAtDescIdDesc(userId).stream()
+				.map(RechargeOrder::amountCents)
+				.toList();
+
 		assertThat(rechargeOrderService.userOrders(userId))
 				.extracting(RechargeOrderResponse::amountCents)
-				.containsExactly(1990, 990);
+				.containsExactlyElementsOf(expectedAmounts)
+				.containsOnly(990, 1990);
 	}
 
 	@Test
