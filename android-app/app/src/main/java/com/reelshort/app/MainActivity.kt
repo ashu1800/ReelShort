@@ -101,6 +101,57 @@ private val DangerText = Color(0xFFFFB4BC)
 
 internal fun String?.coverUrlOrNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
+internal data class ContentEmptyState(
+    val title: String,
+    val message: String,
+    val actionLabel: String? = null,
+)
+
+internal fun homeEmptyState(): ContentEmptyState =
+    ContentEmptyState(
+        title = "今日暂无推荐",
+        message = "内容源暂时没有返回推荐短剧，可以先搜索片名或关键词。",
+        actionLabel = "去搜索",
+    )
+
+internal fun searchEmptyState(query: String, resultCount: Int): ContentEmptyState? {
+    if (resultCount > 0) {
+        return null
+    }
+    val normalizedQuery = query.trim()
+    return if (normalizedQuery.isEmpty()) {
+        ContentEmptyState(
+            title = "发现短剧",
+            message = "输入剧名、角色或关键词，快速找到想看的短剧。",
+        )
+    } else {
+        ContentEmptyState(
+            title = "没有找到相关短剧",
+            message = "没有匹配“$normalizedQuery”的内容，换个关键词再试。",
+            actionLabel = "重新搜索",
+        )
+    }
+}
+
+internal fun detailEmptyState(book: BookSummary?, episodeCount: Int): ContentEmptyState? {
+    if (book != null && episodeCount > 0) {
+        return null
+    }
+    return if (book == null) {
+        ContentEmptyState(
+            title = "先选择一部短剧",
+            message = "从首页推荐或搜索结果进入详情后，这里会展示分集列表。",
+            actionLabel = "返回首页",
+        )
+    } else {
+        ContentEmptyState(
+            title = "分集暂不可用",
+            message = "“${book.title}”暂时没有可播放分集，可以稍后刷新或选择其他短剧。",
+            actionLabel = "换一部",
+        )
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -435,7 +486,7 @@ private fun HomeScreen(books: List<BookSummary>, onOpenBook: (BookSummary) -> Un
             SectionHeader("今日推荐", "为你整理 ${books.size} 部短剧")
         }
         if (books.isEmpty()) {
-            item { EmptyState("暂无推荐内容") }
+            item { EmptyState(homeEmptyState()) }
         }
         items(books) { book ->
             BookRow(book = book, onClick = { onOpenBook(book) })
@@ -484,8 +535,9 @@ private fun SearchScreen(
                 }
             }
         }
-        if (state.searchResults.isEmpty()) {
-            item { EmptyState("暂无搜索结果") }
+        val emptyState = searchEmptyState(state.searchQuery, state.searchResults.size)
+        if (emptyState != null) {
+            item { EmptyState(emptyState) }
         }
         items(state.searchResults) { book ->
             BookRow(book = book, onClick = { onOpenBook(book) })
@@ -499,8 +551,9 @@ private fun DetailScreen(
     episodes: List<EpisodeSummary>,
     onOpenPlayer: (EpisodeSummary) -> Unit,
 ) {
+    val emptyState = detailEmptyState(book, episodes.size)
     if (book == null) {
-        EmptyState("请选择剧集")
+        EmptyState(emptyState ?: return)
         return
     }
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -509,6 +562,9 @@ private fun DetailScreen(
         }
         item {
             SectionHeader("剧集列表", "共 ${episodes.size} 集")
+        }
+        if (emptyState != null) {
+            item { EmptyState(emptyState) }
         }
         items(episodes) { episode ->
             EpisodeRow(episode, onClick = { onOpenPlayer(episode) })
@@ -608,7 +664,14 @@ private fun AccountScreen(
         }
         item { SectionHeader("观看记录", "最近 ${records.size} 条") }
         if (records.isEmpty()) {
-            item { EmptyState("暂无观看记录") }
+            item {
+                EmptyState(
+                    ContentEmptyState(
+                        title = "暂无观看记录",
+                        message = "开始播放短剧后，观看进度会出现在这里。",
+                    ),
+                )
+            }
         }
         items(records) { record -> WatchRecordRow(record) }
         item { SectionHeader("积分流水", "最近 ${pointRecords.size} 条") }
@@ -768,15 +831,31 @@ private fun SectionHeader(title: String, subtitle: String) {
 }
 
 @Composable
-private fun EmptyState(message: String) {
+private fun EmptyState(state: ContentEmptyState) {
     SurfacePanel {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 96.dp),
-            contentAlignment = Alignment.Center,
+                .heightIn(min = 112.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.Start,
         ) {
-            Text(message, color = TextSecondary)
+            Text(
+                state.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                state.message,
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (state.actionLabel != null) {
+                Spacer(Modifier.height(12.dp))
+                MetaPill(state.actionLabel)
+            }
         }
     }
 }
