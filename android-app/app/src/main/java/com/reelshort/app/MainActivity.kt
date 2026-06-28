@@ -81,7 +81,7 @@ private object AndroidAppFactory {
         val sessionStore = FileSessionStore(File(filesDir, "reelshort-session.json"))
         lateinit var repository: AppRepository
         val apiClient = OkHttpReelShortApiClient(
-            config = ApiConfig.default(),
+            config = ApiConfig(BuildConfig.REELSHORT_API_BASE_URL),
             tokenProvider = { repository.currentToken },
         )
         repository = AppRepository(apiClient, sessionStore)

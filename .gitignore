@@ -8,6 +8,7 @@ Thumbs.db
 # Logs
 *.log
 /logs/
+backend/logs/
 infra/backups/
 
 # Java / Gradle
@@ -16,6 +17,7 @@ build/
 backend/.gradle/
 backend/build/
 backend/out/
+backend/data/
 
 # Node / Vue
 node_modules/
