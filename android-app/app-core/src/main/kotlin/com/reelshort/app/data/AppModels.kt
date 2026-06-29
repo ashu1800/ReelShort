@@ -6,6 +6,12 @@ data class AuthSession(
     val tokenType: String,
 )
 
+data class SavedCredentials(
+    val username: String,
+    val password: String,
+    val rememberPassword: Boolean,
+)
+
 data class ApiHealthStatus(
     val status: String,
     val service: String? = null,

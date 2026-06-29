@@ -35,4 +35,10 @@ interface AppDataSource {
     suspend fun restoreSession(): AuthSession?
 
     suspend fun clearSession()
+
+    suspend fun loadSavedCredentials(): SavedCredentials?
+
+    suspend fun saveCredentials(credentials: SavedCredentials)
+
+    suspend fun clearSavedCredentials()
 }

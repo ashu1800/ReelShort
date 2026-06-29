@@ -42,6 +42,11 @@ class VisualTextContractTest {
     }
 
     @Test
+    fun authFormProvidesRememberPasswordEntry() {
+        assertEquals("记住密码", rememberPasswordLabel())
+    }
+
+    @Test
     fun loadingFeedbackUsesCenteredDialog() {
         assertEquals(LoadingFeedbackMode.CENTER_DIALOG, loadingFeedbackMode())
     }

@@ -8,10 +8,12 @@ import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.SavedCredentials
 import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.network.ApiClientException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -104,14 +106,84 @@ class AppStateControllerTest {
 
     @Test
     fun loginFailureUsesUserFacingCredentialMessage() = runTest {
-        val dataSource = FakeAppDataSource(loginError = IllegalStateException("invalid username or password"))
+        val dataSource = FakeAppDataSource(loginError = ApiClientException(401, null, "invalid username or password"))
         val controller = AppStateController(dataSource)
 
-        controller.login("demo", "wrong")
+        controller.login("demo", "wrong", rememberPassword = false)
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals("用户名或密码错误", state.errorMessage)
+    }
+
+    @Test
+    fun homeUnauthorizedErrorDoesNotUseCredentialMessage() = runTest {
+        val dataSource = FakeAppDataSource(homeError = ApiClientException(401, null, "unauthorized"))
+        val controller = AppStateController(dataSource)
+
+        controller.refreshHome()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
+    }
+
+    @Test
+    fun accountUnauthorizedErrorShowsExpiredSessionMessageAndAuthPrompt() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(username = "demo", token = "expired-token", tokenType = "Bearer"),
+        )
+        dataSource.accountError = ApiClientException(401, null, "unauthorized")
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+
+        controller.openAccount()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertEquals("登录状态已失效，请重新登录。", state.errorMessage)
+        assertEquals(true, state.authPromptVisible)
+        assertFalse(state.isLoading)
+    }
+
+    @Test
+    fun loadSavedCredentialsStoresCredentialsInState() = runTest {
+        val credentials = SavedCredentials(username = "demo", password = "Password123", rememberPassword = true)
+        val dataSource = FakeAppDataSource(savedCredentials = credentials)
+        val controller = AppStateController(dataSource)
+
+        controller.loadSavedCredentials()
+
+        assertEquals(credentials, controller.state.value.savedCredentials)
+        assertEquals(listOf("credentials:load"), dataSource.calls)
+    }
+
+    @Test
+    fun loginSuccessSavesRememberedCredentialsWhenEnabled() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.login("demo", "Password123", rememberPassword = true)
+
+        assertEquals(
+            SavedCredentials(username = "demo", password = "Password123", rememberPassword = true),
+            dataSource.savedCredentials,
+        )
+        assertEquals(dataSource.savedCredentials, controller.state.value.savedCredentials)
+    }
+
+    @Test
+    fun loginSuccessClearsRememberedPasswordWhenDisabled() = runTest {
+        val dataSource = FakeAppDataSource(
+            savedCredentials = SavedCredentials(username = "demo", password = "old-password", rememberPassword = true),
+        )
+        val controller = AppStateController(dataSource)
+
+        controller.login("demo", "Password123", rememberPassword = false)
+
+        assertNull(dataSource.savedCredentials)
+        assertNull(controller.state.value.savedCredentials)
     }
 
     @Test
@@ -652,7 +724,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertNull(state.session)
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "home"), dataSource.calls)
+        assertEquals(listOf("restore", "credentials:load", "home"), dataSource.calls)
     }
 
     @Test
@@ -667,7 +739,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals(session, state.session)
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
-        assertEquals(listOf("restore", "home"), dataSource.calls)
+        assertEquals(listOf("restore", "credentials:load", "home"), dataSource.calls)
     }
 
     @Test
@@ -682,7 +754,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals(session, state.session)
         assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
-        assertEquals(listOf("restore", "home"), dataSource.calls)
+        assertEquals(listOf("restore", "credentials:load", "home"), dataSource.calls)
     }
 
     @Test
@@ -717,12 +789,13 @@ class AppStateControllerTest {
         assertNull(state.session)
         assertEquals(emptyList(), state.homeShelf)
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "home", "clear"), dataSource.calls)
+        assertEquals(listOf("restore", "credentials:load", "home", "clear"), dataSource.calls)
     }
 
     private class FakeAppDataSource(
         private val loginError: Throwable? = null,
         private var restoredSession: AuthSession? = null,
+        var savedCredentials: SavedCredentials? = null,
         homeError: Throwable? = null,
     ) : AppDataSource {
         var books = listOf(
@@ -890,6 +963,19 @@ class AppStateControllerTest {
         override suspend fun clearSession() {
             calls += "clear"
             restoredSession = null
+        }
+
+        override suspend fun loadSavedCredentials(): SavedCredentials? {
+            calls += "credentials:load"
+            return savedCredentials
+        }
+
+        override suspend fun saveCredentials(credentials: SavedCredentials) {
+            savedCredentials = credentials
+        }
+
+        override suspend fun clearSavedCredentials() {
+            savedCredentials = null
         }
 
         fun book(id: String, title: String): BookSummary =

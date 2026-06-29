@@ -2,6 +2,7 @@ package com.reelshort.app.data
 
 import com.reelshort.app.network.FakeReelShortApiClient
 import com.reelshort.app.session.FileSessionStore
+import com.reelshort.app.session.InMemoryCredentialStore
 import com.reelshort.app.session.InMemorySessionStore
 import com.reelshort.app.session.SessionStore
 import kotlinx.coroutines.test.runTest
@@ -76,6 +77,21 @@ class AppRepositoryTest {
 
         assertNull(repository.currentToken)
         assertNull(sessionStore.loadSession())
+    }
+
+    @Test
+    fun savedCredentialsUseSeparateCredentialStore() = runTest {
+        val credentialStore = InMemoryCredentialStore()
+        val repository = AppRepository(FakeReelShortApiClient(), InMemorySessionStore(), credentialStore)
+        val credentials = SavedCredentials(username = "demo", password = "Password123", rememberPassword = true)
+
+        repository.saveCredentials(credentials)
+
+        assertEquals(credentials, repository.loadSavedCredentials())
+
+        repository.clearSavedCredentials()
+
+        assertNull(repository.loadSavedCredentials())
     }
 
     @Test

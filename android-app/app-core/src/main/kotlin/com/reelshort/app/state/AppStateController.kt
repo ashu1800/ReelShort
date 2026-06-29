@@ -5,6 +5,7 @@ import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.SavedCredentials
 import com.reelshort.app.network.ApiClientException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,14 +19,16 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
-    suspend fun restoreSession() = runWithLoading {
+    suspend fun restoreSession() = runWithLoading(ErrorContext.CONTENT) {
         val session = dataSource.restoreSession()
+        val savedCredentials = dataSource.loadSavedCredentials()
         try {
             val homeShelf = dataSource.loadHomeShelf()
             mutableState.update {
                 it.copy(
                     screen = AppScreen.HOME,
                     session = session,
+                    savedCredentials = savedCredentials,
                     homeShelf = homeShelf,
                     isLoading = false,
                 )
@@ -37,6 +40,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 it.copy(
                     screen = AppScreen.HOME,
                     session = session,
+                    savedCredentials = savedCredentials,
                     homeShelf = emptyList(),
                     isLoading = false,
                     errorMessage = "内容暂时加载失败，可以稍后刷新。",
@@ -45,14 +49,34 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun login(username: String, password: String) = runWithLoading {
+    suspend fun loadSavedCredentials() = runWithLoading(ErrorContext.DIAGNOSTIC) {
+        val savedCredentials = dataSource.loadSavedCredentials()
+        mutableState.update {
+            it.copy(savedCredentials = savedCredentials, isLoading = false)
+        }
+    }
+
+    suspend fun login(username: String, password: String, rememberPassword: Boolean = false) = runWithLoading(ErrorContext.LOGIN) {
         val session = dataSource.login(username, password)
+        updateSavedCredentials(username, password, rememberPassword)
         openHomeAfterAuthentication(session)
     }
 
-    suspend fun register(username: String, password: String) = runWithLoading {
+    suspend fun register(username: String, password: String, rememberPassword: Boolean = false) = runWithLoading(ErrorContext.REGISTER) {
         val session = dataSource.register(username, password)
+        updateSavedCredentials(username, password, rememberPassword)
         openHomeAfterAuthentication(session)
+    }
+
+    private suspend fun updateSavedCredentials(username: String, password: String, rememberPassword: Boolean) {
+        if (rememberPassword) {
+            val credentials = SavedCredentials(username = username, password = password, rememberPassword = true)
+            dataSource.saveCredentials(credentials)
+            mutableState.update { it.copy(savedCredentials = credentials) }
+        } else {
+            dataSource.clearSavedCredentials()
+            mutableState.update { it.copy(savedCredentials = null) }
+        }
     }
 
     private suspend fun openHomeAfterAuthentication(session: AuthSession) {
@@ -103,7 +127,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun refreshHome() = runWithLoading {
+    suspend fun refreshHome() = runWithLoading(ErrorContext.CONTENT) {
         val homeShelf = dataSource.loadHomeShelf()
         mutableState.update {
             it.copy(
@@ -139,7 +163,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun search(query: String) = runWithLoading {
+    suspend fun search(query: String) = runWithLoading(ErrorContext.CONTENT) {
         val results = dataSource.search(query)
         mutableState.update {
             it.copy(
@@ -155,7 +179,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         mutableState.update { it.copy(screen = AppScreen.SEARCH, errorMessage = null) }
     }
 
-    suspend fun openBook(book: BookSummary) = runWithLoading {
+    suspend fun openBook(book: BookSummary) = runWithLoading(ErrorContext.CONTENT) {
         val episodes = dataSource.loadEpisodes(book)
         mutableState.update {
             it.copy(
@@ -170,7 +194,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun openPlayer(episode: EpisodeSummary) = runWithLoading {
+    suspend fun openPlayer(episode: EpisodeSummary) = runWithLoading(ErrorContext.PLAYBACK) {
         val book = requireSelectedBook()
         if (state.value.session == null) {
             mutableState.update {
@@ -225,7 +249,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun reportProgress(positionSeconds: Int, durationSeconds: Int) = runWithLoading {
+    suspend fun reportProgress(positionSeconds: Int, durationSeconds: Int) = runWithLoading(ErrorContext.PLAYBACK) {
         val current = state.value
         val book = current.selectedBook ?: throw IllegalStateException("未选择剧集")
         val episode = current.selectedEpisode ?: throw IllegalStateException("未选择分集")
@@ -297,7 +321,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun refreshPlaybackUrl() = runWithLoading {
+    suspend fun refreshPlaybackUrl() = runWithLoading(ErrorContext.PLAYBACK) {
         val current = state.value
         val book = current.selectedBook ?: throw IllegalStateException("未选择剧集")
         val episode = current.selectedEpisode ?: throw IllegalStateException("未选择分集")
@@ -311,7 +335,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun loadAccountSnapshot() = runWithLoading {
+    suspend fun loadAccountSnapshot() = runWithLoading(ErrorContext.ACCOUNT) {
         loadAccountSnapshotForAuthenticatedUser()
     }
 
@@ -336,6 +360,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             return
         }
         if (!hasAccountSnapshot(state.value)) {
+            mutableState.update { it.copy(screen = AppScreen.ACCOUNT) }
             loadAccountSnapshot()
             return
         }
@@ -389,7 +414,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update { it.copy(isLoading = false) }
             throw error
         } catch (error: Throwable) {
-            val message = userFacingErrorMessage(error)
+            val message = userFacingErrorMessage(error, ErrorContext.DIAGNOSTIC)
             mutableState.update {
                 it.copy(
                     apiHealthStatus = ApiHealthStatus(status = "DOWN", service = message),
@@ -400,12 +425,15 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun logout() = runWithLoading {
+    suspend fun logout() = runWithLoading(ErrorContext.ACCOUNT) {
         dataSource.clearSession()
-        mutableState.value = AppUiState(apiBaseUrl = dataSource.apiBaseUrl)
+        mutableState.value = AppUiState(
+            apiBaseUrl = dataSource.apiBaseUrl,
+            savedCredentials = state.value.savedCredentials,
+        )
     }
 
-    private suspend fun runWithLoading(block: suspend () -> Unit) {
+    private suspend fun runWithLoading(errorContext: ErrorContext, block: suspend () -> Unit) {
         mutableState.update { it.copy(isLoading = true, errorMessage = null) }
         try {
             block()
@@ -416,7 +444,8 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update {
                 it.copy(
                     isLoading = false,
-                    errorMessage = userFacingErrorMessage(error),
+                    errorMessage = userFacingErrorMessage(error, errorContext),
+                    authPromptVisible = if (shouldPromptForLogin(error, errorContext)) true else it.authPromptVisible,
                 )
             }
         }
@@ -428,15 +457,37 @@ class AppStateController(private val dataSource: AppDataSource) {
     private fun hasAccountSnapshot(state: AppUiState): Boolean =
         state.pointAccount != null || state.watchHistory.isNotEmpty() || state.orders.isNotEmpty()
 
-    private fun userFacingErrorMessage(error: Throwable): String {
+    private fun shouldPromptForLogin(error: Throwable, context: ErrorContext): Boolean =
+        error is ApiClientException &&
+            error.statusCode == 401 &&
+            (context == ErrorContext.ACCOUNT || context == ErrorContext.PLAYBACK)
+
+    private fun userFacingErrorMessage(error: Throwable, context: ErrorContext): String {
         val rawMessage = error.message?.trim().orEmpty()
         val normalizedMessage = rawMessage.lowercase()
-        if (error is ApiClientException && error.statusCode == 401) {
+        if (context == ErrorContext.CONTENT) {
+            return "内容暂时加载失败，可以稍后刷新。"
+        }
+        if (error is ApiClientException && error.statusCode == 401 && (context == ErrorContext.LOGIN || context == ErrorContext.REGISTER)) {
             return "用户名或密码错误"
         }
-        if ("invalid username or password" in normalizedMessage || "invalid credentials" in normalizedMessage) {
+        if (error is ApiClientException && error.statusCode == 401) {
+            return "登录状态已失效，请重新登录。"
+        }
+        if ((context == ErrorContext.LOGIN || context == ErrorContext.REGISTER) &&
+            ("invalid username or password" in normalizedMessage || "invalid credentials" in normalizedMessage)
+        ) {
             return "用户名或密码错误"
         }
         return rawMessage.ifBlank { error::class.simpleName ?: "请求失败" }
+    }
+
+    private enum class ErrorContext {
+        LOGIN,
+        REGISTER,
+        CONTENT,
+        ACCOUNT,
+        PLAYBACK,
+        DIAGNOSTIC,
     }
 }
