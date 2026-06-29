@@ -64,6 +64,18 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun loginFailureUsesUserFacingCredentialMessage() = runTest {
+        val dataSource = FakeAppDataSource(loginError = IllegalStateException("invalid username or password"))
+        val controller = AppStateController(dataSource)
+
+        controller.login("demo", "wrong")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.LOGIN, state.screen)
+        assertEquals("用户名或密码错误", state.errorMessage)
+    }
+
+    @Test
     fun searchUpdatesQueryResultsAndScreen() = runTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)

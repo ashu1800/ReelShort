@@ -29,6 +29,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
@@ -279,12 +280,12 @@ fun ReelShortApp(actions: AppUiActions) {
     }
 
     ReelShortTheme {
+        ErrorDialog(state.errorMessage, actions::clearError)
         if (state.screen == AppScreen.LOGIN) {
             LoginScreen(
                 state = state,
                 onLogin = { username, password -> scope.launch { actions.login(username, password) } },
                 onRegister = { username, password -> scope.launch { actions.register(username, password) } },
-                onClearError = actions::clearError,
             )
         } else {
             MainShell(
@@ -300,7 +301,6 @@ fun ReelShortApp(actions: AppUiActions) {
                     }
                 },
                 onLogout = { scope.launch { actions.logout() } },
-                onClearError = actions::clearError,
                 onSearch = { query -> scope.launch { actions.search(query) } },
                 onOpenBook = { book -> scope.launch { actions.openBook(book) } },
                 onOpenPlayer = { episode -> scope.launch { actions.openPlayer(episode) } },
@@ -355,7 +355,6 @@ private fun LoginScreen(
     state: AppUiState,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String) -> Unit,
-    onClearError: () -> Unit,
 ) {
     var username by remember { mutableStateOf(state.session?.username ?: "demo") }
     var password by remember { mutableStateOf("") }
@@ -373,7 +372,6 @@ private fun LoginScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text("账号登录", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text("继续浏览推荐短剧和观看记录", color = TextSecondary)
-                        ErrorBanner(state.errorMessage, onClearError)
                         LoginTextField(
                             value = username,
                             onValueChange = { username = it },
@@ -449,7 +447,6 @@ private fun MainShell(
     state: AppUiState,
     onScreenSelected: (AppScreen) -> Unit,
     onLogout: () -> Unit,
-    onClearError: () -> Unit,
     onSearch: (String) -> Unit,
     onOpenBook: (BookSummary) -> Unit,
     onOpenPlayer: (EpisodeSummary) -> Unit,
@@ -509,7 +506,6 @@ private fun MainShell(
                 if (state.isLoading) {
                     LoadingStrip()
                 }
-                ErrorBanner(state.errorMessage, onClearError)
                 when (state.screen) {
                     AppScreen.LOGIN -> Unit
                     AppScreen.HOME -> HomeScreen(state.homeShelf, onOpenBook)
@@ -558,25 +554,24 @@ private fun LoadingStrip() {
 }
 
 @Composable
-private fun ErrorBanner(message: String?, onClearError: () -> Unit) {
+private fun ErrorDialog(message: String?, onClearError: () -> Unit) {
     if (message == null) {
         return
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(DangerSurface)
-            .border(1.dp, Color(0xFF663038), RoundedCornerShape(14.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(message, modifier = Modifier.weight(1f), color = DangerText, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        TextButton(onClick = onClearError) {
-            Text("关闭", color = DangerText)
-        }
-    }
+    AlertDialog(
+        onDismissRequest = onClearError,
+        title = { Text("操作失败") },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onClearError) {
+                Text("知道了")
+            }
+        },
+        containerColor = Panel,
+        titleContentColor = TextPrimary,
+        textContentColor = TextSecondary,
+        tonalElevation = 0.dp,
+    )
 }
 
 @Composable

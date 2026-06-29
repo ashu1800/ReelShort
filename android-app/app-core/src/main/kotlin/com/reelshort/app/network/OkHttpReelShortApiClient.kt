@@ -27,6 +27,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -144,7 +147,12 @@ class OkHttpReelShortApiClient(
             val body = response.body?.string()
                 ?: throw ApiClientException(response.code, null, "empty response body")
             if (!response.isSuccessful) {
-                throw ApiClientException(response.code, null, body.ifBlank { response.message })
+                val backendError = parseBackendError(body)
+                throw ApiClientException(
+                    response.code,
+                    backendError?.code,
+                    backendError?.message ?: body.ifBlank { response.message },
+                )
             }
             val apiResponse = json.decodeFromString<BackendApiResponse<T>>(body)
             if (apiResponse.code != 0) {
@@ -185,6 +193,21 @@ class OkHttpReelShortApiClient(
         val token = tokenProvider() ?: throw ApiClientException(0, null, "missing bearer token")
         return header("Authorization", "Bearer $token")
     }
+
+    private fun parseBackendError(body: String): BackendError? = runCatching {
+        val element = json.parseToJsonElement(body) as? JsonObject ?: return@runCatching null
+        val message = element["message"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+            ?: return@runCatching null
+        BackendError(
+            code = element["code"]?.jsonPrimitive?.intOrNull,
+            message = message,
+        )
+    }.getOrNull()
+
+    private data class BackendError(
+        val code: Int?,
+        val message: String,
+    )
 
     private companion object {
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()

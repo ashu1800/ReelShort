@@ -4,6 +4,7 @@ import com.reelshort.app.data.AppDataSource
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.network.ApiClientException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -207,7 +208,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update { it.copy(isLoading = false) }
             throw error
         } catch (error: Throwable) {
-            val message = error.message ?: error::class.simpleName ?: "请求失败"
+            val message = userFacingErrorMessage(error)
             mutableState.update {
                 it.copy(
                     apiHealthStatus = ApiHealthStatus(status = "DOWN", service = message),
@@ -234,7 +235,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update {
                 it.copy(
                     isLoading = false,
-                    errorMessage = error.message ?: error::class.simpleName ?: "请求失败",
+                    errorMessage = userFacingErrorMessage(error),
                 )
             }
         }
@@ -242,4 +243,16 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     private fun requireSelectedBook(): BookSummary =
         state.value.selectedBook ?: throw IllegalStateException("未选择剧集")
+
+    private fun userFacingErrorMessage(error: Throwable): String {
+        val rawMessage = error.message?.trim().orEmpty()
+        val normalizedMessage = rawMessage.lowercase()
+        if (error is ApiClientException && error.statusCode == 401) {
+            return "用户名或密码错误"
+        }
+        if ("invalid username or password" in normalizedMessage || "invalid credentials" in normalizedMessage) {
+            return "用户名或密码错误"
+        }
+        return rawMessage.ifBlank { error::class.simpleName ?: "请求失败" }
+    }
 }

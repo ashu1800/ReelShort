@@ -60,6 +60,37 @@ class OkHttpReelShortApiClientTest {
     }
 
     @Test
+    fun httpErrorResponseExtractsBackendMessage() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(401)
+                    .setBody("""
+                        {
+                          "code": 401,
+                          "message": "invalid username or password",
+                          "path": "/api/app/auth/login",
+                          "requestId": "req-1",
+                          "timestamp": "2026-06-29T10:20:00+08:00"
+                        }
+                    """.trimIndent())
+            )
+            val client = OkHttpReelShortApiClient(
+                config = ApiConfig(server.url("/api/app").toString()),
+                httpClient = OkHttpClient(),
+            )
+
+            val error = assertFailsWith<ApiClientException> {
+                client.login("demo", "bad-password")
+            }
+
+            assertEquals(401, error.statusCode)
+            assertEquals(401, error.code)
+            assertEquals("invalid username or password", error.message)
+        }
+    }
+
+    @Test
     fun loginPostsCredentialsAndParsesSession() = runTest {
         MockWebServer().use { server ->
             server.enqueue(successBody("""
