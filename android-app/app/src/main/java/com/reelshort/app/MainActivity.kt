@@ -310,9 +310,9 @@ fun ReelShortApp(actions: AppUiActions) {
                     onScreenSelected = { screen ->
                         scope.launch {
                             when (screen) {
-                                AppScreen.HOME -> actions.refreshHome()
+                                AppScreen.HOME -> actions.openHome()
                                 AppScreen.SEARCH -> actions.showSearch()
-                                AppScreen.ACCOUNT -> actions.loadAccount()
+                                AppScreen.ACCOUNT -> actions.openAccount()
                                 else -> Unit
                             }
                         }
@@ -1296,6 +1296,18 @@ internal enum class LoadingFeedbackMode {
 }
 
 internal fun loadingFeedbackMode(): LoadingFeedbackMode = LoadingFeedbackMode.CENTER_DIALOG
+
+internal enum class TabRefreshMode {
+    CACHE_FIRST_BACKGROUND_REFRESH,
+    LOCAL_SWITCH,
+}
+
+internal fun primaryTabRefreshModes(): Map<AppScreen, TabRefreshMode> =
+    mapOf(
+        AppScreen.HOME to TabRefreshMode.CACHE_FIRST_BACKGROUND_REFRESH,
+        AppScreen.SEARCH to TabRefreshMode.LOCAL_SWITCH,
+        AppScreen.ACCOUNT to TabRefreshMode.CACHE_FIRST_BACKGROUND_REFRESH,
+    )
 
 internal fun accountEntryLabels(): List<String> =
     listOf("积分余额", "观看记录", "积分流水", "充值订单", "开发诊断", "退出登录")

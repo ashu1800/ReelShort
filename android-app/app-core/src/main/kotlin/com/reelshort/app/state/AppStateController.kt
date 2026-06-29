@@ -88,6 +88,31 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
+    suspend fun openHome() {
+        if (state.value.homeShelf.isEmpty()) {
+            refreshHome()
+            return
+        }
+
+        mutableState.update { it.copy(screen = AppScreen.HOME, errorMessage = null) }
+        refreshHomeSilently()
+    }
+
+    private suspend fun refreshHomeSilently() {
+        try {
+            val homeShelf = dataSource.loadHomeShelf()
+            mutableState.update {
+                it.copy(
+                    screen = AppScreen.HOME,
+                    homeShelf = homeShelf,
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+        }
+    }
+
     suspend fun search(query: String) = runWithLoading {
         val results = dataSource.search(query)
         mutableState.update {
@@ -194,6 +219,35 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
+    suspend fun openAccount() {
+        if (!hasAccountSnapshot(state.value)) {
+            loadAccountSnapshot()
+            return
+        }
+
+        mutableState.update { it.copy(screen = AppScreen.ACCOUNT, errorMessage = null) }
+        refreshAccountSilently()
+    }
+
+    private suspend fun refreshAccountSilently() {
+        try {
+            val history = dataSource.loadWatchHistory()
+            val points = dataSource.loadPointAccount()
+            val orders = dataSource.loadOrders()
+            mutableState.update {
+                it.copy(
+                    screen = AppScreen.ACCOUNT,
+                    watchHistory = history,
+                    pointAccount = points,
+                    orders = orders,
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+        }
+    }
+
     fun clearError() {
         mutableState.update { it.copy(errorMessage = null) }
     }
@@ -247,6 +301,9 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     private fun requireSelectedBook(): BookSummary =
         state.value.selectedBook ?: throw IllegalStateException("未选择剧集")
+
+    private fun hasAccountSnapshot(state: AppUiState): Boolean =
+        state.pointAccount != null || state.watchHistory.isNotEmpty() || state.orders.isNotEmpty()
 
     private fun userFacingErrorMessage(error: Throwable): String {
         val rawMessage = error.message?.trim().orEmpty()

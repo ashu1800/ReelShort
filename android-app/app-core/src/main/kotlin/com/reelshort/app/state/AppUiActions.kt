@@ -13,6 +13,8 @@ class AppUiActions(private val controller: AppStateController) {
 
     suspend fun register(username: String, password: String) = controller.register(username, password)
 
+    suspend fun openHome() = controller.openHome()
+
     suspend fun refreshHome() = controller.refreshHome()
 
     suspend fun search(query: String) = controller.search(query)
@@ -30,6 +32,8 @@ class AppUiActions(private val controller: AppStateController) {
 
     suspend fun reportProgress(positionSeconds: Int, durationSeconds: Int) =
         controller.reportProgress(positionSeconds, durationSeconds)
+
+    suspend fun openAccount() = controller.openAccount()
 
     suspend fun loadAccount() = controller.loadAccountSnapshot()
 

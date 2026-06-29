@@ -1,5 +1,6 @@
 package com.reelshort.app
 
+import com.reelshort.app.state.AppScreen
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -32,5 +33,17 @@ class VisualTextContractTest {
     @Test
     fun loadingFeedbackUsesCenteredDialog() {
         assertEquals(LoadingFeedbackMode.CENTER_DIALOG, loadingFeedbackMode())
+    }
+
+    @Test
+    fun bottomNavigationUsesNonBlockingRefreshForCachedTabs() {
+        assertEquals(
+            mapOf(
+                AppScreen.HOME to TabRefreshMode.CACHE_FIRST_BACKGROUND_REFRESH,
+                AppScreen.SEARCH to TabRefreshMode.LOCAL_SWITCH,
+                AppScreen.ACCOUNT to TabRefreshMode.CACHE_FIRST_BACKGROUND_REFRESH,
+            ),
+            primaryTabRefreshModes(),
+        )
     }
 }

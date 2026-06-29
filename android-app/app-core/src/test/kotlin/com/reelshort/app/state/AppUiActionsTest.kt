@@ -57,6 +57,19 @@ class AppUiActionsTest {
     }
 
     @Test
+    fun tabOpenActionsUseNonBlockingControllerEntrypoints() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        val actions = AppUiActions(controller)
+
+        actions.openHome()
+        actions.openAccount()
+
+        assertEquals(AppScreen.ACCOUNT, controller.state.value.screen)
+        assertEquals(listOf("home", "history", "points", "orders"), dataSource.calls)
+    }
+
+    @Test
     fun openBookDelegatesToControllerAndSelectsBook() = runTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
@@ -220,8 +233,10 @@ class AppUiActionsTest {
             return PointAccount(balance = 25, records = listOf(PointRecord(amount = 5, reason = "WATCH_REWARD")))
         }
 
-        override suspend fun loadOrders(): List<RechargeOrderSummary> =
-            listOf(RechargeOrderSummary(orderNo = "RO202606270001", amountCents = 100, pointAmount = 10, status = "CREATED"))
+        override suspend fun loadOrders(): List<RechargeOrderSummary> {
+            calls += "orders"
+            return listOf(RechargeOrderSummary(orderNo = "RO202606270001", amountCents = 100, pointAmount = 10, status = "CREATED"))
+        }
 
         override suspend fun restoreSession(): AuthSession? = null
 

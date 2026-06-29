@@ -12,6 +12,10 @@ import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,6 +24,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertFailsWith
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AppStateControllerTest {
     @Test
     fun initialStateStartsOnLoginScreen() {
@@ -263,6 +268,109 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun openHomeWithCachedShelfShowsCacheWithoutGlobalLoadingAndReplacesAfterRefresh() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.refreshHome()
+        dataSource.books = listOf(dataSource.book("book-3", "Gamma"))
+        dataSource.homeGate = CompletableDeferred()
+
+        val job = launch { controller.openHome() }
+        runCurrent()
+
+        val cachedState = controller.state.value
+        assertEquals(AppScreen.HOME, cachedState.screen)
+        assertEquals(listOf("book-1", "book-2"), cachedState.homeShelf.map { it.id })
+        assertFalse(cachedState.isLoading)
+        assertNull(cachedState.errorMessage)
+
+        dataSource.homeGate?.complete(Unit)
+        job.join()
+
+        val refreshedState = controller.state.value
+        assertEquals(listOf("book-3"), refreshedState.homeShelf.map { it.id })
+        assertFalse(refreshedState.isLoading)
+        assertNull(refreshedState.errorMessage)
+    }
+
+    @Test
+    fun openHomeWithCachedShelfKeepsCacheAndStaysSilentWhenRefreshFails() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.refreshHome()
+        dataSource.homeError = IllegalStateException("content source unavailable")
+
+        controller.openHome()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
+        assertFalse(state.isLoading)
+        assertNull(state.errorMessage)
+        assertEquals(listOf("home", "home"), dataSource.calls)
+    }
+
+    @Test
+    fun openHomeWithoutCachedShelfUsesInitialLoadingPath() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.openHome()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
+        assertFalse(state.isLoading)
+        assertNull(state.errorMessage)
+        assertEquals(listOf("home"), dataSource.calls)
+    }
+
+    @Test
+    fun openAccountWithCachedSnapshotShowsCacheWithoutGlobalLoadingAndReplacesAfterRefresh() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.loadAccountSnapshot()
+        dataSource.pointBalance = 88
+        dataSource.accountGate = CompletableDeferred()
+
+        val job = launch { controller.openAccount() }
+        runCurrent()
+
+        val cachedState = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, cachedState.screen)
+        assertEquals(25, cachedState.pointAccount?.balance)
+        assertEquals(listOf("RO202606270001"), cachedState.orders.map { it.orderNo })
+        assertFalse(cachedState.isLoading)
+        assertNull(cachedState.errorMessage)
+
+        dataSource.accountGate?.complete(Unit)
+        job.join()
+
+        val refreshedState = controller.state.value
+        assertEquals(88, refreshedState.pointAccount?.balance)
+        assertFalse(refreshedState.isLoading)
+        assertNull(refreshedState.errorMessage)
+    }
+
+    @Test
+    fun openAccountWithCachedSnapshotKeepsCacheAndStaysSilentWhenRefreshFails() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.loadAccountSnapshot()
+        dataSource.accountError = IllegalStateException("account unavailable")
+
+        controller.openAccount()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertEquals(25, state.pointAccount?.balance)
+        assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
+        assertFalse(state.isLoading)
+        assertNull(state.errorMessage)
+        assertEquals(listOf("history", "points", "orders", "history"), dataSource.calls)
+    }
+
+    @Test
     fun checkApiHealthWritesDiagnosticsState() = runTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
@@ -370,9 +478,9 @@ class AppStateControllerTest {
     private class FakeAppDataSource(
         private val loginError: Throwable? = null,
         private var restoredSession: AuthSession? = null,
-        private val homeError: Throwable? = null,
+        homeError: Throwable? = null,
     ) : AppDataSource {
-        val books = listOf(
+        var books = listOf(
             BookSummary(
                 id = "book-1",
                 title = "Alpha",
@@ -390,6 +498,11 @@ class AppStateControllerTest {
                 chapterCount = 1,
             ),
         )
+        var homeError: Throwable? = homeError
+        var homeGate: CompletableDeferred<Unit>? = null
+        var accountError: Throwable? = null
+        var accountGate: CompletableDeferred<Unit>? = null
+        var pointBalance: Int = 25
         val episodes = listOf(
             EpisodeSummary(number = 1, chapterId = "chapter-1", durationSeconds = 200),
             EpisodeSummary(number = 2, chapterId = "chapter-2", durationSeconds = 180),
@@ -421,6 +534,7 @@ class AppStateControllerTest {
 
         override suspend fun loadHomeShelf(): List<BookSummary> {
             calls += "home"
+            homeGate?.await()
             homeError?.let { throw it }
             return books
         }
@@ -469,16 +583,20 @@ class AppStateControllerTest {
 
         override suspend fun loadWatchHistory(): List<WatchRecord> {
             calls += "history"
+            accountGate?.await()
+            accountError?.let { throw it }
             return listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 1, progressPercent = 75))
         }
 
         override suspend fun loadPointAccount(): PointAccount {
             calls += "points"
-            return PointAccount(balance = 25, records = listOf(PointRecord(amount = 5, reason = "WATCH_REWARD")))
+            accountError?.let { throw it }
+            return PointAccount(balance = pointBalance, records = listOf(PointRecord(amount = 5, reason = "WATCH_REWARD")))
         }
 
         override suspend fun loadOrders(): List<RechargeOrderSummary> {
             calls += "orders"
+            accountError?.let { throw it }
             return listOf(
                 RechargeOrderSummary(
                     orderNo = "RO202606270001",
@@ -498,5 +616,15 @@ class AppStateControllerTest {
             calls += "clear"
             restoredSession = null
         }
+
+        fun book(id: String, title: String): BookSummary =
+            BookSummary(
+                id = id,
+                title = title,
+                filteredTitle = title.lowercase(),
+                coverUrl = null,
+                description = "$title book",
+                chapterCount = 1,
+            )
     }
 }
