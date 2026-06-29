@@ -55,7 +55,7 @@ internal fun PosterCard(book: BookSummary, onClick: () -> Unit) {
             .clip(MaterialTheme.shapes.medium)
             .clickable(interactionSource = interaction, indication = LocalIndication.current, onClick = onClick),
     ) {
-        PosterBlock(book.title, book.coverUrl, Modifier.fillMaxWidth())
+        PosterBlock(book.title, book.coverUrl, Modifier.matchParentSize())
         // 底部渐变遮罩，保证标题在任何封面上都可读
         Box(
             modifier = Modifier
