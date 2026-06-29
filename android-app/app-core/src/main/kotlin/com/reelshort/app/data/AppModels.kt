@@ -6,6 +6,11 @@ data class AuthSession(
     val tokenType: String,
 )
 
+data class ApiHealthStatus(
+    val status: String,
+    val service: String? = null,
+)
+
 data class BookSummary(
     val id: String,
     val title: String,

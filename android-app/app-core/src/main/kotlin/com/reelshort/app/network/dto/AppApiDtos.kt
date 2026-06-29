@@ -23,6 +23,12 @@ data class AuthSessionDto(
 )
 
 @Serializable
+data class ApiHealthStatusDto(
+    val status: String,
+    val service: String? = null,
+)
+
+@Serializable
 data class ContentBookDto(
     val bookId: String,
     val title: String,

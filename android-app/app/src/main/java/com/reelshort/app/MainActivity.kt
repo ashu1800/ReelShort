@@ -79,6 +79,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.reelshort.app.config.ApiConfig
+import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AppRepository
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
@@ -165,6 +166,36 @@ internal data class ContentEmptyState(
     val actionLabel: String? = null,
 )
 
+internal data class ApiDiagnosticsText(
+    val label: String,
+    val message: String,
+    val isUp: Boolean,
+)
+
+internal fun apiDiagnosticsText(status: ApiHealthStatus?): ApiDiagnosticsText {
+    if (status == null) {
+        return ApiDiagnosticsText(
+            label = "未检测",
+            message = "点击刷新，检查雷电模拟器是否能访问本机 Spring Boot。",
+            isUp = false,
+        )
+    }
+    return if (status.status.equals("UP", ignoreCase = true)) {
+        val service = status.service?.takeIf { it.isNotBlank() } ?: "Spring Boot"
+        ApiDiagnosticsText(
+            label = "已连接",
+            message = "后端 $service 正常响应。",
+            isUp = true,
+        )
+    } else {
+        ApiDiagnosticsText(
+            label = "连接异常",
+            message = "后端健康状态为 ${status.status}，请确认 Spring Boot 是否启动。",
+            isUp = false,
+        )
+    }
+}
+
 internal fun homeEmptyState(): ContentEmptyState =
     ContentEmptyState(
         title = "今日暂无推荐",
@@ -227,12 +258,13 @@ class MainActivity : ComponentActivity() {
 private object AndroidAppFactory {
     fun createActions(filesDir: File): AppUiActions {
         val sessionStore = FileSessionStore(File(filesDir, "reelshort-session.json"))
+        val apiConfig = ApiConfig(BuildConfig.REELSHORT_API_BASE_URL)
         lateinit var repository: AppRepository
         val apiClient = OkHttpReelShortApiClient(
-            config = ApiConfig(BuildConfig.REELSHORT_API_BASE_URL),
+            config = apiConfig,
             tokenProvider = { repository.currentToken },
         )
-        repository = AppRepository(apiClient, sessionStore)
+        repository = AppRepository(apiClient, sessionStore, apiConfig.baseUrl)
         return AppUiActions(AppStateController(repository))
     }
 }
@@ -278,6 +310,7 @@ fun ReelShortApp(actions: AppUiActions) {
                     val playback = state.playback
                     scope.launch { actions.reportProgress(playback.positionSeconds, playback.durationSeconds) }
                 },
+                onCheckApiHealth = { scope.launch { actions.checkApiHealth() } },
             )
         }
     }
@@ -423,6 +456,7 @@ private fun MainShell(
     onUpdatePlaybackPosition: (Int, Int) -> Unit,
     onRefreshPlaybackUrl: () -> Unit,
     onReportProgress: () -> Unit,
+    onCheckApiHealth: () -> Unit,
 ) {
     AppBackground {
         Scaffold(
@@ -482,7 +516,15 @@ private fun MainShell(
                     AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
                     AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, onOpenPlayer)
                     AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onRefreshPlaybackUrl, onReportProgress)
-                    AppScreen.ACCOUNT -> AccountScreen(state.watchHistory, state.pointAccount?.balance ?: 0, state.pointAccount?.records ?: emptyList(), state.orders)
+                    AppScreen.ACCOUNT -> AccountScreen(
+                        records = state.watchHistory,
+                        balance = state.pointAccount?.balance ?: 0,
+                        pointRecords = state.pointAccount?.records ?: emptyList(),
+                        orders = state.orders,
+                        apiBaseUrl = state.apiBaseUrl,
+                        apiHealthStatus = state.apiHealthStatus,
+                        onCheckApiHealth = onCheckApiHealth,
+                    )
                 }
             }
         }
@@ -781,7 +823,11 @@ private fun AccountScreen(
     balance: Int,
     pointRecords: List<PointRecord>,
     orders: List<RechargeOrderSummary>,
+    apiBaseUrl: String,
+    apiHealthStatus: ApiHealthStatus?,
+    onCheckApiHealth: () -> Unit,
 ) {
+    val diagnostics = apiDiagnosticsText(apiHealthStatus)
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             SurfacePanel {
@@ -790,6 +836,9 @@ private fun AccountScreen(
                     Text("$balance", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black, color = PrimaryGold)
                 }
             }
+        }
+        item {
+            ApiDiagnosticsPanel(apiBaseUrl, diagnostics, onCheckApiHealth)
         }
         item { SectionHeader("观看记录", "最近 ${records.size} 条") }
         if (records.isEmpty()) {
@@ -807,6 +856,33 @@ private fun AccountScreen(
         items(pointRecords) { record -> PointRecordRow(record) }
         item { SectionHeader("充值订单", "商业化预留") }
         items(orders) { order -> OrderRow(order) }
+    }
+}
+
+@Composable
+private fun ApiDiagnosticsPanel(
+    apiBaseUrl: String,
+    diagnostics: ApiDiagnosticsText,
+    onCheckApiHealth: () -> Unit,
+) {
+    SurfacePanel {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("开发连接", color = TextSecondary)
+                    Text(diagnostics.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = if (diagnostics.isUp) PrimaryGold else TextPrimary)
+                }
+                OutlinedButton(
+                    onClick = onCheckApiHealth,
+                    border = BorderStroke(1.dp, Divider),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryGold),
+                ) {
+                    Text("刷新")
+                }
+            }
+            Text(apiBaseUrl.ifBlank { "API 地址未配置" }, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+            Text(diagnostics.message, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }
 

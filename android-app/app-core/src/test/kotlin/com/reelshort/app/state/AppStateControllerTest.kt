@@ -1,6 +1,7 @@
 package com.reelshort.app.state
 
 import com.reelshort.app.data.AppDataSource
+import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
@@ -218,6 +219,36 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun checkApiHealthWritesDiagnosticsState() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.checkApiHealth()
+
+        val state = controller.state.value
+        assertEquals("http://10.0.2.2:8080/api/app", state.apiBaseUrl)
+        assertEquals("UP", state.apiHealthStatus?.status)
+        assertEquals("fake-backend", state.apiHealthStatus?.service)
+        assertEquals(listOf("health"), dataSource.calls)
+    }
+
+    @Test
+    fun checkApiHealthFailureMarksDiagnosticsDown() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.checkApiHealth()
+        dataSource.healthError = IllegalStateException("connection refused")
+
+        controller.checkApiHealth()
+
+        val state = controller.state.value
+        assertEquals("DOWN", state.apiHealthStatus?.status)
+        assertEquals("connection refused", state.errorMessage)
+        assertFalse(state.isLoading)
+        assertEquals(listOf("health", "health"), dataSource.calls)
+    }
+
+    @Test
     fun cancellationIsNotConvertedIntoUiError() = runTest {
         val dataSource = FakeAppDataSource(loginError = CancellationException("cancelled"))
         val controller = AppStateController(dataSource)
@@ -323,6 +354,15 @@ class AppStateControllerTest {
         var lastProgress: WatchProgressReport? = null
         var videoUrlVersion: Int = 1
         var videoDurationSeconds: Int? = null
+        var healthError: Throwable? = null
+
+        override val apiBaseUrl: String = "http://10.0.2.2:8080/api/app"
+
+        override suspend fun checkSystemHealth(): ApiHealthStatus {
+            calls += "health"
+            healthError?.let { throw it }
+            return ApiHealthStatus(status = "UP", service = "fake-backend")
+        }
 
         override suspend fun login(username: String, password: String): AuthSession {
             calls += "login:$username"

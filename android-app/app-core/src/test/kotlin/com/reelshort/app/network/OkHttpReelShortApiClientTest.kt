@@ -13,6 +13,22 @@ import kotlin.test.assertFailsWith
 
 class OkHttpReelShortApiClientTest {
     @Test
+    fun systemHealthCheckUsesPublicEndpointWithoutBearerToken() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""{ "status": "UP", "service": "reelshort-backend" }"""))
+            val client = client(server, token = "token-123")
+
+            val status = client.checkSystemHealth()
+            val request = server.takeRequest()
+
+            assertEquals("/api/system/health", request.path)
+            assertEquals(null, request.getHeader("Authorization"))
+            assertEquals("UP", status.status)
+            assertEquals("reelshort-backend", status.service)
+        }
+    }
+
+    @Test
     fun backendErrorCodeThrowsApiClientException() = runTest {
         MockWebServer().use { server ->
             server.enqueue(

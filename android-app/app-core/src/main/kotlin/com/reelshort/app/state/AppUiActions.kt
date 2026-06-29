@@ -33,6 +33,8 @@ class AppUiActions(private val controller: AppStateController) {
 
     suspend fun loadAccount() = controller.loadAccountSnapshot()
 
+    suspend fun checkApiHealth() = controller.checkApiHealth()
+
     suspend fun logout() = controller.logout()
 
     fun clearError() = controller.clearError()

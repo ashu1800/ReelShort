@@ -1,6 +1,7 @@
 package com.reelshort.app.state
 
 import com.reelshort.app.data.AppDataSource
+import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
@@ -111,6 +112,17 @@ class AppUiActionsTest {
         assertEquals(listOf("login:demo", "home", "clear"), dataSource.calls)
     }
 
+    @Test
+    fun checkApiHealthDelegatesToController() = runTest {
+        val dataSource = FakeAppDataSource()
+        val actions = AppUiActions(AppStateController(dataSource))
+
+        actions.checkApiHealth()
+
+        assertEquals("UP", actions.state.value.apiHealthStatus?.status)
+        assertEquals(listOf("health"), dataSource.calls)
+    }
+
     private class FakeAppDataSource : AppDataSource {
         val books = listOf(
             BookSummary(
@@ -137,6 +149,13 @@ class AppUiActionsTest {
         val calls = mutableListOf<String>()
         var videoUrlVersion: Int = 1
         var lastProgress: WatchProgressReport? = null
+
+        override val apiBaseUrl: String = "http://10.0.2.2:8080/api/app"
+
+        override suspend fun checkSystemHealth(): ApiHealthStatus {
+            calls += "health"
+            return ApiHealthStatus(status = "UP", service = "fake-backend")
+        }
 
         override suspend fun login(username: String, password: String): AuthSession {
             calls += "login:$username"

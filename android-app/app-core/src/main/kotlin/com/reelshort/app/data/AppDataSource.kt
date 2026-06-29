@@ -1,6 +1,10 @@
 package com.reelshort.app.data
 
 interface AppDataSource {
+    val apiBaseUrl: String
+
+    suspend fun checkSystemHealth(): ApiHealthStatus
+
     suspend fun login(username: String, password: String): AuthSession
 
     suspend fun register(username: String, password: String): AuthSession

@@ -5,23 +5,25 @@ import kotlin.test.assertEquals
 
 class ApiConfigTest {
     @Test
-    fun defaultBaseUrlTargetsSpringBootAppApi() {
-        assertEquals("http://10.0.2.2:8080/api/app", ApiConfig.default().baseUrl)
+    fun defaultConfigDerivesSystemHealthUrl() {
+        val config = ApiConfig.default()
+
+        assertEquals("http://10.0.2.2:8080/api/app", config.baseUrl)
+        assertEquals("http://10.0.2.2:8080/api/system/health", config.systemHealthUrl)
     }
 
     @Test
-    fun constructorRemovesTrailingSlashesFromBaseUrl() {
-        assertEquals(
-            "http://localhost:8080/api/app",
-            ApiConfig("http://localhost:8080/api/app///").baseUrl,
-        )
+    fun trimsTrailingSlashBeforeDerivingSystemHealthUrl() {
+        val config = ApiConfig("http://localhost:8080/api/app/")
+
+        assertEquals("http://localhost:8080/api/app", config.baseUrl)
+        assertEquals("http://localhost:8080/api/system/health", config.systemHealthUrl)
     }
 
     @Test
-    fun normalizedBaseUrlDefinesEquality() {
-        assertEquals(
-            ApiConfig("http://localhost:8080/api/app"),
-            ApiConfig("http://localhost:8080/api/app/"),
-        )
+    fun appendsSystemHealthForNonStandardBaseUrl() {
+        val config = ApiConfig("http://localhost:8080/custom")
+
+        assertEquals("http://localhost:8080/custom/system/health", config.systemHealthUrl)
     }
 }
