@@ -5,6 +5,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,6 +26,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,7 +36,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
@@ -74,6 +80,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.media3.common.MediaItem
 import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
@@ -278,39 +285,53 @@ fun ReelShortApp(actions: AppUiActions) {
     LaunchedEffect(actions) {
         actions.restoreSession()
     }
+    LaunchedEffect(state.errorMessage) {
+        if (state.errorMessage != null) {
+            delay(2_000)
+            actions.clearError()
+        }
+    }
 
     ReelShortTheme {
-        ErrorDialog(state.errorMessage, actions::clearError)
-        if (state.screen == AppScreen.LOGIN) {
-            LoginScreen(
-                state = state,
-                onLogin = { username, password -> scope.launch { actions.login(username, password) } },
-                onRegister = { username, password -> scope.launch { actions.register(username, password) } },
-            )
-        } else {
-            MainShell(
-                state = state,
-                onScreenSelected = { screen ->
-                    scope.launch {
-                        when (screen) {
-                            AppScreen.HOME -> actions.refreshHome()
-                            AppScreen.SEARCH -> actions.showSearch()
-                            AppScreen.ACCOUNT -> actions.loadAccount()
-                            else -> Unit
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (state.screen == AppScreen.LOGIN) {
+                LoginScreen(
+                    state = state,
+                    onLogin = { username, password -> scope.launch { actions.login(username, password) } },
+                    onRegister = { username, password -> scope.launch { actions.register(username, password) } },
+                )
+            } else {
+                MainShell(
+                    state = state,
+                    onScreenSelected = { screen ->
+                        scope.launch {
+                            when (screen) {
+                                AppScreen.HOME -> actions.refreshHome()
+                                AppScreen.SEARCH -> actions.showSearch()
+                                AppScreen.ACCOUNT -> actions.loadAccount()
+                                else -> Unit
+                            }
                         }
-                    }
-                },
-                onLogout = { scope.launch { actions.logout() } },
-                onSearch = { query -> scope.launch { actions.search(query) } },
-                onOpenBook = { book -> scope.launch { actions.openBook(book) } },
-                onOpenPlayer = { episode -> scope.launch { actions.openPlayer(episode) } },
-                onUpdatePlaybackPosition = { position, duration -> actions.updatePlaybackPosition(position, duration) },
-                onRefreshPlaybackUrl = { scope.launch { actions.refreshPlaybackUrl() } },
-                onReportProgress = {
-                    val playback = state.playback
-                    scope.launch { actions.reportProgress(playback.positionSeconds, playback.durationSeconds) }
-                },
-                onCheckApiHealth = { scope.launch { actions.checkApiHealth() } },
+                    },
+                    onLogout = { scope.launch { actions.logout() } },
+                    onSearch = { query -> scope.launch { actions.search(query) } },
+                    onOpenBook = { book -> scope.launch { actions.openBook(book) } },
+                    onOpenPlayer = { episode -> scope.launch { actions.openPlayer(episode) } },
+                    onUpdatePlaybackPosition = { position, duration -> actions.updatePlaybackPosition(position, duration) },
+                    onRefreshPlaybackUrl = { scope.launch { actions.refreshPlaybackUrl() } },
+                    onReportProgress = {
+                        val playback = state.playback
+                        scope.launch { actions.reportProgress(playback.positionSeconds, playback.durationSeconds) }
+                    },
+                    onCheckApiHealth = { scope.launch { actions.checkApiHealth() } },
+                )
+            }
+            TopErrorToast(
+                message = state.errorMessage,
+                onDismiss = actions::clearError,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .zIndex(1f),
             )
         }
     }
@@ -554,24 +575,35 @@ private fun LoadingStrip() {
 }
 
 @Composable
-private fun ErrorDialog(message: String?, onClearError: () -> Unit) {
-    if (message == null) {
-        return
+private fun TopErrorToast(message: String?, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = message != null,
+        enter = slideInVertically { -it } + fadeIn(),
+        exit = slideOutVertically { -it } + fadeOut(),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier
+                .statusBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 12.dp)
+                .widthIn(max = 420.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(DangerSurface)
+                .border(1.dp, Color(0xFF663038), RoundedCornerShape(14.dp))
+                .clickable(onClick = onDismiss)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = message.orEmpty(),
+                color = DangerText,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
-    AlertDialog(
-        onDismissRequest = onClearError,
-        title = { Text("操作失败") },
-        text = { Text(message) },
-        confirmButton = {
-            TextButton(onClick = onClearError) {
-                Text("知道了")
-            }
-        },
-        containerColor = Panel,
-        titleContentColor = TextPrimary,
-        textContentColor = TextSecondary,
-        tonalElevation = 0.dp,
-    )
 }
 
 @Composable
