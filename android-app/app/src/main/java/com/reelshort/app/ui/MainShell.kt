@@ -45,7 +45,6 @@ internal fun MainShell(
     onOpenBook: (BookSummary) -> Unit,
     onOpenPlayer: (EpisodeSummary) -> Unit,
     onUpdatePlaybackPosition: (Int, Int) -> Unit,
-    onRefreshPlaybackUrl: () -> Unit,
     onAutoReportProgress: (Int, Int) -> Unit,
     onCheckApiHealth: () -> Unit,
     onShowAuthPrompt: () -> Unit,
@@ -88,7 +87,7 @@ internal fun MainShell(
                         AppScreen.HOME -> HomeScreen(state.homeShelf, onOpenBook)
                         AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
                         AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, onOpenPlayer)
-                        AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onRefreshPlaybackUrl, onAutoReportProgress)
+                        AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onAutoReportProgress)
                         AppScreen.ACCOUNT -> AccountScreen(
                             records = state.watchHistory,
                             isLoggedIn = state.session != null,

@@ -67,10 +67,6 @@ class ReelShortViewModel(
         controller.updatePlaybackPosition(positionSeconds, durationSeconds)
     }
 
-    fun refreshPlaybackUrl() {
-        viewModelScope.launch { controller.refreshPlaybackUrl() }
-    }
-
     fun reportProgressSilently(positionSeconds: Int, durationSeconds: Int) {
         viewModelScope.launch { controller.reportProgressSilently(positionSeconds, durationSeconds) }
     }

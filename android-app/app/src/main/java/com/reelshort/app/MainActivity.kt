@@ -59,7 +59,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onOpenBook = remember(viewModel) { viewModel::openBook }
     val onOpenPlayer = remember(viewModel) { viewModel::openPlayer }
     val onUpdatePlaybackPosition = remember(viewModel) { viewModel::updatePlaybackPosition }
-    val onRefreshPlaybackUrl = remember(viewModel) { viewModel::refreshPlaybackUrl }
     val onAutoReportProgress = remember(viewModel) { viewModel::reportProgressSilently }
     val onCheckApiHealth = remember(viewModel) { viewModel::checkApiHealth }
     val onShowAuthPrompt = remember(viewModel) { viewModel::showAuthPrompt }
@@ -78,7 +77,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onOpenBook = onOpenBook,
                 onOpenPlayer = onOpenPlayer,
                 onUpdatePlaybackPosition = onUpdatePlaybackPosition,
-                onRefreshPlaybackUrl = onRefreshPlaybackUrl,
                 onAutoReportProgress = onAutoReportProgress,
                 onCheckApiHealth = onCheckApiHealth,
                 onShowAuthPrompt = onShowAuthPrompt,

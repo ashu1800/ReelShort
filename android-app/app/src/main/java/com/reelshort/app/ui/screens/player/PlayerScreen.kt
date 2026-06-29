@@ -55,7 +55,6 @@ import com.reelshort.app.ui.format.episodeTitle
 import com.reelshort.app.ui.format.mediaDurationSeconds
 import com.reelshort.app.ui.format.mediaPositionSeconds
 import com.reelshort.app.ui.format.playableMediaUrlOrNull
-import com.reelshort.app.ui.format.playerSecondaryActionLabels
 import com.reelshort.app.ui.format.playerStartsAutomatically
 import com.reelshort.app.ui.format.playerSurfaceAspectRatio
 import com.reelshort.app.ui.format.rewardBadgeState
@@ -72,14 +71,12 @@ import kotlinx.coroutines.delay
 internal fun PlayerScreen(
     state: AppUiState,
     onUpdatePlaybackPosition: (Int, Int) -> Unit,
-    onRefreshPlaybackUrl: () -> Unit,
     onAutoReportProgress: (Int, Int) -> Unit,
 ) {
     val playback = state.playback
     val book = playback.book ?: state.selectedBook
     val episode = playback.episode ?: state.selectedEpisode
     val videoUrl = playback.videoUrl?.url
-    val ready = playback.status == PlaybackStatus.READY && episode != null && videoUrl != null
     val duration = playback.durationSeconds.takeIf { it > 0 } ?: episode?.durationSeconds ?: 0
     val badgeState = rewardBadgeState(
         progressPercent = playback.progressPercent,
@@ -130,19 +127,8 @@ internal fun PlayerScreen(
                     if (description.isNotBlank()) {
                         Text(description, color = TextSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     }
-                    Text("已领取 ${playback.lastReportedProgressPercent}%", color = TextSecondary)
                     if (playback.rewardReportError) {
                         Text("积分同步失败，继续播放时会自动重试。", color = DangerText)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        playerSecondaryActionLabels().forEach { label ->
-                            GoldOutlinedButton(
-                                text = label,
-                                enabled = ready,
-                                onClick = onRefreshPlaybackUrl,
-                                contentColor = TextPrimary,
-                            )
-                        }
                     }
                 }
             }
