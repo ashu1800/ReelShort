@@ -136,6 +136,20 @@ def test_map_book_preserves_description_from_upstream_alias():
     assert mapped["description"] == "A hidden marriage is exposed."
 
 
+def test_map_book_preserves_special_desc_from_current_reelshort_payload():
+    mapped = ReelShortClient("https://site.example", "id", 3)._map_book(
+        {
+            "book_id": "book-1",
+            "book_title": "Love Story",
+            "book_pic": "cover.jpg",
+            "special_desc": "A Marine returns home to a family betrayal.",
+            "chapter_count": 12,
+        }
+    )
+
+    assert mapped["description"] == "A Marine returns home to a family betrayal."
+
+
 def test_map_chapters_preserves_title_and_description_from_upstream_aliases():
     mapped = ReelShortClient("https://site.example", "id", 3)._map_chapters(
         [
@@ -536,6 +550,50 @@ def test_reelshort_client_uses_book_info_when_movie_data_returns_404(monkeypatch
     assert episodes == [
         {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
         {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
+    ]
+
+
+def test_reelshort_client_uses_book_description_when_episode_description_is_missing(monkeypatch):
+    class FakeResponse:
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self.ok = 200 <= status_code < 300
+            self.payload = payload or {}
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        if url.endswith("/_next/data/build-1/37/movie/love-story-book-1.json"):
+            return FakeResponse(
+                200,
+                {
+                    "pageProps": {
+                        "data": {
+                            "special_desc": "A hidden marriage is exposed.",
+                            "online_base": [
+                                {"serial_number": 1, "chapter_id": "chapter-1", "chapter_type": 1},
+                            ],
+                        }
+                    }
+                },
+            )
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+
+    episodes = ReelShortClient("https://site.example", "37", 3, build_id="build-1").episodes(
+        "book-1",
+        "love-story",
+    )
+
+    assert episodes == [
+        {
+            "episode": 1,
+            "chapter_id": "chapter-1",
+            "title": "",
+            "description": "A hidden marriage is exposed.",
+        }
     ]
 
 

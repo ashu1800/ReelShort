@@ -49,14 +49,23 @@ class ReelShortClient:
         return [self._map_book(book) for book in books]
 
     def episodes(self, book_id: str, filtered_title: str):
+        book_description = ""
         try:
             payload = self._movie_payload(book_id, filtered_title)
-            chapters = payload.get("pageProps", {}).get("data", {}).get("online_base", [])
+            book_data = payload.get("pageProps", {}).get("data", {})
+            book_description = self._first_text(
+                book_data, ("description", "introduction", "book_intro", "summary", "special_desc", "desc")
+            )
+            chapters = book_data.get("online_base", [])
         except UpstreamError as exception:
             if exception.status_code != 404:
                 raise
-            chapters = self._book_info_chapters(book_id)
-        return self._map_chapters(chapters)
+            book_data = self._book_info(book_id)
+            book_description = self._first_text(
+                book_data, ("description", "introduction", "book_intro", "summary", "special_desc", "desc")
+            )
+            chapters = book_data.get("online_base", [])
+        return self._map_chapters(chapters, fallback_description=book_description)
 
     def video(self, book_id: str, episode_num: int, filtered_title: str, chapter_id: str):
         slug = f"episode-{episode_num}-{filtered_title}-{book_id}-{chapter_id}"
@@ -94,10 +103,13 @@ class ReelShortClient:
         )
 
     def _book_info_chapters(self, book_id: str):
+        return self._book_info(book_id).get("online_base", [])
+
+    def _book_info(self, book_id: str):
         payload = self._get("/api/video/book/getBookInfo", params={"book_id": book_id})
         if payload.get("code") not in {0, None}:
             raise UpstreamError(404, "upstream not found")
-        return payload.get("data", {}).get("online_base", [])
+        return payload.get("data", {})
 
     def _episode_html_payload(self, slug: str):
         html = self._get_text(f"/episodes/{quote(slug, safe='')}", params={"play_time": "1"})
@@ -227,12 +239,12 @@ class ReelShortClient:
             "filtered_title": book.get("filtered_title") or self._filtered_title(title),
             "book_pic": book.get("book_pic") or book.get("cover") or "",
             "description": self._first_text(
-                book, ("description", "introduction", "book_intro", "summary", "desc")
+                book, ("description", "introduction", "book_intro", "summary", "special_desc", "desc")
             ),
             "chapter_count": int(book.get("chapter_count", 0) or 0),
         }
 
-    def _map_chapters(self, chapters):
+    def _map_chapters(self, chapters, fallback_description: str = ""):
         return [
             {
                 "episode": chapter.get("serial_number"),
@@ -240,7 +252,7 @@ class ReelShortClient:
                 "title": self._first_text(chapter, ("chapter_title", "chapter_name", "title", "name")),
                 "description": self._first_text(
                     chapter, ("description", "intro", "summary", "chapter_desc", "desc")
-                ),
+                ) or fallback_description,
             }
             for chapter in chapters
             if chapter.get("chapter_id") and int(chapter.get("serial_number", 0) or 0) > 0
