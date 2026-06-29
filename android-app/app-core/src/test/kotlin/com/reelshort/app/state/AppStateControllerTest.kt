@@ -50,6 +50,38 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun loginSuccessKeepsSessionWhenHomeShelfFails() = runTest {
+        val dataSource = FakeAppDataSource(homeError = IllegalStateException("content provider returned 502"))
+        val controller = AppStateController(dataSource)
+
+        controller.login("demo", "Password123")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("demo", state.session?.username)
+        assertEquals(emptyList(), state.homeShelf)
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
+        assertFalse(state.isLoading)
+        assertEquals(listOf("login:demo", "home"), dataSource.calls)
+    }
+
+    @Test
+    fun registerSuccessKeepsSessionWhenHomeShelfFails() = runTest {
+        val dataSource = FakeAppDataSource(homeError = IllegalStateException("content provider returned 502"))
+        val controller = AppStateController(dataSource)
+
+        controller.register("new-user", "Password123")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("new-user", state.session?.username)
+        assertEquals(emptyList(), state.homeShelf)
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
+        assertFalse(state.isLoading)
+        assertEquals(listOf("register:new-user", "home"), dataSource.calls)
+    }
+
+    @Test
     fun loginFailureKeepsLoginScreenAndRecordsError() = runTest {
         val dataSource = FakeAppDataSource(loginError = IllegalStateException("bad credentials"))
         val controller = AppStateController(dataSource)

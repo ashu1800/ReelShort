@@ -2,6 +2,7 @@ package com.reelshort.app.state
 
 import com.reelshort.app.data.AppDataSource
 import com.reelshort.app.data.ApiHealthStatus
+import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.network.ApiClientException
@@ -49,26 +50,29 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     suspend fun login(username: String, password: String) = runWithLoading {
         val session = dataSource.login(username, password)
-        val homeShelf = dataSource.loadHomeShelf()
-        mutableState.update {
-            it.copy(
-                screen = AppScreen.HOME,
-                session = session,
-                homeShelf = homeShelf,
-                isLoading = false,
-            )
-        }
+        openHomeAfterAuthentication(session)
     }
 
     suspend fun register(username: String, password: String) = runWithLoading {
         val session = dataSource.register(username, password)
-        val homeShelf = dataSource.loadHomeShelf()
+        openHomeAfterAuthentication(session)
+    }
+
+    private suspend fun openHomeAfterAuthentication(session: AuthSession) {
+        val homeShelf = try {
+            dataSource.loadHomeShelf()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            null
+        }
         mutableState.update {
             it.copy(
                 screen = AppScreen.HOME,
                 session = session,
-                homeShelf = homeShelf,
+                homeShelf = homeShelf ?: emptyList(),
                 isLoading = false,
+                errorMessage = if (homeShelf == null) "内容暂时加载失败，可以稍后刷新。" else null,
             )
         }
     }
