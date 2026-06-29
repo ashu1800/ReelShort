@@ -34,6 +34,7 @@ data class ContentBookDto(
     val title: String,
     val filteredTitle: String,
     val coverUrl: String? = null,
+    val description: String = "",
     val chapterCount: Int,
 )
 
@@ -41,6 +42,8 @@ data class ContentBookDto(
 data class ContentEpisodeDto(
     val episode: Int,
     val chapterId: String,
+    val title: String = "",
+    val description: String = "",
 )
 
 @Serializable
@@ -72,6 +75,16 @@ data class WatchRecordDto(
     val positionSeconds: Int,
     val durationSeconds: Int,
     val progressPercent: Int,
+)
+
+@Serializable
+data class WatchEpisodeSnapshotDto(
+    val bookId: String,
+    val episodeNum: Int,
+    val positionSeconds: Int,
+    val durationSeconds: Int,
+    val progressPercent: Int,
+    val awardedStages: List<Int> = emptyList(),
 )
 
 @Serializable

@@ -17,6 +17,8 @@ interface AppDataSource {
 
     suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl
 
+    suspend fun loadEpisodeSnapshot(book: BookSummary, episode: EpisodeSummary): WatchEpisodeSnapshot
+
     suspend fun reportWatchProgress(
         book: BookSummary,
         episode: EpisodeSummary,

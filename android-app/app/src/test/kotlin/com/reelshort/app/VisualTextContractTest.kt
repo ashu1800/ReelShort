@@ -31,6 +31,11 @@ class VisualTextContractTest {
     }
 
     @Test
+    fun guestAccountPageShowsAuthEntryLabels() {
+        assertEquals(listOf("登录", "注册"), guestAccountEntryLabels())
+    }
+
+    @Test
     fun loadingFeedbackUsesCenteredDialog() {
         assertEquals(LoadingFeedbackMode.CENTER_DIALOG, loadingFeedbackMode())
     }
@@ -53,5 +58,24 @@ class VisualTextContractTest {
         assertEquals("第 12 集", episodeNumberLabel(12))
         assertEquals("第 99 集", episodeNumberLabel(99))
         assertEquals("播放", episodeRowActionLabel())
+    }
+
+    @Test
+    fun episodeRowsUseEpisodeDescriptionWithBookFallback() {
+        assertEquals(
+            "A deal goes wrong.",
+            episodeSubtitle(episodeDescription = "A deal goes wrong.", bookDescription = "Book intro."),
+        )
+        assertEquals(
+            "Book intro.",
+            episodeSubtitle(episodeDescription = "", bookDescription = "Book intro."),
+        )
+        assertEquals("", episodeSubtitle(episodeDescription = " ", bookDescription = " "))
+    }
+
+    @Test
+    fun playerUsesPortraitFirstAutoplayContract() {
+        assertEquals(9f / 16f, playerSurfaceAspectRatio())
+        assertEquals(true, playerStartsAutomatically())
     }
 }

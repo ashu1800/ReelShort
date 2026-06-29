@@ -9,6 +9,7 @@ import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.VideoUrl
+import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.network.dto.AuthRequestDto
@@ -22,6 +23,7 @@ import com.reelshort.app.network.dto.PointAccountDto
 import com.reelshort.app.network.dto.PointRecordDto
 import com.reelshort.app.network.dto.RechargeOrderDto
 import com.reelshort.app.network.dto.WatchProgressRequestDto
+import com.reelshort.app.network.dto.WatchEpisodeSnapshotDto
 import com.reelshort.app.network.dto.WatchRecordDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -58,23 +60,29 @@ class OkHttpReelShortApiClient(
         post<AuthRequestDto, AuthSessionDto>("/auth/register", AuthRequestDto(username, password)).toDomain()
 
     override suspend fun getHomeShelf(): List<BookSummary> =
-        get<List<ContentBookDto>>("/home/recommend", authenticated = true).map { it.toDomain() }
+        get<List<ContentBookDto>>("/home/recommend", authenticated = false).map { it.toDomain() }
 
     override suspend fun search(query: String): List<BookSummary> =
-        get<List<ContentBookDto>>("/content/search", mapOf("keywords" to query), authenticated = true)
+        get<List<ContentBookDto>>("/content/search", mapOf("keywords" to query), authenticated = false)
             .map { it.toDomain() }
 
     override suspend fun getEpisodes(bookId: String, filteredTitle: String): List<EpisodeSummary> =
         get<List<ContentEpisodeDto>>(
             listOf("content", "books", bookId, "episodes"),
             mapOf("filteredTitle" to filteredTitle),
-            authenticated = true,
+            authenticated = false,
         ).map { it.toDomain() }
 
     override suspend fun getVideoUrl(bookId: String, episode: Int, filteredTitle: String, chapterId: String): VideoUrl =
         get<ContentVideoDto>(
             listOf("content", "books", bookId, "episodes", episode.toString(), "play"),
             mapOf("filteredTitle" to filteredTitle, "chapterId" to chapterId),
+            authenticated = true,
+        ).toDomain()
+
+    override suspend fun getEpisodeSnapshot(bookId: String, episode: Int): WatchEpisodeSnapshot =
+        get<WatchEpisodeSnapshotDto>(
+            listOf("watch", "books", bookId, "episodes", episode.toString(), "snapshot"),
             authenticated = true,
         ).toDomain()
 
@@ -167,9 +175,9 @@ class OkHttpReelShortApiClient(
     private fun ApiHealthStatusDto.toDomain(): ApiHealthStatus = ApiHealthStatus(status, service)
 
     private fun ContentBookDto.toDomain(): BookSummary =
-        BookSummary(bookId, title, filteredTitle, coverUrl, "", chapterCount)
+        BookSummary(bookId, title, filteredTitle, coverUrl, description, chapterCount)
 
-    private fun ContentEpisodeDto.toDomain(): EpisodeSummary = EpisodeSummary(episode, chapterId)
+    private fun ContentEpisodeDto.toDomain(): EpisodeSummary = EpisodeSummary(episode, chapterId, title, description)
 
     private fun ContentVideoDto.toDomain(): VideoUrl =
         VideoUrl(videoUrl, "application/vnd.apple.mpegurl", episode, duration)
@@ -180,6 +188,9 @@ class OkHttpReelShortApiClient(
 
     private fun WatchRecordDto.toWatchRecord(): WatchRecord =
         WatchRecord(bookId, bookTitle, episodeNum, progressPercent)
+
+    private fun WatchEpisodeSnapshotDto.toDomain(): WatchEpisodeSnapshot =
+        WatchEpisodeSnapshot(bookId, episodeNum, positionSeconds, durationSeconds, progressPercent, awardedStages)
 
     private fun PointRecordDto.toDomain(): PointRecord = PointRecord(amount, reason)
 

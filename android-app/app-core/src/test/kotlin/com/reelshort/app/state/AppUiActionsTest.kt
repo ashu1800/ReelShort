@@ -9,6 +9,7 @@ import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.VideoUrl
+import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
 import kotlinx.coroutines.test.runTest
@@ -66,7 +67,7 @@ class AppUiActionsTest {
         actions.openAccount()
 
         assertEquals(AppScreen.ACCOUNT, controller.state.value.screen)
-        assertEquals(listOf("home", "history", "points", "orders"), dataSource.calls)
+        assertEquals(listOf("home"), dataSource.calls)
     }
 
     @Test
@@ -89,6 +90,8 @@ class AppUiActionsTest {
         val controller = AppStateController(dataSource)
         val actions = AppUiActions(controller)
 
+        actions.login("demo", "Password123")
+        dataSource.calls.clear()
         actions.openBook(dataSource.books.first())
         actions.openPlayer(dataSource.episodes.first())
         actions.updatePlaybackPosition(positionSeconds = 100, durationSeconds = 200)
@@ -106,7 +109,15 @@ class AppUiActionsTest {
         assertEquals(50, dataSource.lastProgress?.progressPercent)
         assertEquals("https://media.local/book-1/1-v2.m3u8", state.playback.videoUrl?.url)
         assertEquals(
-            listOf("episodes:book-1", "video:book-1:1", "video:book-1:1", "progress:book-1:1:100", "history", "points"),
+            listOf(
+                "episodes:book-1",
+                "snapshot:book-1:1",
+                "video:book-1:1",
+                "video:book-1:1",
+                "progress:book-1:1:100",
+                "history",
+                "points",
+            ),
             dataSource.calls,
         )
     }
@@ -120,7 +131,7 @@ class AppUiActionsTest {
 
         actions.logout()
 
-        assertEquals(AppScreen.LOGIN, controller.state.value.screen)
+        assertEquals(AppScreen.HOME, controller.state.value.screen)
         assertNull(controller.state.value.session)
         assertEquals(listOf("login:demo", "home", "clear"), dataSource.calls)
     }
@@ -199,6 +210,11 @@ class AppUiActionsTest {
             calls += "video:${book.id}:${episode.number}"
             val suffix = if (videoUrlVersion == 1) "" else "-v$videoUrlVersion"
             return VideoUrl("https://media.local/${book.id}/${episode.number}$suffix.m3u8", "application/vnd.apple.mpegurl", episode.number, episode.durationSeconds)
+        }
+
+        override suspend fun loadEpisodeSnapshot(book: BookSummary, episode: EpisodeSummary): WatchEpisodeSnapshot {
+            calls += "snapshot:${book.id}:${episode.number}"
+            return WatchEpisodeSnapshot.empty(book.id, episode.number)
         }
 
         override suspend fun reportWatchProgress(

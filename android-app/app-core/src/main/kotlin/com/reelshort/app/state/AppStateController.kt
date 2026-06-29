@@ -20,17 +20,6 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     suspend fun restoreSession() = runWithLoading {
         val session = dataSource.restoreSession()
-        if (session == null) {
-            mutableState.update {
-                it.copy(
-                    screen = AppScreen.LOGIN,
-                    session = null,
-                    isLoading = false,
-                )
-            }
-            return@runWithLoading
-        }
-
         try {
             val homeShelf = dataSource.loadHomeShelf()
             mutableState.update {
@@ -44,8 +33,18 @@ class AppStateController(private val dataSource: AppDataSource) {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            dataSource.clearSession()
-            throw error
+            if (session != null) {
+                dataSource.clearSession()
+            }
+            mutableState.update {
+                it.copy(
+                    screen = AppScreen.HOME,
+                    session = null,
+                    homeShelf = emptyList(),
+                    isLoading = false,
+                    errorMessage = "内容暂时加载失败，可以稍后刷新。",
+                )
+            }
         }
     }
 
@@ -60,6 +59,20 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     private suspend fun openHomeAfterAuthentication(session: AuthSession) {
+        val pendingEpisode = state.value.pendingPlaybackEpisode
+        if (pendingEpisode != null) {
+            mutableState.update {
+                it.copy(
+                    session = session,
+                    authPromptVisible = false,
+                    pendingPlaybackEpisode = null,
+                    isLoading = false,
+                    errorMessage = null,
+                )
+            }
+            openPlayerForAuthenticatedUser(pendingEpisode)
+            return
+        }
         val homeShelf = try {
             dataSource.loadHomeShelf()
         } catch (error: CancellationException) {
@@ -71,6 +84,8 @@ class AppStateController(private val dataSource: AppDataSource) {
             it.copy(
                 screen = AppScreen.HOME,
                 session = session,
+                authPromptVisible = false,
+                pendingPlaybackEpisode = null,
                 homeShelf = homeShelf ?: emptyList(),
                 isLoading = false,
                 errorMessage = if (homeShelf == null) "内容暂时加载失败，可以稍后刷新。" else null,
@@ -147,14 +162,45 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     suspend fun openPlayer(episode: EpisodeSummary) = runWithLoading {
         val book = requireSelectedBook()
+        if (state.value.session == null) {
+            mutableState.update {
+                it.copy(
+                    screen = AppScreen.DETAIL,
+                    authPromptVisible = true,
+                    pendingPlaybackEpisode = episode,
+                    isLoading = false,
+                )
+            }
+            return@runWithLoading
+        }
+        openPlayerForAuthenticatedUser(episode)
+    }
+
+    private suspend fun openPlayerForAuthenticatedUser(episode: EpisodeSummary) {
+        val book = requireSelectedBook()
+        val snapshot = try {
+            dataSource.loadEpisodeSnapshot(book, episode)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
         val videoUrl = dataSource.loadVideoUrl(book, episode)
+        val initialPosition = snapshot?.positionSeconds ?: 0
+        val initialDuration = snapshot?.durationSeconds?.takeIf { it > 0 } ?: videoUrl.durationSeconds
+        val awardedProgress = snapshot?.awardedStages?.maxOrNull() ?: 0
         mutableState.update {
             it.copy(
                 screen = AppScreen.PLAYER,
                 selectedEpisode = episode,
                 currentVideoUrl = videoUrl,
-                playback = PlaybackState.ready(book, episode, videoUrl),
+                playback = PlaybackState.ready(book, episode, videoUrl)
+                    .withPosition(initialPosition, initialDuration)
+                    .withReportedProgress(initialPosition, awardedProgress),
                 isLoading = false,
+                authPromptVisible = false,
+                pendingPlaybackEpisode = null,
+                errorMessage = if (snapshot == null) "积分状态暂时加载失败，播放不受影响。" else null,
             )
         }
     }
@@ -271,6 +317,10 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun openAccount() {
+        if (state.value.session == null) {
+            mutableState.update { it.copy(screen = AppScreen.ACCOUNT, errorMessage = null, isLoading = false) }
+            return
+        }
         if (!hasAccountSnapshot(state.value)) {
             loadAccountSnapshot()
             return
@@ -301,6 +351,14 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     fun clearError() {
         mutableState.update { it.copy(errorMessage = null) }
+    }
+
+    fun showAuthPrompt() {
+        mutableState.update { it.copy(authPromptVisible = true, errorMessage = null) }
+    }
+
+    fun dismissAuthPrompt() {
+        mutableState.update { it.copy(authPromptVisible = false, pendingPlaybackEpisode = null) }
     }
 
     suspend fun checkApiHealth() {

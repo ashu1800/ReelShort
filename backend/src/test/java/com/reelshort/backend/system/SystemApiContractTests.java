@@ -44,11 +44,13 @@ class SystemApiContractTests {
 
 	@Test
 	void protectedAppApiWithoutTokenUsesUnauthorizedEnvelope() throws Exception {
-		mockMvc.perform(get("/api/app/content/search"))
+		mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
+				.param("filteredTitle", "love-story")
+				.param("chapterId", "chapter-1"))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value(401))
 				.andExpect(jsonPath("$.message", not(blankOrNullString())))
-				.andExpect(jsonPath("$.path").value("/api/app/content/search"))
+				.andExpect(jsonPath("$.path").value("/api/app/content/books/book-1/episodes/1/play"))
 				.andExpect(jsonPath("$.requestId", not(blankOrNullString())))
 				.andExpect(jsonPath("$.timestamp", not(blankOrNullString())));
 	}

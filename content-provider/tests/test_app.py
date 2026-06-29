@@ -9,6 +9,7 @@ BOOK = {
     "book_title": "Love Story",
     "filtered_title": "love-story",
     "book_pic": "https://example.com/cover.jpg",
+    "description": "A secret marriage turns dangerous.",
     "chapter_count": 12,
 }
 
@@ -22,8 +23,8 @@ class FakeReelShortClient:
 
     def episodes(self, book_id, filtered_title):
         return [
-            {"episode": 1, "chapter_id": "chapter-1"},
-            {"episode": 2, "chapter_id": "chapter-2"},
+            {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
+            {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
         ]
 
     def video(self, book_id, episode_num, filtered_title, chapter_id):
@@ -31,7 +32,12 @@ class FakeReelShortClient:
             "video_url": "https://cdn.example.com/video.m3u8",
             "episode": episode_num,
             "duration": 120,
-            "next_episode": {"episode": episode_num + 1, "chapter_id": "chapter-2"},
+            "next_episode": {
+                "episode": episode_num + 1,
+                "chapter_id": "chapter-2",
+                "title": "Second Move",
+                "description": "The secret spreads.",
+            },
         }
 
 
@@ -103,8 +109,8 @@ def test_episodes_return_spring_boot_contract(client):
     assert response.status_code == 200
     assert response.get_json() == {
         "episodes": [
-            {"episode": 1, "chapter_id": "chapter-1"},
-            {"episode": 2, "chapter_id": "chapter-2"},
+            {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
+            {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
         ],
     }
 
@@ -114,6 +120,42 @@ def test_episodes_require_filtered_title(client):
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "filtered_title is required"}
+
+
+def test_map_book_preserves_description_from_upstream_alias():
+    mapped = ReelShortClient("https://site.example", "id", 3)._map_book(
+        {
+            "book_id": "book-1",
+            "book_title": "Love Story",
+            "book_pic": "cover.jpg",
+            "book_intro": "A hidden marriage is exposed.",
+            "chapter_count": 12,
+        }
+    )
+
+    assert mapped["description"] == "A hidden marriage is exposed."
+
+
+def test_map_chapters_preserves_title_and_description_from_upstream_aliases():
+    mapped = ReelShortClient("https://site.example", "id", 3)._map_chapters(
+        [
+            {
+                "serial_number": 1,
+                "chapter_id": "chapter-1",
+                "chapter_title": "Opening Trap",
+                "chapter_desc": "A deal goes wrong.",
+            }
+        ]
+    )
+
+    assert mapped == [
+        {
+            "episode": 1,
+            "chapter_id": "chapter-1",
+            "title": "Opening Trap",
+            "description": "A deal goes wrong.",
+        }
+    ]
 
 
 def test_video_returns_spring_boot_contract(client):
@@ -126,7 +168,12 @@ def test_video_returns_spring_boot_contract(client):
         "video_url": "https://cdn.example.com/video.m3u8",
         "episode": 1,
         "duration": 120,
-        "next_episode": {"episode": 2, "chapter_id": "chapter-2"},
+        "next_episode": {
+            "episode": 2,
+            "chapter_id": "chapter-2",
+            "title": "Second Move",
+            "description": "The secret spreads.",
+        },
     }
 
 
@@ -203,6 +250,7 @@ def test_reelshort_client_maps_search_page_props(monkeypatch):
             "book_title": "Love Story",
             "filtered_title": "love-story",
             "book_pic": "https://example.com/cover.jpg",
+            "description": "",
             "chapter_count": 12,
         }
     ]
@@ -280,6 +328,7 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_is_empty(mon
             "book_title": "New Release Story",
             "filtered_title": "new-release-story",
             "book_pic": "https://example.com/new.jpg",
+            "description": "",
             "chapter_count": 8,
         },
         {
@@ -287,6 +336,7 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_is_empty(mon
             "book_title": "Top Story",
             "filtered_title": "top-story",
             "book_pic": "https://example.com/top.jpg",
+            "description": "",
             "chapter_count": 20,
         },
     ]
@@ -362,6 +412,7 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_returns_404(
             "book_title": "Fallback Story",
             "filtered_title": "fallback-story",
             "book_pic": "https://example.com/fallback.jpg",
+            "description": "",
             "chapter_count": 16,
         }
     ]
@@ -379,8 +430,18 @@ def test_reelshort_client_maps_episode_page_props(monkeypatch):
                 "pageProps": {
                     "data": {
                         "online_base": [
-                            {"serial_number": 1, "chapter_id": "chapter-1"},
-                            {"serial_number": 2, "chapter_id": "chapter-2"},
+                            {
+                                "serial_number": 1,
+                                "chapter_id": "chapter-1",
+                                "chapter_title": "Opening Trap",
+                                "chapter_desc": "A deal goes wrong.",
+                            },
+                            {
+                                "serial_number": 2,
+                                "chapter_id": "chapter-2",
+                                "chapter_title": "Second Move",
+                                "chapter_desc": "The secret spreads.",
+                            },
                         ]
                     }
                 }
@@ -403,8 +464,8 @@ def test_reelshort_client_maps_episode_page_props(monkeypatch):
         "params": {"slug": "love-story-book/1"},
     }
     assert episodes == [
-        {"episode": 1, "chapter_id": "chapter-1"},
-        {"episode": 2, "chapter_id": "chapter-2"},
+        {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
+        {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
     ]
 
 
@@ -435,8 +496,20 @@ def test_reelshort_client_uses_book_info_when_movie_data_returns_404(monkeypatch
                     "data": {
                         "online_base": [
                             {"serial_number": 0, "chapter_id": "trailer", "chapter_type": 2},
-                            {"serial_number": 1, "chapter_id": "chapter-1", "chapter_type": 1},
-                            {"serial_number": 2, "chapter_id": "chapter-2", "chapter_type": 1},
+                            {
+                                "serial_number": 1,
+                                "chapter_id": "chapter-1",
+                                "chapter_type": 1,
+                                "chapter_title": "Opening Trap",
+                                "chapter_desc": "A deal goes wrong.",
+                            },
+                            {
+                                "serial_number": 2,
+                                "chapter_id": "chapter-2",
+                                "chapter_type": 1,
+                                "chapter_title": "Second Move",
+                                "chapter_desc": "The secret spreads.",
+                            },
                         ]
                     },
                 },
@@ -461,8 +534,8 @@ def test_reelshort_client_uses_book_info_when_movie_data_returns_404(monkeypatch
         },
     ]
     assert episodes == [
-        {"episode": 1, "chapter_id": "chapter-1"},
-        {"episode": 2, "chapter_id": "chapter-2"},
+        {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
+        {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
     ]
 
 
@@ -499,7 +572,12 @@ def test_reelshort_client_fetches_video_episode_page(monkeypatch):
                     "data": {
                         "online_base": [
                             {"serial_number": 1, "chapter_id": "chapter-1"},
-                            {"serial_number": 2, "chapter_id": "chapter-2"},
+                            {
+                                "serial_number": 2,
+                                "chapter_id": "chapter-2",
+                                "chapter_title": "Second Move",
+                                "chapter_desc": "The secret spreads.",
+                            },
                         ]
                     }
                 }
@@ -523,7 +601,12 @@ def test_reelshort_client_fetches_video_episode_page(monkeypatch):
         "video_url": "https://cdn.example.com/1.m3u8",
         "episode": 1,
         "duration": 90,
-        "next_episode": {"episode": 2, "chapter_id": "chapter-2"},
+        "next_episode": {
+            "episode": 2,
+            "chapter_id": "chapter-2",
+            "title": "Second Move",
+            "description": "The secret spreads.",
+        },
     }
 
 
@@ -597,7 +680,7 @@ def test_reelshort_client_falls_back_to_episode_html_when_legacy_video_data_retu
         "video_url": "https://cdn.example.com/html-1.m3u8",
         "episode": 1,
         "duration": 128,
-        "next_episode": {"episode": 2, "chapter_id": "chapter-2"},
+        "next_episode": {"episode": 2, "chapter_id": "chapter-2", "title": "", "description": ""},
     }
 
 

@@ -29,22 +29,19 @@ public class ContentController {
 	}
 
 	@GetMapping("/search")
-	public ApiResponse<List<ContentBook>> search(@RequestParam @NotBlank String keywords, CurrentUser currentUser,
-			HttpServletRequest request) {
+	public ApiResponse<List<ContentBook>> search(@RequestParam @NotBlank String keywords, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentCacheService.search(keywords), requestId);
 	}
 
 	@GetMapping("/shelves/{shelfType}")
-	public ApiResponse<List<ContentBook>> shelf(@PathVariable @NotBlank String shelfType, CurrentUser currentUser,
-			HttpServletRequest request) {
+	public ApiResponse<List<ContentBook>> shelf(@PathVariable @NotBlank String shelfType, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentCacheService.getShelf(ContentShelfType.fromApiValue(shelfType)), requestId);
 	}
 
 	@GetMapping("/books/{bookId}")
-	public ApiResponse<ContentBook> detail(@PathVariable @NotBlank String bookId, CurrentUser currentUser,
-			HttpServletRequest request) {
+	public ApiResponse<ContentBook> detail(@PathVariable @NotBlank String bookId, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentCacheService.getBook(bookId), requestId);
 	}
@@ -52,7 +49,6 @@ public class ContentController {
 	@GetMapping("/books/{bookId}/episodes")
 	public ApiResponse<List<ContentEpisode>> episodes(@PathVariable @NotBlank String bookId,
 			@RequestParam @NotBlank String filteredTitle,
-			CurrentUser currentUser,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		return ApiResponse.success(contentCacheService.getEpisodes(bookId, filteredTitle), requestId);

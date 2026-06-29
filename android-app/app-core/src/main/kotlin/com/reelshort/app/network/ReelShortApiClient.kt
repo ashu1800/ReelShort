@@ -7,6 +7,7 @@ import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.VideoUrl
+import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
 
@@ -24,6 +25,8 @@ interface ReelShortApiClient {
     suspend fun getEpisodes(bookId: String, filteredTitle: String): List<EpisodeSummary>
 
     suspend fun getVideoUrl(bookId: String, episode: Int, filteredTitle: String, chapterId: String): VideoUrl
+
+    suspend fun getEpisodeSnapshot(bookId: String, episode: Int): WatchEpisodeSnapshot
 
     suspend fun reportWatchProgress(
         bookId: String,

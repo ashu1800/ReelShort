@@ -37,6 +37,9 @@ class AppRepository(
     override suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl =
         apiClient.getVideoUrl(book.id, episode.number, book.filteredTitle, episode.chapterId)
 
+    override suspend fun loadEpisodeSnapshot(book: BookSummary, episode: EpisodeSummary): WatchEpisodeSnapshot =
+        apiClient.getEpisodeSnapshot(book.id, episode.number)
+
     override suspend fun reportWatchProgress(
         book: BookSummary,
         episode: EpisodeSummary,

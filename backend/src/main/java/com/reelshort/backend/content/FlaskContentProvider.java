@@ -123,19 +123,24 @@ public class FlaskContentProvider implements ContentProvider {
 			@JsonProperty("book_title") String bookTitle,
 			@JsonProperty("filtered_title") String filteredTitle,
 			@JsonProperty("book_pic") String bookPic,
+			String description,
 			@JsonProperty("chapter_count") int chapterCount) {
 
 		ContentBook toContentBook() {
-			return new ContentBook(bookId, bookTitle, filteredTitle, bookPic, chapterCount);
+			return new ContentBook(bookId, bookTitle, filteredTitle, bookPic, description == null ? "" : description,
+					chapterCount);
 		}
 	}
 
 	private record FlaskEpisode(
 			int episode,
-			@JsonProperty("chapter_id") String chapterId) {
+			@JsonProperty("chapter_id") String chapterId,
+			String title,
+			String description) {
 
 		ContentEpisode toContentEpisode() {
-			return new ContentEpisode(episode, chapterId);
+			return new ContentEpisode(episode, chapterId, title == null ? "" : title,
+					description == null ? "" : description);
 		}
 	}
 

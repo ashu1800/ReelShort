@@ -226,15 +226,32 @@ class ReelShortClient:
             "book_title": title,
             "filtered_title": book.get("filtered_title") or self._filtered_title(title),
             "book_pic": book.get("book_pic") or book.get("cover") or "",
+            "description": self._first_text(
+                book, ("description", "introduction", "book_intro", "summary", "desc")
+            ),
             "chapter_count": int(book.get("chapter_count", 0) or 0),
         }
 
     def _map_chapters(self, chapters):
         return [
-            {"episode": chapter.get("serial_number"), "chapter_id": chapter.get("chapter_id", "")}
+            {
+                "episode": chapter.get("serial_number"),
+                "chapter_id": chapter.get("chapter_id", ""),
+                "title": self._first_text(chapter, ("chapter_title", "chapter_name", "title", "name")),
+                "description": self._first_text(
+                    chapter, ("description", "intro", "summary", "chapter_desc", "desc")
+                ),
+            }
             for chapter in chapters
             if chapter.get("chapter_id") and int(chapter.get("serial_number", 0) or 0) > 0
         ]
+
+    def _first_text(self, payload, keys):
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
 
     def _filtered_title(self, title: str):
         value = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")

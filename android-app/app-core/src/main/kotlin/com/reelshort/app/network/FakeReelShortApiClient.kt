@@ -8,6 +8,7 @@ import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.VideoUrl
+import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
 
@@ -35,10 +36,21 @@ class FakeReelShortApiClient : ReelShortApiClient {
         books.filter { it.title.contains(query, ignoreCase = true) || query.isBlank() }
 
     override suspend fun getEpisodes(bookId: String, filteredTitle: String): List<EpisodeSummary> =
-        (1..8).map { EpisodeSummary(it, "chapter-$it", 180 + it * 12) }
+        (1..8).map {
+            EpisodeSummary(
+                number = it,
+                chapterId = "chapter-$it",
+                title = "第 $it 集",
+                description = "短剧第 $it 集剧情简介",
+                durationSeconds = 180 + it * 12,
+            )
+        }
 
     override suspend fun getVideoUrl(bookId: String, episode: Int, filteredTitle: String, chapterId: String): VideoUrl =
         VideoUrl("https://springboot.local/video/$bookId/$episode.m3u8", "application/vnd.apple.mpegurl", episode, 180)
+
+    override suspend fun getEpisodeSnapshot(bookId: String, episode: Int): WatchEpisodeSnapshot =
+        WatchEpisodeSnapshot.empty(bookId, episode)
 
     override suspend fun reportWatchProgress(
         bookId: String,

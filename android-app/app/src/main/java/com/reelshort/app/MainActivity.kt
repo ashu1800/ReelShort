@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -89,6 +90,7 @@ import androidx.compose.ui.zIndex
 import androidx.media3.common.MediaItem
 import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.reelshort.app.config.ApiConfig
@@ -184,6 +186,15 @@ internal fun rewardBadgeState(
 
 internal fun playerSecondaryActionLabels(): List<String> = listOf("刷新地址")
 
+internal fun guestAccountEntryLabels(): List<String> = listOf("登录", "注册")
+
+internal fun episodeSubtitle(episodeDescription: String, bookDescription: String): String =
+    episodeDescription.trim().ifBlank { bookDescription.trim() }
+
+internal fun playerSurfaceAspectRatio(): Float = 9f / 16f
+
+internal fun playerStartsAutomatically(): Boolean = true
+
 internal data class ContentEmptyState(
     val title: String,
     val message: String,
@@ -268,6 +279,11 @@ internal fun detailEmptyState(book: BookSummary?, episodeCount: Int): ContentEmp
 internal fun episodeNumberLabel(number: Int): String =
     "第 ${number.coerceAtLeast(0).toString().padStart(2, '0')} 集"
 
+internal fun episodeTitle(episode: EpisodeSummary): String =
+    episode.title.trim().takeIf { it.isNotBlank() }
+        ?.let { "${episodeNumberLabel(episode.number)} · $it" }
+        ?: episodeNumberLabel(episode.number)
+
 internal fun episodeRowActionLabel(): String = "播放"
 
 class MainActivity : ComponentActivity() {
@@ -315,37 +331,40 @@ fun ReelShortApp(actions: AppUiActions) {
 
     ReelShortTheme {
         Box(modifier = Modifier.fillMaxSize()) {
-            if (state.screen == AppScreen.LOGIN) {
-                LoginScreen(
-                    state = state,
-                    onLogin = { username, password -> scope.launch { actions.login(username, password) } },
-                    onRegister = { username, password -> scope.launch { actions.register(username, password) } },
-                )
-            } else {
-                MainShell(
-                    state = state,
-                    onScreenSelected = { screen ->
-                        scope.launch {
-                            when (screen) {
-                                AppScreen.HOME -> actions.openHome()
-                                AppScreen.SEARCH -> actions.showSearch()
-                                AppScreen.ACCOUNT -> actions.openAccount()
-                                else -> Unit
-                            }
+            MainShell(
+                state = state,
+                onScreenSelected = { screen ->
+                    scope.launch {
+                        when (screen) {
+                            AppScreen.HOME -> actions.openHome()
+                            AppScreen.SEARCH -> actions.showSearch()
+                            AppScreen.ACCOUNT -> actions.openAccount()
+                            else -> Unit
                         }
-                    },
-                    onLogout = { scope.launch { actions.logout() } },
-                    onSearch = { query -> scope.launch { actions.search(query) } },
-                    onOpenBook = { book -> scope.launch { actions.openBook(book) } },
-                    onOpenPlayer = { episode -> scope.launch { actions.openPlayer(episode) } },
-                    onUpdatePlaybackPosition = { position, duration -> actions.updatePlaybackPosition(position, duration) },
-                    onRefreshPlaybackUrl = { scope.launch { actions.refreshPlaybackUrl() } },
-                    onAutoReportProgress = { position, duration ->
-                        scope.launch { actions.reportProgressSilently(position, duration) }
-                    },
-                    onCheckApiHealth = { scope.launch { actions.checkApiHealth() } },
-                )
-            }
+                    }
+                },
+                onLogout = { scope.launch { actions.logout() } },
+                onSearch = { query -> scope.launch { actions.search(query) } },
+                onOpenBook = { book -> scope.launch { actions.openBook(book) } },
+                onOpenPlayer = { episode -> scope.launch { actions.openPlayer(episode) } },
+                onUpdatePlaybackPosition = { position, duration -> actions.updatePlaybackPosition(position, duration) },
+                onRefreshPlaybackUrl = { scope.launch { actions.refreshPlaybackUrl() } },
+                onAutoReportProgress = { position, duration ->
+                    scope.launch { actions.reportProgressSilently(position, duration) }
+                },
+                onCheckApiHealth = { scope.launch { actions.checkApiHealth() } },
+                onShowAuthPrompt = actions::showAuthPrompt,
+            )
+            AuthBottomSheet(
+                visible = state.authPromptVisible,
+                state = state,
+                onLogin = { username, password -> scope.launch { actions.login(username, password) } },
+                onRegister = { username, password -> scope.launch { actions.register(username, password) } },
+                onDismiss = actions::dismissAuthPrompt,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .zIndex(2f),
+            )
             TopErrorToast(
                 message = state.errorMessage,
                 onDismiss = actions::clearError,
@@ -354,7 +373,7 @@ fun ReelShortApp(actions: AppUiActions) {
                     .zIndex(2f),
             )
             LoadingDialog(
-                visible = state.isLoading && state.screen != AppScreen.LOGIN,
+                visible = state.isLoading,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .zIndex(1f),
@@ -500,6 +519,7 @@ private fun MainShell(
     onRefreshPlaybackUrl: () -> Unit,
     onAutoReportProgress: (Int, Int) -> Unit,
     onCheckApiHealth: () -> Unit,
+    onShowAuthPrompt: () -> Unit,
 ) {
     AppBackground {
         Scaffold(
@@ -537,6 +557,7 @@ private fun MainShell(
                     AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onRefreshPlaybackUrl, onAutoReportProgress)
                     AppScreen.ACCOUNT -> AccountScreen(
                         records = state.watchHistory,
+                        isLoggedIn = state.session != null,
                         username = state.session?.username.orEmpty(),
                         balance = state.pointAccount?.balance ?: 0,
                         pointRecords = state.pointAccount?.records ?: emptyList(),
@@ -544,6 +565,7 @@ private fun MainShell(
                         apiBaseUrl = state.apiBaseUrl,
                         apiHealthStatus = state.apiHealthStatus,
                         onCheckApiHealth = onCheckApiHealth,
+                        onShowAuthPrompt = onShowAuthPrompt,
                         onLogout = onLogout,
                     )
                 }
@@ -578,6 +600,95 @@ private fun LoadingDialog(visible: Boolean, modifier: Modifier = Modifier) {
             shape = RoundedCornerShape(22.dp),
         ) {
             LoadingContent(Modifier.padding(horizontal = 22.dp, vertical = 18.dp))
+        }
+    }
+}
+
+@Composable
+private fun AuthBottomSheet(
+    visible: Boolean,
+    state: AppUiState,
+    onLogin: (String, String) -> Unit,
+    onRegister: (String, String) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically { it } + fadeIn(),
+        exit = slideOutVertically { it } + fadeOut(),
+        modifier = modifier,
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Panel,
+            contentColor = TextPrimary,
+            border = BorderStroke(1.dp, Divider),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        ) {
+            AuthFormContent(
+                state = state,
+                title = "登录后继续播放",
+                subtitle = "播放、积分和账户数据需要登录账号。",
+                onLogin = onLogin,
+                onRegister = onRegister,
+                onDismiss = onDismiss,
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 20.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AuthFormContent(
+    state: AppUiState,
+    title: String,
+    subtitle: String,
+    onLogin: (String, String) -> Unit,
+    onRegister: (String, String) -> Unit,
+    onDismiss: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    var username by remember { mutableStateOf(state.session?.username ?: "demo") }
+    var password by remember { mutableStateOf("") }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(subtitle, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            }
+            if (onDismiss != null) {
+                TextButton(onClick = onDismiss, enabled = !state.isLoading) {
+                    Text("关闭", color = TextSecondary)
+                }
+            }
+        }
+        LoginTextField(
+            value = username,
+            onValueChange = { username = it },
+            label = "用户名",
+            enabled = !state.isLoading,
+        )
+        LoginTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = "密码",
+            enabled = !state.isLoading,
+            isPassword = true,
+        )
+        PrimaryActionButton(
+            text = if (state.isLoading) "登录中" else "登录",
+            enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
+            onClick = { onLogin(username, password) },
+        )
+        OutlinedButton(
+            onClick = { onRegister(username, password) },
+            enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, Divider),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryGold),
+        ) {
+            Text("注册")
         }
     }
 }
@@ -714,7 +825,7 @@ private fun DetailScreen(
             item { EmptyState(emptyState) }
         }
         items(episodes) { episode ->
-            EpisodeRow(episode, onClick = { onOpenPlayer(episode) })
+            EpisodeRow(episode, book.description, onClick = { onOpenPlayer(episode) })
         }
     }
 }
@@ -762,18 +873,26 @@ private fun PlayerScreen(
                 videoUrl = videoUrl,
                 episodeNumber = episode?.number,
                 fallbackDurationSeconds = duration,
+                initialPositionSeconds = playback.positionSeconds,
                 rewardBadgeState = badgeState,
                 onProgress = onUpdatePlaybackPosition,
             )
         }
         item {
-            SectionHeader(book?.title ?: "未选择剧集", "时长 ${duration.formatSeconds()} · 进度 ${playback.progressPercent}%")
+            SectionHeader(
+                book?.title ?: "未选择剧集",
+                "${episode?.let { episodeTitle(it) } ?: "分集"} · 进度 ${playback.progressPercent}%",
+            )
         }
         item {
             SurfacePanel {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("播放状态", fontWeight = FontWeight.SemiBold)
-                    Text("当前进度 ${playback.progressPercent}% · 已领取 ${playback.lastReportedProgressPercent}%", color = TextSecondary)
+                    Text(episode?.let { episodeTitle(it) } ?: "当前分集", fontWeight = FontWeight.SemiBold)
+                    val description = episode?.let { episodeSubtitle(it.description, book?.description.orEmpty()) }.orEmpty()
+                    if (description.isNotBlank()) {
+                        Text(description, color = TextSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text("已领取 ${playback.lastReportedProgressPercent}%", color = TextSecondary)
                     if (playback.rewardReportError) {
                         Text("积分同步失败，继续播放时会自动重试。", color = DangerText)
                     }
@@ -800,37 +919,45 @@ private fun MediaPlayerSurface(
     videoUrl: String?,
     episodeNumber: Int?,
     fallbackDurationSeconds: Int,
+    initialPositionSeconds: Int,
     rewardBadgeState: RewardBadgeState,
     onProgress: (positionSeconds: Int, durationSeconds: Int) -> Unit,
 ) {
     val playableUrl = videoUrl.playableMediaUrlOrNull()
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(240.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xFF2B1E12), Color(0xFF07080C)),
-                ),
-            )
-            .border(1.dp, Divider, RoundedCornerShape(24.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (playableUrl == null) {
-            PlayerPlaceholder(episodeNumber)
-        } else {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 430.dp)
+                .aspectRatio(playerSurfaceAspectRatio())
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF2B1E12), Color(0xFF07080C)),
+                    ),
+                )
+                .border(1.dp, Divider, RoundedCornerShape(24.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (playableUrl == null) {
+                PlayerPlaceholder(episodeNumber)
+            } else {
             val context = LocalContext.current
             val player = remember(playableUrl) {
                 ExoPlayer.Builder(context).build().apply {
                     setMediaItem(MediaItem.fromUri(playableUrl))
-                    playWhenReady = false
+                    playWhenReady = playerStartsAutomatically()
                     prepare()
                 }
             }
             DisposableEffect(player) {
                 onDispose { player.release() }
+            }
+            LaunchedEffect(player) {
+                if (initialPositionSeconds > 0) {
+                    player.seekTo(initialPositionSeconds * 1_000L)
+                }
             }
             LaunchedEffect(player, fallbackDurationSeconds) {
                 while (true) {
@@ -845,20 +972,25 @@ private fun MediaPlayerSurface(
                 factory = { viewContext ->
                     PlayerView(viewContext).apply {
                         useController = true
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         this.player = player
                     }
                 },
-                update = { view -> view.player = player },
+                update = { view ->
+                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    view.player = player
+                },
                 onRelease = { view -> view.player = null },
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        RewardProgressBadge(
-            state = rewardBadgeState,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(12.dp),
-        )
+            RewardProgressBadge(
+                state = rewardBadgeState,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp),
+            )
+        }
     }
 }
 
@@ -924,6 +1056,7 @@ private fun PlayerPlaceholder(episodeNumber: Int?) {
 @Composable
 private fun AccountScreen(
     records: List<WatchRecord>,
+    isLoggedIn: Boolean,
     username: String,
     balance: Int,
     pointRecords: List<PointRecord>,
@@ -931,6 +1064,7 @@ private fun AccountScreen(
     apiBaseUrl: String,
     apiHealthStatus: ApiHealthStatus?,
     onCheckApiHealth: () -> Unit,
+    onShowAuthPrompt: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val diagnostics = apiDiagnosticsText(apiHealthStatus)
@@ -938,9 +1072,26 @@ private fun AccountScreen(
 
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            AccountHero(username = username, balance = balance)
+            AccountHero(username = username, balance = balance, isLoggedIn = isLoggedIn)
         }
-        item {
+        if (!isLoggedIn) {
+            item {
+                AccountMenuGroup {
+                    guestAccountEntryLabels().forEachIndexed { index, label ->
+                        AccountMenuRow(
+                            icon = if (label == "登录") Icons.Rounded.AccountCircle else Icons.Rounded.PlayArrow,
+                            title = label,
+                            subtitle = if (label == "登录") "登录后可播放短剧并获取积分" else "创建账号保存观看进度",
+                            onClick = onShowAuthPrompt,
+                        )
+                        if (index < guestAccountEntryLabels().lastIndex) {
+                            AccountMenuDivider()
+                        }
+                    }
+                }
+            }
+        }
+        if (isLoggedIn) item {
             AccountMenuGroup {
                 AccountMenuRow(
                     icon = Icons.Rounded.MonetizationOn,
@@ -999,18 +1150,18 @@ private fun AccountScreen(
                 }
             }
         }
-        item {
+        if (isLoggedIn) item {
             AccountMenuGroup {
                 AccountMenuRow(
                     icon = Icons.AutoMirrored.Rounded.Logout,
                     title = "退出登录",
-                    subtitle = "退出当前账号并返回登录页",
+                    subtitle = "退出当前账号",
                     titleColor = DangerText,
                     onClick = onLogout,
                 )
             }
         }
-        if (records.isNotEmpty()) {
+        if (isLoggedIn && records.isNotEmpty()) {
             item { SectionHeader("最近观看", "继续上次的短剧进度") }
             items(records.take(3)) { record -> WatchRecordRow(record) }
         }
@@ -1018,8 +1169,8 @@ private fun AccountScreen(
 }
 
 @Composable
-private fun AccountHero(username: String, balance: Int) {
-    val displayName = username.ifBlank { "ReelShort 用户" }
+private fun AccountHero(username: String, balance: Int, isLoggedIn: Boolean) {
+    val displayName = if (isLoggedIn) username.ifBlank { "ReelShort 用户" } else "游客"
     SurfacePanel {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1043,10 +1194,18 @@ private fun AccountHero(username: String, balance: Int) {
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = TextPrimary)
-                Text("已登录 · ReelShort", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    if (isLoggedIn) "已登录 · ReelShort" else "登录后可保存观看进度和积分",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MetaPill("积分 $balance")
-                    Text("持续观看可获得奖励", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    MetaPill(if (isLoggedIn) "积分 $balance" else "未登录")
+                    Text(
+                        if (isLoggedIn) "持续观看可获得奖励" else "可先浏览首页和搜索",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
@@ -1139,7 +1298,8 @@ private fun BookHero(book: BookSummary) {
 }
 
 @Composable
-private fun EpisodeRow(episode: EpisodeSummary, onClick: () -> Unit) {
+private fun EpisodeRow(episode: EpisodeSummary, bookDescription: String, onClick: () -> Unit) {
+    val subtitle = episodeSubtitle(episode.description, bookDescription)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -1162,13 +1322,25 @@ private fun EpisodeRow(episode: EpisodeSummary, onClick: () -> Unit) {
             ) {
                 Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp))
             }
-            Text(
-                episodeNumberLabel(episode.number),
-                modifier = Modifier.weight(1f),
-                color = TextPrimary,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Black,
-            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    episodeTitle(episode),
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             Text(episodeRowActionLabel(), color = PrimaryGold, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
             Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
         }

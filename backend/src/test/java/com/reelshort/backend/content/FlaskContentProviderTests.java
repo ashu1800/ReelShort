@@ -35,6 +35,7 @@ class FlaskContentProviderTests {
 						      "book_title": "Love Story",
 						      "filtered_title": "love-story",
 						      "book_pic": "https://example.com/cover.jpg",
+						      "description": "A dramatic short series.",
 						      "chapter_count": 12
 						    }
 						  ]
@@ -48,6 +49,7 @@ class FlaskContentProviderTests {
 				"Love Story",
 				"love-story",
 				"https://example.com/cover.jpg",
+				"A dramatic short series.",
 				12));
 		server.verify();
 	}
@@ -68,6 +70,7 @@ class FlaskContentProviderTests {
 						      "book_title": "Recommended",
 						      "filtered_title": "recommended",
 						      "book_pic": "https://example.com/recommended.jpg",
+						      "description": "Recommended description.",
 						      "chapter_count": 8
 						    }
 						  ]
@@ -81,6 +84,7 @@ class FlaskContentProviderTests {
 				"Recommended",
 				"recommended",
 				"https://example.com/recommended.jpg",
+				"Recommended description.",
 				8));
 		server.verify();
 	}
@@ -153,8 +157,8 @@ class FlaskContentProviderTests {
 				.andRespond(withSuccess("""
 						{
 						  "episodes": [
-						    { "episode": 1, "chapter_id": "chapter-1" },
-						    { "episode": 2, "chapter_id": "chapter-2" }
+						    { "episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong." },
+						    { "episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads." }
 						  ]
 						}
 						""", MediaType.APPLICATION_JSON));
@@ -162,8 +166,8 @@ class FlaskContentProviderTests {
 		List<ContentEpisode> episodes = provider.getEpisodes("book-1", "love-story");
 
 		assertThat(episodes).containsExactly(
-				new ContentEpisode(1, "chapter-1"),
-				new ContentEpisode(2, "chapter-2"));
+				new ContentEpisode(1, "chapter-1", "Opening Trap", "A deal goes wrong."),
+				new ContentEpisode(2, "chapter-2", "Second Move", "The secret spreads."));
 		server.verify();
 	}
 
@@ -183,7 +187,9 @@ class FlaskContentProviderTests {
 						  "duration": 120,
 						  "next_episode": {
 						    "episode": 2,
-						    "chapter_id": "chapter-2"
+						    "chapter_id": "chapter-2",
+						    "title": "Second Move",
+						    "description": "The secret spreads."
 						  }
 						}
 						""", MediaType.APPLICATION_JSON));
@@ -194,7 +200,7 @@ class FlaskContentProviderTests {
 				"https://cdn.example.com/video.m3u8",
 				1,
 				120,
-				new ContentEpisode(2, "chapter-2")));
+				new ContentEpisode(2, "chapter-2", "Second Move", "The secret spreads.")));
 		server.verify();
 	}
 

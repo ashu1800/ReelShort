@@ -20,7 +20,13 @@ data class BookSummary(
     val chapterCount: Int,
 )
 
-data class EpisodeSummary(val number: Int, val chapterId: String, val durationSeconds: Int = 0)
+data class EpisodeSummary(
+    val number: Int,
+    val chapterId: String,
+    val title: String = "",
+    val description: String = "",
+    val durationSeconds: Int = 0,
+)
 
 data class VideoUrl(
     val url: String,
@@ -46,6 +52,27 @@ data class WatchRecord(
     val episode: Int,
     val progressPercent: Int,
 )
+
+data class WatchEpisodeSnapshot(
+    val bookId: String,
+    val episode: Int,
+    val positionSeconds: Int,
+    val durationSeconds: Int,
+    val progressPercent: Int,
+    val awardedStages: List<Int>,
+) {
+    companion object {
+        fun empty(bookId: String, episode: Int): WatchEpisodeSnapshot =
+            WatchEpisodeSnapshot(
+                bookId = bookId,
+                episode = episode,
+                positionSeconds = 0,
+                durationSeconds = 0,
+                progressPercent = 0,
+                awardedStages = emptyList(),
+            )
+    }
+}
 
 data class PointAccount(
     val balance: Int,

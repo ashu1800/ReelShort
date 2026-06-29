@@ -123,6 +123,7 @@ class OkHttpReelShortApiClientTest {
                     "title": "Alpha",
                     "filteredTitle": "alpha",
                     "coverUrl": "https://example.com/alpha.jpg",
+                    "description": "Alpha description.",
                     "chapterCount": 12
                   }
                 ]
@@ -133,16 +134,18 @@ class OkHttpReelShortApiClientTest {
             val request = server.takeRequest()
 
             assertEquals("/api/app/home/recommend", request.path)
-            assertEquals("Bearer token-123", request.getHeader("Authorization"))
+            assertEquals(null, request.getHeader("Authorization"))
             assertEquals("book-1", books.single().id)
             assertEquals("alpha", books.single().filteredTitle)
             assertEquals("https://example.com/alpha.jpg", books.single().coverUrl)
+            assertEquals("Alpha description.", books.single().description)
         }
     }
 
     @Test
     fun protectedRequestsCanReadBearerTokenFromSessionStore() = runTest {
         MockWebServer().use { server ->
+            server.enqueue(successBody("""{ "balance": 18 }"""))
             server.enqueue(successBody("[]"))
             val sessionStore = InMemorySessionStore(
                 AuthSession(username = "demo", token = "stored-token", tokenType = "Bearer"),
@@ -153,9 +156,10 @@ class OkHttpReelShortApiClientTest {
                 tokenProvider = { sessionStore.loadSession()?.token },
             )
 
-            client.getHomeShelf()
+            client.getPointAccount()
             val request = server.takeRequest()
 
+            assertEquals("/api/app/points/account", request.path)
             assertEquals("Bearer stored-token", request.getHeader("Authorization"))
         }
     }
@@ -170,17 +174,17 @@ class OkHttpReelShortApiClientTest {
             val request = server.takeRequest()
 
             assertEquals("/api/app/content/search?keywords=Alpha%20Love", request.path)
-            assertEquals("Bearer token-123", request.getHeader("Authorization"))
+            assertEquals(null, request.getHeader("Authorization"))
             assertEquals(emptyList(), result)
         }
     }
 
     @Test
-    fun protectedContentRequestsIncludeBearerTokenAndMapEpisodesAndVideo() = runTest {
+    fun contentEpisodesArePublicButVideoUrlRequiresBearerToken() = runTest {
         MockWebServer().use { server ->
             server.enqueue(successBody("""
                 [
-                  { "episode": 1, "chapterId": "chapter-1" }
+                  { "episode": 1, "chapterId": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong." }
                 ]
             """.trimIndent()))
             server.enqueue(successBody("""
@@ -199,12 +203,41 @@ class OkHttpReelShortApiClientTest {
             val videoRequest = server.takeRequest()
 
             assertEquals("/api/app/content/books/book%201/episodes?filteredTitle=alpha", episodesRequest.path)
-            assertEquals("Bearer token-123", episodesRequest.getHeader("Authorization"))
+            assertEquals(null, episodesRequest.getHeader("Authorization"))
             assertEquals(1, episodes.single().number)
             assertEquals("chapter-1", episodes.single().chapterId)
+            assertEquals("Opening Trap", episodes.single().title)
+            assertEquals("A deal goes wrong.", episodes.single().description)
             assertEquals("/api/app/content/books/book%201/episodes/1/play?filteredTitle=alpha&chapterId=chapter%201", videoRequest.path)
+            assertEquals("Bearer token-123", videoRequest.getHeader("Authorization"))
             assertEquals("https://cdn.example.com/book-1/1.m3u8", video.url)
             assertEquals(180, video.durationSeconds)
+        }
+    }
+
+    @Test
+    fun episodeSnapshotMapsPlaybackAndRewardStages() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                {
+                  "bookId": "book-1",
+                  "episodeNum": 2,
+                  "positionSeconds": 90,
+                  "durationSeconds": 120,
+                  "progressPercent": 75,
+                  "awardedStages": [25, 50, 75]
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val snapshot = client.getEpisodeSnapshot("book-1", 2)
+            val request = server.takeRequest()
+
+            assertEquals("/api/app/watch/books/book-1/episodes/2/snapshot", request.path)
+            assertEquals("Bearer token-123", request.getHeader("Authorization"))
+            assertEquals(90, snapshot.positionSeconds)
+            assertEquals(75, snapshot.progressPercent)
+            assertEquals(listOf(25, 50, 75), snapshot.awardedStages)
         }
     }
 

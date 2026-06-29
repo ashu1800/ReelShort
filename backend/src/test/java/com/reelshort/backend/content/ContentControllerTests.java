@@ -48,7 +48,8 @@ class ContentControllerTests {
 	@Test
 	void searchReturnsBooksInUnifiedEnvelope() throws Exception {
 		when(contentCacheService.search("love")).thenReturn(List.of(
-				new ContentBook("book-1", "Love Story", "love-story", "https://example.com/cover.jpg", 12)));
+				new ContentBook("book-1", "Love Story", "love-story", "https://example.com/cover.jpg",
+						"A dramatic short series.", 12)));
 
 		mockMvc.perform(get("/api/app/content/search").param("keywords", "love"))
 				.andExpect(status().isOk())
@@ -56,7 +57,8 @@ class ContentControllerTests {
 				.andExpect(jsonPath("$.message").value("success"))
 				.andExpect(jsonPath("$.data", hasSize(1)))
 				.andExpect(jsonPath("$.data[0].bookId").value("book-1"))
-				.andExpect(jsonPath("$.data[0].title").value("Love Story"));
+				.andExpect(jsonPath("$.data[0].title").value("Love Story"))
+				.andExpect(jsonPath("$.data[0].description").value("A dramatic short series."));
 	}
 
 	@Test
@@ -90,8 +92,8 @@ class ContentControllerTests {
 	@Test
 	void episodesReturnsProviderEpisodesInUnifiedEnvelope() throws Exception {
 		when(contentCacheService.getEpisodes("book-1", "love-story")).thenReturn(List.of(
-				new ContentEpisode(1, "chapter-1"),
-				new ContentEpisode(2, "chapter-2")));
+				new ContentEpisode(1, "chapter-1", "The Beginning", "The first conflict starts."),
+				new ContentEpisode(2, "chapter-2", "The Choice", "A risky choice follows.")));
 
 		mockMvc.perform(get("/api/app/content/books/book-1/episodes")
 				.param("filteredTitle", "love-story"))
@@ -99,14 +101,16 @@ class ContentControllerTests {
 				.andExpect(jsonPath("$.code").value(0))
 				.andExpect(jsonPath("$.data", hasSize(2)))
 				.andExpect(jsonPath("$.data[0].episode").value(1))
-				.andExpect(jsonPath("$.data[0].chapterId").value("chapter-1"));
+				.andExpect(jsonPath("$.data[0].chapterId").value("chapter-1"))
+				.andExpect(jsonPath("$.data[0].title").value("The Beginning"))
+				.andExpect(jsonPath("$.data[0].description").value("The first conflict starts."));
 	}
 
 	@Test
 	void detailReturnsCachedBookInUnifiedEnvelope() throws Exception {
 		when(contentCacheService.getBook("book-1"))
 				.thenReturn(new ContentBook("book-1", "Love Story", "love-story",
-						"https://example.com/cover.jpg", 12));
+						"https://example.com/cover.jpg", "A dramatic short series.", 12));
 
 		mockMvc.perform(get("/api/app/content/books/book-1"))
 				.andExpect(status().isOk())
@@ -114,6 +118,7 @@ class ContentControllerTests {
 				.andExpect(jsonPath("$.data.bookId").value("book-1"))
 				.andExpect(jsonPath("$.data.title").value("Love Story"))
 				.andExpect(jsonPath("$.data.filteredTitle").value("love-story"))
+				.andExpect(jsonPath("$.data.description").value("A dramatic short series."))
 				.andExpect(jsonPath("$.data.chapterCount").value(12));
 	}
 
@@ -124,7 +129,7 @@ class ContentControllerTests {
 						"https://cdn.example.com/video.m3u8",
 						1,
 						120,
-						new ContentEpisode(2, "chapter-2")));
+						new ContentEpisode(2, "chapter-2", "Next Episode", "The next scene.")));
 
 		mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
 				.param("filteredTitle", "love-story")
@@ -135,25 +140,28 @@ class ContentControllerTests {
 				.andExpect(jsonPath("$.data.episode").value(1))
 				.andExpect(jsonPath("$.data.duration").value(120))
 				.andExpect(jsonPath("$.data.nextEpisode.episode").value(2))
-				.andExpect(jsonPath("$.data.nextEpisode.chapterId").value("chapter-2"));
+				.andExpect(jsonPath("$.data.nextEpisode.chapterId").value("chapter-2"))
+				.andExpect(jsonPath("$.data.nextEpisode.title").value("Next Episode"));
 	}
 
 	@Test
 	void homeRecommendReturnsRecommendShelf() throws Exception {
 		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND)).thenReturn(List.of(
-				new ContentBook("book-home", "Home Pick", "home-pick", "https://example.com/home.jpg", 6)));
+				new ContentBook("book-home", "Home Pick", "home-pick", "https://example.com/home.jpg",
+						"Home shelf description.", 6)));
 
 		mockMvc.perform(get("/api/app/home/recommend"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value(0))
 				.andExpect(jsonPath("$.data", hasSize(1)))
-				.andExpect(jsonPath("$.data[0].bookId").value("book-home"));
+				.andExpect(jsonPath("$.data[0].bookId").value("book-home"))
+				.andExpect(jsonPath("$.data[0].description").value("Home shelf description."));
 	}
 
 	@Test
 	void shelfEndpointReturnsSelectedShelf() throws Exception {
 		when(contentCacheService.getShelf(ContentShelfType.NEW_RELEASE)).thenReturn(List.of(
-				new ContentBook("book-new", "New", "new", "https://example.com/new.jpg", 2)));
+				new ContentBook("book-new", "New", "new", "https://example.com/new.jpg", "New release.", 2)));
 
 		mockMvc.perform(get("/api/app/content/shelves/new-release"))
 				.andExpect(status().isOk())

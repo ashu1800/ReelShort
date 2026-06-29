@@ -65,7 +65,7 @@ class AdminDashboardServiceTests {
 		assertThatThrownBy(() -> paymentCallbackService.handle(new PaymentCallbackRequest("dashboard-rejected-event",
 				"missing-order", "mock-pay", 990)));
 		contentBookCacheRepository.save(ContentBookCache.from(
-				new ContentBook("dashboard-book", "Dashboard", "dashboard", "https://example.com/cover.jpg", 2)));
+				new ContentBook("dashboard-book", "Dashboard", "dashboard", "https://example.com/cover.jpg", "", 2)));
 		contentEpisodeCacheRepository.save(ContentEpisodeCache.create("dashboard-book", "dashboard", "[]", 2));
 		contentShelfCacheRepository.save(ContentShelfCache.create(ContentShelfType.RECOMMEND, "[]", 1));
 		for (int index = 0; index < 6; index++) {

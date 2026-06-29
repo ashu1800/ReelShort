@@ -7,6 +7,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -48,6 +49,14 @@ public class SecurityConfig {
 								"/api/internal/payments/recharge/callback",
 								"/api/system/health", "/actuator/health")
 						.permitAll()
+						.requestMatchers("/api/app/home/recommend",
+								"/api/app/content/search",
+								"/api/app/content/shelves/**",
+								"/api/app/content/books/*",
+								"/api/app/content/books/*/episodes")
+						.access((authentication, context) -> new AuthorizationDecision(
+								context.getRequest().getAttribute(BearerTokenAuthenticationFilter.AUTH_FAILURE_ATTRIBUTE)
+										== null))
 						.requestMatchers("/api/app/**").authenticated()
 						.requestMatchers("/api/admin/**").authenticated()
 						.anyRequest().permitAll())

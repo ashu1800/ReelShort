@@ -71,16 +71,21 @@ class AppSecurityContractTests {
 	}
 
 	@Test
-	void contentSearchRequiresBearerToken() throws Exception {
+	void contentSearchIsPublicForGuestBrowsing() throws Exception {
+		when(contentProvider.search("love")).thenReturn(List.of(
+				new ContentBook("book-guest", "Guest Love", "guest-love", "https://example.com/cover.jpg",
+						"Guest browsable.", 12)));
+
 		mockMvc.perform(get("/api/app/content/search").param("keywords", "love"))
-				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.code").value(401))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data[0].bookId").value("book-guest"))
 				.andExpect(jsonPath("$.requestId").isNotEmpty())
 				.andExpect(header().exists("X-Request-Id"));
 	}
 
 	@Test
-	void contentSearchRejectsInvalidBearerToken() throws Exception {
+	void contentSearchRejectsInvalidBearerTokenWhenProvided() throws Exception {
 		mockMvc.perform(get("/api/app/content/search")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer invalid-token")
 				.param("keywords", "love"))
@@ -145,7 +150,8 @@ class AppSecurityContractTests {
 	void contentSearchAcceptsValidBearerToken() throws Exception {
 		String token = registerAndExtractToken("security-active");
 		when(contentProvider.search("love")).thenReturn(List.of(
-				new ContentBook("book-1", "Love Story", "love-story", "https://example.com/cover.jpg", 12)));
+				new ContentBook("book-1", "Love Story", "love-story", "https://example.com/cover.jpg",
+						"Authenticated browse.", 12)));
 
 		mockMvc.perform(get("/api/app/content/search")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
@@ -153,6 +159,15 @@ class AppSecurityContractTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value(0))
 				.andExpect(jsonPath("$.data[0].bookId").value("book-1"));
+	}
+
+	@Test
+	void contentPlayStillRequiresBearerToken() throws Exception {
+		mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
+				.param("filteredTitle", "love-story")
+				.param("chapterId", "chapter-1"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401));
 	}
 
 	@Test

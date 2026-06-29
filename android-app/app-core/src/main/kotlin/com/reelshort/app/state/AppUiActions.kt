@@ -44,5 +44,9 @@ class AppUiActions(private val controller: AppStateController) {
 
     suspend fun logout() = controller.logout()
 
+    fun showAuthPrompt() = controller.showAuthPrompt()
+
+    fun dismissAuthPrompt() = controller.dismissAuthPrompt()
+
     fun clearError() = controller.clearError()
 }

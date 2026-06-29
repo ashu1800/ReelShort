@@ -115,7 +115,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void getEpisodesPersistsEpisodeCacheWhenProviderSucceeds() {
-		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1"));
+		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1", "", ""));
 		when(contentProvider.getEpisodes("book-1", "love-story")).thenReturn(episodes);
 
 		List<ContentEpisode> response = contentCacheService.getEpisodes("book-1", "love-story");
@@ -131,7 +131,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void getEpisodesFallsBackToCachedEpisodesWhenProviderFails() {
-		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1"));
+		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1", "", ""));
 		when(contentProvider.getEpisodes("book-1", "love-story"))
 				.thenReturn(episodes)
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
@@ -173,6 +173,6 @@ class ContentCacheServiceTests {
 	}
 
 	private ContentBook book(String bookId, String title) {
-		return new ContentBook(bookId, title, title.toLowerCase(), "https://example.com/" + bookId + ".jpg", 10);
+		return new ContentBook(bookId, title, title.toLowerCase(), "https://example.com/" + bookId + ".jpg", "", 10);
 	}
 }

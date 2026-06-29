@@ -103,7 +103,7 @@ class AuthControllerTests {
 		registerUser("carol-api", "Password123");
 		String token = loginUserAndExtractToken("carol-api", "Password123");
 		when(contentProvider.search("love")).thenReturn(List.of(
-				new ContentBook("book-login-token", "Love", "love", "https://example.com/cover.jpg", 3)));
+				new ContentBook("book-login-token", "Love", "love", "https://example.com/cover.jpg", "", 3)));
 
 		mockMvc.perform(get("/api/app/content/search")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)

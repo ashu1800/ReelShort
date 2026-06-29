@@ -5,5 +5,6 @@ public record ContentBook(
 		String title,
 		String filteredTitle,
 		String coverUrl,
+		String description,
 		int chapterCount) {
 }

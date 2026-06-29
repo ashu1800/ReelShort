@@ -91,6 +91,41 @@ class WatchControllerTests {
 	}
 
 	@Test
+	void episodeSnapshotReturnsEmptyStateWhenNoHistoryExists() throws Exception {
+		String token = registerAndExtractToken("watch-snapshot-empty");
+
+		mockMvc.perform(get("/api/app/watch/books/book-empty/episodes/3/snapshot")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data.bookId").value("book-empty"))
+				.andExpect(jsonPath("$.data.episodeNum").value(3))
+				.andExpect(jsonPath("$.data.positionSeconds").value(0))
+				.andExpect(jsonPath("$.data.durationSeconds").value(0))
+				.andExpect(jsonPath("$.data.progressPercent").value(0))
+				.andExpect(jsonPath("$.data.awardedStages", hasSize(0)));
+	}
+
+	@Test
+	void episodeSnapshotReturnsHistoryAndAwardedStages() throws Exception {
+		String token = registerAndExtractToken("watch-snapshot-progress");
+		reportProgress(token, "book-snapshot", 2, 90, 120);
+
+		mockMvc.perform(get("/api/app/watch/books/book-snapshot/episodes/2/snapshot")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-snapshot"))
+				.andExpect(jsonPath("$.data.episodeNum").value(2))
+				.andExpect(jsonPath("$.data.positionSeconds").value(90))
+				.andExpect(jsonPath("$.data.durationSeconds").value(120))
+				.andExpect(jsonPath("$.data.progressPercent").value(75))
+				.andExpect(jsonPath("$.data.awardedStages", hasSize(3)))
+				.andExpect(jsonPath("$.data.awardedStages[0]").value(25))
+				.andExpect(jsonPath("$.data.awardedStages[1]").value(50))
+				.andExpect(jsonPath("$.data.awardedStages[2]").value(75));
+	}
+
+	@Test
 	void progressRejectsInvalidDuration() throws Exception {
 		String token = registerAndExtractToken("watch-erin");
 

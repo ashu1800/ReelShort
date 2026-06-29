@@ -9,5 +9,8 @@ public interface PointTransactionRepository extends JpaRepository<PointTransacti
 
 	List<PointTransaction> findByUserIdOrderByCreatedAtDesc(UUID userId);
 
+	List<PointTransaction> findByUserIdAndBookIdAndEpisodeNumAndSourceOrderByStageAsc(UUID userId, String bookId,
+			Integer episodeNum, String source);
+
 	long countByUserId(UUID userId);
 }

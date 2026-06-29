@@ -24,6 +24,9 @@ public class ContentBookCache {
 	@Column(name = "cover_url", length = 1024)
 	private String coverUrl;
 
+	@Column(nullable = false, columnDefinition = "text")
+	private String description;
+
 	@Column(name = "chapter_count", nullable = false)
 	private int chapterCount;
 
@@ -38,6 +41,7 @@ public class ContentBookCache {
 		this.title = book.title();
 		this.filteredTitle = book.filteredTitle();
 		this.coverUrl = book.coverUrl();
+		this.description = book.description();
 		this.chapterCount = book.chapterCount();
 		this.updatedAt = updatedAt;
 	}
@@ -50,6 +54,7 @@ public class ContentBookCache {
 		this.title = book.title();
 		this.filteredTitle = book.filteredTitle();
 		this.coverUrl = book.coverUrl();
+		this.description = book.description();
 		this.chapterCount = book.chapterCount();
 		this.updatedAt = OffsetDateTime.now();
 	}
@@ -70,6 +75,10 @@ public class ContentBookCache {
 		return coverUrl;
 	}
 
+	public String description() {
+		return description;
+	}
+
 	public int chapterCount() {
 		return chapterCount;
 	}
@@ -79,6 +88,6 @@ public class ContentBookCache {
 	}
 
 	public ContentBook toContentBook() {
-		return new ContentBook(bookId, title, filteredTitle, coverUrl, chapterCount);
+		return new ContentBook(bookId, title, filteredTitle, coverUrl, description, chapterCount);
 	}
 }

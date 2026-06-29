@@ -19,12 +19,14 @@ enum class AppScreen {
 }
 
 data class AppUiState(
-    val screen: AppScreen = AppScreen.LOGIN,
+    val screen: AppScreen = AppScreen.HOME,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val apiBaseUrl: String = "",
     val apiHealthStatus: ApiHealthStatus? = null,
     val session: AuthSession? = null,
+    val authPromptVisible: Boolean = false,
+    val pendingPlaybackEpisode: EpisodeSummary? = null,
     val homeShelf: List<BookSummary> = emptyList(),
     val searchQuery: String = "",
     val searchResults: List<BookSummary> = emptyList(),
