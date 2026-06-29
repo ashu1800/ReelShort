@@ -226,7 +226,7 @@ class AppStateControllerTest {
         controller.checkApiHealth()
 
         val state = controller.state.value
-        assertEquals("http://10.0.2.2:8080/api/app", state.apiBaseUrl)
+        assertEquals("http://66.42.99.110:18080/api/app", state.apiBaseUrl)
         assertEquals("UP", state.apiHealthStatus?.status)
         assertEquals("fake-backend", state.apiHealthStatus?.service)
         assertEquals(listOf("health"), dataSource.calls)
@@ -356,7 +356,7 @@ class AppStateControllerTest {
         var videoDurationSeconds: Int? = null
         var healthError: Throwable? = null
 
-        override val apiBaseUrl: String = "http://10.0.2.2:8080/api/app"
+        override val apiBaseUrl: String = "http://66.42.99.110:18080/api/app"
 
         override suspend fun checkSystemHealth(): ApiHealthStatus {
             calls += "health"

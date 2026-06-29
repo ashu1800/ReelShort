@@ -150,7 +150,7 @@ class AppUiActionsTest {
         var videoUrlVersion: Int = 1
         var lastProgress: WatchProgressReport? = null
 
-        override val apiBaseUrl: String = "http://10.0.2.2:8080/api/app"
+        override val apiBaseUrl: String = "http://66.42.99.110:18080/api/app"
 
         override suspend fun checkSystemHealth(): ApiHealthStatus {
             calls += "health"

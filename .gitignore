@@ -4,6 +4,8 @@ Thumbs.db
 .idea/
 .vscode/
 .worktrees/
+服务器.md
+服务器.txt
 
 # Logs
 *.log

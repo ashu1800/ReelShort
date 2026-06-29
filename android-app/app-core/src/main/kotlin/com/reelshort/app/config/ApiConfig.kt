@@ -16,6 +16,6 @@ class ApiConfig(rawBaseUrl: String) {
     override fun toString(): String = "ApiConfig(baseUrl=$baseUrl)"
 
     companion object {
-        fun default(): ApiConfig = ApiConfig("http://10.0.2.2:8080/api/app")
+        fun default(): ApiConfig = ApiConfig("http://66.42.99.110:18080/api/app")
     }
 }

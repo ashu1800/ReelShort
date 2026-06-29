@@ -14,7 +14,7 @@ android {
     compileSdk = 35
 
     val reelshortApiBaseUrl = providers.gradleProperty("reelshortApiBaseUrl")
-        .orElse("http://10.0.2.2:8080/api/app")
+        .orElse("http://66.42.99.110:18080/api/app")
 
     defaultConfig {
         applicationId = "com.reelshort.app"

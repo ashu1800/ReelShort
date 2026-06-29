@@ -8,8 +8,8 @@ class ApiConfigTest {
     fun defaultConfigDerivesSystemHealthUrl() {
         val config = ApiConfig.default()
 
-        assertEquals("http://10.0.2.2:8080/api/app", config.baseUrl)
-        assertEquals("http://10.0.2.2:8080/api/system/health", config.systemHealthUrl)
+        assertEquals("http://66.42.99.110:18080/api/app", config.baseUrl)
+        assertEquals("http://66.42.99.110:18080/api/system/health", config.systemHealthUrl)
     }
 
     @Test
