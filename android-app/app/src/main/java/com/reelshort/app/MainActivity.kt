@@ -335,6 +335,12 @@ fun ReelShortApp(actions: AppUiActions) {
                 onDismiss = actions::clearError,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
+                    .zIndex(2f),
+            )
+            LoadingDialog(
+                visible = state.isLoading && state.screen != AppScreen.LOGIN,
+                modifier = Modifier
+                    .align(Alignment.Center)
                     .zIndex(1f),
             )
         }
@@ -507,9 +513,6 @@ private fun MainShell(
                     .padding(padding)
                     .statusBarsPadding(),
             ) {
-                if (state.isLoading) {
-                    LoadingStrip()
-                }
                 when (state.screen) {
                     AppScreen.LOGIN -> Unit
                     AppScreen.HOME -> HomeScreen(state.homeShelf, onOpenBook)
@@ -545,17 +548,33 @@ private fun NavigationIcon(screen: AppScreen) {
 }
 
 @Composable
-private fun LoadingStrip() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0x33252C3A))
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun LoadingDialog(visible: Boolean, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = modifier,
     ) {
-        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = PrimaryGold)
-        Spacer(Modifier.width(10.dp))
-        Text("正在加载", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+        Surface(
+            color = Color(0xF211151E),
+            contentColor = TextPrimary,
+            border = BorderStroke(1.dp, Divider),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            LoadingContent(Modifier.padding(horizontal = 22.dp, vertical = 18.dp))
+        }
+    }
+}
+
+@Composable
+private fun LoadingContent(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp, color = PrimaryGold)
+        Text("正在加载", color = TextPrimary, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -1271,6 +1290,12 @@ internal val primaryTabs = listOf(AppScreen.HOME, AppScreen.SEARCH, AppScreen.AC
 
 internal val AppScreen.usesGlobalTopBar: Boolean
     get() = false
+
+internal enum class LoadingFeedbackMode {
+    CENTER_DIALOG,
+}
+
+internal fun loadingFeedbackMode(): LoadingFeedbackMode = LoadingFeedbackMode.CENTER_DIALOG
 
 internal fun accountEntryLabels(): List<String> =
     listOf("积分余额", "观看记录", "积分流水", "充值订单", "开发诊断", "退出登录")

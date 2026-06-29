@@ -28,4 +28,9 @@ class VisualTextContractTest {
             accountEntryLabels(),
         )
     }
+
+    @Test
+    fun loadingFeedbackUsesCenteredDialog() {
+        assertEquals(LoadingFeedbackMode.CENTER_DIALOG, loadingFeedbackMode())
+    }
 }
