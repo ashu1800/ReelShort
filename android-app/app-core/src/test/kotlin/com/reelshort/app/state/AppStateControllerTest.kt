@@ -671,18 +671,36 @@ class AppStateControllerTest {
     }
 
     @Test
-    fun restoreSessionFailureClearsSessionAndRecordsError() = runTest {
+    fun restoreSessionFailureKeepsStoredSessionAndRecordsContentError() = runTest {
         val session = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer")
-        val dataSource = FakeAppDataSource(restoredSession = session, homeError = IllegalStateException("expired"))
+        val dataSource = FakeAppDataSource(restoredSession = session, homeError = IllegalStateException("content unavailable"))
         val controller = AppStateController(dataSource)
 
         controller.restoreSession()
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
-        assertNull(state.session)
+        assertEquals(session, state.session)
         assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
-        assertEquals(listOf("restore", "home", "clear"), dataSource.calls)
+        assertEquals(listOf("restore", "home"), dataSource.calls)
+    }
+
+    @Test
+    fun loginFromAccountPromptReturnsToAccountAndLoadsProtectedSnapshot() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        val controller = AppStateController(dataSource)
+
+        controller.openAccount()
+        controller.showAuthPrompt()
+        controller.login("demo", "Password123")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertEquals("demo", state.session?.username)
+        assertFalse(state.authPromptVisible)
+        assertEquals(25, state.pointAccount?.balance)
+        assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
+        assertEquals(listOf("login:demo", "history", "points", "orders"), dataSource.calls)
     }
 
     @Test

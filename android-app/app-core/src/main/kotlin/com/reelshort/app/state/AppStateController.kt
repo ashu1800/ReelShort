@@ -33,13 +33,10 @@ class AppStateController(private val dataSource: AppDataSource) {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            if (session != null) {
-                dataSource.clearSession()
-            }
             mutableState.update {
                 it.copy(
                     screen = AppScreen.HOME,
-                    session = null,
+                    session = session,
                     homeShelf = emptyList(),
                     isLoading = false,
                     errorMessage = "内容暂时加载失败，可以稍后刷新。",
@@ -71,6 +68,19 @@ class AppStateController(private val dataSource: AppDataSource) {
                 )
             }
             openPlayerForAuthenticatedUser(pendingEpisode)
+            return
+        }
+        if (state.value.screen == AppScreen.ACCOUNT) {
+            mutableState.update {
+                it.copy(
+                    session = session,
+                    authPromptVisible = false,
+                    pendingPlaybackEpisode = null,
+                    isLoading = false,
+                    errorMessage = null,
+                )
+            }
+            loadAccountSnapshotForAuthenticatedUser()
             return
         }
         val homeShelf = try {
@@ -302,6 +312,10 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun loadAccountSnapshot() = runWithLoading {
+        loadAccountSnapshotForAuthenticatedUser()
+    }
+
+    private suspend fun loadAccountSnapshotForAuthenticatedUser() {
         val history = dataSource.loadWatchHistory()
         val points = dataSource.loadPointAccount()
         val orders = dataSource.loadOrders()

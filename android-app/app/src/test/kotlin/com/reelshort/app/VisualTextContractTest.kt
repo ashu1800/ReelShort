@@ -36,6 +36,12 @@ class VisualTextContractTest {
     }
 
     @Test
+    fun authPromptTitleMatchesTriggerContext() {
+        assertEquals("登录后继续播放", authPromptTitle(hasPendingPlayback = true))
+        assertEquals("登录后查看账户", authPromptTitle(hasPendingPlayback = false))
+    }
+
+    @Test
     fun loadingFeedbackUsesCenteredDialog() {
         assertEquals(LoadingFeedbackMode.CENTER_DIALOG, loadingFeedbackMode())
     }

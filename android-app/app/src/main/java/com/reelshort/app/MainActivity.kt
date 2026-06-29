@@ -188,6 +188,9 @@ internal fun playerSecondaryActionLabels(): List<String> = listOf("刷新地址"
 
 internal fun guestAccountEntryLabels(): List<String> = listOf("登录", "注册")
 
+internal fun authPromptTitle(hasPendingPlayback: Boolean): String =
+    if (hasPendingPlayback) "登录后继续播放" else "登录后查看账户"
+
 internal fun episodeSubtitle(episodeDescription: String, bookDescription: String): String =
     episodeDescription.trim().ifBlank { bookDescription.trim() }
 
@@ -628,8 +631,12 @@ private fun AuthBottomSheet(
         ) {
             AuthFormContent(
                 state = state,
-                title = "登录后继续播放",
-                subtitle = "播放、积分和账户数据需要登录账号。",
+                title = authPromptTitle(state.pendingPlaybackEpisode != null),
+                subtitle = if (state.pendingPlaybackEpisode != null) {
+                    "播放、积分和账户数据需要登录账号。"
+                } else {
+                    "登录后可以查看积分、观看记录和订单。"
+                },
                 onLogin = onLogin,
                 onRegister = onRegister,
                 onDismiss = onDismiss,
