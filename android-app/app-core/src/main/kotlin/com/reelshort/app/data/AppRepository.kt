@@ -1,12 +1,15 @@
 package com.reelshort.app.data
 
 import com.reelshort.app.network.ReelShortApiClient
+import com.reelshort.app.session.CredentialStore
+import com.reelshort.app.session.InMemoryCredentialStore
 import com.reelshort.app.session.InMemorySessionStore
 import com.reelshort.app.session.SessionStore
 
 class AppRepository(
     private val apiClient: ReelShortApiClient,
     private val sessionStore: SessionStore = InMemorySessionStore(),
+    private val credentialStore: CredentialStore = InMemoryCredentialStore(),
     override val apiBaseUrl: String = "",
 ) : AppDataSource {
     var currentToken: String? = null
@@ -70,5 +73,16 @@ class AppRepository(
     override suspend fun clearSession() {
         sessionStore.clearSession()
         currentToken = null
+    }
+
+    override suspend fun loadSavedCredentials(): SavedCredentials? =
+        credentialStore.loadCredentials()
+
+    override suspend fun saveCredentials(credentials: SavedCredentials) {
+        credentialStore.saveCredentials(credentials)
+    }
+
+    override suspend fun clearSavedCredentials() {
+        credentialStore.clearCredentials()
     }
 }

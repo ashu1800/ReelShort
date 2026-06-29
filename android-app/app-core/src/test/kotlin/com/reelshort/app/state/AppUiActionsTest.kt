@@ -8,6 +8,7 @@ import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.SavedCredentials
 import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
@@ -258,6 +259,14 @@ class AppUiActionsTest {
 
         override suspend fun clearSession() {
             calls += "clear"
+        }
+
+        override suspend fun loadSavedCredentials(): SavedCredentials? = null
+
+        override suspend fun saveCredentials(credentials: SavedCredentials) {
+        }
+
+        override suspend fun clearSavedCredentials() {
         }
     }
 }

@@ -6,6 +6,7 @@ import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.SavedCredentials
 import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchRecord
 
@@ -25,6 +26,7 @@ data class AppUiState(
     val apiBaseUrl: String = "",
     val apiHealthStatus: ApiHealthStatus? = null,
     val session: AuthSession? = null,
+    val savedCredentials: SavedCredentials? = null,
     val authPromptVisible: Boolean = false,
     val pendingPlaybackEpisode: EpisodeSummary? = null,
     val homeShelf: List<BookSummary> = emptyList(),

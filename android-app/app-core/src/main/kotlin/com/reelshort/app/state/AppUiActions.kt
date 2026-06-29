@@ -9,9 +9,13 @@ class AppUiActions(private val controller: AppStateController) {
 
     suspend fun restoreSession() = controller.restoreSession()
 
-    suspend fun login(username: String, password: String) = controller.login(username, password)
+    suspend fun loadSavedCredentials() = controller.loadSavedCredentials()
 
-    suspend fun register(username: String, password: String) = controller.register(username, password)
+    suspend fun login(username: String, password: String, rememberPassword: Boolean = false) =
+        controller.login(username, password, rememberPassword)
+
+    suspend fun register(username: String, password: String, rememberPassword: Boolean = false) =
+        controller.register(username, password, rememberPassword)
 
     suspend fun openHome() = controller.openHome()
 

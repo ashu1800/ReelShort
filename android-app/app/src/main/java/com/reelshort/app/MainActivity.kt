@@ -1,6 +1,7 @@
 package com.reelshort.app
 
 import android.os.Bundle
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -38,6 +39,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
@@ -191,6 +194,8 @@ internal fun guestAccountEntryLabels(): List<String> = listOf("登录", "注册"
 internal fun authPromptTitle(hasPendingPlayback: Boolean): String =
     if (hasPendingPlayback) "登录后继续播放" else "登录后查看账户"
 
+internal fun rememberPasswordLabel(): String = "记住密码"
+
 internal fun episodeSubtitle(episodeDescription: String, bookDescription: String): String =
     episodeDescription.trim().ifBlank { bookDescription.trim() }
 
@@ -297,22 +302,24 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.rgb(8, 10, 15)),
         )
         setContent {
-            val actions = remember { AndroidAppFactory.createActions(filesDir) }
+            val actions = remember { AndroidAppFactory.createActions(applicationContext) }
             ReelShortApp(actions)
         }
     }
 }
 
 private object AndroidAppFactory {
-    fun createActions(filesDir: File): AppUiActions {
+    fun createActions(context: Context): AppUiActions {
+        val filesDir = context.filesDir
         val sessionStore = FileSessionStore(File(filesDir, "reelshort-session.json"))
+        val credentialStore = AndroidCredentialStore.create(context)
         val apiConfig = ApiConfig(BuildConfig.REELSHORT_API_BASE_URL)
         lateinit var repository: AppRepository
         val apiClient = OkHttpReelShortApiClient(
             config = apiConfig,
             tokenProvider = { repository.currentToken },
         )
-        repository = AppRepository(apiClient, sessionStore, apiConfig.baseUrl)
+        repository = AppRepository(apiClient, sessionStore, credentialStore, apiConfig.baseUrl)
         return AppUiActions(AppStateController(repository))
     }
 }
@@ -361,8 +368,12 @@ fun ReelShortApp(actions: AppUiActions) {
             AuthBottomSheet(
                 visible = state.authPromptVisible,
                 state = state,
-                onLogin = { username, password -> scope.launch { actions.login(username, password) } },
-                onRegister = { username, password -> scope.launch { actions.register(username, password) } },
+                onLogin = { username, password, rememberPassword ->
+                    scope.launch { actions.login(username, password, rememberPassword) }
+                },
+                onRegister = { username, password, rememberPassword ->
+                    scope.launch { actions.register(username, password, rememberPassword) }
+                },
                 onDismiss = actions::dismissAuthPrompt,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -422,11 +433,12 @@ private fun AppBackground(content: @Composable () -> Unit) {
 @Composable
 private fun LoginScreen(
     state: AppUiState,
-    onLogin: (String, String) -> Unit,
-    onRegister: (String, String) -> Unit,
+    onLogin: (String, String, Boolean) -> Unit,
+    onRegister: (String, String, Boolean) -> Unit,
 ) {
-    var username by remember { mutableStateOf(state.session?.username ?: "demo") }
-    var password by remember { mutableStateOf("") }
+    var username by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.username ?: state.session?.username ?: "demo") }
+    var password by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.password.orEmpty()) }
+    var rememberPassword by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.rememberPassword == true) }
 
     AppBackground {
         LazyColumn(
@@ -454,13 +466,18 @@ private fun LoginScreen(
                             enabled = !state.isLoading,
                             isPassword = true,
                         )
+                        RememberPasswordRow(
+                            checked = rememberPassword,
+                            onCheckedChange = { rememberPassword = it },
+                            enabled = !state.isLoading,
+                        )
                         PrimaryActionButton(
                             text = if (state.isLoading) "登录中" else "登录",
                             enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
-                            onClick = { onLogin(username, password) },
+                            onClick = { onLogin(username, password, rememberPassword) },
                         )
                         TextButton(
-                            onClick = { onRegister(username, password) },
+                            onClick = { onRegister(username, password, rememberPassword) },
                             enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
@@ -508,6 +525,39 @@ private fun LoginTextField(
             cursorColor = PrimaryGold,
         ),
     )
+}
+
+@Composable
+private fun RememberPasswordRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            colors = CheckboxDefaults.colors(
+                checkedColor = PrimaryGold,
+                uncheckedColor = TextSecondary,
+                checkmarkColor = Color(0xFF281600),
+            ),
+        )
+        Text(
+            text = rememberPasswordLabel(),
+            color = TextSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }
 
 @Composable
@@ -611,8 +661,8 @@ private fun LoadingDialog(visible: Boolean, modifier: Modifier = Modifier) {
 private fun AuthBottomSheet(
     visible: Boolean,
     state: AppUiState,
-    onLogin: (String, String) -> Unit,
-    onRegister: (String, String) -> Unit,
+    onLogin: (String, String, Boolean) -> Unit,
+    onRegister: (String, String, Boolean) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -651,13 +701,14 @@ private fun AuthFormContent(
     state: AppUiState,
     title: String,
     subtitle: String,
-    onLogin: (String, String) -> Unit,
-    onRegister: (String, String) -> Unit,
+    onLogin: (String, String, Boolean) -> Unit,
+    onRegister: (String, String, Boolean) -> Unit,
     onDismiss: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    var username by remember { mutableStateOf(state.session?.username ?: "demo") }
-    var password by remember { mutableStateOf("") }
+    var username by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.username ?: state.session?.username ?: "demo") }
+    var password by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.password.orEmpty()) }
+    var rememberPassword by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.rememberPassword == true) }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -683,13 +734,18 @@ private fun AuthFormContent(
             enabled = !state.isLoading,
             isPassword = true,
         )
+        RememberPasswordRow(
+            checked = rememberPassword,
+            onCheckedChange = { rememberPassword = it },
+            enabled = !state.isLoading,
+        )
         PrimaryActionButton(
             text = if (state.isLoading) "登录中" else "登录",
             enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
-            onClick = { onLogin(username, password) },
+            onClick = { onLogin(username, password, rememberPassword) },
         )
         OutlinedButton(
-            onClick = { onRegister(username, password) },
+            onClick = { onRegister(username, password, rememberPassword) },
             enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
             border = BorderStroke(1.dp, Divider),
