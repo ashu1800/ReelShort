@@ -1,6 +1,7 @@
 package com.reelshort.app.network
 
 import com.reelshort.app.data.AuthSession
+import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
@@ -10,6 +11,8 @@ import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
 
 interface ReelShortApiClient {
+    suspend fun checkSystemHealth(): ApiHealthStatus
+
     suspend fun login(username: String, password: String): AuthSession
 
     suspend fun register(username: String, password: String): AuthSession

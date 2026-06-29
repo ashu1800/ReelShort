@@ -1,6 +1,7 @@
 package com.reelshort.app.state
 
 import com.reelshort.app.data.AppDataSource
+import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
 import kotlinx.coroutines.CancellationException
@@ -10,7 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 class AppStateController(private val dataSource: AppDataSource) {
-    private val mutableState = MutableStateFlow(AppUiState())
+    private val mutableState = MutableStateFlow(AppUiState(apiBaseUrl = dataSource.apiBaseUrl))
 
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
@@ -192,9 +193,34 @@ class AppStateController(private val dataSource: AppDataSource) {
         mutableState.update { it.copy(errorMessage = null) }
     }
 
+    suspend fun checkApiHealth() {
+        mutableState.update { it.copy(isLoading = true, errorMessage = null) }
+        try {
+            val status = dataSource.checkSystemHealth()
+            mutableState.update {
+                it.copy(
+                    apiHealthStatus = status,
+                    isLoading = false,
+                )
+            }
+        } catch (error: CancellationException) {
+            mutableState.update { it.copy(isLoading = false) }
+            throw error
+        } catch (error: Throwable) {
+            val message = error.message ?: error::class.simpleName ?: "请求失败"
+            mutableState.update {
+                it.copy(
+                    apiHealthStatus = ApiHealthStatus(status = "DOWN", service = message),
+                    errorMessage = message,
+                    isLoading = false,
+                )
+            }
+        }
+    }
+
     suspend fun logout() = runWithLoading {
         dataSource.clearSession()
-        mutableState.value = AppUiState()
+        mutableState.value = AppUiState(apiBaseUrl = dataSource.apiBaseUrl)
     }
 
     private suspend fun runWithLoading(block: suspend () -> Unit) {

@@ -1,5 +1,6 @@
 package com.reelshort.app.state
 
+import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
@@ -21,6 +22,8 @@ data class AppUiState(
     val screen: AppScreen = AppScreen.LOGIN,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val apiBaseUrl: String = "",
+    val apiHealthStatus: ApiHealthStatus? = null,
     val session: AuthSession? = null,
     val homeShelf: List<BookSummary> = emptyList(),
     val searchQuery: String = "",

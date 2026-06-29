@@ -1,6 +1,7 @@
 package com.reelshort.app.network
 
 import com.reelshort.app.data.AuthSession
+import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
@@ -16,6 +17,9 @@ class FakeReelShortApiClient : ReelShortApiClient {
         BookSummary("book-2", "The Billionaire's Secret", "billionaire-secret", null, "都市爱情与身份反转", 48),
         BookSummary("book-3", "My Mafia Protector", "mafia-protector", null, "动作、悬疑和快节奏剧情", 55),
     )
+
+    override suspend fun checkSystemHealth(): ApiHealthStatus =
+        ApiHealthStatus(status = "UP", service = "fake-reelshort-backend")
 
     override suspend fun login(username: String, password: String): AuthSession = AuthSession(
         username = username,

@@ -7,9 +7,12 @@ import com.reelshort.app.session.SessionStore
 class AppRepository(
     private val apiClient: ReelShortApiClient,
     private val sessionStore: SessionStore = InMemorySessionStore(),
+    override val apiBaseUrl: String = "",
 ) : AppDataSource {
     var currentToken: String? = null
         private set
+
+    override suspend fun checkSystemHealth(): ApiHealthStatus = apiClient.checkSystemHealth()
 
     override suspend fun login(username: String, password: String): AuthSession {
         val session = apiClient.login(username, password)

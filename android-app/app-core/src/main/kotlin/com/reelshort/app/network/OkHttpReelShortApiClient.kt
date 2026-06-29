@@ -1,6 +1,7 @@
 package com.reelshort.app.network
 
 import com.reelshort.app.config.ApiConfig
+import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
@@ -12,6 +13,7 @@ import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.network.dto.AuthRequestDto
 import com.reelshort.app.network.dto.AuthSessionDto
+import com.reelshort.app.network.dto.ApiHealthStatusDto
 import com.reelshort.app.network.dto.BackendApiResponse
 import com.reelshort.app.network.dto.ContentBookDto
 import com.reelshort.app.network.dto.ContentEpisodeDto
@@ -37,6 +39,14 @@ class OkHttpReelShortApiClient(
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val tokenProvider: suspend () -> String? = { null },
 ) : ReelShortApiClient {
+
+    override suspend fun checkSystemHealth(): ApiHealthStatus =
+        execute<ApiHealthStatusDto>(
+            Request.Builder()
+                .url(config.systemHealthUrl)
+                .get()
+                .build(),
+        ).toDomain()
 
     override suspend fun login(username: String, password: String): AuthSession =
         post<AuthRequestDto, AuthSessionDto>("/auth/login", AuthRequestDto(username, password)).toDomain()
@@ -145,6 +155,8 @@ class OkHttpReelShortApiClient(
     }
 
     private fun AuthSessionDto.toDomain(): AuthSession = AuthSession(username, token, tokenType)
+
+    private fun ApiHealthStatusDto.toDomain(): ApiHealthStatus = ApiHealthStatus(status, service)
 
     private fun ContentBookDto.toDomain(): BookSummary =
         BookSummary(bookId, title, filteredTitle, coverUrl, "", chapterCount)
