@@ -1,4 +1,5 @@
 package com.reelshort.app
+import com.reelshort.app.ui.format.coverUrlOrNull
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

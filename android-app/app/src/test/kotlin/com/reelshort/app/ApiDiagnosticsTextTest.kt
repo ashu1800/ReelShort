@@ -1,4 +1,5 @@
 package com.reelshort.app
+import com.reelshort.app.ui.format.apiDiagnosticsText
 
 import com.reelshort.app.data.ApiHealthStatus
 import kotlin.test.Test

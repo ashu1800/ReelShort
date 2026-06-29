@@ -1,4 +1,6 @@
 package com.reelshort.app
+import com.reelshort.app.ui.format.mediaPositionSeconds
+import com.reelshort.app.ui.format.mediaDurationSeconds
 
 import androidx.media3.common.C
 import kotlin.test.Test
