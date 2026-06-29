@@ -208,6 +208,165 @@ def test_reelshort_client_maps_search_page_props(monkeypatch):
     ]
 
 
+def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_is_empty(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        ok = True
+        text = ""
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append(url)
+        if url.endswith("/_next/data/build-1/37/recommend.json"):
+            return FakeResponse({})
+        if url.endswith("/_next/data/build-1/en.json"):
+            return FakeResponse(
+                {
+                    "pageProps": {
+                        "fallback": {
+                            "/api/ms/hall/webInfo": {
+                                "bookShelfList": [
+                                    {
+                                        "bookshelf_name": "New Release",
+                                        "books": [
+                                            {
+                                                "book_id": "book-2",
+                                                "book_title": "New Release Story",
+                                                "book_pic": "https://example.com/new.jpg",
+                                                "chapter_count": 8,
+                                            }
+                                        ],
+                                    },
+                                    {
+                                        "bookshelf_name": "TOP",
+                                        "books": [
+                                            {
+                                                "book_id": "book-3",
+                                                "book_title": "Top Story",
+                                                "book_pic": "https://example.com/top.jpg",
+                                                "chapter_count": 20,
+                                            }
+                                        ],
+                                    },
+                                ]
+                            }
+                        }
+                    }
+                }
+            )
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+
+    client = ReelShortClient("https://site.example", "37", 3)
+    client.build_id = "build-1"
+
+    results = client.shelf("recommend")
+
+    assert calls == [
+        "https://site.example/_next/data/build-1/37/recommend.json",
+        "https://site.example/_next/data/build-1/en.json",
+    ]
+    assert results == [
+        {
+            "book_id": "book-2",
+            "book_title": "New Release Story",
+            "filtered_title": "new-release-story",
+            "book_pic": "https://example.com/new.jpg",
+            "chapter_count": 8,
+        },
+        {
+            "book_id": "book-3",
+            "book_title": "Top Story",
+            "filtered_title": "top-story",
+            "book_pic": "https://example.com/top.jpg",
+            "chapter_count": 20,
+        },
+    ]
+
+
+def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_returns_404(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        text = ""
+
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self.ok = 200 <= status_code < 300
+            self.payload = payload or {}
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append(url)
+        if url.endswith("/_next/data/build-1/37/recommend.json"):
+            return FakeResponse(404)
+        if url.endswith("/_next/data/fresh-build/37/recommend.json"):
+            return FakeResponse(404)
+        if url.endswith("/_next/data/fresh-build/en.json"):
+            return FakeResponse(
+                200,
+                {
+                    "pageProps": {
+                        "fallback": {
+                            "/api/ms/hall/webInfo": {
+                                "bookShelfList": [
+                                    {
+                                        "bookshelf_name": "TOP",
+                                        "books": [
+                                            {
+                                                "book_id": "book-4",
+                                                "book_title": "Fallback Story",
+                                                "book_pic": "https://example.com/fallback.jpg",
+                                                "chapter_count": 16,
+                                            }
+                                        ],
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+            )
+        raise AssertionError(f"unexpected URL {url}")
+
+    def fake_discover(self):
+        self.build_id = "fresh-build"
+        return self.build_id
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    monkeypatch.setattr(ReelShortClient, "_discover_build_id", fake_discover)
+
+    client = ReelShortClient("https://site.example", "37", 3)
+    client.build_id = "build-1"
+
+    results = client.shelf("recommend")
+
+    assert calls == [
+        "https://site.example/_next/data/build-1/37/recommend.json",
+        "https://site.example/_next/data/fresh-build/37/recommend.json",
+        "https://site.example/_next/data/fresh-build/en.json",
+    ]
+    assert results == [
+        {
+            "book_id": "book-4",
+            "book_title": "Fallback Story",
+            "filtered_title": "fallback-story",
+            "book_pic": "https://example.com/fallback.jpg",
+            "chapter_count": 16,
+        }
+    ]
+
+
 def test_reelshort_client_maps_episode_page_props(monkeypatch):
     captured = {}
 

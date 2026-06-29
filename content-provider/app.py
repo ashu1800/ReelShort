@@ -35,8 +35,16 @@ class ReelShortClient:
         return [self._map_book(book) for book in self._books(payload)]
 
     def shelf(self, shelf_name: str):
-        payload = self._get_data(f"/{shelf_name}.json")
-        return [self._map_book(book) for book in self._books(payload)]
+        books = []
+        try:
+            payload = self._get_data(f"/{shelf_name}.json")
+            books = self._books(payload)
+        except UpstreamError as exception:
+            if exception.status_code != 404 or shelf_name not in {"recommend", "newrelease", "dramadub"}:
+                raise
+        if not books and shelf_name in {"recommend", "newrelease", "dramadub"}:
+            books = self._home_shelf_books(shelf_name)
+        return [self._map_book(book) for book in books]
 
     def episodes(self, book_id: str, filtered_title: str):
         payload = self._movie_payload(book_id, filtered_title)
@@ -115,15 +123,49 @@ class ReelShortClient:
             response = requests.get(f"{self.site_url}/{quote(self.site_id, safe='')}", timeout=self.timeout_seconds)
         except requests.RequestException as exception:
             raise UpstreamError(502, "upstream request failed") from exception
-        if not response.ok:
-            raise UpstreamError(502, "upstream request failed")
         match = re.search(r'"buildId":"([^"]+)"', response.text)
         if not match:
             match = re.search(rf'/{re.escape(self.site_id)}/_next/data/([^/]+)/', response.text)
         if not match:
+            try:
+                response = requests.get(f"{self.site_url}/", timeout=self.timeout_seconds)
+            except requests.RequestException as exception:
+                raise UpstreamError(502, "upstream request failed") from exception
+            if not response.ok:
+                raise UpstreamError(502, "upstream request failed")
+            match = re.search(r'"buildId":"([^"]+)"', response.text)
+        if not match:
             raise UpstreamError(502, "upstream build id not found")
         self.build_id = match.group(1)
         return self.build_id
+
+    def _home_shelf_books(self, shelf_name: str):
+        payload = self._get(f"/_next/data/{quote(self.build_id or self._discover_build_id(), safe='')}/en.json")
+        web_info = payload.get("pageProps", {}).get("fallback", {}).get("/api/ms/hall/webInfo", {})
+        shelves = web_info.get("bookShelfList") or []
+        selected_shelves = self._select_home_shelves(shelves, shelf_name)
+        books = []
+        seen = set()
+        for shelf in selected_shelves:
+            for book in shelf.get("books") or []:
+                book_id = book.get("book_id") or book.get("_id") or book.get("id")
+                if book_id and book_id not in seen:
+                    seen.add(book_id)
+                    books.append(book)
+        return books
+
+    def _select_home_shelves(self, shelves, shelf_name: str):
+        if shelf_name == "recommend":
+            return [shelf for shelf in shelves if shelf.get("books")]
+        labels = {
+            "newrelease": ("new release", "new-release", "new"),
+            "dramadub": ("drama dub", "drama-dub", "dub"),
+        }[shelf_name]
+        matched = [
+            shelf for shelf in shelves
+            if any(label in str(shelf.get("bookshelf_name", "")).lower() for label in labels)
+        ]
+        return matched or [shelf for shelf in shelves if shelf.get("books")]
 
     def _books(self, payload):
         page_props = payload.get("pageProps", {})
