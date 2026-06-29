@@ -78,25 +78,31 @@ internal fun MainShell(
                     .padding(padding)
                     .statusBarsPadding(),
             ) {
-                when (state.screen) {
-                    AppScreen.LOGIN -> Unit
-                    AppScreen.HOME -> HomeScreen(state.homeShelf, onOpenBook)
-                    AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
-                    AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, onOpenPlayer)
-                    AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onRefreshPlaybackUrl, onAutoReportProgress)
-                    AppScreen.ACCOUNT -> AccountScreen(
-                        records = state.watchHistory,
-                        isLoggedIn = state.session != null,
-                        username = state.session?.username.orEmpty(),
-                        balance = state.pointAccount?.balance ?: 0,
-                        pointRecords = state.pointAccount?.records ?: emptyList(),
-                        orders = state.orders,
-                        apiBaseUrl = state.apiBaseUrl,
-                        apiHealthStatus = state.apiHealthStatus,
-                        onCheckApiHealth = onCheckApiHealth,
-                        onShowAuthPrompt = onShowAuthPrompt,
-                        onLogout = onLogout,
-                    )
+                androidx.compose.animation.Crossfade(
+                    targetState = state.screen,
+                    animationSpec = androidx.compose.animation.core.tween(durationMillis = 220),
+                    label = "screen-transition",
+                ) { screen ->
+                    when (screen) {
+                        AppScreen.LOGIN -> Unit
+                        AppScreen.HOME -> HomeScreen(state.homeShelf, onOpenBook)
+                        AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
+                        AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, onOpenPlayer)
+                        AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onRefreshPlaybackUrl, onAutoReportProgress)
+                        AppScreen.ACCOUNT -> AccountScreen(
+                            records = state.watchHistory,
+                            isLoggedIn = state.session != null,
+                            username = state.session?.username.orEmpty(),
+                            balance = state.pointAccount?.balance ?: 0,
+                            pointRecords = state.pointAccount?.records ?: emptyList(),
+                            orders = state.orders,
+                            apiBaseUrl = state.apiBaseUrl,
+                            apiHealthStatus = state.apiHealthStatus,
+                            onCheckApiHealth = onCheckApiHealth,
+                            onShowAuthPrompt = onShowAuthPrompt,
+                            onLogout = onLogout,
+                        )
+                    }
                 }
             }
         }

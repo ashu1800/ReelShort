@@ -35,8 +35,12 @@ internal fun PosterBlock(title: String, coverUrl: String?, modifier: Modifier = 
         contentAlignment = Alignment.BottomStart,
     ) {
         if (normalizedCoverUrl != null) {
+            val context = androidx.compose.ui.platform.LocalContext.current
             AsyncImage(
-                model = normalizedCoverUrl,
+                model = coil.request.ImageRequest.Builder(context)
+                    .data(normalizedCoverUrl)
+                    .crossfade(true)
+                    .build(),
                 contentDescription = title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),

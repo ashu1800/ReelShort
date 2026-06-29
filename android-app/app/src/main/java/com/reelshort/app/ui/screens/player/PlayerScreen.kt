@@ -24,12 +24,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -276,15 +279,25 @@ private fun RewardProgressBadge(state: RewardBadgeState, modifier: Modifier = Mo
             ringColor = DangerText; backgroundColor = Color(0xE63A1417); textColor = DangerText
         }
     }
+    // 进度环平滑过渡，避免百分比变化时瞬切（B11）。
+    val animatedRingProgress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = state.ringProgress,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 350),
+        label = "reward-ring",
+    )
     Surface(
-        modifier = modifier.size(52.dp),
+        modifier = modifier
+            .size(52.dp)
+            .semantics {
+                contentDescription = "观看奖励进度 ${state.displayText}"
+            },
         color = backgroundColor,
         shape = RoundedCornerShape(26.dp),
         border = BorderStroke(1.dp, GoldStroke),
     ) {
         Box(contentAlignment = Alignment.Center) {
             CircularProgressIndicator(
-                progress = { state.ringProgress },
+                progress = { animatedRingProgress },
                 color = ringColor,
                 strokeWidth = 3.dp,
                 modifier = Modifier.fillMaxSize().padding(3.dp),

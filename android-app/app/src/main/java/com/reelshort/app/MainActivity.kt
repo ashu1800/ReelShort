@@ -47,7 +47,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     }
     LaunchedEffect(state.errorMessage) {
         if (state.errorMessage != null) {
-            delay(2_000)
+            delay(4_000)
             viewModel.clearError()
         }
     }
