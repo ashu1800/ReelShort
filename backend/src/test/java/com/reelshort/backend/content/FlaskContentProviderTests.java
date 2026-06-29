@@ -146,7 +146,48 @@ class FlaskContentProviderTests {
 	}
 
 	@Test
-	void getEpisodesMapsFlaskEpisodeList() {
+	void getEpisodesDetailMapsFlaskEpisodesAndBook() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(),
+				requestTo("http://content-provider:5000/api/v1/reelshort/episodes/book-1?filtered_title=love-story"))
+				.andExpect(method(GET))
+				.andRespond(withSuccess("""
+						{
+						  "book": {
+						    "book_id": "book-1",
+						    "book_title": "Love Story",
+						    "filtered_title": "love-story",
+						    "book_pic": "https://example.com/cover.jpg",
+						    "description": "A dramatic short series.",
+						    "chapter_count": 12
+						  },
+						  "episodes": [
+						    { "episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong." },
+						    { "episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads." }
+						  ]
+						}
+						""", MediaType.APPLICATION_JSON));
+
+		ContentEpisodesDetail detail = provider.getEpisodesDetail("book-1", "love-story");
+
+		assertThat(detail.episodes()).containsExactly(
+				new ContentEpisode(1, "chapter-1", "Opening Trap", "A deal goes wrong."),
+				new ContentEpisode(2, "chapter-2", "Second Move", "The secret spreads."));
+		assertThat(detail.book()).contains(new ContentBook(
+				"book-1",
+				"Love Story",
+				"love-story",
+				"https://example.com/cover.jpg",
+				"A dramatic short series.",
+				12));
+		server.verify();
+	}
+
+	@Test
+	void getEpisodesDetailReturnsEmptyBookWhenAbsent() {
 		RestClient.Builder builder = RestClient.builder();
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
@@ -157,17 +198,37 @@ class FlaskContentProviderTests {
 				.andRespond(withSuccess("""
 						{
 						  "episodes": [
-						    { "episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong." },
-						    { "episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads." }
+						    { "episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong." }
 						  ]
 						}
 						""", MediaType.APPLICATION_JSON));
 
-		List<ContentEpisode> episodes = provider.getEpisodes("book-1", "love-story");
+		ContentEpisodesDetail detail = provider.getEpisodesDetail("book-1", "love-story");
 
-		assertThat(episodes).containsExactly(
-				new ContentEpisode(1, "chapter-1", "Opening Trap", "A deal goes wrong."),
-				new ContentEpisode(2, "chapter-2", "Second Move", "The secret spreads."));
+		assertThat(detail.book()).isEmpty();
+		assertThat(detail.episodes()).hasSize(1);
+		server.verify();
+	}
+
+	@Test
+	void getEpisodesDetailTreatsBlankBookIdAsAbsentBook() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(),
+				requestTo("http://content-provider:5000/api/v1/reelshort/episodes/book-1?filtered_title=love-story"))
+				.andExpect(method(GET))
+				.andRespond(withSuccess("""
+						{
+						  "book": { "book_id": "", "book_title": "", "filtered_title": "love-story" },
+						  "episodes": []
+						}
+						""", MediaType.APPLICATION_JSON));
+
+		ContentEpisodesDetail detail = provider.getEpisodesDetail("book-1", "love-story");
+
+		assertThat(detail.book()).isEmpty();
 		server.verify();
 	}
 

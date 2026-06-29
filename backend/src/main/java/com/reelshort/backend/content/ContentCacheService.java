@@ -19,20 +19,26 @@ public class ContentCacheService {
 	private static final TypeReference<List<ContentEpisode>> CONTENT_EPISODE_LIST = new TypeReference<>() {
 	};
 
+	private static final TypeReference<ContentVideo> CONTENT_VIDEO = new TypeReference<>() {
+	};
+
 	private final ContentProvider contentProvider;
 	private final ContentShelfCacheRepository contentShelfCacheRepository;
 	private final ContentBookCacheRepository contentBookCacheRepository;
 	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
+	private final ContentVideoCacheRepository contentVideoCacheRepository;
 	private final ObjectMapper objectMapper;
 
 	public ContentCacheService(ContentProvider contentProvider, ContentShelfCacheRepository contentShelfCacheRepository,
 			ContentBookCacheRepository contentBookCacheRepository,
 			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
+			ContentVideoCacheRepository contentVideoCacheRepository,
 			ObjectMapper objectMapper) {
 		this.contentProvider = contentProvider;
 		this.contentShelfCacheRepository = contentShelfCacheRepository;
 		this.contentBookCacheRepository = contentBookCacheRepository;
 		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
+		this.contentVideoCacheRepository = contentVideoCacheRepository;
 		this.objectMapper = objectMapper;
 	}
 
@@ -77,18 +83,26 @@ public class ContentCacheService {
 	@Transactional(noRollbackFor = ContentProviderException.class)
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
 		try {
-			List<ContentEpisode> episodes = contentProvider.getEpisodes(bookId, filteredTitle);
-			saveEpisodes(bookId, filteredTitle, episodes);
-			return episodes;
+			ContentEpisodesDetail detail = contentProvider.getEpisodesDetail(bookId, filteredTitle);
+			detail.book().ifPresent(this::saveBook);
+			saveEpisodes(bookId, filteredTitle, detail.episodes());
+			return detail.episodes();
 		}
 		catch (ContentProviderException exception) {
 			return cachedEpisodesOrThrow(bookId, filteredTitle, exception);
 		}
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional(noRollbackFor = ContentProviderException.class)
 	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId) {
-		return contentProvider.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId);
+		try {
+			ContentVideo video = contentProvider.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId);
+			saveVideo(bookId, episodeNum, filteredTitle, chapterId, video);
+			return video;
+		}
+		catch (ContentProviderException exception) {
+			return cachedVideoOrThrow(bookId, episodeNum, filteredTitle, chapterId, exception);
+		}
 	}
 
 	@Transactional(readOnly = true)
@@ -136,11 +150,15 @@ public class ContentCacheService {
 
 	private void saveBooks(List<ContentBook> books) {
 		for (ContentBook book : books) {
-			ContentBookCache cache = contentBookCacheRepository.findById(book.bookId())
-					.orElseGet(() -> ContentBookCache.from(book));
-			cache.update(book);
-			contentBookCacheRepository.save(cache);
+			saveBook(book);
 		}
+	}
+
+	private void saveBook(ContentBook book) {
+		ContentBookCache cache = contentBookCacheRepository.findById(book.bookId())
+				.orElseGet(() -> ContentBookCache.from(book));
+		cache.update(book);
+		contentBookCacheRepository.save(cache);
 	}
 
 	private void saveEpisodes(String bookId, String filteredTitle, List<ContentEpisode> episodes) {
@@ -149,6 +167,31 @@ public class ContentCacheService {
 				.orElseGet(() -> ContentEpisodeCache.create(bookId, filteredTitle, episodesJson, episodes.size()));
 		cache.update(episodesJson, episodes.size());
 		contentEpisodeCacheRepository.save(cache);
+	}
+
+	private void saveVideo(String bookId, int episodeNum, String filteredTitle, String chapterId, ContentVideo video) {
+		String videoJson = writeVideo(video);
+		ContentVideoCache cache = contentVideoCacheRepository
+				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterId(bookId, episodeNum, filteredTitle, chapterId)
+				.orElseGet(() -> ContentVideoCache.create(bookId, episodeNum, filteredTitle, chapterId, videoJson));
+		cache.update(videoJson);
+		contentVideoCacheRepository.save(cache);
+	}
+
+	private ContentVideo cachedVideoOrThrow(String bookId, int episodeNum, String filteredTitle, String chapterId,
+			ContentProviderException exception) {
+		// 播放地址具备时效性，仅当上游不可用（5xx）时回退最后一次缓存；404 表示该集不存在，不回退。
+		if (exception.statusCode() == 404) {
+			throw exception;
+		}
+		return contentVideoCacheRepository
+				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterId(bookId, episodeNum, filteredTitle, chapterId)
+				.map(cache -> {
+					cache.markFailure(exception.getMessage());
+					contentVideoCacheRepository.save(cache);
+					return readVideo(cache.videoJson());
+				})
+				.orElseThrow(() -> exception);
 	}
 
 	private List<ContentEpisode> cachedEpisodesOrThrow(String bookId, String filteredTitle,
@@ -195,6 +238,24 @@ public class ContentCacheService {
 		}
 		catch (JsonProcessingException exception) {
 			throw new IllegalStateException("failed to read content episode cache", exception);
+		}
+	}
+
+	private String writeVideo(ContentVideo video) {
+		try {
+			return objectMapper.writeValueAsString(video);
+		}
+		catch (JsonProcessingException exception) {
+			throw new IllegalStateException("failed to write content video cache", exception);
+		}
+	}
+
+	private ContentVideo readVideo(String videoJson) {
+		try {
+			return objectMapper.readValue(videoJson, CONTENT_VIDEO);
+		}
+		catch (JsonProcessingException exception) {
+			throw new IllegalStateException("failed to read content video cache", exception);
 		}
 	}
 }

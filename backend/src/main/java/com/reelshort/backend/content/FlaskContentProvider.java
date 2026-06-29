@@ -1,6 +1,7 @@
 package com.reelshort.backend.content;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -53,15 +54,19 @@ public class FlaskContentProvider implements ContentProvider {
 	}
 
 	@Override
-	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
+	public ContentEpisodesDetail getEpisodesDetail(String bookId, String filteredTitle) {
 		EpisodesResponse response = get(EpisodesResponse.class,
 				uri("/api/v1/reelshort/episodes/{bookId}")
 						.queryParam("filtered_title", filteredTitle)
 						.buildAndExpand(bookId)
 						.toUriString());
-		return response.episodes() == null
+		Optional<ContentBook> book = Optional.ofNullable(response.book())
+				.map(FlaskBook::toContentBook)
+				.filter(contentBook -> contentBook.bookId() != null && !contentBook.bookId().isBlank());
+		List<ContentEpisode> episodes = response.episodes() == null
 				? List.of()
 				: response.episodes().stream().map(FlaskEpisode::toContentEpisode).toList();
+		return new ContentEpisodesDetail(book, episodes);
 	}
 
 	@Override
@@ -115,7 +120,7 @@ public class FlaskContentProvider implements ContentProvider {
 	private record ShelfResponse(List<FlaskBook> books) {
 	}
 
-	private record EpisodesResponse(List<FlaskEpisode> episodes) {
+	private record EpisodesResponse(FlaskBook book, List<FlaskEpisode> episodes) {
 	}
 
 	private record FlaskBook(

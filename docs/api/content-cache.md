@@ -22,11 +22,15 @@
 
 ### `GET /api/app/content/books/{bookId}`
 
-返回已缓存剧集详情。详情来自搜索、推荐或货架写入的 PostgreSQL 内容书缓存；没有缓存时返回 `404`。
+返回已缓存剧集详情。详情来自搜索、推荐或货架写入的 PostgreSQL 内容书缓存；查看分集列表时内容源返回的书籍元信息也会自动回填缓存。没有缓存时返回 `404`。
 
 ### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}`
 
-返回剧集分集列表。后端优先调用 Flask 内容源；调用成功后写入 PostgreSQL 分集缓存；内容源不可用且已有缓存时返回最后一次可用分集缓存。
+返回剧集分集列表。后端优先调用 Flask 内容源；调用成功后写入 PostgreSQL 分集缓存，并顺带把内容源返回的书籍元信息回填到详情缓存；内容源不可用且已有缓存时返回最后一次可用分集缓存。
+
+### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}`
+
+返回单集播放地址。播放地址具备时效性，正常路径总是实时调用内容源获取最新地址，成功后写入 PostgreSQL 播放缓存；当内容源返回 `502`/`503`（不可用）且已有缓存时，回退返回最后一次播放地址缓存（尽力而为，旧地址可能已失效）；内容源返回 `404`（该集确实不存在）时不回退。
 
 错误：
 

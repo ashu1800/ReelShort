@@ -49,23 +49,34 @@ class ReelShortClient:
         return [self._map_book(book) for book in books]
 
     def episodes(self, book_id: str, filtered_title: str):
-        book_description = ""
         try:
-            payload = self._movie_payload(book_id, filtered_title)
-            book_data = payload.get("pageProps", {}).get("data", {})
-            book_description = self._first_text(
-                book_data, ("description", "introduction", "book_intro", "summary", "special_desc", "desc")
-            )
-            chapters = book_data.get("online_base", [])
+            book_data = self._movie_payload(book_id, filtered_title).get("pageProps", {}).get("data", {})
         except UpstreamError as exception:
             if exception.status_code != 404:
                 raise
             book_data = self._book_info(book_id)
-            book_description = self._first_text(
-                book_data, ("description", "introduction", "book_intro", "summary", "special_desc", "desc")
-            )
-            chapters = book_data.get("online_base", [])
-        return self._map_chapters(chapters, fallback_description=book_description)
+        return {
+            "book": self._map_book(self._with_book_context(book_id, filtered_title, book_data)),
+            "episodes": self._map_chapters(
+                book_data.get("online_base", []),
+                fallback_description=self._first_text(
+                    book_data, ("description", "introduction", "book_intro", "summary", "special_desc", "desc")
+                ),
+            ),
+        }
+
+    @staticmethod
+    def _with_book_context(book_id: str, filtered_title: str, book_data: dict):
+        view = dict(book_data)
+        view.setdefault("book_id", book_id)
+        if not view.get("book_id"):
+            view["book_id"] = book_id
+        view.setdefault("filtered_title", filtered_title)
+        if not view.get("filtered_title"):
+            view["filtered_title"] = filtered_title
+        if not view.get("chapter_count") and isinstance(view.get("online_base"), list):
+            view.setdefault("chapter_count", len(view["online_base"]))
+        return view
 
     def video(self, book_id: str, episode_num: int, filtered_title: str, chapter_id: str):
         slug = f"episode-{episode_num}-{filtered_title}-{book_id}-{chapter_id}"
@@ -82,7 +93,7 @@ class ReelShortClient:
         if not episode_data.get("video_url"):
             raise UpstreamError(404, "upstream not found")
 
-        chapters = self.episodes(book_id, filtered_title)
+        chapters = self.episodes(book_id, filtered_title).get("episodes", [])
         next_chapter = None
         for index, chapter in enumerate(chapters):
             if chapter.get("episode") == episode_num and index + 1 < len(chapters):
@@ -309,7 +320,7 @@ def create_app(client=None) -> Flask:
         filtered_title = request.args.get("filtered_title", "").strip()
         if not filtered_title:
             return jsonify({"error": "filtered_title is required"}), 400
-        return jsonify({"episodes": reelshort_client.episodes(book_id, filtered_title)})
+        return jsonify(reelshort_client.episodes(book_id, filtered_title))
 
     @app.get("/api/v1/reelshort/video/<book_id>/<int:episode_num>")
     def video(book_id: str, episode_num: int):

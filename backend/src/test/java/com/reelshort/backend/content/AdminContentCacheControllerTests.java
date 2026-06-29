@@ -96,8 +96,9 @@ class AdminContentCacheControllerTests {
 	void contentCacheStatusIncludesEpisodeCacheCount() throws Exception {
 		String adminToken = adminLogin();
 		String appToken = registerAndExtractAppToken("episode-cache-user");
-		when(contentProvider.getEpisodes("book-episodes", "episodes"))
-				.thenReturn(List.of(new ContentEpisode(1, "chapter-1", "", "")));
+		when(contentProvider.getEpisodesDetail("book-episodes", "episodes"))
+				.thenReturn(new ContentEpisodesDetail(java.util.Optional.empty(),
+						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
 
 		mockMvc.perform(get("/api/app/content/books/book-episodes/episodes")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + appToken)

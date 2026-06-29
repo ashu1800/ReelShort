@@ -22,10 +22,13 @@ class FakeReelShortClient:
         return [BOOK | {"book_title": shelf_name}]
 
     def episodes(self, book_id, filtered_title):
-        return [
-            {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
-            {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
-        ]
+        return {
+            "book": BOOK,
+            "episodes": [
+                {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
+                {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
+            ],
+        }
 
     def video(self, book_id, episode_num, filtered_title, chapter_id):
         return {
@@ -108,6 +111,7 @@ def test_episodes_return_spring_boot_contract(client):
 
     assert response.status_code == 200
     assert response.get_json() == {
+        "book": BOOK,
         "episodes": [
             {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
             {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
@@ -477,10 +481,20 @@ def test_reelshort_client_maps_episode_page_props(monkeypatch):
         "url": "https://site.example/_next/data/build-1/id/movie/love-story-book%2F1.json",
         "params": {"slug": "love-story-book/1"},
     }
-    assert episodes == [
-        {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
-        {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
-    ]
+    assert episodes == {
+        "book": {
+            "book_id": "book/1",
+            "book_title": "",
+            "filtered_title": "love-story",
+            "book_pic": "",
+            "description": "",
+            "chapter_count": 2,
+        },
+        "episodes": [
+            {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
+            {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
+        ],
+    }
 
 
 def test_reelshort_client_uses_book_info_when_movie_data_returns_404(monkeypatch):
@@ -547,10 +561,20 @@ def test_reelshort_client_uses_book_info_when_movie_data_returns_404(monkeypatch
             "params": {"book_id": "6a2b"},
         },
     ]
-    assert episodes == [
-        {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
-        {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
-    ]
+    assert episodes == {
+        "book": {
+            "book_id": "6a2b",
+            "book_title": "",
+            "filtered_title": "fiancee-s-betrayal",
+            "book_pic": "",
+            "description": "",
+            "chapter_count": 3,
+        },
+        "episodes": [
+            {"episode": 1, "chapter_id": "chapter-1", "title": "Opening Trap", "description": "A deal goes wrong."},
+            {"episode": 2, "chapter_id": "chapter-2", "title": "Second Move", "description": "The secret spreads."},
+        ],
+    }
 
 
 def test_reelshort_client_uses_book_description_when_episode_description_is_missing(monkeypatch):
@@ -587,14 +611,24 @@ def test_reelshort_client_uses_book_description_when_episode_description_is_miss
         "love-story",
     )
 
-    assert episodes == [
-        {
-            "episode": 1,
-            "chapter_id": "chapter-1",
-            "title": "",
+    assert episodes == {
+        "book": {
+            "book_id": "book-1",
+            "book_title": "",
+            "filtered_title": "love-story",
+            "book_pic": "",
             "description": "A hidden marriage is exposed.",
-        }
-    ]
+            "chapter_count": 1,
+        },
+        "episodes": [
+            {
+                "episode": 1,
+                "chapter_id": "chapter-1",
+                "title": "",
+                "description": "A hidden marriage is exposed.",
+            }
+        ],
+    }
 
 
 def test_reelshort_client_fetches_video_episode_page(monkeypatch):

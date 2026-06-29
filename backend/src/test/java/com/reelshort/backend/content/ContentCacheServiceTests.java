@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,9 @@ class ContentCacheServiceTests {
 	@Autowired
 	private ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 
+	@Autowired
+	private ContentVideoCacheRepository contentVideoCacheRepository;
+
 	@MockitoBean
 	private ContentProvider contentProvider;
 
@@ -35,6 +39,7 @@ class ContentCacheServiceTests {
 		contentShelfCacheRepository.deleteAll();
 		contentBookCacheRepository.deleteAll();
 		contentEpisodeCacheRepository.deleteAll();
+		contentVideoCacheRepository.deleteAll();
 	}
 
 	@Test
@@ -116,7 +121,8 @@ class ContentCacheServiceTests {
 	@Test
 	void getEpisodesPersistsEpisodeCacheWhenProviderSucceeds() {
 		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1", "", ""));
-		when(contentProvider.getEpisodes("book-1", "love-story")).thenReturn(episodes);
+		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
+				.thenReturn(new ContentEpisodesDetail(java.util.Optional.empty(), episodes));
 
 		List<ContentEpisode> response = contentCacheService.getEpisodes("book-1", "love-story");
 
@@ -132,8 +138,8 @@ class ContentCacheServiceTests {
 	@Test
 	void getEpisodesFallsBackToCachedEpisodesWhenProviderFails() {
 		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1", "", ""));
-		when(contentProvider.getEpisodes("book-1", "love-story"))
-				.thenReturn(episodes)
+		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
+				.thenReturn(new ContentEpisodesDetail(java.util.Optional.empty(), episodes))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		contentCacheService.getEpisodes("book-1", "love-story");
@@ -147,7 +153,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void getEpisodesPropagatesProviderFailureWhenNoCacheExists() {
-		when(contentProvider.getEpisodes("book-1", "love-story"))
+		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		assertThatThrownBy(() -> contentCacheService.getEpisodes("book-1", "love-story"))
@@ -170,6 +176,90 @@ class ContentCacheServiceTests {
 				.filteredOn(shelf -> shelf.shelfType().equals("drama-dub"))
 				.singleElement()
 				.satisfies(shelf -> assertThat(shelf.itemCount()).isEqualTo(1));
+	}
+
+	@Test
+	void getVideoUrlPersistsVideoCacheWhenProviderSucceeds() {
+		ContentVideo video = new ContentVideo("https://cdn.example.com/1.m3u8", 1, 120, null);
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1")).thenReturn(video);
+
+		ContentVideo response = contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1");
+
+		assertThat(response).isEqualTo(video);
+		assertThat(contentVideoCacheRepository
+				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterId("book-1", 1, "love-story", "chapter-1"))
+				.isPresent()
+				.get()
+				.satisfies(cache -> {
+					assertThat(cache.lastError()).isNull();
+					assertThat(cache.refreshedAt()).isNotNull();
+				});
+	}
+
+	@Test
+	void getVideoUrlFallsBackToCachedVideoWhenProviderUnavailable() {
+		ContentVideo video = new ContentVideo("https://cdn.example.com/1.m3u8", 1, 120, null);
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+				.thenReturn(video)
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1");
+		ContentVideo cached = contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1");
+
+		assertThat(cached).isEqualTo(video);
+		assertThat(contentVideoCacheRepository
+				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterId("book-1", 1, "love-story", "chapter-1"))
+				.isPresent()
+				.get()
+				.satisfies(cache -> assertThat(cache.lastError()).isEqualTo("content provider unavailable"));
+	}
+
+	@Test
+	void getVideoUrlPropagatesProviderFailureWhenNoCacheExists() {
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		assertThatThrownBy(() -> contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content provider unavailable");
+	}
+
+	@Test
+	void getVideoUrlDoesNotFallbackOn404() {
+		when(contentProvider.getVideoUrl("book-1", 99, "love-story", "missing"))
+				.thenThrow(new ContentProviderException(404, "upstream not found"));
+
+		assertThatThrownBy(() -> contentCacheService.getVideoUrl("book-1", 99, "love-story", "missing"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("upstream not found");
+		assertThat(contentVideoCacheRepository
+				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterId("book-1", 99, "love-story", "missing"))
+				.isEmpty();
+	}
+
+	@Test
+	void getEpisodesPopulatesBookCacheForDetailLookup() {
+		ContentBook book = book("book-detail", "Detail");
+		when(contentProvider.getEpisodesDetail("book-detail", "detail"))
+				.thenReturn(new ContentEpisodesDetail(Optional.of(book),
+						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
+
+		contentCacheService.getEpisodes("book-detail", "detail");
+
+		assertThat(contentCacheService.getBook("book-detail")).isEqualTo(book);
+	}
+
+	@Test
+	void getEpisodesSkipsBookBackfillWhenBookAbsent() {
+		when(contentProvider.getEpisodesDetail("book-sparse", "sparse"))
+				.thenReturn(new ContentEpisodesDetail(Optional.empty(),
+						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
+
+		contentCacheService.getEpisodes("book-sparse", "sparse");
+
+		assertThatThrownBy(() -> contentCacheService.getBook("book-sparse"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content book not cached");
 	}
 
 	private ContentBook book(String bookId, String title) {
