@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,11 +38,16 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -53,8 +59,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -462,7 +466,6 @@ private fun LoginTextField(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainShell(
     state: AppUiState,
@@ -479,30 +482,6 @@ private fun MainShell(
     AppBackground {
         Scaffold(
             containerColor = Color.Transparent,
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(state.screen.title, fontWeight = FontWeight.Bold)
-                            Text("ReelShort", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                        }
-                    },
-                    actions = {
-                        OutlinedButton(
-                            onClick = onLogout,
-                            contentPadding = PaddingValues(horizontal = 14.dp),
-                            border = BorderStroke(1.dp, Divider),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
-                        ) {
-                            Text("退出")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = TextPrimary,
-                    ),
-                )
-            },
             bottomBar = {
                 NavigationBar(containerColor = Color(0xF20B0E14), tonalElevation = 0.dp) {
                     primaryTabs.forEach { screen ->
@@ -523,7 +502,11 @@ private fun MainShell(
                 }
             },
         ) { padding ->
-            Column(modifier = Modifier.padding(padding)) {
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .statusBarsPadding(),
+            ) {
                 if (state.isLoading) {
                     LoadingStrip()
                 }
@@ -535,12 +518,14 @@ private fun MainShell(
                     AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onRefreshPlaybackUrl, onReportProgress)
                     AppScreen.ACCOUNT -> AccountScreen(
                         records = state.watchHistory,
+                        username = state.session?.username.orEmpty(),
                         balance = state.pointAccount?.balance ?: 0,
                         pointRecords = state.pointAccount?.records ?: emptyList(),
                         orders = state.orders,
                         apiBaseUrl = state.apiBaseUrl,
                         apiHealthStatus = state.apiHealthStatus,
                         onCheckApiHealth = onCheckApiHealth,
+                        onLogout = onLogout,
                     )
                 }
             }
@@ -847,70 +832,204 @@ private fun PlayerPlaceholder(episodeNumber: Int?) {
 @Composable
 private fun AccountScreen(
     records: List<WatchRecord>,
+    username: String,
     balance: Int,
     pointRecords: List<PointRecord>,
     orders: List<RechargeOrderSummary>,
     apiBaseUrl: String,
     apiHealthStatus: ApiHealthStatus?,
     onCheckApiHealth: () -> Unit,
+    onLogout: () -> Unit,
 ) {
     val diagnostics = apiDiagnosticsText(apiHealthStatus)
+    var showDiagnostics by remember { mutableStateOf(false) }
+
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            SurfacePanel {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("积分余额", color = TextSecondary)
-                    Text("$balance", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black, color = PrimaryGold)
+            AccountHero(username = username, balance = balance)
+        }
+        item {
+            AccountMenuGroup {
+                AccountMenuRow(
+                    icon = Icons.Rounded.MonetizationOn,
+                    title = "积分余额",
+                    subtitle = "$balance 积分",
+                    trailing = "$balance",
+                    highlight = true,
+                )
+                AccountMenuDivider()
+                AccountMenuRow(
+                    icon = Icons.Rounded.History,
+                    title = "观看记录",
+                    subtitle = "最近 ${records.size} 条",
+                    trailing = records.firstOrNull()?.let { "${it.progressPercent}%" }.orEmpty(),
+                )
+                AccountMenuDivider()
+                AccountMenuRow(
+                    icon = Icons.AutoMirrored.Rounded.ReceiptLong,
+                    title = "积分流水",
+                    subtitle = "最近 ${pointRecords.size} 条",
+                    trailing = pointRecords.firstOrNull()?.let { if (it.amount > 0) "+${it.amount}" else "${it.amount}" }.orEmpty(),
+                )
+                AccountMenuDivider()
+                AccountMenuRow(
+                    icon = Icons.AutoMirrored.Rounded.ReceiptLong,
+                    title = "充值订单",
+                    subtitle = if (orders.isEmpty()) "商业化预留" else "最近 ${orders.size} 笔",
+                    trailing = orders.firstOrNull()?.status.orEmpty(),
+                )
+            }
+        }
+        item {
+            AccountMenuGroup {
+                AccountMenuRow(
+                    icon = Icons.Rounded.Settings,
+                    title = "开发诊断",
+                    subtitle = diagnostics.label,
+                    trailing = if (showDiagnostics) "收起" else "查看",
+                    onClick = { showDiagnostics = !showDiagnostics },
+                )
+                AnimatedVisibility(visible = showDiagnostics) {
+                    Column(
+                        modifier = Modifier.padding(start = 52.dp, end = 16.dp, bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(apiBaseUrl.ifBlank { "API 地址未配置" }, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                        Text(diagnostics.message, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                        OutlinedButton(
+                            onClick = onCheckApiHealth,
+                            border = BorderStroke(1.dp, Divider),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryGold),
+                        ) {
+                            Text("刷新诊断")
+                        }
+                    }
                 }
             }
         }
         item {
-            ApiDiagnosticsPanel(apiBaseUrl, diagnostics, onCheckApiHealth)
-        }
-        item { SectionHeader("观看记录", "最近 ${records.size} 条") }
-        if (records.isEmpty()) {
-            item {
-                EmptyState(
-                    ContentEmptyState(
-                        title = "暂无观看记录",
-                        message = "开始播放短剧后，观看进度会出现在这里。",
-                    ),
+            AccountMenuGroup {
+                AccountMenuRow(
+                    icon = Icons.AutoMirrored.Rounded.Logout,
+                    title = "退出登录",
+                    subtitle = "退出当前账号并返回登录页",
+                    titleColor = DangerText,
+                    onClick = onLogout,
                 )
             }
         }
-        items(records) { record -> WatchRecordRow(record) }
-        item { SectionHeader("积分流水", "最近 ${pointRecords.size} 条") }
-        items(pointRecords) { record -> PointRecordRow(record) }
-        item { SectionHeader("充值订单", "商业化预留") }
-        items(orders) { order -> OrderRow(order) }
+        if (records.isNotEmpty()) {
+            item { SectionHeader("最近观看", "继续上次的短剧进度") }
+            items(records.take(3)) { record -> WatchRecordRow(record) }
+        }
     }
 }
 
 @Composable
-private fun ApiDiagnosticsPanel(
-    apiBaseUrl: String,
-    diagnostics: ApiDiagnosticsText,
-    onCheckApiHealth: () -> Unit,
-) {
+private fun AccountHero(username: String, balance: Int) {
+    val displayName = username.ifBlank { "ReelShort 用户" }
     SurfacePanel {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("开发连接", color = TextSecondary)
-                    Text(diagnostics.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = if (diagnostics.isUp) PrimaryGold else TextPrimary)
-                }
-                OutlinedButton(
-                    onClick = onCheckApiHealth,
-                    border = BorderStroke(1.dp, Divider),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryGold),
-                ) {
-                    Text("刷新")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(68.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Brush.verticalGradient(listOf(PrimaryGold, PrimaryGoldDark)))
+                    .border(1.dp, Color(0x55FFFFFF), RoundedCornerShape(18.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    displayName.take(1).uppercase(),
+                    color = Color(0xFF221400),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = TextPrimary)
+                Text("已登录 · ReelShort", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    MetaPill("积分 $balance")
+                    Text("持续观看可获得奖励", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Text(apiBaseUrl.ifBlank { "API 地址未配置" }, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-            Text(diagnostics.message, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
         }
     }
+}
+
+@Composable
+private fun AccountMenuGroup(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Panel.copy(alpha = 0.92f),
+        contentColor = TextPrimary,
+        border = BorderStroke(1.dp, Divider),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Column(content = content)
+    }
+}
+
+@Composable
+private fun AccountMenuRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    trailing: String = "",
+    highlight: Boolean = false,
+    titleColor: Color = TextPrimary,
+    onClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Surface(
+            color = if (highlight) Color(0x26FFC46B) else Color(0x1FFFFFFF),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.padding(10.dp).size(22.dp),
+                tint = if (titleColor == DangerText) DangerText else PrimaryGold,
+            )
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, color = titleColor, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, color = TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (trailing.isNotBlank()) {
+            Text(
+                trailing,
+                color = if (highlight) PrimaryGold else TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (highlight) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun AccountMenuDivider() {
+    Box(
+        modifier = Modifier
+            .padding(start = 68.dp)
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(Divider),
+    )
 }
 
 @Composable
@@ -1150,15 +1269,11 @@ private fun MetaPill(text: String) {
 
 internal val primaryTabs = listOf(AppScreen.HOME, AppScreen.SEARCH, AppScreen.ACCOUNT)
 
-private val AppScreen.title: String
-    get() = when (this) {
-        AppScreen.LOGIN -> "登录"
-        AppScreen.HOME -> "首页"
-        AppScreen.SEARCH -> "搜索"
-        AppScreen.DETAIL -> "详情"
-        AppScreen.PLAYER -> "播放"
-        AppScreen.ACCOUNT -> "账户"
-    }
+internal val AppScreen.usesGlobalTopBar: Boolean
+    get() = false
+
+internal fun accountEntryLabels(): List<String> =
+    listOf("积分余额", "观看记录", "积分流水", "充值订单", "开发诊断", "退出登录")
 
 internal val AppScreen.navigationLabel: String
     get() = when (this) {
