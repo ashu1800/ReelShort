@@ -1,5 +1,7 @@
 import os
 import re
+import json
+from html import unescape
 from urllib.parse import quote
 
 import requests
@@ -58,10 +60,15 @@ class ReelShortClient:
 
     def video(self, book_id: str, episode_num: int, filtered_title: str, chapter_id: str):
         slug = f"episode-{episode_num}-{filtered_title}-{book_id}-{chapter_id}"
-        payload = self._get_data(
-            f"/episodes/{quote(slug, safe='')}.json",
-            params={"play_time": "1", "slug": slug},
-        )
+        try:
+            payload = self._get_data(
+                f"/episodes/{quote(slug, safe='')}.json",
+                params={"play_time": "1", "slug": slug},
+            )
+        except UpstreamError as exception:
+            if exception.status_code != 404:
+                raise
+            payload = self._episode_html_payload(slug)
         episode_data = payload.get("pageProps", {}).get("data", {})
         if not episode_data.get("video_url"):
             raise UpstreamError(404, "upstream not found")
@@ -91,6 +98,21 @@ class ReelShortClient:
         if payload.get("code") not in {0, None}:
             raise UpstreamError(404, "upstream not found")
         return payload.get("data", {}).get("online_base", [])
+
+    def _episode_html_payload(self, slug: str):
+        html = self._get_text(f"/episodes/{quote(slug, safe='')}", params={"play_time": "1"})
+        match = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            html,
+            re.DOTALL,
+        )
+        if not match:
+            raise UpstreamError(404, "upstream not found")
+        try:
+            next_data = json.loads(unescape(match.group(1)))
+        except json.JSONDecodeError as exception:
+            raise UpstreamError(502, "upstream returned invalid json") from exception
+        return next_data.get("props", {})
 
     def _get_data(self, data_path: str, params=None):
         build_id = self.build_id or self._discover_build_id()
@@ -124,6 +146,22 @@ class ReelShortClient:
             return response.json()
         except requests.JSONDecodeError as exception:
             raise UpstreamError(502, "upstream returned invalid json") from exception
+
+    def _get_text(self, path: str, params=None):
+        try:
+            response = requests.get(
+                f"{self.site_url}{path}",
+                params=params,
+                timeout=self.timeout_seconds,
+            )
+        except requests.RequestException as exception:
+            raise UpstreamError(502, "upstream request failed") from exception
+
+        if response.status_code == 404:
+            raise UpstreamError(404, "upstream not found")
+        if not response.ok:
+            raise UpstreamError(502, "upstream request failed")
+        return response.text
 
     def _discover_build_id(self):
         try:

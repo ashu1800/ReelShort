@@ -527,6 +527,80 @@ def test_reelshort_client_fetches_video_episode_page(monkeypatch):
     }
 
 
+def test_reelshort_client_falls_back_to_episode_html_when_legacy_video_data_returns_404(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, status_code, payload=None, text=""):
+            self.status_code = status_code
+            self.ok = 200 <= status_code < 300
+            self.payload = payload or {}
+            self.text = text
+
+        def json(self):
+            return self.payload
+
+    html = """
+        <html><body>
+        <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"pageProps":{"data":{
+          "video_url":"https://cdn.example.com/html-1.m3u8",
+          "serial_number":1,
+          "duration":128
+        }}}}
+        </script>
+        </body></html>
+    """
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append({"url": url, "params": params})
+        if url.endswith("/_next/data/build-1/37/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1.json"):
+            return FakeResponse(404)
+        if url.endswith("/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1"):
+            return FakeResponse(200, text=html)
+        if url.endswith("/_next/data/build-1/37/movie/fiancee-s-betrayal-book-1.json"):
+            return FakeResponse(
+                200,
+                {
+                    "pageProps": {
+                        "data": {
+                            "online_base": [
+                                {"serial_number": 1, "chapter_id": "chapter-1"},
+                                {"serial_number": 2, "chapter_id": "chapter-2"},
+                            ]
+                        }
+                    }
+                },
+            )
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+
+    video = ReelShortClient("https://site.example", "37", 3, build_id="build-1").video(
+        "book-1",
+        1,
+        "fiancee-s-betrayal",
+        "chapter-1",
+    )
+
+    assert calls[:2] == [
+        {
+            "url": "https://site.example/_next/data/build-1/37/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1.json",
+            "params": {"play_time": "1", "slug": "episode-1-fiancee-s-betrayal-book-1-chapter-1"},
+        },
+        {
+            "url": "https://site.example/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1",
+            "params": {"play_time": "1"},
+        },
+    ]
+    assert video == {
+        "video_url": "https://cdn.example.com/html-1.m3u8",
+        "episode": 1,
+        "duration": 128,
+        "next_episode": {"episode": 2, "chapter_id": "chapter-2"},
+    }
+
+
 def test_reelshort_client_refreshes_auto_discovered_build_id_after_data_404(monkeypatch):
     calls = []
 
