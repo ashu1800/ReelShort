@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -252,6 +253,11 @@ internal fun detailEmptyState(book: BookSummary?, episodeCount: Int): ContentEmp
         )
     }
 }
+
+internal fun episodeNumberLabel(number: Int): String =
+    "第 ${number.coerceAtLeast(0).toString().padStart(2, '0')} 集"
+
+internal fun episodeRowActionLabel(): String = "播放"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1076,9 +1082,28 @@ private fun EpisodeRow(episode: EpisodeSummary, onClick: () -> Unit) {
         border = BorderStroke(1.dp, Divider),
         shape = RoundedCornerShape(16.dp),
     ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("第 ${episode.number} 集", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-            Text("${episode.durationSeconds.coerceAtLeast(0) / 60} 分钟", color = TextSecondary)
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Surface(
+                color = Color(0x1AFFC46B),
+                contentColor = PrimaryGold,
+                border = BorderStroke(1.dp, Color(0x44FFC46B)),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp))
+            }
+            Text(
+                episodeNumberLabel(episode.number),
+                modifier = Modifier.weight(1f),
+                color = TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Black,
+            )
+            Text(episodeRowActionLabel(), color = PrimaryGold, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
         }
     }
 }

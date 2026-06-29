@@ -46,4 +46,12 @@ class VisualTextContractTest {
             primaryTabRefreshModes(),
         )
     }
+
+    @Test
+    fun episodeRowsUseNumberOnlyDisplayWithoutDuration() {
+        assertEquals("第 01 集", episodeNumberLabel(1))
+        assertEquals("第 12 集", episodeNumberLabel(12))
+        assertEquals("第 99 集", episodeNumberLabel(99))
+        assertEquals("播放", episodeRowActionLabel())
+    }
 }
