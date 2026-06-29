@@ -188,11 +188,35 @@ private fun MediaPlayerSurface(
                         player.seekTo(initialPositionSeconds * 1_000L)
                     }
                 }
+                // 后台暂停、前台恢复，避免 ExoPlayer 在 App 切到后台时继续解码出声。
+                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                DisposableEffect(player, lifecycleOwner) {
+                    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        when (event) {
+                            androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> player.pause()
+                            androidx.lifecycle.Lifecycle.Event.ON_RESUME ->
+                                if (playerStartsAutomatically()) player.play()
+                            else -> Unit
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
+                // 进度上报节流：每秒轮询播放器位置，但仅在播放百分比变化时回调，
+                // 避免每秒写全局 state 引发整树重组。跨过奖励阶段(25/50/75/100)才触发上报。
                 LaunchedEffect(player, fallbackDurationSeconds) {
+                    var lastReportedPercent = -1
                     while (true) {
                         val durationSeconds = mediaDurationSeconds(player.duration, fallbackDurationSeconds)
                         if (durationSeconds > 0) {
-                            onProgress(mediaPositionSeconds(player.currentPosition), durationSeconds)
+                            val positionSeconds = mediaPositionSeconds(player.currentPosition)
+                            val percent = ((positionSeconds.toDouble() / durationSeconds) * 100)
+                                .toInt()
+                                .coerceIn(0, 100)
+                            if (percent != lastReportedPercent) {
+                                lastReportedPercent = percent
+                                onProgress(positionSeconds, durationSeconds)
+                            }
                         }
                         delay(1_000)
                     }
@@ -207,7 +231,6 @@ private fun MediaPlayerSurface(
                     },
                     update = { view ->
                         view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        view.player = player
                     },
                     onRelease = { view -> view.player = null },
                     modifier = Modifier.fillMaxSize(),
