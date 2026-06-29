@@ -408,6 +408,64 @@ def test_reelshort_client_maps_episode_page_props(monkeypatch):
     ]
 
 
+def test_reelshort_client_uses_book_info_when_movie_data_returns_404(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        text = ""
+
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self.ok = 200 <= status_code < 300
+            self.payload = payload or {}
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append({"url": url, "params": params})
+        if url.endswith("/_next/data/build-1/37/movie/fiancee-s-betrayal-6a2b.json"):
+            return FakeResponse(404)
+        if url.endswith("/api/video/book/getBookInfo"):
+            return FakeResponse(
+                200,
+                {
+                    "code": 0,
+                    "msg": "success",
+                    "data": {
+                        "online_base": [
+                            {"serial_number": 0, "chapter_id": "trailer", "chapter_type": 2},
+                            {"serial_number": 1, "chapter_id": "chapter-1", "chapter_type": 1},
+                            {"serial_number": 2, "chapter_id": "chapter-2", "chapter_type": 1},
+                        ]
+                    },
+                },
+            )
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+
+    episodes = ReelShortClient("https://site.example", "37", 3, build_id="build-1").episodes(
+        "6a2b",
+        "fiancee-s-betrayal",
+    )
+
+    assert calls == [
+        {
+            "url": "https://site.example/_next/data/build-1/37/movie/fiancee-s-betrayal-6a2b.json",
+            "params": {"slug": "fiancee-s-betrayal-6a2b"},
+        },
+        {
+            "url": "https://site.example/api/video/book/getBookInfo",
+            "params": {"book_id": "6a2b"},
+        },
+    ]
+    assert episodes == [
+        {"episode": 1, "chapter_id": "chapter-1"},
+        {"episode": 2, "chapter_id": "chapter-2"},
+    ]
+
+
 def test_reelshort_client_fetches_video_episode_page(monkeypatch):
     calls = []
 

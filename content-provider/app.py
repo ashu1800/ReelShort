@@ -47,13 +47,14 @@ class ReelShortClient:
         return [self._map_book(book) for book in books]
 
     def episodes(self, book_id: str, filtered_title: str):
-        payload = self._movie_payload(book_id, filtered_title)
-        chapters = payload.get("pageProps", {}).get("data", {}).get("online_base", [])
-        return [
-            {"episode": chapter.get("serial_number"), "chapter_id": chapter.get("chapter_id", "")}
-            for chapter in chapters
-            if chapter.get("chapter_id")
-        ]
+        try:
+            payload = self._movie_payload(book_id, filtered_title)
+            chapters = payload.get("pageProps", {}).get("data", {}).get("online_base", [])
+        except UpstreamError as exception:
+            if exception.status_code != 404:
+                raise
+            chapters = self._book_info_chapters(book_id)
+        return self._map_chapters(chapters)
 
     def video(self, book_id: str, episode_num: int, filtered_title: str, chapter_id: str):
         slug = f"episode-{episode_num}-{filtered_title}-{book_id}-{chapter_id}"
@@ -84,6 +85,12 @@ class ReelShortClient:
             f"/movie/{quote(slug, safe='')}.json",
             params={"slug": slug},
         )
+
+    def _book_info_chapters(self, book_id: str):
+        payload = self._get("/api/video/book/getBookInfo", params={"book_id": book_id})
+        if payload.get("code") not in {0, None}:
+            raise UpstreamError(404, "upstream not found")
+        return payload.get("data", {}).get("online_base", [])
 
     def _get_data(self, data_path: str, params=None):
         build_id = self.build_id or self._discover_build_id()
@@ -183,6 +190,13 @@ class ReelShortClient:
             "book_pic": book.get("book_pic") or book.get("cover") or "",
             "chapter_count": int(book.get("chapter_count", 0) or 0),
         }
+
+    def _map_chapters(self, chapters):
+        return [
+            {"episode": chapter.get("serial_number"), "chapter_id": chapter.get("chapter_id", "")}
+            for chapter in chapters
+            if chapter.get("chapter_id") and int(chapter.get("serial_number", 0) or 0) > 0
+        ]
 
     def _filtered_title(self, title: str):
         value = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
