@@ -106,6 +106,7 @@ import com.reelshort.app.state.AppStateController
 import com.reelshort.app.state.AppUiActions
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.state.PlaybackStatus
+import com.reelshort.app.state.nextUnreportedRewardStage
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -138,40 +139,50 @@ internal fun mediaDurationSeconds(durationMs: Long, fallbackDurationSeconds: Int
         (maxOf(durationMs, 0L) / 1_000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
-private val WatchRewardStages = listOf(25, 50, 75, 100)
+private val RewardBadgeStages = listOf(25, 50, 75, 100)
 
-internal data class WatchRewardHint(
-    val title: String,
-    val message: String,
-    val actionReady: Boolean,
+internal enum class RewardBadgeVisualState {
+    WAITING,
+    READY,
+    REPORTING,
+    COMPLETED,
+    ERROR,
+}
+
+internal data class RewardBadgeState(
+    val displayText: String,
+    val ringProgress: Float,
+    val visualState: RewardBadgeVisualState,
 )
 
-internal fun watchRewardHint(progressPercent: Int, lastReportedProgressPercent: Int): WatchRewardHint {
+internal fun rewardBadgeState(
+    progressPercent: Int,
+    lastReportedProgressPercent: Int,
+    isReporting: Boolean,
+    hasError: Boolean,
+): RewardBadgeState {
     val progress = progressPercent.coerceIn(0, 100)
     val reported = lastReportedProgressPercent.coerceIn(0, 100)
-    val readyStages = WatchRewardStages.filter { it > reported && it <= progress }
-    val nextStage = WatchRewardStages.firstOrNull { it > reported }
-        ?: return WatchRewardHint(
-            title = "本集奖励已完成",
-            message = "25%、50%、75%、100% 阶段都已上报，继续观看不会重复发放。",
-            actionReady = false,
+    val targetStage = RewardBadgeStages.firstOrNull { it > reported }
+        ?: return RewardBadgeState(
+            displayText = "✓",
+            ringProgress = 1f,
+            visualState = RewardBadgeVisualState.COMPLETED,
         )
-
-    return if (readyStages.isNotEmpty()) {
-        val readyStageLabel = readyStages.joinToString("、") { "$it%" }
-        WatchRewardHint(
-            title = "可上报领取 $readyStageLabel 奖励",
-            message = "本次上报可结算 $readyStageLabel 观看阶段，后端会自动跳过已领取阶段。",
-            actionReady = true,
-        )
-    } else {
-        WatchRewardHint(
-            title = "下一奖励：${nextStage}%",
-            message = "继续观看，距离 ${nextStage}% 阶段还差 ${nextStage - progress}%。",
-            actionReady = false,
-        )
+    val visualState = when {
+        hasError -> RewardBadgeVisualState.ERROR
+        isReporting -> RewardBadgeVisualState.REPORTING
+        progress >= targetStage -> RewardBadgeVisualState.READY
+        else -> RewardBadgeVisualState.WAITING
     }
+    return RewardBadgeState(
+        displayText = targetStage.toString(),
+        ringProgress = (progress.toFloat() / targetStage.toFloat()).coerceIn(0f, 1f),
+        visualState = visualState,
+    )
 }
+
+internal fun playerSecondaryActionLabels(): List<String> = listOf("刷新地址")
 
 internal data class ContentEmptyState(
     val title: String,
@@ -329,9 +340,8 @@ fun ReelShortApp(actions: AppUiActions) {
                     onOpenPlayer = { episode -> scope.launch { actions.openPlayer(episode) } },
                     onUpdatePlaybackPosition = { position, duration -> actions.updatePlaybackPosition(position, duration) },
                     onRefreshPlaybackUrl = { scope.launch { actions.refreshPlaybackUrl() } },
-                    onReportProgress = {
-                        val playback = state.playback
-                        scope.launch { actions.reportProgress(playback.positionSeconds, playback.durationSeconds) }
+                    onAutoReportProgress = { position, duration ->
+                        scope.launch { actions.reportProgressSilently(position, duration) }
                     },
                     onCheckApiHealth = { scope.launch { actions.checkApiHealth() } },
                 )
@@ -488,7 +498,7 @@ private fun MainShell(
     onOpenPlayer: (EpisodeSummary) -> Unit,
     onUpdatePlaybackPosition: (Int, Int) -> Unit,
     onRefreshPlaybackUrl: () -> Unit,
-    onReportProgress: () -> Unit,
+    onAutoReportProgress: (Int, Int) -> Unit,
     onCheckApiHealth: () -> Unit,
 ) {
     AppBackground {
@@ -524,7 +534,7 @@ private fun MainShell(
                     AppScreen.HOME -> HomeScreen(state.homeShelf, onOpenBook)
                     AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
                     AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, onOpenPlayer)
-                    AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onRefreshPlaybackUrl, onReportProgress)
+                    AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onRefreshPlaybackUrl, onAutoReportProgress)
                     AppScreen.ACCOUNT -> AccountScreen(
                         records = state.watchHistory,
                         username = state.session?.username.orEmpty(),
@@ -714,7 +724,7 @@ private fun PlayerScreen(
     state: AppUiState,
     onUpdatePlaybackPosition: (Int, Int) -> Unit,
     onRefreshPlaybackUrl: () -> Unit,
-    onReportProgress: () -> Unit,
+    onAutoReportProgress: (Int, Int) -> Unit,
 ) {
     val playback = state.playback
     val book = playback.book ?: state.selectedBook
@@ -722,8 +732,29 @@ private fun PlayerScreen(
     val videoUrl = playback.videoUrl?.url
     val ready = playback.status == PlaybackStatus.READY && episode != null && videoUrl != null
     val duration = playback.durationSeconds.takeIf { it > 0 } ?: episode?.durationSeconds ?: 0
-    val simulatedPosition = if (duration > 0) duration / 4 else 0
-    val rewardHint = watchRewardHint(playback.progressPercent, playback.lastReportedProgressPercent)
+    val badgeState = rewardBadgeState(
+        progressPercent = playback.progressPercent,
+        lastReportedProgressPercent = playback.lastReportedProgressPercent,
+        isReporting = playback.isRewardReporting,
+        hasError = playback.rewardReportError,
+    )
+
+    LaunchedEffect(
+        playback.positionSeconds,
+        playback.durationSeconds,
+        playback.progressPercent,
+        playback.lastReportedProgressPercent,
+    ) {
+        if (
+            playback.status == PlaybackStatus.READY &&
+            !playback.isRewardReporting &&
+            playback.positionSeconds > 0 &&
+            playback.durationSeconds > 0 &&
+            nextUnreportedRewardStage(playback.progressPercent, playback.lastReportedProgressPercent) != null
+        ) {
+            onAutoReportProgress(playback.positionSeconds, playback.durationSeconds)
+        }
+    }
 
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -731,6 +762,7 @@ private fun PlayerScreen(
                 videoUrl = videoUrl,
                 episodeNumber = episode?.number,
                 fallbackDurationSeconds = duration,
+                rewardBadgeState = badgeState,
                 onProgress = onUpdatePlaybackPosition,
             )
         }
@@ -738,50 +770,27 @@ private fun PlayerScreen(
             SectionHeader(book?.title ?: "未选择剧集", "时长 ${duration.formatSeconds()} · 进度 ${playback.progressPercent}%")
         }
         item {
-            WatchRewardHintPanel(rewardHint)
-        }
-        item {
             SurfacePanel {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("播放地址", fontWeight = FontWeight.SemiBold)
-                    Text(videoUrl ?: "暂无播放地址", maxLines = 2, overflow = TextOverflow.Ellipsis, color = TextSecondary)
-                    Text("已上报 ${playback.lastReportedProgressPercent}% · 位置 ${playback.lastReportedPositionSeconds.formatSeconds()}", color = TextSecondary)
+                    Text("播放状态", fontWeight = FontWeight.SemiBold)
+                    Text("当前进度 ${playback.progressPercent}% · 已领取 ${playback.lastReportedProgressPercent}%", color = TextSecondary)
+                    if (playback.rewardReportError) {
+                        Text("积分同步失败，继续播放时会自动重试。", color = DangerText)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(
-                            onClick = { onUpdatePlaybackPosition(simulatedPosition, duration) },
-                            enabled = ready && duration > 0,
-                            border = BorderStroke(1.dp, Divider),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-                        ) {
-                            Text("同步 25%")
-                        }
-                        OutlinedButton(
-                            onClick = onRefreshPlaybackUrl,
-                            enabled = ready,
-                            border = BorderStroke(1.dp, Divider),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-                        ) {
-                            Text("刷新地址")
+                        playerSecondaryActionLabels().forEach { label ->
+                            OutlinedButton(
+                                onClick = onRefreshPlaybackUrl,
+                                enabled = ready,
+                                border = BorderStroke(1.dp, Divider),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                            ) {
+                                Text(label)
+                            }
                         }
                     }
-                    PrimaryActionButton(
-                        text = "上报当前进度",
-                        enabled = ready && playback.durationSeconds > 0 && playback.positionSeconds > 0,
-                        onClick = onReportProgress,
-                    )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun WatchRewardHintPanel(hint: WatchRewardHint) {
-    SurfacePanel {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(hint.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
-            Text(hint.message, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            MetaPill(if (hint.actionReady) "可上报" else "继续观看")
         }
     }
 }
@@ -791,6 +800,7 @@ private fun MediaPlayerSurface(
     videoUrl: String?,
     episodeNumber: Int?,
     fallbackDurationSeconds: Int,
+    rewardBadgeState: RewardBadgeState,
     onProgress: (positionSeconds: Int, durationSeconds: Int) -> Unit,
 ) {
     val playableUrl = videoUrl.playableMediaUrlOrNull()
@@ -841,6 +851,63 @@ private fun MediaPlayerSurface(
                 update = { view -> view.player = player },
                 onRelease = { view -> view.player = null },
                 modifier = Modifier.fillMaxSize(),
+            )
+        }
+        RewardProgressBadge(
+            state = rewardBadgeState,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(12.dp),
+        )
+    }
+}
+
+@Composable
+private fun RewardProgressBadge(
+    state: RewardBadgeState,
+    modifier: Modifier = Modifier,
+) {
+    val ringColor = when (state.visualState) {
+        RewardBadgeVisualState.WAITING -> Color(0xFF6E7686)
+        RewardBadgeVisualState.READY,
+        RewardBadgeVisualState.REPORTING,
+        RewardBadgeVisualState.COMPLETED -> PrimaryGold
+        RewardBadgeVisualState.ERROR -> DangerText
+    }
+    val backgroundColor = when (state.visualState) {
+        RewardBadgeVisualState.COMPLETED -> Color(0xFFE0A94C)
+        else -> Color(0xCC080A0F)
+    }
+    val textColor = when (state.visualState) {
+        RewardBadgeVisualState.COMPLETED -> Color(0xFF241500)
+        RewardBadgeVisualState.ERROR -> DangerText
+        else -> TextPrimary
+    }
+
+    Surface(
+        modifier = modifier.size(52.dp),
+        color = backgroundColor,
+        contentColor = textColor,
+        shape = RoundedCornerShape(26.dp),
+        border = BorderStroke(1.dp, ringColor.copy(alpha = 0.78f)),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(
+                progress = { state.ringProgress },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(4.dp),
+                color = ringColor,
+                trackColor = Color(0x33FFFFFF),
+                strokeWidth = 3.dp,
+            )
+            Text(
+                text = state.displayText,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Black,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
             )
         }
     }

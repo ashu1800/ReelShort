@@ -33,6 +33,9 @@ class AppUiActions(private val controller: AppStateController) {
     suspend fun reportProgress(positionSeconds: Int, durationSeconds: Int) =
         controller.reportProgress(positionSeconds, durationSeconds)
 
+    suspend fun reportProgressSilently(positionSeconds: Int, durationSeconds: Int) =
+        controller.reportProgressSilently(positionSeconds, durationSeconds)
+
     suspend fun openAccount() = controller.openAccount()
 
     suspend fun loadAccount() = controller.loadAccountSnapshot()

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.update
 
 class AppStateController(private val dataSource: AppDataSource) {
     private val mutableState = MutableStateFlow(AppUiState(apiBaseUrl = dataSource.apiBaseUrl))
+    private var rewardReportInFlight = false
 
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
@@ -187,6 +188,56 @@ class AppStateController(private val dataSource: AppDataSource) {
                     ),
                 isLoading = false,
             )
+        }
+    }
+
+    suspend fun reportProgressSilently(positionSeconds: Int, durationSeconds: Int) {
+        val current = state.value
+        val playback = current.playback
+        if (playback.status != PlaybackStatus.READY || playback.isRewardReporting || rewardReportInFlight) {
+            return
+        }
+        if (positionSeconds <= 0 || durationSeconds <= 0) {
+            return
+        }
+        val localProgress = playback.withPosition(positionSeconds, durationSeconds)
+        if (nextUnreportedRewardStage(localProgress.progressPercent, playback.lastReportedProgressPercent) == null) {
+            mutableState.update { it.copy(playback = localProgress) }
+            return
+        }
+        val book = current.selectedBook ?: return
+        val episode = current.selectedEpisode ?: return
+
+        rewardReportInFlight = true
+        mutableState.update {
+            it.copy(playback = localProgress.withRewardReporting(true))
+        }
+        try {
+            val progress = dataSource.reportWatchProgress(book, episode, positionSeconds, durationSeconds)
+            val history = dataSource.loadWatchHistory()
+            val points = dataSource.loadPointAccount()
+            mutableState.update {
+                it.copy(
+                    watchHistory = history,
+                    pointAccount = points,
+                    playback = it.playback
+                        .withPosition(progress.positionSeconds, progress.durationSeconds)
+                        .withReportedProgress(
+                            positionSeconds = progress.positionSeconds,
+                            progressPercent = progress.progressPercent,
+                        )
+                        .withRewardReporting(false),
+                )
+            }
+        } catch (error: CancellationException) {
+            mutableState.update { it.copy(playback = it.playback.withRewardReporting(false)) }
+            throw error
+        } catch (_: Throwable) {
+            mutableState.update {
+                it.copy(playback = it.playback.withPosition(positionSeconds, durationSeconds).withRewardReportError())
+            }
+        } finally {
+            rewardReportInFlight = false
         }
     }
 

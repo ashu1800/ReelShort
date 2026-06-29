@@ -20,6 +20,8 @@ data class PlaybackState(
     val progressPercent: Int = 0,
     val lastReportedPositionSeconds: Int = 0,
     val lastReportedProgressPercent: Int = 0,
+    val isRewardReporting: Boolean = false,
+    val rewardReportError: Boolean = false,
 ) {
     fun withPosition(positionSeconds: Int, durationSeconds: Int = this.durationSeconds): PlaybackState {
         val safeDuration = maxOf(durationSeconds, 0)
@@ -47,7 +49,14 @@ data class PlaybackState(
         copy(
             lastReportedPositionSeconds = maxOf(positionSeconds, 0),
             lastReportedProgressPercent = progressPercent.coerceIn(0, 100),
+            rewardReportError = false,
         )
+
+    fun withRewardReporting(isReporting: Boolean): PlaybackState =
+        copy(isRewardReporting = isReporting, rewardReportError = if (isReporting) false else rewardReportError)
+
+    fun withRewardReportError(): PlaybackState =
+        copy(isRewardReporting = false, rewardReportError = true)
 
     companion object {
         fun ready(book: BookSummary, episode: EpisodeSummary, videoUrl: VideoUrl): PlaybackState =
@@ -59,4 +68,12 @@ data class PlaybackState(
                 durationSeconds = videoUrl.durationSeconds,
             )
     }
+}
+
+val RewardProgressStages = listOf(25, 50, 75, 100)
+
+fun nextUnreportedRewardStage(progressPercent: Int, lastReportedProgressPercent: Int): Int? {
+    val progress = progressPercent.coerceIn(0, 100)
+    val reported = lastReportedProgressPercent.coerceIn(0, 100)
+    return RewardProgressStages.firstOrNull { it > reported && it <= progress }
 }
