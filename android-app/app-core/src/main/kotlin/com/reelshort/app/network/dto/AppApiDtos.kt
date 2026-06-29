@@ -103,3 +103,40 @@ data class RechargeOrderDto(
     val pointAmount: Int,
     val status: String,
 )
+
+@Serializable
+data class SocialToggleDto(
+    val active: Boolean,
+    val count: Int,
+)
+
+@Serializable
+data class FavoriteRequestDto(
+    val bookTitle: String,
+    val filteredTitle: String,
+    val coverUrl: String? = null,
+    val chapterCount: Int,
+)
+
+@Serializable
+data class CommentRequestDto(
+    val content: String,
+)
+
+@Serializable
+data class CommentDto(
+    val id: String,
+    val username: String,
+    val content: String,
+    val createdAt: String,
+)
+
+@Serializable
+data class FavoriteBookDto(
+    val bookId: String,
+    val bookTitle: String,
+    val filteredTitle: String,
+    val coverUrl: String? = null,
+    val chapterCount: Int,
+    val createdAt: String,
+)

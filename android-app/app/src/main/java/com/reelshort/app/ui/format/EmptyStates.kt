@@ -46,6 +46,12 @@ internal fun homeEmptyState(): ContentEmptyState =
         actionLabel = "去搜索",
     )
 
+internal fun favoritesEmptyState(): ContentEmptyState =
+    ContentEmptyState(
+        title = "还没有收藏",
+        message = "在播放页点击收藏，喜欢的短剧会出现在这里。",
+    )
+
 internal fun searchEmptyState(query: String, resultCount: Int): ContentEmptyState? {
     if (resultCount > 0) {
         return null

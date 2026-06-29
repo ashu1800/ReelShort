@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MonetizationOn
@@ -82,6 +83,7 @@ internal fun AccountScreen(
     apiHealthStatus: ApiHealthStatus?,
     onCheckApiHealth: () -> Unit,
     onShowAuthPrompt: () -> Unit,
+    onOpenFavorites: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val diagnostics = apiDiagnosticsText(apiHealthStatus)
@@ -106,6 +108,17 @@ internal fun AccountScreen(
                         }
                     }
                 }
+            }
+        }
+        if (isLoggedIn) item {
+            AccountMenuGroup {
+                AccountMenuRow(
+                    icon = Icons.Rounded.BookmarkBorder,
+                    title = "我的收藏",
+                    subtitle = "收藏的短剧",
+                    trailing = "查看",
+                    onClick = onOpenFavorites,
+                )
             }
         }
         if (isLoggedIn) item {

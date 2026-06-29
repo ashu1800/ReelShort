@@ -3,9 +3,11 @@ package com.reelshort.app.network
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
@@ -43,4 +45,24 @@ interface ReelShortApiClient {
     suspend fun getPointAccount(): PointAccount
 
     suspend fun getOrders(): List<RechargeOrderSummary>
+
+    suspend fun toggleLike(bookId: String): SocialToggleResult
+
+    suspend fun getLikeStatus(bookId: String): SocialToggleResult
+
+    suspend fun toggleFavorite(
+        bookId: String,
+        bookTitle: String,
+        filteredTitle: String,
+        coverUrl: String?,
+        chapterCount: Int,
+    ): SocialToggleResult
+
+    suspend fun getFavoriteStatus(bookId: String): SocialToggleResult
+
+    suspend fun addComment(bookId: String, content: String): Comment
+
+    suspend fun listComments(bookId: String): List<Comment>
+
+    suspend fun listMyFavorites(): List<BookSummary>
 }

@@ -64,6 +64,23 @@ class AppRepository(
 
     override suspend fun loadOrders(): List<RechargeOrderSummary> = apiClient.getOrders()
 
+    override suspend fun toggleLike(book: BookSummary): SocialToggleResult = apiClient.toggleLike(book.id)
+
+    override suspend fun loadLikeStatus(book: BookSummary): SocialToggleResult = apiClient.getLikeStatus(book.id)
+
+    override suspend fun toggleFavorite(book: BookSummary): SocialToggleResult =
+        apiClient.toggleFavorite(book.id, book.title, book.filteredTitle, book.coverUrl, book.chapterCount)
+
+    override suspend fun loadFavoriteStatus(book: BookSummary): SocialToggleResult =
+        apiClient.getFavoriteStatus(book.id)
+
+    override suspend fun addComment(book: BookSummary, content: String): Comment =
+        apiClient.addComment(book.id, content)
+
+    override suspend fun listComments(book: BookSummary): List<Comment> = apiClient.listComments(book.id)
+
+    override suspend fun loadMyFavorites(): List<BookSummary> = apiClient.listMyFavorites()
+
     override suspend fun restoreSession(): AuthSession? {
         val session = sessionStore.loadSession()
         currentToken = session?.token

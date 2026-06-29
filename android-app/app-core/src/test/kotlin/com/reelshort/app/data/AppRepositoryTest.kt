@@ -146,6 +146,21 @@ class AppRepositoryTest {
         assertEquals("RO202606270001", orders.single().orderNo)
     }
 
+    @Test
+    fun socialActionsAreDelegatedToClient() = runTest {
+        val repository = AppRepository(FakeReelShortApiClient())
+        val book = repository.loadHomeShelf().first()
+
+        val like = repository.toggleLike(book)
+        assertTrue(like.active)
+        val favorite = repository.toggleFavorite(book)
+        assertTrue(favorite.active)
+        val comment = repository.addComment(book, "nice")
+        assertEquals("nice", comment.content)
+        assertEquals(1, repository.listComments(book).size)
+        assertEquals(1, repository.loadMyFavorites().size)
+    }
+
     private class FailingSessionStore : SessionStore {
         override suspend fun loadSession(): AuthSession? = null
 

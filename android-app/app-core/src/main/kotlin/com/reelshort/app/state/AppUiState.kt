@@ -2,7 +2,9 @@ package com.reelshort.app.state
 
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
+import com.reelshort.app.data.BookInteractionState
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.RechargeOrderSummary
@@ -17,6 +19,7 @@ enum class AppScreen {
     DETAIL,
     PLAYER,
     ACCOUNT,
+    FAVORITES,
 }
 
 data class AppUiState(
@@ -40,4 +43,7 @@ data class AppUiState(
     val watchHistory: List<WatchRecord> = emptyList(),
     val pointAccount: PointAccount? = null,
     val orders: List<RechargeOrderSummary> = emptyList(),
+    val interaction: BookInteractionState = BookInteractionState(),
+    val comments: List<Comment> = emptyList(),
+    val favorites: List<BookSummary> = emptyList(),
 )

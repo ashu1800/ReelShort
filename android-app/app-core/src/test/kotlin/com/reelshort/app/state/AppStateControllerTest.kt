@@ -4,11 +4,13 @@ import com.reelshort.app.data.AppDataSource
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.SavedCredentials
+import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
@@ -22,6 +24,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -239,7 +242,7 @@ class AppStateControllerTest {
         assertEquals(200, state.playback.durationSeconds)
         assertEquals(0, state.playback.positionSeconds)
         assertEquals(0, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -274,7 +277,7 @@ class AppStateControllerTest {
         assertFalse(state.authPromptVisible)
         assertNull(state.pendingPlaybackEpisode)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "snapshot:book-1:1", "video:book-1:1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -335,7 +338,7 @@ class AppStateControllerTest {
         assertEquals(200, state.playback.positionSeconds)
         assertEquals(200, state.playback.durationSeconds)
         assertEquals(100, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -387,7 +390,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(
-            listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "progress:book-1:1:150", "history", "points"),
+            listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:150", "history", "points"),
             dataSource.calls,
         )
     }
@@ -413,7 +416,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(
-            listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "progress:book-1:1:50", "history", "points"),
+            listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50", "history", "points"),
             dataSource.calls,
         )
     }
@@ -436,7 +439,7 @@ class AppStateControllerTest {
         assertEquals(80, state.playback.progressPercent)
         assertEquals(75, state.playback.lastReportedProgressPercent)
         assertEquals(160, state.playback.lastReportedPositionSeconds)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "progress:book-1:1:160", "history", "points"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:160", "history", "points"), dataSource.calls)
     }
 
     @Test
@@ -457,14 +460,14 @@ class AppStateControllerTest {
         val reportingState = controller.state.value
         assertFalse(reportingState.isLoading)
         assertEquals(true, reportingState.playback.isRewardReporting)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "progress:book-1:1:50"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
 
         dataSource.progressGate?.complete(Unit)
         job.join()
 
         assertEquals(25, controller.state.value.playback.lastReportedProgressPercent)
         assertEquals(
-            listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "progress:book-1:1:50", "history", "points"),
+            listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50", "history", "points"),
             dataSource.calls,
         )
     }
@@ -490,7 +493,7 @@ class AppStateControllerTest {
         assertEquals(25, state.playback.progressPercent)
         assertEquals(0, state.playback.lastReportedProgressPercent)
         assertNull(state.errorMessage)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "progress:book-1:1:50"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
     }
 
     @Test
@@ -514,6 +517,9 @@ class AppStateControllerTest {
                 "episodes:book-1",
                 "snapshot:book-1:1",
                 "video:book-1:1",
+                "like-status:book-1",
+                "favorite-status:book-1",
+                "comments:book-1",
                 "progress:book-1:1:150",
                 "history",
                 "points",
@@ -545,7 +551,7 @@ class AppStateControllerTest {
         assertEquals(80, state.playback.positionSeconds)
         assertEquals(400, state.playback.durationSeconds)
         assertEquals(20, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "video:book-1:1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "video:book-1:1"), dataSource.calls)
     }
 
     @Test
@@ -792,6 +798,75 @@ class AppStateControllerTest {
         assertEquals(listOf("restore", "credentials:load", "home", "clear"), dataSource.calls)
     }
 
+    @Test
+    fun toggleLikeFlipsInteractionStateForCurrentBook() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.openBook(dataSource.book("book-1", "Alpha"))
+        controller.openPlayer(dataSource.episodes.first())
+        controller.toggleLike()
+
+        val state = controller.state.value
+        assertTrue(state.interaction.liked)
+        assertEquals(1, state.interaction.likeCount)
+    }
+
+    @Test
+    fun toggleFavoriteFlipsInteractionStateForCurrentBook() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.openBook(dataSource.book("book-1", "Alpha"))
+        controller.openPlayer(dataSource.episodes.first())
+        controller.toggleFavorite()
+
+        val state = controller.state.value
+        assertTrue(state.interaction.favorited)
+        assertEquals(1, state.interaction.favoriteCount)
+    }
+
+    @Test
+    fun submitCommentAppendsCommentAndRefreshesList() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.openBook(dataSource.book("book-1", "Alpha"))
+        controller.openPlayer(dataSource.episodes.first())
+
+        controller.submitComment("nice drama")
+
+        val state = controller.state.value
+        assertEquals(1, state.comments.size)
+        assertEquals("nice drama", state.comments.single().content)
+    }
+
+    @Test
+    fun socialErrorPromptsLoginForLoggedOutUser() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        dataSource.socialError = ApiClientException(401, 401, "unauthorized")
+        val controller = AppStateController(dataSource)
+        controller.openBook(dataSource.book("book-1", "Alpha"))
+        controller.openPlayer(dataSource.episodes.first())
+        controller.toggleLike()
+
+        assertTrue(controller.state.value.authPromptVisible)
+    }
+
+    @Test
+    fun openFavoritesLoadsUserFavoriteBooks() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.favoritesList = listOf(dataSource.book("book-fav", "Love"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+
+        controller.openFavorites()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.FAVORITES, state.screen)
+        assertEquals(listOf("book-fav"), state.favorites.map { it.id })
+    }
+
     private class FakeAppDataSource(
         private val loginError: Throwable? = null,
         private var restoredSession: AuthSession? = null,
@@ -846,6 +921,11 @@ class AppStateControllerTest {
         var videoUrlVersion: Int = 1
         var videoDurationSeconds: Int? = null
         var healthError: Throwable? = null
+        var socialError: Throwable? = null
+        private val liked = mutableSetOf<String>()
+        private val favorited = mutableSetOf<String>()
+        private val commentStore = mutableListOf<Comment>()
+        var favoritesList: List<BookSummary> = emptyList()
 
         override val apiBaseUrl: String = "http://66.42.99.110:18080/api/app"
 
@@ -976,6 +1056,54 @@ class AppStateControllerTest {
 
         override suspend fun clearSavedCredentials() {
             savedCredentials = null
+        }
+
+        override suspend fun toggleLike(book: BookSummary): SocialToggleResult {
+            calls += "like:${book.id}"
+            socialError?.let { throw it }
+            if (!liked.add(book.id)) liked.remove(book.id)
+            return SocialToggleResult(liked.contains(book.id), liked.size)
+        }
+
+        override suspend fun loadLikeStatus(book: BookSummary): SocialToggleResult {
+            calls += "like-status:${book.id}"
+            return SocialToggleResult(liked.contains(book.id), liked.size)
+        }
+
+        override suspend fun toggleFavorite(book: BookSummary): SocialToggleResult {
+            calls += "favorite:${book.id}"
+            socialError?.let { throw it }
+            if (!favorited.add(book.id)) favorited.remove(book.id)
+            return SocialToggleResult(favorited.contains(book.id), favorited.size)
+        }
+
+        override suspend fun loadFavoriteStatus(book: BookSummary): SocialToggleResult {
+            calls += "favorite-status:${book.id}"
+            return SocialToggleResult(favorited.contains(book.id), favorited.size)
+        }
+
+        override suspend fun addComment(book: BookSummary, content: String): Comment {
+            calls += "comment-add:${book.id}"
+            socialError?.let { throw it }
+            val comment = Comment(
+                id = "comment-${commentStore.size + 1}",
+                username = "demo",
+                content = content,
+                createdAt = "2026-06-29T00:00:00Z",
+            )
+            commentStore.add(comment)
+            return comment
+        }
+
+        override suspend fun listComments(book: BookSummary): List<Comment> {
+            calls += "comments:${book.id}"
+            return commentStore.toList()
+        }
+
+        override suspend fun loadMyFavorites(): List<BookSummary> {
+            calls += "my-favorites"
+            socialError?.let { throw it }
+            return favoritesList
         }
 
         fun book(id: String, title: String): BookSummary =

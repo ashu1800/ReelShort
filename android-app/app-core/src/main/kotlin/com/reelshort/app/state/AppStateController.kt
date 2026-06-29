@@ -3,7 +3,9 @@ package com.reelshort.app.state
 import com.reelshort.app.data.AppDataSource
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
+import com.reelshort.app.data.BookInteractionState
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.SavedCredentials
 import com.reelshort.app.network.ApiClientException
@@ -223,6 +225,8 @@ class AppStateController(private val dataSource: AppDataSource) {
         val initialPosition = snapshot?.positionSeconds ?: 0
         val initialDuration = snapshot?.durationSeconds?.takeIf { it > 0 } ?: videoUrl.durationSeconds
         val awardedProgress = snapshot?.awardedStages?.maxOrNull() ?: 0
+        val interaction = loadInteractionSilently(book)
+        val comments = loadCommentsSilently(book)
         mutableState.update {
             it.copy(
                 screen = AppScreen.PLAYER,
@@ -231,12 +235,45 @@ class AppStateController(private val dataSource: AppDataSource) {
                 playback = PlaybackState.ready(book, episode, videoUrl)
                     .withPosition(initialPosition, initialDuration)
                     .withReportedProgress(initialPosition, awardedProgress),
+                interaction = interaction,
+                comments = comments,
                 isLoading = false,
                 authPromptVisible = false,
                 pendingPlaybackEpisode = null,
                 errorMessage = if (snapshot == null) "积分状态暂时加载失败，播放不受影响。" else null,
             )
         }
+    }
+
+    private suspend fun loadInteractionSilently(book: BookSummary): BookInteractionState {
+        val like = try {
+            dataSource.loadLikeStatus(book)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
+        val favorite = try {
+            dataSource.loadFavoriteStatus(book)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
+        return BookInteractionState(
+            liked = like?.active ?: false,
+            likeCount = like?.count ?: 0,
+            favorited = favorite?.active ?: false,
+            favoriteCount = favorite?.count ?: 0,
+        )
+    }
+
+    private suspend fun loadCommentsSilently(book: BookSummary): List<Comment> = try {
+        dataSource.listComments(book)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Throwable) {
+        emptyList()
     }
 
     fun updatePlaybackPosition(positionSeconds: Int, durationSeconds: Int) {
@@ -333,6 +370,56 @@ class AppStateController(private val dataSource: AppDataSource) {
                 isLoading = false,
             )
         }
+    }
+
+    suspend fun toggleLike() = runSocialAction {
+        val book = requireSelectedBook()
+        val result = dataSource.toggleLike(book)
+        mutableState.update {
+            it.copy(interaction = it.interaction.copy(liked = result.active, likeCount = result.count))
+        }
+    }
+
+    suspend fun toggleFavorite() = runSocialAction {
+        val book = requireSelectedBook()
+        val result = dataSource.toggleFavorite(book)
+        mutableState.update {
+            it.copy(interaction = it.interaction.copy(favorited = result.active, favoriteCount = result.count))
+        }
+    }
+
+    suspend fun submitComment(content: String) = runSocialAction {
+        val trimmed = content.trim()
+        require(trimmed.isNotEmpty()) { "评论内容不能为空" }
+        val book = requireSelectedBook()
+        dataSource.addComment(book, trimmed)
+        val comments = dataSource.listComments(book)
+        mutableState.update { it.copy(comments = comments) }
+    }
+
+    suspend fun openFavorites() = runWithLoading(ErrorContext.ACCOUNT) {
+        if (state.value.session == null) {
+            mutableState.update {
+                it.copy(screen = AppScreen.FAVORITES, favorites = emptyList(), errorMessage = null, isLoading = false)
+            }
+            return@runWithLoading
+        }
+        val favorites = dataSource.loadMyFavorites()
+        mutableState.update {
+            it.copy(screen = AppScreen.FAVORITES, favorites = favorites, errorMessage = null, isLoading = false)
+        }
+    }
+
+    fun backToDetail() {
+        mutableState.update { it.copy(screen = AppScreen.DETAIL, isLoading = false, errorMessage = null) }
+    }
+
+    fun backToAccount() {
+        mutableState.update { it.copy(screen = AppScreen.ACCOUNT, isLoading = false, errorMessage = null) }
+    }
+
+    private suspend fun runSocialAction(block: suspend () -> Unit) = runWithLoading(ErrorContext.SOCIAL) {
+        block()
     }
 
     suspend fun loadAccountSnapshot() = runWithLoading(ErrorContext.ACCOUNT) {
@@ -460,7 +547,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     private fun shouldPromptForLogin(error: Throwable, context: ErrorContext): Boolean =
         error is ApiClientException &&
             error.statusCode == 401 &&
-            (context == ErrorContext.ACCOUNT || context == ErrorContext.PLAYBACK)
+            (context == ErrorContext.ACCOUNT || context == ErrorContext.PLAYBACK || context == ErrorContext.SOCIAL)
 
     private fun userFacingErrorMessage(error: Throwable, context: ErrorContext): String {
         val rawMessage = error.message?.trim().orEmpty()
@@ -488,6 +575,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         CONTENT,
         ACCOUNT,
         PLAYBACK,
+        SOCIAL,
         DIAGNOSTIC,
     }
 }

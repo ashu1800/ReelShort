@@ -41,7 +41,7 @@ class VisualTextContractTest {
     @Test
     fun accountPageUsesMeStyleEntryLabels() {
         assertEquals(
-            listOf("积分余额", "观看记录", "积分流水", "充值订单", "开发诊断", "退出登录"),
+            listOf("我的收藏", "积分余额", "观看记录", "积分流水", "充值订单", "开发诊断", "退出登录"),
             accountEntryLabels(),
         )
     }

@@ -32,6 +32,20 @@ interface AppDataSource {
 
     suspend fun loadOrders(): List<RechargeOrderSummary>
 
+    suspend fun toggleLike(book: BookSummary): SocialToggleResult
+
+    suspend fun loadLikeStatus(book: BookSummary): SocialToggleResult
+
+    suspend fun toggleFavorite(book: BookSummary): SocialToggleResult
+
+    suspend fun loadFavoriteStatus(book: BookSummary): SocialToggleResult
+
+    suspend fun addComment(book: BookSummary, content: String): Comment
+
+    suspend fun listComments(book: BookSummary): List<Comment>
+
+    suspend fun loadMyFavorites(): List<BookSummary>
+
     suspend fun restoreSession(): AuthSession?
 
     suspend fun clearSession()

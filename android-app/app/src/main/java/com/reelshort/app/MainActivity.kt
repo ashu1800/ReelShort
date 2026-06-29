@@ -15,7 +15,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
+import androidx.activity.compose.BackHandler
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.reelshort.app.state.AppScreen
 import com.reelshort.app.ui.MainShell
 import com.reelshort.app.ui.ReelShortViewModel
 import com.reelshort.app.ui.components.LoadingDialog
@@ -60,8 +62,22 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onOpenPlayer = remember(viewModel) { viewModel::openPlayer }
     val onUpdatePlaybackPosition = remember(viewModel) { viewModel::updatePlaybackPosition }
     val onAutoReportProgress = remember(viewModel) { viewModel::reportProgressSilently }
+    val onToggleLike = remember(viewModel) { viewModel::toggleLike }
+    val onToggleFavorite = remember(viewModel) { viewModel::toggleFavorite }
+    val onSubmitComment = remember(viewModel) { { content: String -> viewModel.submitComment(content) } }
+    val onOpenFavorites = remember(viewModel) { viewModel::openFavorites }
+    val onBackFromPlayer = remember(viewModel) { viewModel::backFromPlayer }
+    val onBackFromFavorites = remember(viewModel) { viewModel::backFromFavorites }
     val onCheckApiHealth = remember(viewModel) { viewModel::checkApiHealth }
     val onShowAuthPrompt = remember(viewModel) { viewModel::showAuthPrompt }
+
+    // 播放器与收藏页为全屏沉浸式，系统返回键回到上一级而非退出 App
+    BackHandler(enabled = state.screen == AppScreen.PLAYER) {
+        viewModel.backFromPlayer()
+    }
+    BackHandler(enabled = state.screen == AppScreen.FAVORITES) {
+        viewModel.backFromFavorites()
+    }
     val onLogin = remember(viewModel) { { u: String, p: String, r: Boolean -> viewModel.login(u, p, r) } }
     val onRegister = remember(viewModel) { { u: String, p: String, r: Boolean -> viewModel.register(u, p, r) } }
     val onDismissAuthPrompt = remember(viewModel) { viewModel::dismissAuthPrompt }
@@ -78,6 +94,12 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onOpenPlayer = onOpenPlayer,
                 onUpdatePlaybackPosition = onUpdatePlaybackPosition,
                 onAutoReportProgress = onAutoReportProgress,
+                onToggleLike = onToggleLike,
+                onToggleFavorite = onToggleFavorite,
+                onSubmitComment = onSubmitComment,
+                onOpenFavorites = onOpenFavorites,
+                onBackFromPlayer = onBackFromPlayer,
+                onBackFromFavorites = onBackFromFavorites,
                 onCheckApiHealth = onCheckApiHealth,
                 onShowAuthPrompt = onShowAuthPrompt,
             )

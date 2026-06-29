@@ -4,10 +4,12 @@ import com.reelshort.app.config.ApiConfig
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
@@ -16,12 +18,17 @@ import com.reelshort.app.network.dto.AuthRequestDto
 import com.reelshort.app.network.dto.AuthSessionDto
 import com.reelshort.app.network.dto.ApiHealthStatusDto
 import com.reelshort.app.network.dto.BackendApiResponse
+import com.reelshort.app.network.dto.CommentDto
+import com.reelshort.app.network.dto.CommentRequestDto
 import com.reelshort.app.network.dto.ContentBookDto
 import com.reelshort.app.network.dto.ContentEpisodeDto
 import com.reelshort.app.network.dto.ContentVideoDto
+import com.reelshort.app.network.dto.FavoriteBookDto
+import com.reelshort.app.network.dto.FavoriteRequestDto
 import com.reelshort.app.network.dto.PointAccountDto
 import com.reelshort.app.network.dto.PointRecordDto
 import com.reelshort.app.network.dto.RechargeOrderDto
+import com.reelshort.app.network.dto.SocialToggleDto
 import com.reelshort.app.network.dto.WatchProgressRequestDto
 import com.reelshort.app.network.dto.WatchEpisodeSnapshotDto
 import com.reelshort.app.network.dto.WatchRecordDto
@@ -121,6 +128,47 @@ class OkHttpReelShortApiClient(
     override suspend fun getOrders(): List<RechargeOrderSummary> =
         get<List<RechargeOrderDto>>("/orders", authenticated = true).map { it.toDomain() }
 
+    override suspend fun toggleLike(bookId: String): SocialToggleResult =
+        post<Unit, SocialToggleDto>(socialPath(bookId, "like"), Unit, authenticated = true).toDomain()
+
+    override suspend fun getLikeStatus(bookId: String): SocialToggleResult =
+        get<SocialToggleDto>(socialSegments(bookId, "like-status"), authenticated = true).toDomain()
+
+    override suspend fun toggleFavorite(
+        bookId: String,
+        bookTitle: String,
+        filteredTitle: String,
+        coverUrl: String?,
+        chapterCount: Int,
+    ): SocialToggleResult = post<FavoriteRequestDto, SocialToggleDto>(
+        socialPath(bookId, "favorite"),
+        FavoriteRequestDto(bookTitle, filteredTitle, coverUrl, chapterCount),
+        authenticated = true,
+    ).toDomain()
+
+    override suspend fun getFavoriteStatus(bookId: String): SocialToggleResult =
+        get<SocialToggleDto>(socialSegments(bookId, "favorite-status"), authenticated = true).toDomain()
+
+    override suspend fun addComment(bookId: String, content: String): Comment =
+        post<CommentRequestDto, CommentDto>(
+            socialPath(bookId, "comments"),
+            CommentRequestDto(content),
+            authenticated = true,
+        ).toDomain()
+
+    override suspend fun listComments(bookId: String): List<Comment> =
+        get<List<CommentDto>>(socialSegments(bookId, "comments"), authenticated = false).map { it.toDomain() }
+
+    override suspend fun listMyFavorites(): List<BookSummary> =
+        get<List<FavoriteBookDto>>(listOf("social", "my", "favorites"), authenticated = true)
+            .map { it.toDomain() }
+
+    private fun socialPath(bookId: String, action: String): String =
+        "/social/books/$bookId/$action"
+
+    private fun socialSegments(bookId: String, action: String): List<String> =
+        listOf("social", "books", bookId, action)
+
     private suspend inline fun <reified RequestDto, reified ResponseDto> post(
         path: String,
         requestDto: RequestDto,
@@ -196,6 +244,13 @@ class OkHttpReelShortApiClient(
 
     private fun RechargeOrderDto.toDomain(): RechargeOrderSummary =
         RechargeOrderSummary(orderNo, amountCents, pointAmount, status)
+
+    private fun SocialToggleDto.toDomain(): SocialToggleResult = SocialToggleResult(active, count)
+
+    private fun CommentDto.toDomain(): Comment = Comment(id, username, content, createdAt)
+
+    private fun FavoriteBookDto.toDomain(): BookSummary =
+        BookSummary(bookId, bookTitle, filteredTitle, coverUrl, "", chapterCount)
 
     private suspend fun Request.Builder.applyAuthentication(authenticated: Boolean): Request.Builder {
         if (!authenticated) {

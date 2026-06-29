@@ -333,6 +333,115 @@ class OkHttpReelShortApiClientTest {
         }
     }
 
+    @Test
+    fun toggleLikePostsAuthenticatedAndParsesResult() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""{ "active": true, "count": 1 }"""))
+            val client = client(server, token = "token-123")
+
+            val result = client.toggleLike("book-1")
+
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/api/app/social/books/book-1/like", request.path)
+            assertEquals("Bearer token-123", request.getHeader("Authorization"))
+            assertEquals(true, result.active)
+            assertEquals(1, result.count)
+        }
+    }
+
+    @Test
+    fun listCommentsReadsGuestEndpointWithoutBearerToken() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                [
+                  {
+                    "id": "00000000-0000-0000-0000-000000000010",
+                    "username": "social-carol",
+                    "content": "nice drama",
+                    "createdAt": "2026-06-29T10:28:00Z"
+                  }
+                ]
+            """.trimIndent()))
+            val client = client(server, token = null)
+
+            val comments = client.listComments("book-1")
+
+            val request = server.takeRequest()
+            assertEquals("/api/app/social/books/book-1/comments", request.path)
+            assertEquals(null, request.getHeader("Authorization"))
+            assertEquals(1, comments.size)
+            assertEquals("nice drama", comments.single().content)
+        }
+    }
+
+    @Test
+    fun addCommentPostsAuthenticatedBody() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                {
+                  "id": "00000000-0000-0000-0000-000000000011",
+                  "username": "demo",
+                  "content": "great",
+                  "createdAt": "2026-06-29T10:28:00Z"
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val comment = client.addComment("book-1", "great")
+
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/api/app/social/books/book-1/comments", request.path)
+            val body = request.body.readUtf8()
+            assert(body.contains("\"content\":\"great\""))
+            assertEquals("great", comment.content)
+        }
+    }
+
+    @Test
+    fun toggleFavoritePostsSnapshotBodyAndParsesResult() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""{ "active": true, "count": 1 }"""))
+            val client = client(server, token = "token-123")
+
+            val result = client.toggleFavorite("book-1", "Love Story", "love-story", "http://cover", 12)
+
+            val request = server.takeRequest()
+            assertEquals("/api/app/social/books/book-1/favorite", request.path)
+            val body = request.body.readUtf8()
+            assert(body.contains("\"bookTitle\":\"Love Story\""))
+            assert(body.contains("\"chapterCount\":12"))
+            assertEquals(true, result.active)
+        }
+    }
+
+    @Test
+    fun listMyFavoritesMapsToBookSummary() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                [
+                  {
+                    "bookId": "book-fav",
+                    "bookTitle": "Love Story",
+                    "filteredTitle": "love-story",
+                    "coverUrl": "http://cover",
+                    "chapterCount": 12,
+                    "createdAt": "2026-06-29T10:28:00Z"
+                  }
+                ]
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val favorites = client.listMyFavorites()
+
+            assertEquals("/api/app/social/my/favorites", server.takeRequest().path)
+            assertEquals(1, favorites.size)
+            assertEquals("book-fav", favorites.single().id)
+            assertEquals(12, favorites.single().chapterCount)
+        }
+    }
+
     private fun client(server: MockWebServer, token: String? = null): OkHttpReelShortApiClient =
         OkHttpReelShortApiClient(
             config = ApiConfig(server.url("/api/app").toString()),

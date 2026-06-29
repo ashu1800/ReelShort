@@ -27,6 +27,7 @@ import com.reelshort.app.ui.format.navigationLabel
 import com.reelshort.app.ui.format.primaryTabs
 import com.reelshort.app.ui.screens.account.AccountScreen
 import com.reelshort.app.ui.screens.detail.DetailScreen
+import com.reelshort.app.ui.screens.favorites.FavoritesScreen
 import com.reelshort.app.ui.screens.home.HomeScreen
 import com.reelshort.app.ui.screens.player.PlayerScreen
 import com.reelshort.app.ui.screens.search.SearchScreen
@@ -46,9 +47,30 @@ internal fun MainShell(
     onOpenPlayer: (EpisodeSummary) -> Unit,
     onUpdatePlaybackPosition: (Int, Int) -> Unit,
     onAutoReportProgress: (Int, Int) -> Unit,
+    onToggleLike: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onSubmitComment: (String) -> Unit,
+    onOpenFavorites: () -> Unit,
+    onBackFromPlayer: () -> Unit,
+    onBackFromFavorites: () -> Unit,
     onCheckApiHealth: () -> Unit,
     onShowAuthPrompt: () -> Unit,
 ) {
+    // 播放器全屏渲染：跳出底部导航与状态栏占位，沉浸式短剧播放
+    if (state.screen == AppScreen.PLAYER) {
+        AppBackground {
+            PlayerScreen(
+                state = state,
+                onBack = onBackFromPlayer,
+                onUpdatePlaybackPosition = onUpdatePlaybackPosition,
+                onAutoReportProgress = onAutoReportProgress,
+                onToggleLike = onToggleLike,
+                onToggleFavorite = onToggleFavorite,
+                onSubmitComment = onSubmitComment,
+            )
+        }
+        return
+    }
     AppBackground {
         Scaffold(
             containerColor = Color.Transparent,
@@ -87,7 +109,8 @@ internal fun MainShell(
                         AppScreen.HOME -> HomeScreen(state.homeShelf, onOpenBook)
                         AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
                         AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, onOpenPlayer)
-                        AppScreen.PLAYER -> PlayerScreen(state, onUpdatePlaybackPosition, onAutoReportProgress)
+                        AppScreen.PLAYER -> Unit
+                        AppScreen.FAVORITES -> FavoritesScreen(state.favorites, onOpenBook, onBackFromFavorites)
                         AppScreen.ACCOUNT -> AccountScreen(
                             records = state.watchHistory,
                             isLoggedIn = state.session != null,
@@ -99,6 +122,7 @@ internal fun MainShell(
                             apiHealthStatus = state.apiHealthStatus,
                             onCheckApiHealth = onCheckApiHealth,
                             onShowAuthPrompt = onShowAuthPrompt,
+                            onOpenFavorites = onOpenFavorites,
                             onLogout = onLogout,
                         )
                     }

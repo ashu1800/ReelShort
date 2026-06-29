@@ -96,3 +96,25 @@ data class RechargeOrderSummary(
     val pointAmount: Int,
     val status: String,
 )
+
+/** 单级文字评论。 */
+data class Comment(
+    val id: String,
+    val username: String,
+    val content: String,
+    val createdAt: String,
+)
+
+/** 当前剧的互动状态：是否已点赞/收藏及计数。 */
+data class BookInteractionState(
+    val liked: Boolean = false,
+    val likeCount: Int = 0,
+    val favorited: Boolean = false,
+    val favoriteCount: Int = 0,
+)
+
+/** 点赞/收藏切换接口返回的单项结果。 */
+data class SocialToggleResult(
+    val active: Boolean,
+    val count: Int,
+)

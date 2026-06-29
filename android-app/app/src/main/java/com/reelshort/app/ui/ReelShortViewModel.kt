@@ -71,6 +71,26 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.reportProgressSilently(positionSeconds, durationSeconds) }
     }
 
+    fun toggleLike() {
+        viewModelScope.launch { controller.toggleLike() }
+    }
+
+    fun toggleFavorite() {
+        viewModelScope.launch { controller.toggleFavorite() }
+    }
+
+    fun submitComment(content: String) {
+        viewModelScope.launch { controller.submitComment(content) }
+    }
+
+    fun openFavorites() {
+        viewModelScope.launch { controller.openFavorites() }
+    }
+
+    fun backFromPlayer() = controller.backToDetail()
+
+    fun backFromFavorites() = controller.backToAccount()
+
     fun checkApiHealth() {
         viewModelScope.launch { controller.checkApiHealth() }
     }
