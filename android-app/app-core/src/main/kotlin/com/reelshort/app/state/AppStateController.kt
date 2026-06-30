@@ -18,10 +18,20 @@ import kotlinx.coroutines.flow.update
 class AppStateController(private val dataSource: AppDataSource) {
     private val mutableState = MutableStateFlow(AppUiState(apiBaseUrl = dataSource.apiBaseUrl))
     private var rewardReportInFlight = false
+    private var sessionRestored = false
+    private var searchRequestVersion = 0L
+    private var openBookRequestVersion = 0L
+    private var accountRequestVersion = 0L
+    private var favoritesRequestVersion = 0L
 
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
     suspend fun restoreSession() = runWithLoading(ErrorContext.CONTENT) {
+        if (sessionRestored) {
+            mutableState.update { it.copy(isLoading = false) }
+            return@runWithLoading
+        }
+        sessionRestored = true
         val session = dataSource.restoreSession()
         val savedCredentials = dataSource.loadSavedCredentials()
         val cachedHomeShelf = dataSource.loadCachedHomeShelf()
@@ -122,7 +132,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                     errorMessage = null,
                 )
             }
-            loadAccountSnapshotForAuthenticatedUser()
+            loadAccountSnapshot()
             return
         }
         val homeShelf = try {
@@ -212,7 +222,11 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun search(query: String) = runWithLoading(ErrorContext.CONTENT) {
+        val requestVersion = ++searchRequestVersion
         val results = dataSource.search(query)
+        if (requestVersion != searchRequestVersion) {
+            return@runWithLoading
+        }
         mutableState.update {
             it.copy(
                 screen = AppScreen.SEARCH,
@@ -228,7 +242,11 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun openBook(book: BookSummary) = runWithLoading(ErrorContext.CONTENT) {
+        val requestVersion = ++openBookRequestVersion
         val episodes = dataSource.loadEpisodes(book)
+        if (requestVersion != openBookRequestVersion) {
+            return@runWithLoading
+        }
         mutableState.update {
             it.copy(
                 screen = AppScreen.DETAIL,
@@ -444,13 +462,18 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun openFavorites() = runWithLoading(ErrorContext.ACCOUNT) {
+        val requestVersion = ++favoritesRequestVersion
         if (state.value.session == null) {
             mutableState.update {
                 it.copy(screen = AppScreen.FAVORITES, favorites = emptyList(), errorMessage = null, isLoading = false)
             }
             return@runWithLoading
         }
+        mutableState.update { it.copy(screen = AppScreen.FAVORITES) }
         val favorites = dataSource.loadMyFavorites()
+        if (requestVersion != favoritesRequestVersion || state.value.screen != AppScreen.FAVORITES) {
+            return@runWithLoading
+        }
         mutableState.update {
             it.copy(screen = AppScreen.FAVORITES, favorites = favorites, errorMessage = null, isLoading = false)
         }
@@ -461,6 +484,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     fun backToAccount() {
+        favoritesRequestVersion++
         mutableState.update { it.copy(screen = AppScreen.ACCOUNT, isLoading = false, errorMessage = null) }
     }
 
@@ -468,14 +492,39 @@ class AppStateController(private val dataSource: AppDataSource) {
         block()
     }
 
-    suspend fun loadAccountSnapshot() = runWithLoading(ErrorContext.ACCOUNT) {
-        loadAccountSnapshotForAuthenticatedUser()
+    suspend fun loadAccountSnapshot() {
+        val requestVersion = ++accountRequestVersion
+        mutableState.update { it.copy(screen = AppScreen.ACCOUNT) }
+        loadAccountSnapshot(requestVersion)
     }
 
-    private suspend fun loadAccountSnapshotForAuthenticatedUser() {
+    suspend fun openAccount() {
+        if (state.value.session == null) {
+            mutableState.update { it.copy(screen = AppScreen.ACCOUNT, errorMessage = null, isLoading = false) }
+            return
+        }
+        if (!hasAccountSnapshot(state.value)) {
+            val requestVersion = ++accountRequestVersion
+            mutableState.update { it.copy(screen = AppScreen.ACCOUNT) }
+            loadAccountSnapshot(requestVersion)
+            return
+        }
+
+        mutableState.update { it.copy(screen = AppScreen.ACCOUNT, errorMessage = null) }
+        refreshAccountSilently()
+    }
+
+    private suspend fun loadAccountSnapshot(requestVersion: Long) = runWithLoading(ErrorContext.ACCOUNT) {
+        loadAccountSnapshotForAuthenticatedUser(requestVersion)
+    }
+
+    private suspend fun loadAccountSnapshotForAuthenticatedUser(requestVersion: Long) {
         val history = dataSource.loadWatchHistory()
         val points = dataSource.loadPointAccount()
         val orders = dataSource.loadOrders()
+        if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            return
+        }
         mutableState.update {
             it.copy(
                 screen = AppScreen.ACCOUNT,
@@ -485,21 +534,6 @@ class AppStateController(private val dataSource: AppDataSource) {
                 isLoading = false,
             )
         }
-    }
-
-    suspend fun openAccount() {
-        if (state.value.session == null) {
-            mutableState.update { it.copy(screen = AppScreen.ACCOUNT, errorMessage = null, isLoading = false) }
-            return
-        }
-        if (!hasAccountSnapshot(state.value)) {
-            mutableState.update { it.copy(screen = AppScreen.ACCOUNT) }
-            loadAccountSnapshot()
-            return
-        }
-
-        mutableState.update { it.copy(screen = AppScreen.ACCOUNT, errorMessage = null) }
-        refreshAccountSilently()
     }
 
     private suspend fun refreshAccountSilently() {

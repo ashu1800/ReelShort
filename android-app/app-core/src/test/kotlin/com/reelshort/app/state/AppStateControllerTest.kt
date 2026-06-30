@@ -204,6 +204,25 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun slowerSearchResultDoesNotOverwriteNewerSearch() = runTest {
+        val firstGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource()
+        dataSource.searchGates["Alpha"] = firstGate
+        val controller = AppStateController(dataSource)
+
+        val firstSearch = launch { controller.search("Alpha") }
+        runCurrent()
+        controller.search("Beta")
+        firstGate.complete(Unit)
+        firstSearch.join()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.SEARCH, state.screen)
+        assertEquals("Beta", state.searchQuery)
+        assertEquals(listOf("book-2"), state.searchResults.map { it.id })
+    }
+
+    @Test
     fun openBookSelectsBookAndLoadsEpisodes() = runTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
@@ -218,6 +237,88 @@ class AppStateControllerTest {
         assertNull(state.selectedEpisode)
         assertNull(state.currentVideoUrl)
         assertEquals(listOf("episodes:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun repeatedRestoreSessionDoesNotResetCurrentScreen() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer"),
+        )
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        dataSource.calls.clear()
+        controller.restoreSession()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals("book-1", state.selectedBook?.id)
+        assertEquals(listOf(1, 2), state.episodes.map { it.number })
+        assertTrue(dataSource.calls.isEmpty())
+    }
+
+    @Test
+    fun slowerOpenBookResultDoesNotOverwriteNewerBook() = runTest {
+        val firstGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource()
+        dataSource.episodeGates["book-1"] = firstGate
+        val controller = AppStateController(dataSource)
+        val firstBook = dataSource.books.first()
+        val secondBook = dataSource.books.last()
+
+        val firstOpen = launch { controller.openBook(firstBook) }
+        runCurrent()
+        controller.openBook(secondBook)
+        firstGate.complete(Unit)
+        firstOpen.join()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals("book-2", state.selectedBook?.id)
+        assertEquals(listOf(1, 2), state.episodes.map { it.number })
+    }
+
+    @Test
+    fun slowerAccountRefreshDoesNotReturnUserToAccountAfterNavigatingAway() = runTest {
+        val accountGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer"),
+        )
+        dataSource.accountGate = accountGate
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+
+        val accountOpen = launch { controller.openAccount() }
+        runCurrent()
+        controller.openHome()
+        accountGate.complete(Unit)
+        accountOpen.join()
+
+        assertEquals(AppScreen.HOME, controller.state.value.screen)
+    }
+
+    @Test
+    fun slowerFavoritesLoadDoesNotReturnUserToFavoritesAfterBack() = runTest {
+        val favoritesGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer"),
+        )
+        dataSource.favoritesGate = favoritesGate
+        dataSource.favoritesList = listOf(dataSource.book("book-fav", "Love"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+
+        val favoritesOpen = launch { controller.openFavorites() }
+        runCurrent()
+        controller.backToAccount()
+        favoritesGate.complete(Unit)
+        favoritesOpen.join()
+
+        assertEquals(AppScreen.ACCOUNT, controller.state.value.screen)
+        assertTrue(controller.state.value.favorites.isEmpty())
     }
 
     @Test
@@ -683,7 +784,7 @@ class AppStateControllerTest {
         controller.checkApiHealth()
 
         val state = controller.state.value
-        assertEquals("http://66.42.99.110:18080/api/app", state.apiBaseUrl)
+        assertEquals("https://reelshort.hjj888.cc/api/app", state.apiBaseUrl)
         assertEquals("UP", state.apiHealthStatus?.status)
         assertEquals("fake-backend", state.apiHealthStatus?.service)
         assertEquals(listOf("health"), dataSource.calls)
@@ -987,6 +1088,8 @@ class AppStateControllerTest {
         )
         var homeError: Throwable? = homeError
         var homeGate: CompletableDeferred<Unit>? = null
+        val searchGates = mutableMapOf<String, CompletableDeferred<Unit>>()
+        val episodeGates = mutableMapOf<String, CompletableDeferred<Unit>>()
         var cachedHomeShelf: List<BookSummary> = cachedHomeShelf
         val savedHomeShelves = mutableListOf<List<BookSummary>>()
         var accountError: Throwable? = null
@@ -1018,12 +1121,13 @@ class AppStateControllerTest {
         var videoDurationSeconds: Int? = null
         var healthError: Throwable? = null
         var socialError: Throwable? = null
+        var favoritesGate: CompletableDeferred<Unit>? = null
         private val liked = mutableSetOf<String>()
         private val favorited = mutableSetOf<String>()
         private val commentStore = mutableListOf<Comment>()
         var favoritesList: List<BookSummary> = emptyList()
 
-        override val apiBaseUrl: String = "http://66.42.99.110:18080/api/app"
+        override val apiBaseUrl: String = "https://reelshort.hjj888.cc/api/app"
 
         override suspend fun checkSystemHealth(): ApiHealthStatus {
             calls += "health"
@@ -1062,11 +1166,13 @@ class AppStateControllerTest {
 
         override suspend fun search(query: String): List<BookSummary> {
             calls += "search:$query"
+            searchGates[query]?.await()
             return books.filter { it.title.contains(query, ignoreCase = true) }
         }
 
         override suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary> {
             calls += "episodes:${book.id}"
+            episodeGates[book.id]?.await()
             return episodes
         }
 
@@ -1209,6 +1315,7 @@ class AppStateControllerTest {
 
         override suspend fun loadMyFavorites(): List<BookSummary> {
             calls += "my-favorites"
+            favoritesGate?.await()
             socialError?.let { throw it }
             return favoritesList
         }

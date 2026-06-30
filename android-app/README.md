@@ -14,9 +14,9 @@ Android 原生客户端骨架，规划使用 Kotlin、Jetpack Compose 和 Androi
 ## 模块结构
 
 - `app`：Android Compose UI 模块，负责页面骨架和本地交互。
-- `app-core`：纯 Kotlin JVM 核心模块，包含 Spring Boot API 配置、统一响应模型、App 数据模型、`ReelShortApiClient` 边界、`FakeReelShortApiClient`、`OkHttpReelShortApiClient`、`SessionStore`、`InMemorySessionStore`、`FileSessionStore`、`AppDataSource`、`AppRepository`、`AppUiState`、`PlaybackState`、`AppStateController` 和 `AppUiActions`。
+- `app-core`：纯 Kotlin JVM 核心模块，包含 Spring Boot API 配置、统一响应模型、App 数据模型、`ReelShortApiClient` 边界、`FakeReelShortApiClient`、`OkHttpReelShortApiClient`、`SessionStore`、`InMemorySessionStore`、`FileSessionStore`、`AppDataSource`、`AppRepository`、`AppUiState`、`PlaybackState` 和 `AppStateController`。
 
-App 只访问 Spring Boot API，不直接访问 Flask 内容源服务。当前 `FakeReelShortApiClient` 用于无 Android SDK 环境下的结构验证；`OkHttpReelShortApiClient` 用于真实 Spring Boot API 访问，并通过 token provider 为受保护 App 业务接口添加 Bearer Token；健康检查使用公开的 `/api/system/health`，不携带 Bearer Token。`SessionStore` 提供纯 Kotlin 会话存储边界，`FileSessionStore` 使用本地 JSON 文件保存登录会话，当前 Android 组合根使用 `filesDir/reelshort-session.json` 恢复登录状态；后续平台层可替换为 DataStore 或加密 SharedPreferences。`AppStateController` 以 `StateFlow<AppUiState>` 暴露登录、启动恢复、登出、首页、搜索、详情、播放、观看上报、积分、观看记录、订单和 API 诊断状态，Compose UI 只负责展示状态和触发动作。`PlaybackState` 保存当前剧集、分集、播放 URL、播放位置、进度百分比、已上报进度和播放地址刷新结果，播放页通过 Media3 消费合法 HTTP/HTTPS 媒体 URL，定时同步播放器当前位置，并只通过用户手动点击上报观看奖励阶段。
+App 只访问 Spring Boot API，不直接访问 Flask 内容源服务。生产默认 API 地址为 `https://reelshort.hjj888.cc/api/app`，本地联调可通过 Gradle 属性 `reelshortApiBaseUrl` 覆盖。当前 `FakeReelShortApiClient` 用于无 Android SDK 环境下的结构验证；`OkHttpReelShortApiClient` 用于真实 Spring Boot API 访问，并通过 token provider 为受保护 App 业务接口添加 Bearer Token；健康检查使用公开的 `/api/system/health`，不携带 Bearer Token。`SessionStore` 提供纯 Kotlin 会话存储边界，`FileSessionStore` 保留给 JVM 测试和非 Android fallback，Android 组合根优先使用 AndroidX Security Crypto 加密保存登录会话和记住密码凭据。`AppStateController` 以 `StateFlow<AppUiState>` 暴露登录、启动恢复、登出、首页、搜索、详情、播放、观看上报、积分、观看记录、订单和 API 诊断状态，并避免重复启动恢复覆盖当前页面；Compose UI 只负责展示状态和触发动作。`PlaybackState` 保存当前剧集、分集、播放 URL、播放位置、进度百分比、已上报进度和播放地址刷新结果，播放页通过 Media3 消费合法 HTTP/HTTPS 媒体 URL，定时同步播放器当前位置，并自动静默上报观看奖励阶段。
 
 当前机器已配置 Android SDK，可构建 debug APK 并安装到雷电模拟器进行基础启动验证。
 

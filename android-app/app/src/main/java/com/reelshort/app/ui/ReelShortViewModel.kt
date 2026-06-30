@@ -14,6 +14,7 @@ import com.reelshort.app.session.FileSessionStore
 import com.reelshort.app.state.AppStateController
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.BuildConfig
+import com.reelshort.app.AndroidSessionStore
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
@@ -121,7 +122,10 @@ class ReelShortViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val context = application.applicationContext
                     val filesDir = context.filesDir
-                    val sessionStore = FileSessionStore(File(filesDir, "reelshort-session.json"))
+                    val sessionStore = AndroidSessionStore.create(
+                        context = context,
+                        fallback = FileSessionStore(File(filesDir, "reelshort-session.json")),
+                    )
                     val homeShelfStore = FileHomeShelfStore(File(filesDir, "home-shelf-cache.json"))
                     val credentialStore = com.reelshort.app.AndroidCredentialStore.create(context)
                     val apiConfig = ApiConfig(BuildConfig.REELSHORT_API_BASE_URL)
