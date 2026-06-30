@@ -223,19 +223,61 @@ class AppStateControllerTest {
     }
 
     @Test
-    fun openBookSelectsBookAndLoadsEpisodes() = runTest {
-        val dataSource = FakeAppDataSource()
+    fun openBookWithSessionDirectlyOpensFirstEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         val controller = AppStateController(dataSource)
         val book = dataSource.books.first()
 
+        controller.restoreSession()
+        dataSource.calls.clear()
         controller.openBook(book)
 
         val state = controller.state.value
-        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals(AppScreen.PLAYER, state.screen)
         assertSame(book, state.selectedBook)
         assertEquals(listOf(1, 2), state.episodes.map { it.number })
+        assertEquals(1, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
+        assertEquals(PlaybackStatus.READY, state.playback.status)
+        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookWithoutSessionKeepsCurrentScreenAndDefersFirstEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        val controller = AppStateController(dataSource)
+
+        controller.showSearch()
+        controller.openBook(dataSource.books.first())
+
+        val state = controller.state.value
+        assertEquals(AppScreen.SEARCH, state.screen)
+        assertEquals("book-1", state.selectedBook?.id)
+        assertEquals(listOf(1, 2), state.episodes.map { it.number })
+        assertTrue(state.authPromptVisible)
+        assertEquals(1, state.pendingPlaybackEpisode?.number)
+        assertNull(state.currentVideoUrl)
+        assertEquals(PlaybackStatus.IDLE, state.playback.status)
+        assertEquals(listOf("episodes:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookWithNoEpisodesKeepsCurrentScreenAndReportsContentError() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.episodes = emptyList()
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("book-1", state.selectedBook?.id)
+        assertTrue(state.episodes.isEmpty())
         assertNull(state.selectedEpisode)
         assertNull(state.currentVideoUrl)
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
         assertEquals(listOf("episodes:book-1"), dataSource.calls)
     }
 
@@ -252,7 +294,7 @@ class AppStateControllerTest {
         controller.restoreSession()
 
         val state = controller.state.value
-        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals("book-1", state.selectedBook?.id)
         assertEquals(listOf(1, 2), state.episodes.map { it.number })
         assertTrue(dataSource.calls.isEmpty())
@@ -261,12 +303,14 @@ class AppStateControllerTest {
     @Test
     fun slowerOpenBookResultDoesNotOverwriteNewerBook() = runTest {
         val firstGate = CompletableDeferred<Unit>()
-        val dataSource = FakeAppDataSource()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.episodeGates["book-1"] = firstGate
         val controller = AppStateController(dataSource)
         val firstBook = dataSource.books.first()
         val secondBook = dataSource.books.last()
 
+        controller.restoreSession()
+        dataSource.calls.clear()
         val firstOpen = launch { controller.openBook(firstBook) }
         runCurrent()
         controller.openBook(secondBook)
@@ -274,9 +318,10 @@ class AppStateControllerTest {
         firstOpen.join()
 
         val state = controller.state.value
-        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals("book-2", state.selectedBook?.id)
         assertEquals(listOf(1, 2), state.episodes.map { it.number })
+        assertEquals(1, state.selectedEpisode?.number)
     }
 
     @Test
@@ -330,7 +375,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(book)
-        controller.openPlayer(dataSource.episodes.first())
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
@@ -347,15 +391,33 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun openPlayerSwitchesEpisodeInsideCurrentBook() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+        dataSource.calls.clear()
+        controller.openPlayer(dataSource.episodes[1])
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(2, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
+        assertEquals(180, state.playback.durationSeconds)
+        assertEquals(listOf("snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
     fun openPlayerWithoutSessionShowsAuthPromptAndDefersEpisode() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = null)
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
 
         val state = controller.state.value
-        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals(AppScreen.HOME, state.screen)
         assertEquals(true, state.authPromptVisible)
         assertEquals(1, state.pendingPlaybackEpisode?.number)
         assertNull(state.currentVideoUrl)
@@ -369,7 +431,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.login("demo", "Password123")
 
         val state = controller.state.value
@@ -379,6 +440,28 @@ class AppStateControllerTest {
         assertNull(state.pendingPlaybackEpisode)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
         assertEquals(listOf("episodes:book-1", "login:demo", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun backToPlaybackSourceReturnsToOriginatingScreen() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.showSearch()
+        controller.openBook(dataSource.books.first())
+        controller.backToPlaybackSource()
+
+        assertEquals(AppScreen.SEARCH, controller.state.value.screen)
+    }
+
+    @Test
+    fun backToPlaybackSourceDefaultsToHome() {
+        val controller = AppStateController(FakeAppDataSource())
+
+        controller.backToPlaybackSource()
+
+        assertEquals(AppScreen.HOME, controller.state.value.screen)
     }
 
     @Test
@@ -397,7 +480,6 @@ class AppStateControllerTest {
 
         controller.restoreSession()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
 
         val state = controller.state.value
         assertEquals(120, state.playback.positionSeconds)
@@ -415,7 +497,6 @@ class AppStateControllerTest {
 
         controller.restoreSession()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
@@ -432,7 +513,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = 240, durationSeconds = 200)
 
         val state = controller.state.value
@@ -450,7 +530,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = -10, durationSeconds = 200)
 
         val state = controller.state.value
@@ -478,7 +557,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.reportProgress(positionSeconds = 150, durationSeconds = 200)
 
         val state = controller.state.value
@@ -504,7 +582,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.reportProgressSilently(positionSeconds = 50, durationSeconds = 200)
 
         val state = controller.state.value
@@ -530,7 +607,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = 40, durationSeconds = 200)
         controller.reportProgressSilently(positionSeconds = 160, durationSeconds = 200)
 
@@ -551,7 +627,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         dataSource.progressGate = CompletableDeferred()
 
         val job = launch { controller.reportProgressSilently(positionSeconds = 50, durationSeconds = 200) }
@@ -581,7 +656,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = 50, durationSeconds = 200)
         dataSource.progressError = IllegalStateException("backend unavailable")
         controller.reportProgressSilently(positionSeconds = 50, durationSeconds = 200)
@@ -605,7 +679,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.reportProgressSilently(positionSeconds = 150, durationSeconds = 200)
         controller.reportProgressSilently(positionSeconds = 160, durationSeconds = 200)
         controller.reportProgressSilently(positionSeconds = 200, durationSeconds = 200)
@@ -640,7 +713,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = 80, durationSeconds = 200)
         dataSource.videoUrlVersion = 2
         dataSource.videoDurationSeconds = 400
@@ -998,7 +1070,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
         controller.restoreSession()
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
         controller.toggleLike()
 
         val state = controller.state.value
@@ -1012,7 +1083,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
         controller.restoreSession()
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
         controller.toggleFavorite()
 
         val state = controller.state.value
@@ -1028,7 +1098,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
         controller.restoreSession()
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
 
         val likeJob = launch { controller.toggleLike() }
         runCurrent()
@@ -1046,7 +1115,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
         controller.restoreSession()
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
 
         controller.submitComment("nice drama")
 
@@ -1061,7 +1129,6 @@ class AppStateControllerTest {
         dataSource.socialError = ApiClientException(401, 401, "unauthorized")
         val controller = AppStateController(dataSource)
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
         controller.toggleLike()
 
         assertTrue(controller.state.value.authPromptVisible)
@@ -1119,7 +1186,7 @@ class AppStateControllerTest {
         var pointBalance: Int = 25
         var snapshot: WatchEpisodeSnapshot = WatchEpisodeSnapshot.empty("book-1", 1)
         var snapshotError: Throwable? = null
-        val episodes = listOf(
+        var episodes = listOf(
             EpisodeSummary(
                 number = 1,
                 chapterId = "chapter-1",

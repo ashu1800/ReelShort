@@ -21,12 +21,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Close
@@ -72,9 +76,12 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.reelshort.app.data.Comment
+import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.format.RewardBadgeState
 import com.reelshort.app.ui.format.RewardBadgeVisualState
+import com.reelshort.app.ui.format.episodeNumberLabel
+import com.reelshort.app.ui.format.episodeSelectorLabel
 import com.reelshort.app.ui.format.rewardBadgeState
 import com.reelshort.app.ui.format.playerStartsAutomatically
 import com.reelshort.app.ui.theme.DangerText
@@ -92,6 +99,7 @@ internal fun PlayerScreen(
     onAutoReportProgress: (Int, Int) -> Unit,
     onToggleLike: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onOpenPlayer: (EpisodeSummary) -> Unit,
     onSubmitComment: (String) -> Unit,
 ) {
     val playback = state.playback
@@ -99,6 +107,7 @@ internal fun PlayerScreen(
     val episode = playback.episode
     val playableUrl = playback.videoUrl?.url
     var commentSheetVisible by remember { mutableStateOf(false) }
+    var episodeSheetVisible by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         // 视频层
@@ -152,7 +161,10 @@ internal fun PlayerScreen(
             bookTitle = book?.title.orEmpty(),
             episodeTitle = episode?.title.orEmpty(),
             episodeDescription = (episode?.description?.ifBlank { null } ?: book?.description).orEmpty(),
+            episodes = state.episodes,
+            selectedEpisode = state.selectedEpisode,
             progressPercent = playback.progressPercent.coerceIn(0, 100),
+            onOpenEpisodeSheet = { episodeSheetVisible = true },
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
@@ -187,6 +199,20 @@ internal fun PlayerScreen(
             onDismiss = { commentSheetVisible = false },
             onSubmit = { content ->
                 onSubmitComment(content)
+            },
+        )
+    }
+
+    if (episodeSheetVisible) {
+        EpisodeSelectorBottomSheet(
+            episodes = state.episodes,
+            selectedEpisode = state.selectedEpisode,
+            onDismiss = { episodeSheetVisible = false },
+            onSelectEpisode = { selected ->
+                episodeSheetVisible = false
+                if (selected.number != state.selectedEpisode?.number || selected.chapterId != state.selectedEpisode?.chapterId) {
+                    onOpenPlayer(selected)
+                }
             },
         )
     }
@@ -398,7 +424,10 @@ private fun BottomInfo(
     bookTitle: String,
     episodeTitle: String,
     episodeDescription: String,
+    episodes: List<EpisodeSummary>,
+    selectedEpisode: EpisodeSummary?,
     progressPercent: Int,
+    onOpenEpisodeSheet: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -455,6 +484,135 @@ private fun BottomInfo(
                     .background(PrimaryGold),
             )
         }
+        if (episodes.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            EpisodeSelectorBar(
+                label = episodeSelectorLabel(episodes.size),
+                selectedEpisode = selectedEpisode,
+                onClick = onOpenEpisodeSheet,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EpisodeSelectorBar(
+    label: String,
+    selectedEpisode: EpisodeSummary?,
+    onClick: () -> Unit,
+) {
+    Surface(
+        color = Color(0xE61A1A1A),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    label,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (selectedEpisode != null) {
+                    Text(
+                        "当前 ${episodeNumberLabel(selectedEpisode.number)}",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "展开选集", tint = Color.White, modifier = Modifier.size(24.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EpisodeSelectorBottomSheet(
+    episodes: List<EpisodeSummary>,
+    selectedEpisode: EpisodeSummary?,
+    onDismiss: () -> Unit,
+    onSelectEpisode: (EpisodeSummary) -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF11151E),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(episodeSelectorLabel(episodes.size), color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "关闭",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(22.dp).clickable(onClick = onDismiss),
+                )
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 72.dp),
+                modifier = Modifier.fillMaxWidth().height(320.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 16.dp),
+            ) {
+                items(episodes, key = { "${it.chapterId}:${it.number}" }) { episode ->
+                    val selected = episode.chapterId == selectedEpisode?.chapterId && episode.number == selectedEpisode.number
+                    EpisodeSelectorItem(episode = episode, selected = selected, onClick = { onSelectEpisode(episode) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EpisodeSelectorItem(
+    episode: EpisodeSummary,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val background = if (selected) PrimaryGold else Color(0xFF1B202B)
+    val foreground = if (selected) OnPrimaryDark else TextPrimary
+    Box(
+        modifier = Modifier
+            .height(46.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(background)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            episode.number.coerceAtLeast(0).toString(),
+            color = foreground,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
     }
 }
 

@@ -93,7 +93,7 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.refreshHomeWithPull() }
     }
 
-    fun backFromPlayer() = controller.backToDetail()
+    fun backFromPlayer() = controller.backToPlaybackSource()
 
     fun backFromFavorites() = controller.backToAccount()
 

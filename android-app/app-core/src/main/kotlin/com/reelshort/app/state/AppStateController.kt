@@ -243,21 +243,49 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     suspend fun openBook(book: BookSummary) = runWithLoading(ErrorContext.CONTENT) {
         val requestVersion = ++openBookRequestVersion
+        val returnScreen = playbackReturnScreenFor(state.value.screen)
         val episodes = dataSource.loadEpisodes(book)
         if (requestVersion != openBookRequestVersion) {
             return@runWithLoading
         }
+        val firstEpisode = episodes.firstOrNull()
+        if (firstEpisode == null) {
+            mutableState.update {
+                it.copy(
+                    selectedBook = book,
+                    episodes = emptyList(),
+                    selectedEpisode = null,
+                    currentVideoUrl = null,
+                    playback = PlaybackState(),
+                    playerReturnScreen = returnScreen,
+                    isLoading = false,
+                    errorMessage = "内容暂时加载失败，可以稍后刷新。",
+                )
+            }
+            return@runWithLoading
+        }
         mutableState.update {
             it.copy(
-                screen = AppScreen.DETAIL,
                 selectedBook = book,
                 episodes = episodes,
                 selectedEpisode = null,
                 currentVideoUrl = null,
                 playback = PlaybackState(),
+                playerReturnScreen = returnScreen,
                 isLoading = false,
             )
         }
+        if (state.value.session == null) {
+            mutableState.update {
+                it.copy(
+                    authPromptVisible = true,
+                    pendingPlaybackEpisode = firstEpisode,
+                    isLoading = false,
+                )
+            }
+            return@runWithLoading
+        }
+        openPlayerForAuthenticatedUser(firstEpisode)
     }
 
     suspend fun openPlayer(episode: EpisodeSummary) = runWithLoading(ErrorContext.PLAYBACK) {
@@ -265,7 +293,6 @@ class AppStateController(private val dataSource: AppDataSource) {
         if (state.value.session == null) {
             mutableState.update {
                 it.copy(
-                    screen = AppScreen.DETAIL,
                     authPromptVisible = true,
                     pendingPlaybackEpisode = episode,
                     isLoading = false,
@@ -480,7 +507,17 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     fun backToDetail() {
-        mutableState.update { it.copy(screen = AppScreen.DETAIL, isLoading = false, errorMessage = null) }
+        backToPlaybackSource()
+    }
+
+    fun backToPlaybackSource() {
+        mutableState.update {
+            it.copy(
+                screen = it.playerReturnScreen ?: AppScreen.HOME,
+                isLoading = false,
+                errorMessage = null,
+            )
+        }
     }
 
     fun backToAccount() {
@@ -635,6 +672,13 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     private fun hasAccountSnapshot(state: AppUiState): Boolean =
         state.pointAccount != null || state.watchHistory.isNotEmpty() || state.orders.isNotEmpty()
+
+    private fun playbackReturnScreenFor(screen: AppScreen): AppScreen =
+        when (screen) {
+            AppScreen.SEARCH -> AppScreen.SEARCH
+            AppScreen.FAVORITES -> AppScreen.FAVORITES
+            else -> AppScreen.HOME
+        }
 
     private fun shouldPromptForLogin(error: Throwable, context: ErrorContext): Boolean =
         error is ApiClientException &&
