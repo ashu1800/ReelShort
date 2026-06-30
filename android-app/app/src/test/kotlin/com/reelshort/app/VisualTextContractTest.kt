@@ -15,6 +15,7 @@ import com.reelshort.app.ui.format.episodeRowActionLabel
 import com.reelshort.app.ui.format.episodeSubtitle
 import com.reelshort.app.ui.format.playerSurfaceAspectRatio
 import com.reelshort.app.ui.format.playerStartsAutomatically
+import com.reelshort.app.data.AppLanguage
 
 import com.reelshort.app.state.AppScreen
 import kotlin.test.Test
@@ -27,8 +28,15 @@ class VisualTextContractTest {
     fun bottomNavigationUsesReadableLabels() {
         val labels = primaryTabs.map { it.navigationLabel }
 
-        assertEquals(listOf("首页", "搜索", "账户"), labels)
+        assertEquals(listOf("首頁", "探索", "我的"), labels)
         assertTrue(labels.all { it.length >= 2 })
+    }
+
+    @Test
+    fun bottomNavigationUsesDefaultEnglishLabelsWhenLanguageIsEnglish() {
+        val labels = primaryTabs.map { it.navigationLabel(AppLanguage.ENGLISH) }
+
+        assertEquals(listOf("Home", "Discover", "Me"), labels)
     }
 
     @Test

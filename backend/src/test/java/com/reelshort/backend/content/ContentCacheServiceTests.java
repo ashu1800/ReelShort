@@ -47,33 +47,86 @@ class ContentCacheServiceTests {
 
 	@Test
 	void getShelfPersistsShelfAndBookCacheWhenProviderSucceeds() {
-		when(contentProvider.getShelf(ContentShelfType.RECOMMEND)).thenReturn(List.of(book("book-1", "Recommended")));
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
+				.thenReturn(List.of(book("book-1", "Recommended")));
 
-		List<ContentBook> books = contentCacheService.getShelf(ContentShelfType.RECOMMEND);
+		List<ContentBook> books = contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH);
 
 		assertThat(books).containsExactly(book("book-1", "Recommended"));
-		assertThat(contentShelfCacheRepository.findById(ContentShelfType.RECOMMEND)).isPresent()
+		assertThat(contentShelfCacheRepository.findByShelfTypeAndLocale(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).isPresent()
 				.get()
 				.satisfies(cache -> {
 					assertThat(cache.itemCount()).isEqualTo(1);
 					assertThat(cache.lastError()).isNull();
 					assertThat(cache.refreshedAt()).isNotNull();
 				});
-		assertThat(contentBookCacheRepository.findById("book-1")).isPresent()
+		assertThat(contentBookCacheRepository.findByBookIdAndLocale("book-1", ContentLocale.ENGLISH)).isPresent()
 				.get()
 				.satisfies(cache -> assertThat(cache.title()).isEqualTo("Recommended"));
 	}
 
 	@Test
+	void getShelfCachesSameBookIdSeparatelyByLocale() {
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
+				.thenReturn(List.of(book("book-1", "Love Story")));
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE))
+				.thenReturn(List.of(book("book-1", "愛情故事")));
+
+		List<ContentBook> english = contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH);
+		List<ContentBook> traditionalChinese = contentCacheService.getShelf(
+				ContentShelfType.RECOMMEND,
+				ContentLocale.TRADITIONAL_CHINESE);
+
+		assertThat(english).extracting(ContentBook::title).containsExactly("Love Story");
+		assertThat(traditionalChinese).extracting(ContentBook::title).containsExactly("愛情故事");
+		assertThat(contentBookCacheRepository.findByBookIdAndLocale("book-1", ContentLocale.ENGLISH)).isPresent()
+				.get()
+				.satisfies(cache -> assertThat(cache.title()).isEqualTo("Love Story"));
+		assertThat(contentBookCacheRepository.findByBookIdAndLocale("book-1", ContentLocale.TRADITIONAL_CHINESE)).isPresent()
+				.get()
+				.satisfies(cache -> assertThat(cache.title()).isEqualTo("愛情故事"));
+	}
+
+	@Test
+	void searchFallsBackToCachedMetadataWhenProviderFails() {
+		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(
+				new ContentBook("book-local", "Don't Toy with My Heart, Mr. Billionaire", "billionaire",
+						"https://example.com/local.jpg", "A rich CEO romance.", 60),
+				ContentLocale.ENGLISH));
+		when(contentProvider.search("Billionaire", ContentLocale.ENGLISH))
+				.thenThrow(new ContentProviderException(404, "content provider returned 404"));
+
+		List<ContentBook> books = contentCacheService.search("Billionaire", ContentLocale.ENGLISH);
+
+		assertThat(books).extracting(ContentBook::bookId).containsExactly("book-local");
+	}
+
+	@Test
+	void searchCachedFallbackKeepsLocaleBucketsIsolated() {
+		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(
+				new ContentBook("book-en", "Love Contract", "love-contract", "https://example.com/en.jpg", "", 20),
+				ContentLocale.ENGLISH));
+		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(
+				new ContentBook("book-zh", "愛情契約", "love-contract", "https://example.com/zh.jpg", "", 20),
+				ContentLocale.TRADITIONAL_CHINESE));
+		when(contentProvider.search("愛情", ContentLocale.TRADITIONAL_CHINESE))
+				.thenThrow(new ContentProviderException(404, "content provider returned 404"));
+
+		List<ContentBook> books = contentCacheService.search("愛情", ContentLocale.TRADITIONAL_CHINESE);
+
+		assertThat(books).extracting(ContentBook::bookId).containsExactly("book-zh");
+	}
+
+	@Test
 	void getShelfReturnsCachedShelfWithoutCallingProviderWhenCacheExists() {
-		when(contentProvider.getShelf(ContentShelfType.RECOMMEND))
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
 				.thenReturn(List.of(book("book-1", "Recommended")));
 
 		contentCacheService.getShelf(ContentShelfType.RECOMMEND);
 		List<ContentBook> cachedBooks = contentCacheService.getShelf(ContentShelfType.RECOMMEND);
 
 		assertThat(cachedBooks).containsExactly(book("book-1", "Recommended"));
-		verify(contentProvider, times(1)).getShelf(ContentShelfType.RECOMMEND);
+		verify(contentProvider, times(1)).getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH);
 		assertThat(contentShelfCacheRepository.findById(ContentShelfType.RECOMMEND)).isPresent()
 				.get()
 				.satisfies(cache -> assertThat(cache.lastError()).isNull());
@@ -82,12 +135,12 @@ class ContentCacheServiceTests {
 	@Test
 	void getShelfRefreshesCacheWhenCachedShelfJsonIsCorrupt() {
 		contentShelfCacheRepository.saveAndFlush(ContentShelfCache.create(ContentShelfType.RECOMMEND, "{broken", 1));
-		when(contentProvider.getShelf(ContentShelfType.RECOMMEND)).thenReturn(List.of(book("book-1", "Recovered")));
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(book("book-1", "Recovered")));
 
 		List<ContentBook> books = contentCacheService.getShelf(ContentShelfType.RECOMMEND);
 
 		assertThat(books).containsExactly(book("book-1", "Recovered"));
-		verify(contentProvider).getShelf(ContentShelfType.RECOMMEND);
+		verify(contentProvider).getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH);
 		assertThat(contentShelfCacheRepository.findById(ContentShelfType.RECOMMEND)).isPresent()
 				.get()
 				.satisfies(cache -> {
@@ -99,7 +152,7 @@ class ContentCacheServiceTests {
 	@Test
 	void getShelfRecordsCorruptCacheErrorWhenRefreshFails() {
 		contentShelfCacheRepository.saveAndFlush(ContentShelfCache.create(ContentShelfType.RECOMMEND, "{broken", 1));
-		when(contentProvider.getShelf(ContentShelfType.RECOMMEND))
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		assertThatThrownBy(() -> contentCacheService.getShelf(ContentShelfType.RECOMMEND))
@@ -113,7 +166,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void getShelfPropagatesProviderFailureWhenNoCacheExists() {
-		when(contentProvider.getShelf(ContentShelfType.NEW_RELEASE))
+		when(contentProvider.getShelf(ContentShelfType.NEW_RELEASE, ContentLocale.ENGLISH))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		assertThatThrownBy(() -> contentCacheService.getShelf(ContentShelfType.NEW_RELEASE))
@@ -123,7 +176,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void refreshShelfRecordsLastErrorWhenProviderFailsAndCacheExists() {
-		when(contentProvider.getShelf(ContentShelfType.RECOMMEND))
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
 				.thenReturn(List.of(book("book-1", "Recommended")))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 		contentCacheService.refreshShelf(ContentShelfType.RECOMMEND);
@@ -156,7 +209,7 @@ class ContentCacheServiceTests {
 	@Test
 	void getEpisodesPersistsEpisodeCacheWhenProviderSucceeds() {
 		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1", "", ""));
-		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
+		when(contentProvider.getEpisodesDetail("book-1", "love-story", ContentLocale.ENGLISH))
 				.thenReturn(new ContentEpisodesDetail(java.util.Optional.empty(), episodes));
 
 		List<ContentEpisode> response = contentCacheService.getEpisodes("book-1", "love-story");
@@ -173,7 +226,7 @@ class ContentCacheServiceTests {
 	@Test
 	void getEpisodesReturnsCachedEpisodesWithoutCallingProviderWhenCacheExists() {
 		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1", "", ""));
-		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
+		when(contentProvider.getEpisodesDetail("book-1", "love-story", ContentLocale.ENGLISH))
 				.thenReturn(new ContentEpisodesDetail(java.util.Optional.empty(), episodes));
 
 		contentCacheService.getEpisodes("book-1", "love-story");
@@ -183,7 +236,7 @@ class ContentCacheServiceTests {
 		assertThat(contentEpisodeCacheRepository.findByBookIdAndFilteredTitle("book-1", "love-story")).isPresent()
 				.get()
 				.satisfies(cache -> assertThat(cache.lastError()).isNull());
-		verify(contentProvider, times(1)).getEpisodesDetail("book-1", "love-story");
+		verify(contentProvider, times(1)).getEpisodesDetail("book-1", "love-story", ContentLocale.ENGLISH);
 		verifyNoMoreInteractions(contentProvider);
 	}
 
@@ -191,13 +244,13 @@ class ContentCacheServiceTests {
 	void getEpisodesRefreshesCacheWhenCachedEpisodeJsonIsCorrupt() {
 		contentEpisodeCacheRepository.saveAndFlush(ContentEpisodeCache.create("book-1", "love-story", "{broken", 1));
 		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1", "", ""));
-		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
+		when(contentProvider.getEpisodesDetail("book-1", "love-story", ContentLocale.ENGLISH))
 				.thenReturn(new ContentEpisodesDetail(Optional.empty(), episodes));
 
 		List<ContentEpisode> response = contentCacheService.getEpisodes("book-1", "love-story");
 
 		assertThat(response).containsExactlyElementsOf(episodes);
-		verify(contentProvider).getEpisodesDetail("book-1", "love-story");
+		verify(contentProvider).getEpisodesDetail("book-1", "love-story", ContentLocale.ENGLISH);
 		assertThat(contentEpisodeCacheRepository.findByBookIdAndFilteredTitle("book-1", "love-story")).isPresent()
 				.get()
 				.satisfies(cache -> {
@@ -209,7 +262,7 @@ class ContentCacheServiceTests {
 	@Test
 	void getEpisodesRecordsCorruptCacheErrorWhenRefreshFails() {
 		contentEpisodeCacheRepository.saveAndFlush(ContentEpisodeCache.create("book-1", "love-story", "{broken", 1));
-		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
+		when(contentProvider.getEpisodesDetail("book-1", "love-story", ContentLocale.ENGLISH))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		assertThatThrownBy(() -> contentCacheService.getEpisodes("book-1", "love-story"))
@@ -223,7 +276,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void getEpisodesPropagatesProviderFailureWhenNoCacheExists() {
-		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
+		when(contentProvider.getEpisodesDetail("book-1", "love-story", ContentLocale.ENGLISH))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		assertThatThrownBy(() -> contentCacheService.getEpisodes("book-1", "love-story"))
@@ -233,7 +286,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void cacheStatusIncludesAllShelvesAndBookCount() {
-		when(contentProvider.getShelf(ContentShelfType.DRAMA_DUB)).thenReturn(List.of(book("book-dub", "Dub")));
+		when(contentProvider.getShelf(ContentShelfType.DRAMA_DUB, ContentLocale.ENGLISH)).thenReturn(List.of(book("book-dub", "Dub")));
 		contentCacheService.getShelf(ContentShelfType.DRAMA_DUB);
 
 		ContentCacheStatusResponse status = contentCacheService.status();
@@ -251,7 +304,7 @@ class ContentCacheServiceTests {
 	@Test
 	void getVideoUrlPersistsVideoCacheWhenProviderSucceeds() {
 		ContentVideo video = new ContentVideo("https://cdn.example.com/1.m3u8", 1, 120, null);
-		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1")).thenReturn(video);
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1", ContentLocale.ENGLISH)).thenReturn(video);
 
 		ContentVideo response = contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1");
 
@@ -269,7 +322,7 @@ class ContentCacheServiceTests {
 	@Test
 	void getVideoUrlFallsBackToCachedVideoWhenProviderUnavailable() {
 		ContentVideo video = new ContentVideo("https://cdn.example.com/1.m3u8", 1, 120, null);
-		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1", ContentLocale.ENGLISH))
 				.thenReturn(video)
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
@@ -286,7 +339,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void getVideoUrlPropagatesProviderFailureWhenNoCacheExists() {
-		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1", ContentLocale.ENGLISH))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		assertThatThrownBy(() -> contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
@@ -296,7 +349,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void getVideoUrlDoesNotFallbackOn404() {
-		when(contentProvider.getVideoUrl("book-1", 99, "love-story", "missing"))
+		when(contentProvider.getVideoUrl("book-1", 99, "love-story", "missing", ContentLocale.ENGLISH))
 				.thenThrow(new ContentProviderException(404, "upstream not found"));
 
 		assertThatThrownBy(() -> contentCacheService.getVideoUrl("book-1", 99, "love-story", "missing"))
@@ -310,7 +363,7 @@ class ContentCacheServiceTests {
 	@Test
 	void getEpisodesPopulatesBookCacheForDetailLookup() {
 		ContentBook book = book("book-detail", "Detail");
-		when(contentProvider.getEpisodesDetail("book-detail", "detail"))
+		when(contentProvider.getEpisodesDetail("book-detail", "detail", ContentLocale.ENGLISH))
 				.thenReturn(new ContentEpisodesDetail(Optional.of(book),
 						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
 
@@ -321,7 +374,7 @@ class ContentCacheServiceTests {
 
 	@Test
 	void getEpisodesSkipsBookBackfillWhenBookAbsent() {
-		when(contentProvider.getEpisodesDetail("book-sparse", "sparse"))
+		when(contentProvider.getEpisodesDetail("book-sparse", "sparse", ContentLocale.ENGLISH))
 				.thenReturn(new ContentEpisodesDetail(Optional.empty(),
 						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
 

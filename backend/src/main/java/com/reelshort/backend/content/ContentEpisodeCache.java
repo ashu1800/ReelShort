@@ -5,13 +5,15 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 @Entity
 @Table(name = "content_episode_cache",
-		uniqueConstraints = @UniqueConstraint(columnNames = { "book_id", "filtered_title" }))
+		uniqueConstraints = @UniqueConstraint(columnNames = { "book_id", "filtered_title", "locale" }))
 public class ContentEpisodeCache {
 
 	@Id
@@ -22,6 +24,10 @@ public class ContentEpisodeCache {
 
 	@Column(name = "filtered_title", nullable = false, length = 255)
 	private String filteredTitle;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 32)
+	private ContentLocale locale;
 
 	@Column(name = "episodes_json", nullable = false, columnDefinition = "text")
 	private String episodesJson;
@@ -38,11 +44,12 @@ public class ContentEpisodeCache {
 	protected ContentEpisodeCache() {
 	}
 
-	private ContentEpisodeCache(UUID id, String bookId, String filteredTitle, String episodesJson, int episodeCount,
-			OffsetDateTime refreshedAt) {
+	private ContentEpisodeCache(UUID id, String bookId, String filteredTitle, ContentLocale locale, String episodesJson,
+			int episodeCount, OffsetDateTime refreshedAt) {
 		this.id = id;
 		this.bookId = bookId;
 		this.filteredTitle = filteredTitle;
+		this.locale = locale;
 		this.episodesJson = episodesJson;
 		this.episodeCount = episodeCount;
 		this.refreshedAt = refreshedAt;
@@ -50,7 +57,12 @@ public class ContentEpisodeCache {
 
 	public static ContentEpisodeCache create(String bookId, String filteredTitle, String episodesJson,
 			int episodeCount) {
-		return new ContentEpisodeCache(UUID.randomUUID(), bookId, filteredTitle, episodesJson, episodeCount,
+		return create(bookId, filteredTitle, ContentLocale.ENGLISH, episodesJson, episodeCount);
+	}
+
+	public static ContentEpisodeCache create(String bookId, String filteredTitle, ContentLocale locale,
+			String episodesJson, int episodeCount) {
+		return new ContentEpisodeCache(UUID.randomUUID(), bookId, filteredTitle, locale, episodesJson, episodeCount,
 				OffsetDateTime.now());
 	}
 
@@ -75,6 +87,10 @@ public class ContentEpisodeCache {
 
 	public String filteredTitle() {
 		return filteredTitle;
+	}
+
+	public ContentLocale locale() {
+		return locale;
 	}
 
 	public String episodesJson() {

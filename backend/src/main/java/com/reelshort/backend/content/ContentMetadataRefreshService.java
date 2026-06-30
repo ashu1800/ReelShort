@@ -33,13 +33,17 @@ public class ContentMetadataRefreshService {
 	int refreshShelves(List<String> shelfValues) {
 		int refreshed = 0;
 		for (String shelfValue : shelfValues) {
-			try {
-				ContentShelfType shelfType = ContentShelfType.fromApiValue(shelfValue);
-				contentCacheService.refreshShelf(shelfType);
-				refreshed++;
-			}
-			catch (IllegalArgumentException | ContentProviderException exception) {
-				log.warn("Content metadata refresh skipped shelf {}: {}", shelfValue, exception.getMessage());
+			for (String localeValue : properties.getLocales()) {
+				try {
+					ContentShelfType shelfType = ContentShelfType.fromApiValue(shelfValue);
+					ContentLocale locale = ContentLocale.fromApiValue(localeValue);
+					contentCacheService.refreshShelf(shelfType, locale);
+					refreshed++;
+				}
+				catch (IllegalArgumentException | ContentProviderException exception) {
+					log.warn("Content metadata refresh skipped shelf {} locale {}: {}", shelfValue, localeValue,
+							exception.getMessage());
+				}
 			}
 		}
 		return refreshed;

@@ -4,16 +4,27 @@ import java.time.OffsetDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "content_book_cache")
+@Table(name = "content_book_cache",
+		uniqueConstraints = @UniqueConstraint(columnNames = { "book_id", "locale" }))
 public class ContentBookCache {
 
 	@Id
+	@Column(length = 36)
+	private String id;
+
 	@Column(name = "book_id", length = 128)
 	private String bookId;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 32)
+	private ContentLocale locale;
 
 	@Column(nullable = false, length = 255)
 	private String title;
@@ -36,8 +47,10 @@ public class ContentBookCache {
 	protected ContentBookCache() {
 	}
 
-	private ContentBookCache(ContentBook book, OffsetDateTime updatedAt) {
+	private ContentBookCache(ContentBook book, ContentLocale locale, OffsetDateTime updatedAt) {
+		this.id = key(book.bookId(), locale);
 		this.bookId = book.bookId();
+		this.locale = locale;
 		this.title = book.title();
 		this.filteredTitle = book.filteredTitle();
 		this.coverUrl = book.coverUrl();
@@ -47,7 +60,11 @@ public class ContentBookCache {
 	}
 
 	public static ContentBookCache from(ContentBook book) {
-		return new ContentBookCache(book, OffsetDateTime.now());
+		return from(book, ContentLocale.ENGLISH);
+	}
+
+	public static ContentBookCache from(ContentBook book, ContentLocale locale) {
+		return new ContentBookCache(book, locale, OffsetDateTime.now());
 	}
 
 	public void update(ContentBook book) {
@@ -61,6 +78,10 @@ public class ContentBookCache {
 
 	public String bookId() {
 		return bookId;
+	}
+
+	public ContentLocale locale() {
+		return locale;
 	}
 
 	public String title() {
@@ -89,5 +110,9 @@ public class ContentBookCache {
 
 	public ContentBook toContentBook() {
 		return new ContentBook(bookId, title, filteredTitle, coverUrl, description, chapterCount);
+	}
+
+	static String key(String bookId, ContentLocale locale) {
+		return locale == ContentLocale.ENGLISH ? bookId : bookId + "::" + locale.name();
 	}
 }

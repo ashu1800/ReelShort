@@ -25,11 +25,14 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -48,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.ApiHealthStatus
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.WatchRecord
@@ -60,6 +64,7 @@ import com.reelshort.app.ui.components.WatchRecordRow
 import com.reelshort.app.ui.components.verticalGradient
 import com.reelshort.app.ui.format.apiDiagnosticsText
 import com.reelshort.app.ui.format.guestAccountEntryLabels
+import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.DangerText
 import com.reelshort.app.ui.theme.Divider
 import com.reelshort.app.ui.theme.GoldSurfaceStrong
@@ -71,6 +76,7 @@ import com.reelshort.app.ui.theme.TextPrimary
 import com.reelshort.app.ui.theme.TextSecondary
 import com.reelshort.app.ui.theme.WhiteEdge
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AccountScreen(
     records: List<WatchRecord>,
@@ -85,9 +91,13 @@ internal fun AccountScreen(
     onShowAuthPrompt: () -> Unit,
     onOpenFavorites: () -> Unit,
     onLogout: () -> Unit,
+    language: AppLanguage,
+    onSetLanguage: (AppLanguage) -> Unit,
 ) {
     val diagnostics = apiDiagnosticsText(apiHealthStatus)
     var showDiagnostics by remember { mutableStateOf(false) }
+    var languageSheetVisible by remember { mutableStateOf(false) }
+    val copy = strings(language)
 
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
@@ -156,6 +166,14 @@ internal fun AccountScreen(
         item {
             AccountMenuGroup {
                 AccountMenuRow(
+                    icon = Icons.Rounded.Language,
+                    title = copy.languageTitle,
+                    subtitle = copy.languageSubtitle,
+                    trailing = language.displayName,
+                    onClick = { languageSheetVisible = true },
+                )
+                AccountMenuDivider()
+                AccountMenuRow(
                     icon = Icons.Rounded.Settings,
                     title = "开发诊断",
                     subtitle = diagnostics.label,
@@ -193,6 +211,29 @@ internal fun AccountScreen(
         if (isLoggedIn && records.isNotEmpty()) {
             item { SectionHeader("最近观看", "继续上次的短剧进度") }
             items(records.take(3), key = { "${it.bookId}-${it.episode}" }) { record -> WatchRecordRow(record) }
+        }
+    }
+    if (languageSheetVisible) {
+        ModalBottomSheet(onDismissRequest = { languageSheetVisible = false }, containerColor = Panel) {
+            Column(
+                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(copy.languageTitle, color = TextPrimary, style = MaterialTheme.typography.titleLarge)
+                AppLanguage.entries.forEach { option ->
+                    AccountMenuRow(
+                        icon = Icons.Rounded.Language,
+                        title = option.displayName,
+                        subtitle = option.locale,
+                        trailing = if (option == language) "Selected" else "",
+                        highlight = option == language,
+                        onClick = {
+                            languageSheetVisible = false
+                            onSetLanguage(option)
+                        },
+                    )
+                }
+            }
         }
     }
 }

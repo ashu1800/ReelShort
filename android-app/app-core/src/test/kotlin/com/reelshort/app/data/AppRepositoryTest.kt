@@ -5,6 +5,7 @@ import com.reelshort.app.session.FileSessionStore
 import com.reelshort.app.session.HomeShelfStore
 import com.reelshort.app.session.InMemoryCredentialStore
 import com.reelshort.app.session.InMemoryHomeShelfStore
+import com.reelshort.app.session.InMemoryLanguagePreferenceStore
 import com.reelshort.app.session.InMemorySessionStore
 import com.reelshort.app.session.SessionStore
 import kotlinx.coroutines.test.runTest
@@ -94,6 +95,31 @@ class AppRepositoryTest {
         repository.clearSavedCredentials()
 
         assertNull(repository.loadSavedCredentials())
+    }
+
+    @Test
+    fun languagePreferenceDefaultsToEnglishAndPersists() = runTest {
+        val languageStore = InMemoryLanguagePreferenceStore()
+        val repository = AppRepository(
+            FakeReelShortApiClient(),
+            InMemorySessionStore(),
+            InMemoryCredentialStore(),
+            InMemoryHomeShelfStore(),
+            languageStore,
+        )
+
+        assertEquals(AppLanguage.ENGLISH, repository.loadLanguagePreference())
+
+        repository.saveLanguagePreference(AppLanguage.TRADITIONAL_CHINESE)
+
+        val restoredRepository = AppRepository(
+            FakeReelShortApiClient(),
+            InMemorySessionStore(),
+            InMemoryCredentialStore(),
+            InMemoryHomeShelfStore(),
+            languageStore,
+        )
+        assertEquals(AppLanguage.TRADITIONAL_CHINESE, restoredRepository.loadLanguagePreference())
     }
 
     @Test

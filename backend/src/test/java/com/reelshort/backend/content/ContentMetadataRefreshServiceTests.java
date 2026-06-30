@@ -22,12 +22,15 @@ class ContentMetadataRefreshServiceTests {
 	void refreshShelvesRefreshesValidShelvesAndSkipsInvalidValues() {
 		ContentRefreshProperties properties = new ContentRefreshProperties();
 		ContentMetadataRefreshService service = new ContentMetadataRefreshService(contentCacheService, properties);
-		when(contentCacheService.refreshShelf(ContentShelfType.RECOMMEND)).thenReturn(List.of());
+		when(contentCacheService.refreshShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of());
+		when(contentCacheService.refreshShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE))
+				.thenReturn(List.of());
 
 		int refreshed = service.refreshShelves(List.of("recommend", "unknown"));
 
-		assertThat(refreshed).isEqualTo(1);
-		verify(contentCacheService).refreshShelf(ContentShelfType.RECOMMEND);
+		assertThat(refreshed).isEqualTo(2);
+		verify(contentCacheService).refreshShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH);
+		verify(contentCacheService).refreshShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE);
 	}
 
 	@Test

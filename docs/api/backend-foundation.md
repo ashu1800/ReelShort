@@ -45,27 +45,27 @@
 
 返回 Spring Boot 业务服务健康状态。
 
-### `GET /api/app/content/search?keywords={keywords}`
+### `GET /api/app/content/search?keywords={keywords}&locale={locale}`
 
-通过 `ContentProvider` 调用 Flask ReelShort 内容源搜索剧集，并转换为平台内部内容模型。
+通过 `ContentProvider` 调用 Flask ReelShort 内容源搜索剧集，并转换为平台内部内容模型。`locale` 可选，默认 `en`，当前支持 `en` 和 `zh-TW`。
 
-### `GET /api/app/home/recommend`
+### `GET /api/app/home/recommend?locale={locale}`
 
 通过内容缓存服务获取推荐货架。内容源调用成功后写入 PostgreSQL 缓存；内容源不可用且缓存存在时返回最后一次可用缓存。
 
-### `GET /api/app/content/shelves/{shelfType}`
+### `GET /api/app/content/shelves/{shelfType}?locale={locale}`
 
 通过内容缓存服务获取指定货架。支持 `recommend`、`new-release`、`drama-dub`。
 
-### `GET /api/app/content/books/{bookId}`
+### `GET /api/app/content/books/{bookId}?locale={locale}`
 
 从 PostgreSQL 内容书缓存返回剧集详情。客户端应先通过搜索、推荐或货架发现剧集；如果剧集尚未缓存，返回 `404`。
 
-### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}`
+### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}&locale={locale}`
 
 优先从 PostgreSQL 分集缓存返回指定剧集的分集列表；缓存不存在或损坏时才通过 `ContentProvider` 拉取并写入缓存。视频播放地址仍只在播放请求时实时获取。
 
-### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}`
+### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}&locale={locale}`
 
 通过 `ContentProvider` 获取指定分集的 HLS 播放地址、时长和下一集信息。
 
@@ -73,10 +73,10 @@
 
 `ContentProvider` 当前定义：
 
-- `search(String keywords)`
-- `getShelf(ContentShelfType shelfType)`
-- `getEpisodes(String bookId, String filteredTitle)`
-- `getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId)`
+- `search(String keywords, ContentLocale locale)`
+- `getShelf(ContentShelfType shelfType, ContentLocale locale)`
+- `getEpisodesDetail(String bookId, String filteredTitle, ContentLocale locale)`
+- `getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId, ContentLocale locale)`
 
 当前实现为 `FlaskContentProvider`，默认内容源地址：
 

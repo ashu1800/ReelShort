@@ -36,12 +36,12 @@ class FakeReelShortApiClient : ReelShortApiClient {
 
     override suspend fun register(username: String, password: String): AuthSession = login(username, password)
 
-    override suspend fun getHomeShelf(): List<BookSummary> = books
+    override suspend fun getHomeShelf(locale: String): List<BookSummary> = books
 
-    override suspend fun search(query: String): List<BookSummary> =
+    override suspend fun search(query: String, locale: String): List<BookSummary> =
         books.filter { it.title.contains(query, ignoreCase = true) || query.isBlank() }
 
-    override suspend fun getEpisodes(bookId: String, filteredTitle: String): List<EpisodeSummary> =
+    override suspend fun getEpisodes(bookId: String, filteredTitle: String, locale: String): List<EpisodeSummary> =
         (1..8).map {
             EpisodeSummary(
                 number = it,
@@ -52,7 +52,13 @@ class FakeReelShortApiClient : ReelShortApiClient {
             )
         }
 
-    override suspend fun getVideoUrl(bookId: String, episode: Int, filteredTitle: String, chapterId: String): VideoUrl =
+    override suspend fun getVideoUrl(
+        bookId: String,
+        episode: Int,
+        filteredTitle: String,
+        chapterId: String,
+        locale: String,
+    ): VideoUrl =
         VideoUrl("https://springboot.local/video/$bookId/$episode.m3u8", "application/vnd.apple.mpegurl", episode, 180)
 
     override suspend fun getEpisodeSnapshot(bookId: String, episode: Int): WatchEpisodeSnapshot =

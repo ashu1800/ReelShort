@@ -59,4 +59,8 @@ interface AppDataSource {
     suspend fun saveCredentials(credentials: SavedCredentials)
 
     suspend fun clearSavedCredentials()
+
+    suspend fun loadLanguagePreference(): AppLanguage
+
+    suspend fun saveLanguagePreference(language: AppLanguage)
 }

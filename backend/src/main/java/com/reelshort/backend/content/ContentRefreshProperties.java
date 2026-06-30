@@ -10,6 +10,8 @@ public class ContentRefreshProperties {
 
 	private boolean enabled = true;
 	private List<String> shelves = new ArrayList<>(List.of(ContentShelfType.RECOMMEND.apiValue()));
+	private List<String> locales = new ArrayList<>(List.of(ContentLocale.ENGLISH.apiValue(),
+			ContentLocale.TRADITIONAL_CHINESE.apiValue()));
 
 	public boolean isEnabled() {
 		return enabled;
@@ -25,5 +27,13 @@ public class ContentRefreshProperties {
 
 	public void setShelves(List<String> shelves) {
 		this.shelves = shelves;
+	}
+
+	public List<String> getLocales() {
+		return locales;
+	}
+
+	public void setLocales(List<String> locales) {
+		this.locales = locales;
 	}
 }

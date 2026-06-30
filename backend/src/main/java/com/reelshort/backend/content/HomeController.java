@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.reelshort.backend.auth.CurrentUser;
@@ -23,8 +24,19 @@ public class HomeController {
 	}
 
 	@GetMapping("/recommend")
-	public ApiResponse<List<ContentBook>> recommend(CurrentUser currentUser, HttpServletRequest request) {
+	public ApiResponse<List<ContentBook>> recommend(@RequestParam(required = false) String locale,
+			CurrentUser currentUser, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentCacheService.getShelf(ContentShelfType.RECOMMEND), requestId);
+		return ApiResponse.success(contentCacheService.getShelf(ContentShelfType.RECOMMEND, parseLocale(locale)),
+				requestId);
+	}
+
+	private ContentLocale parseLocale(String locale) {
+		try {
+			return ContentLocale.fromApiValue(locale);
+		}
+		catch (IllegalArgumentException exception) {
+			throw new ContentProviderException(400, "unsupported locale");
+		}
 	}
 }

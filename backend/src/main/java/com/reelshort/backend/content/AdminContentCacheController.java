@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.reelshort.backend.admin.AdminAuditService;
@@ -40,12 +41,23 @@ public class AdminContentCacheController {
 	@PostMapping("/shelves/{shelfType}/refresh")
 	@RequireAdminPermission(AdminPermissions.CONTENT_CACHE_WRITE)
 	public ApiResponse<List<ContentBook>> refreshShelf(CurrentAdmin currentAdmin, @PathVariable String shelfType,
-			HttpServletRequest request) {
+			@RequestParam(required = false) String locale, HttpServletRequest request) {
 		ContentShelfType resolvedShelfType = ContentShelfType.fromApiValue(shelfType);
-		List<ContentBook> books = contentCacheService.refreshShelf(resolvedShelfType);
+		ContentLocale resolvedLocale = parseLocale(locale);
+		List<ContentBook> books = contentCacheService.refreshShelf(resolvedShelfType, resolvedLocale);
 		adminAuditService.record(currentAdmin.username(), "CONTENT_CACHE_REFRESHED", "CONTENT_SHELF",
-				targetId(resolvedShelfType), "Refreshed content shelf " + resolvedShelfType.apiValue());
+				targetId(resolvedShelfType), "Refreshed content shelf " + resolvedShelfType.apiValue()
+						+ " locale " + resolvedLocale.apiValue());
 		return ApiResponse.success(books, requestId(request));
+	}
+
+	private ContentLocale parseLocale(String locale) {
+		try {
+			return ContentLocale.fromApiValue(locale);
+		}
+		catch (IllegalArgumentException exception) {
+			throw new ContentProviderException(400, "unsupported locale");
+		}
 	}
 
 	private UUID targetId(ContentShelfType shelfType) {

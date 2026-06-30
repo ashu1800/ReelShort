@@ -2,6 +2,7 @@ package com.reelshort.app.state
 
 import com.reelshort.app.data.AppDataSource
 import com.reelshort.app.data.ApiHealthStatus
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.Comment
@@ -1148,7 +1149,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertNull(state.session)
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -1163,7 +1164,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals(session, state.session)
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -1178,7 +1179,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals(session, state.session)
         assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
     }
 
     @Test
@@ -1204,7 +1205,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
         assertNull(state.errorMessage)
         // 读缓存（命中秒开）+ 后台网络拉取 + 写回新缓存。
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
         assertEquals(listOf(dataSource.books), dataSource.savedHomeShelves)
     }
 
@@ -1230,7 +1231,7 @@ class AppStateControllerTest {
         // 后台刷新失败静默吞掉，保留缓存数据，不给用户报错。
         assertEquals(listOf("cached-1"), state.homeShelf.map { it.id })
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
         // 失败时不写回缓存。
         assertTrue(dataSource.savedHomeShelves.isEmpty())
     }
@@ -1306,7 +1307,24 @@ class AppStateControllerTest {
         assertNull(state.session)
         assertEquals(emptyList(), state.homeShelf)
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save", "clear"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home", "home:cache:save", "clear"), dataSource.calls)
+    }
+
+    @Test
+    fun setLanguagePersistsPreferenceRefreshesHomeAndClearsSearchResults() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.search("Alpha")
+        dataSource.calls.clear()
+
+        controller.setLanguage(AppLanguage.TRADITIONAL_CHINESE)
+
+        val state = controller.state.value
+        assertEquals(AppLanguage.TRADITIONAL_CHINESE, state.language)
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("", state.searchQuery)
+        assertEquals(emptyList(), state.searchResults)
+        assertEquals(listOf("language:save:zh-TW", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -1462,6 +1480,7 @@ class AppStateControllerTest {
         private val favorited = mutableSetOf<String>()
         private val commentStore = mutableListOf<Comment>()
         var favoritesList: List<BookSummary> = emptyList()
+        var language: AppLanguage = AppLanguage.ENGLISH
 
         override val apiBaseUrl: String = "https://reelshort.hjj888.cc/api/app"
 
@@ -1609,6 +1628,16 @@ class AppStateControllerTest {
 
         override suspend fun clearSavedCredentials() {
             savedCredentials = null
+        }
+
+        override suspend fun loadLanguagePreference(): AppLanguage {
+            calls += "language:load"
+            return language
+        }
+
+        override suspend fun saveLanguagePreference(language: AppLanguage) {
+            calls += "language:save:${language.locale}"
+            this.language = language
         }
 
         override suspend fun toggleLike(book: BookSummary): SocialToggleResult {

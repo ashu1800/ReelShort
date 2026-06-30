@@ -12,23 +12,25 @@
 
 ## App API
 
-### `GET /api/app/home/recommend`
+以下 App 内容接口都支持可选 `locale` 参数，当前仅允许 `en` 和 `zh-TW`，默认 `en`。PostgreSQL 内容缓存按 locale 分桶：同一 `bookId` 的英文和繁體中文标题、封面、简介、分集标题可以分别保存；观看记录、收藏、点赞和评论仍按 `bookId` 关联，不按语言拆分。
+
+### `GET /api/app/home/recommend?locale={locale}`
 
 返回推荐货架内容。后端优先读取 PostgreSQL 货架缓存；缓存不存在时才调用 Flask 内容源并写入 `content_shelf_cache` 和 `content_book_cache`。后台刷新接口负责主动更新片库元数据。
 
-### `GET /api/app/content/shelves/{shelfType}`
+### `GET /api/app/content/shelves/{shelfType}?locale={locale}`
 
 返回指定货架内容。`shelfType` 必须是 `recommend`、`new-release` 或 `drama-dub`。读取策略与首页推荐一致：缓存优先，缺失时才拉取内容源。
 
-### `GET /api/app/content/books/{bookId}`
+### `GET /api/app/content/books/{bookId}?locale={locale}`
 
 返回已缓存剧集详情。详情来自搜索、推荐或货架写入的 PostgreSQL 内容书缓存；查看分集列表时内容源返回的书籍元信息也会自动回填缓存。没有缓存时返回 `404`。
 
-### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}`
+### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}&locale={locale}`
 
 返回剧集分集列表。后端优先读取 PostgreSQL 分集缓存；缓存不存在或缓存 JSON 损坏时才调用 Flask 内容源，调用成功后写入 `content_episode_cache`，并顺带把内容源返回的书籍元信息回填到详情缓存。缓存损坏且刷新失败时返回内容源错误，并记录最近错误。
 
-### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}`
+### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}&locale={locale}`
 
 返回单集播放地址。播放地址具备时效性，正常路径总是实时调用内容源获取最新地址，成功后写入 PostgreSQL 播放缓存；当内容源返回 `502`/`503`（不可用）且已有缓存时，回退返回最后一次播放地址缓存（尽力而为，旧地址可能已失效）；内容源返回 `404`（该集确实不存在）时不回退。
 
@@ -37,7 +39,7 @@
 首页、货架、剧集详情和分集列表等元数据以 PostgreSQL 自有缓存为主。上游新增短剧时，不依赖 App 首页实时拉上游，而是通过两条路径进入自有库：
 
 - 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh` 强制刷新指定货架。
-- 后端定时任务默认每 6 小时刷新 `recommend` 货架，可通过 `REELSHORT_CONTENT_REFRESH_ENABLED`、`REELSHORT_CONTENT_REFRESH_INTERVAL` 和 `REELSHORT_CONTENT_REFRESH_SHELVES` 调整。
+- 后端定时任务默认每 6 小时刷新 `recommend` 货架的 `en` 和 `zh-TW` 元数据，可通过 `REELSHORT_CONTENT_REFRESH_ENABLED`、`REELSHORT_CONTENT_REFRESH_INTERVAL`、`REELSHORT_CONTENT_REFRESH_SHELVES` 和 `REELSHORT_CONTENT_REFRESH_LOCALES` 调整。
 
 视频文件和播放流不存放在自有服务器；只有播放页请求单集播放地址时才按需调用内容源。
 

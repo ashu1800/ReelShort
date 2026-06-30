@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.reelshort.app.config.ApiConfig
 import com.reelshort.app.data.AppRepository
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.network.OkHttpReelShortApiClient
@@ -105,6 +106,10 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.logout() }
     }
 
+    fun setLanguage(language: AppLanguage) {
+        viewModelScope.launch { controller.setLanguage(language) }
+    }
+
     fun showAuthPrompt() = controller.showAuthPrompt()
 
     fun dismissAuthPrompt() = controller.dismissAuthPrompt()
@@ -128,13 +133,21 @@ class ReelShortViewModel(
                     )
                     val homeShelfStore = FileHomeShelfStore(File(filesDir, "home-shelf-cache.json"))
                     val credentialStore = com.reelshort.app.AndroidCredentialStore.create(context)
+                    val languagePreferenceStore = com.reelshort.app.AndroidLanguagePreferenceStore(context)
                     val apiConfig = ApiConfig(BuildConfig.REELSHORT_API_BASE_URL)
                     lateinit var repository: AppRepository
                     val apiClient = OkHttpReelShortApiClient(
                         config = apiConfig,
                         tokenProvider = { repository.currentToken },
                     )
-                    repository = AppRepository(apiClient, sessionStore, credentialStore, homeShelfStore, apiConfig.baseUrl)
+                    repository = AppRepository(
+                        apiClient = apiClient,
+                        sessionStore = sessionStore,
+                        credentialStore = credentialStore,
+                        homeShelfStore = homeShelfStore,
+                        languagePreferenceStore = languagePreferenceStore,
+                        apiBaseUrl = apiConfig.baseUrl,
+                    )
                     val controller = AppStateController(repository)
                     return ReelShortViewModel(controller) as T
                 }

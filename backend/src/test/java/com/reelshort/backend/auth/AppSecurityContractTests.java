@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.content.ContentBook;
+import com.reelshort.backend.content.ContentLocale;
 import com.reelshort.backend.content.ContentProvider;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
@@ -72,7 +73,7 @@ class AppSecurityContractTests {
 
 	@Test
 	void contentSearchIsPublicForGuestBrowsing() throws Exception {
-		when(contentProvider.search("love")).thenReturn(List.of(
+		when(contentProvider.search("love", ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentBook("book-guest", "Guest Love", "guest-love", "https://example.com/cover.jpg",
 						"Guest browsable.", 12)));
 
@@ -149,7 +150,7 @@ class AppSecurityContractTests {
 	@Test
 	void contentSearchAcceptsValidBearerToken() throws Exception {
 		String token = registerAndExtractToken("security-active");
-		when(contentProvider.search("love")).thenReturn(List.of(
+		when(contentProvider.search("love", ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentBook("book-1", "Love Story", "love-story", "https://example.com/cover.jpg",
 						"Authenticated browse.", 12)));
 

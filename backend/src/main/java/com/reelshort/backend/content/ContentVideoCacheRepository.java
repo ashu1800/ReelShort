@@ -9,4 +9,7 @@ public interface ContentVideoCacheRepository extends JpaRepository<ContentVideoC
 
 	Optional<ContentVideoCache> findByBookIdAndEpisodeNumAndFilteredTitleAndChapterId(String bookId, int episodeNum,
 			String filteredTitle, String chapterId);
+
+	Optional<ContentVideoCache> findByBookIdAndEpisodeNumAndFilteredTitleAndChapterIdAndLocale(String bookId,
+			int episodeNum, String filteredTitle, String chapterId, ContentLocale locale);
 }

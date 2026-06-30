@@ -2,6 +2,7 @@ package com.reelshort.app.state
 
 import com.reelshort.app.data.AppDataSource
 import com.reelshort.app.data.ApiHealthStatus
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookInteractionState
 import com.reelshort.app.data.BookSummary
@@ -33,6 +34,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             return@runWithLoading
         }
         sessionRestored = true
+        val language = dataSource.loadLanguagePreference()
         val session = dataSource.restoreSession()
         val savedCredentials = dataSource.loadSavedCredentials()
         val cachedHomeShelf = dataSource.loadCachedHomeShelf()
@@ -41,6 +43,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update {
                 it.copy(
                     screen = AppScreen.HOME,
+                    language = language,
                     session = session,
                     savedCredentials = savedCredentials,
                     homeShelf = cachedHomeShelf,
@@ -55,6 +58,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update {
                 it.copy(
                     screen = AppScreen.HOME,
+                    language = language,
                     session = session,
                     savedCredentials = savedCredentials,
                     homeShelf = homeShelf,
@@ -68,6 +72,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update {
                 it.copy(
                     screen = AppScreen.HOME,
+                    language = language,
                     session = session,
                     savedCredentials = savedCredentials,
                     homeShelf = emptyList(),
@@ -257,6 +262,23 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     fun showSearch() {
         mutableState.update { it.copy(screen = AppScreen.SEARCH, errorMessage = null) }
+    }
+
+    suspend fun setLanguage(language: AppLanguage) = runWithLoading(ErrorContext.CONTENT) {
+        dataSource.saveLanguagePreference(language)
+        val homeShelf = dataSource.loadHomeShelf()
+        mutableState.update {
+            it.copy(
+                language = language,
+                screen = AppScreen.HOME,
+                homeShelf = homeShelf,
+                searchQuery = "",
+                searchResults = emptyList(),
+                isLoading = false,
+                errorMessage = null,
+            )
+        }
+        dataSource.saveCachedHomeShelf(homeShelf)
     }
 
     suspend fun openBook(book: BookSummary) = runWithLoading(ErrorContext.CONTENT) {
@@ -709,6 +731,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         mutableState.value = AppUiState(
             apiBaseUrl = dataSource.apiBaseUrl,
             savedCredentials = state.value.savedCredentials,
+            language = state.value.language,
         )
     }
 
