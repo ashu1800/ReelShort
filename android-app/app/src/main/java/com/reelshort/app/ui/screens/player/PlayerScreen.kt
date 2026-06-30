@@ -85,6 +85,7 @@ import com.reelshort.app.ui.format.RewardBadgeVisualState
 import com.reelshort.app.ui.format.episodeNumberLabel
 import com.reelshort.app.ui.format.episodeSelectorLabel
 import com.reelshort.app.ui.format.playerLoadingLabel
+import com.reelshort.app.ui.format.playerLoadingOverlayVisible
 import com.reelshort.app.ui.format.rewardBadgeState
 import com.reelshort.app.ui.format.playerStartsAutomatically
 import com.reelshort.app.ui.theme.DangerText
@@ -244,7 +245,8 @@ private fun BoxScope.MediaPlayerSurface(
         }
         val context = LocalContext.current
         val lifecycleOwner = LocalLifecycleOwner.current
-        var isVideoLoading by remember(playableUrl) { mutableStateOf(true) }
+        var playbackState by remember(playableUrl) { mutableStateOf(Player.STATE_IDLE) }
+        var hasFirstReady by remember(playableUrl) { mutableStateOf(false) }
         var playerError by remember(playableUrl) { mutableStateOf(false) }
         val player = remember(playableUrl) {
             ExoPlayer.Builder(context).build().apply {
@@ -255,20 +257,16 @@ private fun BoxScope.MediaPlayerSurface(
         }
         DisposableEffect(player) {
             val listener = object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    isVideoLoading = playbackState == Player.STATE_IDLE || playbackState == Player.STATE_BUFFERING
-                    if (playbackState == Player.STATE_READY) {
+                override fun onPlaybackStateChanged(newPlaybackState: Int) {
+                    playbackState = newPlaybackState
+                    if (newPlaybackState == Player.STATE_READY) {
+                        hasFirstReady = true
                         playerError = false
                     }
                 }
 
-                override fun onIsLoadingChanged(isLoading: Boolean) {
-                    isVideoLoading = isLoading || player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_IDLE
-                }
-
                 override fun onPlayerError(error: PlaybackException) {
                     playerError = true
-                    isVideoLoading = false
                 }
             }
             player.addListener(listener)
@@ -310,6 +308,12 @@ private fun BoxScope.MediaPlayerSurface(
                 }
             }
         }
+        val loadingOverlayVisible = playerLoadingOverlayVisible(
+            playableUrl = playableUrl,
+            playbackState = playbackState,
+            hasFirstReady = hasFirstReady,
+            hasError = playerError,
+        )
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { viewContext ->
@@ -325,7 +329,7 @@ private fun BoxScope.MediaPlayerSurface(
             },
         )
         AnimatedVisibility(
-            visible = isVideoLoading || playerError,
+            visible = loadingOverlayVisible,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.matchParentSize(),
