@@ -37,6 +37,9 @@ internal fun playerSurfaceAspectRatio(): Float = 9f / 16f
 
 internal fun playerStartsAutomatically(): Boolean = true
 
+internal fun playerLoadingLabel(episodeNumber: Int): String =
+    "加载${episodeNumberLabel(episodeNumber)}..."
+
 internal fun episodeSelectorLabel(totalEpisodes: Int): String =
     "选集 · 已完结 · 全${totalEpisodes.coerceAtLeast(0)}集"
 

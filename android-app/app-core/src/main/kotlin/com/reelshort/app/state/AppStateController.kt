@@ -8,6 +8,7 @@ import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.SavedCredentials
+import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.network.ApiClientException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -285,7 +286,8 @@ class AppStateController(private val dataSource: AppDataSource) {
             }
             return@runWithLoading
         }
-        openPlayerForAuthenticatedUser(firstEpisode)
+        val resumeEpisode = chooseResumeEpisode(book, episodes) ?: firstEpisode
+        openPlayerForAuthenticatedUser(resumeEpisode)
     }
 
     suspend fun openPlayer(episode: EpisodeSummary) = runWithLoading(ErrorContext.PLAYBACK) {
@@ -365,6 +367,18 @@ class AppStateController(private val dataSource: AppDataSource) {
         throw error
     } catch (_: Throwable) {
         emptyList()
+    }
+
+    private suspend fun chooseResumeEpisode(book: BookSummary, episodes: List<EpisodeSummary>): EpisodeSummary? {
+        val history = try {
+            dataSource.loadWatchHistory()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            return episodes.firstOrNull()
+        }
+        val record = history.firstOrNull { it.bookId == book.id } ?: return episodes.firstOrNull()
+        return resumeEpisodeForRecord(episodes, record) ?: episodes.firstOrNull()
     }
 
     fun updatePlaybackPosition(positionSeconds: Int, durationSeconds: Int) {
@@ -672,6 +686,17 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     private fun hasAccountSnapshot(state: AppUiState): Boolean =
         state.pointAccount != null || state.watchHistory.isNotEmpty() || state.orders.isNotEmpty()
+
+    private fun resumeEpisodeForRecord(episodes: List<EpisodeSummary>, record: WatchRecord): EpisodeSummary? {
+        val currentIndex = episodes.indexOfFirst { it.number == record.episode }
+        if (currentIndex < 0) {
+            return null
+        }
+        if (record.progressPercent < 100) {
+            return episodes[currentIndex]
+        }
+        return episodes.getOrNull(currentIndex + 1) ?: episodes[currentIndex]
+    }
 
     private fun playbackReturnScreenFor(screen: AppScreen): AppScreen =
         when (screen) {

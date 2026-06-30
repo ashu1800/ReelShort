@@ -71,6 +71,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -82,6 +84,7 @@ import com.reelshort.app.ui.format.RewardBadgeState
 import com.reelshort.app.ui.format.RewardBadgeVisualState
 import com.reelshort.app.ui.format.episodeNumberLabel
 import com.reelshort.app.ui.format.episodeSelectorLabel
+import com.reelshort.app.ui.format.playerLoadingLabel
 import com.reelshort.app.ui.format.rewardBadgeState
 import com.reelshort.app.ui.format.playerStartsAutomatically
 import com.reelshort.app.ui.theme.DangerText
@@ -117,6 +120,7 @@ internal fun PlayerScreen(
             initialPositionSeconds = playback.positionSeconds,
             fallbackDurationSeconds = playback.durationSeconds,
             onProgress = onUpdatePlaybackPosition,
+            onAutoReportProgress = onAutoReportProgress,
         )
 
         // 顶部状态栏占位 + 返回键 + 奖励进度
@@ -226,6 +230,7 @@ private fun BoxScope.MediaPlayerSurface(
     initialPositionSeconds: Int,
     fallbackDurationSeconds: Int,
     onProgress: (Int, Int) -> Unit,
+    onAutoReportProgress: (Int, Int) -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -234,17 +239,40 @@ private fun BoxScope.MediaPlayerSurface(
         contentAlignment = Alignment.Center,
     ) {
         if (playableUrl == null) {
-            PlayerPlaceholder(episodeNumber)
+            PlayerPlaceholder(playerLoadingLabel(episodeNumber))
             return
         }
         val context = LocalContext.current
         val lifecycleOwner = LocalLifecycleOwner.current
+        var isVideoLoading by remember(playableUrl) { mutableStateOf(true) }
+        var playerError by remember(playableUrl) { mutableStateOf(false) }
         val player = remember(playableUrl) {
             ExoPlayer.Builder(context).build().apply {
                 setMediaItem(MediaItem.fromUri(playableUrl))
                 playWhenReady = playerStartsAutomatically()
                 prepare()
             }
+        }
+        DisposableEffect(player) {
+            val listener = object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    isVideoLoading = playbackState == Player.STATE_IDLE || playbackState == Player.STATE_BUFFERING
+                    if (playbackState == Player.STATE_READY) {
+                        playerError = false
+                    }
+                }
+
+                override fun onIsLoadingChanged(isLoading: Boolean) {
+                    isVideoLoading = isLoading || player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_IDLE
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    playerError = true
+                    isVideoLoading = false
+                }
+            }
+            player.addListener(listener)
+            onDispose { player.removeListener(listener) }
         }
         LaunchedEffect(player) {
             if (initialPositionSeconds > 0) {
@@ -278,6 +306,7 @@ private fun BoxScope.MediaPlayerSurface(
                 if (percent != lastPercent) {
                     lastPercent = percent
                     onProgress(positionSeconds, durationSeconds)
+                    onAutoReportProgress(positionSeconds, durationSeconds)
                 }
             }
         }
@@ -295,14 +324,36 @@ private fun BoxScope.MediaPlayerSurface(
                 view.player = player
             },
         )
+        AnimatedVisibility(
+            visible = isVideoLoading || playerError,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.matchParentSize(),
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0x99000000)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (playerError) {
+                    Text(
+                        "视频加载失败，请稍后重试",
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                } else {
+                    PlayerPlaceholder(playerLoadingLabel(episodeNumber))
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun PlayerPlaceholder(episodeNumber: Int) {
+private fun PlayerPlaceholder(label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         CircularProgressIndicator(color = PrimaryGold, strokeWidth = 2.dp, modifier = Modifier.size(36.dp))
-        Text("加载第 $episodeNumber 集…", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+        Text(label, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
