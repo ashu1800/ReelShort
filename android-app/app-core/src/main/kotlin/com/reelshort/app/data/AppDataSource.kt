@@ -11,6 +11,10 @@ interface AppDataSource {
 
     suspend fun loadHomeShelf(): List<BookSummary>
 
+    suspend fun loadCachedHomeShelf(): List<BookSummary>
+
+    suspend fun saveCachedHomeShelf(shelf: List<BookSummary>)
+
     suspend fun search(query: String): List<BookSummary>
 
     suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary>

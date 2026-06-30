@@ -70,6 +70,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onBackFromFavorites = remember(viewModel) { viewModel::backFromFavorites }
     val onCheckApiHealth = remember(viewModel) { viewModel::checkApiHealth }
     val onShowAuthPrompt = remember(viewModel) { viewModel::showAuthPrompt }
+    val onRefreshHome = remember(viewModel) { viewModel::refreshHome }
 
     // 播放器与收藏页为全屏沉浸式，系统返回键回到上一级而非退出 App
     BackHandler(enabled = state.screen == AppScreen.PLAYER) {
@@ -102,6 +103,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onBackFromFavorites = onBackFromFavorites,
                 onCheckApiHealth = onCheckApiHealth,
                 onShowAuthPrompt = onShowAuthPrompt,
+                onRefreshHome = onRefreshHome,
             )
             AuthBottomSheet(
                 visible = state.authPromptVisible,

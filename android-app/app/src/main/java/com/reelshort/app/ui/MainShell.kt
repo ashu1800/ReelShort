@@ -55,6 +55,7 @@ internal fun MainShell(
     onBackFromFavorites: () -> Unit,
     onCheckApiHealth: () -> Unit,
     onShowAuthPrompt: () -> Unit,
+    onRefreshHome: () -> Unit,
 ) {
     // 播放器全屏渲染：跳出底部导航与状态栏占位，沉浸式短剧播放
     if (state.screen == AppScreen.PLAYER) {
@@ -106,7 +107,12 @@ internal fun MainShell(
                 ) { screen ->
                     when (screen) {
                         AppScreen.LOGIN -> Unit
-                        AppScreen.HOME -> HomeScreen(state.homeShelf, onOpenBook)
+                        AppScreen.HOME -> HomeScreen(
+                            books = state.homeShelf,
+                            isRefreshing = state.isHomeRefreshing,
+                            onOpenBook = onOpenBook,
+                            onRefresh = onRefreshHome,
+                        )
                         AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
                         AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, onOpenPlayer)
                         AppScreen.PLAYER -> Unit

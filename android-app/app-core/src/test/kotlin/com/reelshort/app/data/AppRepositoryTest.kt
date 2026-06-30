@@ -2,7 +2,9 @@ package com.reelshort.app.data
 
 import com.reelshort.app.network.FakeReelShortApiClient
 import com.reelshort.app.session.FileSessionStore
+import com.reelshort.app.session.HomeShelfStore
 import com.reelshort.app.session.InMemoryCredentialStore
+import com.reelshort.app.session.InMemoryHomeShelfStore
 import com.reelshort.app.session.InMemorySessionStore
 import com.reelshort.app.session.SessionStore
 import kotlinx.coroutines.test.runTest
@@ -114,6 +116,20 @@ class AppRepositoryTest {
 
         assertTrue(home.isNotEmpty())
         assertEquals(listOf("book-1"), search.map { it.id })
+    }
+
+    @Test
+    fun homeShelfCachePersistsAcrossRepositoryRecreation() = runTest {
+        val homeShelfStore: HomeShelfStore = InMemoryHomeShelfStore()
+        val firstRepository = AppRepository(FakeReelShortApiClient(), InMemorySessionStore(), InMemoryCredentialStore(), homeShelfStore)
+        val network = firstRepository.loadHomeShelf()
+        firstRepository.saveCachedHomeShelf(network)
+
+        val restoredRepository = AppRepository(FakeReelShortApiClient(), InMemorySessionStore(), InMemoryCredentialStore(), homeShelfStore)
+        val cached = restoredRepository.loadCachedHomeShelf()
+
+        assertEquals(network, cached)
+        assertTrue(cached.isNotEmpty())
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.reelshort.app.data.AppRepository
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.network.OkHttpReelShortApiClient
+import com.reelshort.app.session.FileHomeShelfStore
 import com.reelshort.app.session.FileSessionStore
 import com.reelshort.app.state.AppStateController
 import com.reelshort.app.state.AppUiState
@@ -87,6 +88,10 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.openFavorites() }
     }
 
+    fun refreshHome() {
+        viewModelScope.launch { controller.refreshHomeWithPull() }
+    }
+
     fun backFromPlayer() = controller.backToDetail()
 
     fun backFromFavorites() = controller.backToAccount()
@@ -117,6 +122,7 @@ class ReelShortViewModel(
                     val context = application.applicationContext
                     val filesDir = context.filesDir
                     val sessionStore = FileSessionStore(File(filesDir, "reelshort-session.json"))
+                    val homeShelfStore = FileHomeShelfStore(File(filesDir, "home-shelf-cache.json"))
                     val credentialStore = com.reelshort.app.AndroidCredentialStore.create(context)
                     val apiConfig = ApiConfig(BuildConfig.REELSHORT_API_BASE_URL)
                     lateinit var repository: AppRepository
@@ -124,7 +130,7 @@ class ReelShortViewModel(
                         config = apiConfig,
                         tokenProvider = { repository.currentToken },
                     )
-                    repository = AppRepository(apiClient, sessionStore, credentialStore, apiConfig.baseUrl)
+                    repository = AppRepository(apiClient, sessionStore, credentialStore, homeShelfStore, apiConfig.baseUrl)
                     val controller = AppStateController(repository)
                     return ReelShortViewModel(controller) as T
                 }

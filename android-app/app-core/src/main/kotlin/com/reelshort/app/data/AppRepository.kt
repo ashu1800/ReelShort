@@ -2,7 +2,9 @@ package com.reelshort.app.data
 
 import com.reelshort.app.network.ReelShortApiClient
 import com.reelshort.app.session.CredentialStore
+import com.reelshort.app.session.HomeShelfStore
 import com.reelshort.app.session.InMemoryCredentialStore
+import com.reelshort.app.session.InMemoryHomeShelfStore
 import com.reelshort.app.session.InMemorySessionStore
 import com.reelshort.app.session.SessionStore
 
@@ -10,6 +12,7 @@ class AppRepository(
     private val apiClient: ReelShortApiClient,
     private val sessionStore: SessionStore = InMemorySessionStore(),
     private val credentialStore: CredentialStore = InMemoryCredentialStore(),
+    private val homeShelfStore: HomeShelfStore = InMemoryHomeShelfStore(),
     override val apiBaseUrl: String = "",
 ) : AppDataSource {
     var currentToken: String? = null
@@ -32,6 +35,12 @@ class AppRepository(
     }
 
     override suspend fun loadHomeShelf(): List<BookSummary> = apiClient.getHomeShelf()
+
+    override suspend fun loadCachedHomeShelf(): List<BookSummary> = homeShelfStore.loadHomeShelf()
+
+    override suspend fun saveCachedHomeShelf(shelf: List<BookSummary>) {
+        homeShelfStore.saveHomeShelf(shelf)
+    }
 
     override suspend fun search(query: String): List<BookSummary> = apiClient.search(query)
 

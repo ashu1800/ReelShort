@@ -24,6 +24,21 @@ class AppStateController(private val dataSource: AppDataSource) {
     suspend fun restoreSession() = runWithLoading(ErrorContext.CONTENT) {
         val session = dataSource.restoreSession()
         val savedCredentials = dataSource.loadSavedCredentials()
+        val cachedHomeShelf = dataSource.loadCachedHomeShelf()
+        if (cachedHomeShelf.isNotEmpty()) {
+            // 冷启动秒开：先用磁盘缓存立即渲染首页，随后在后台静默拉取最新数据替换并更新缓存。
+            mutableState.update {
+                it.copy(
+                    screen = AppScreen.HOME,
+                    session = session,
+                    savedCredentials = savedCredentials,
+                    homeShelf = cachedHomeShelf,
+                    isLoading = false,
+                )
+            }
+            refreshHomeSilently()
+            return@runWithLoading
+        }
         try {
             val homeShelf = dataSource.loadHomeShelf()
             mutableState.update {
@@ -35,6 +50,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                     isLoading = false,
                 )
             }
+            dataSource.saveCachedHomeShelf(homeShelf)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -127,6 +143,9 @@ class AppStateController(private val dataSource: AppDataSource) {
                 errorMessage = if (homeShelf == null) "内容暂时加载失败，可以稍后刷新。" else null,
             )
         }
+        if (homeShelf != null) {
+            dataSource.saveCachedHomeShelf(homeShelf)
+        }
     }
 
     suspend fun refreshHome() = runWithLoading(ErrorContext.CONTENT) {
@@ -137,6 +156,32 @@ class AppStateController(private val dataSource: AppDataSource) {
                 homeShelf = homeShelf,
                 isLoading = false,
             )
+        }
+        dataSource.saveCachedHomeShelf(homeShelf)
+    }
+
+    /**
+     * 下拉刷新首页：与 [refreshHome] 不同，只展示顶部的下拉刷新指示器，
+     * 不触发全局居中 loading 弹窗，且失败时保留旧数据并给出顶部错误提示。
+     */
+    suspend fun refreshHomeWithPull() {
+        mutableState.update { it.copy(screen = AppScreen.HOME, isHomeRefreshing = true, errorMessage = null) }
+        try {
+            val homeShelf = dataSource.loadHomeShelf()
+            mutableState.update {
+                it.copy(homeShelf = homeShelf, isHomeRefreshing = false)
+            }
+            dataSource.saveCachedHomeShelf(homeShelf)
+        } catch (error: CancellationException) {
+            mutableState.update { it.copy(isHomeRefreshing = false) }
+            throw error
+        } catch (error: Throwable) {
+            mutableState.update {
+                it.copy(
+                    isHomeRefreshing = false,
+                    errorMessage = userFacingErrorMessage(error, ErrorContext.CONTENT),
+                )
+            }
         }
     }
 
@@ -159,6 +204,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                     homeShelf = homeShelf,
                 )
             }
+            dataSource.saveCachedHomeShelf(homeShelf)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {

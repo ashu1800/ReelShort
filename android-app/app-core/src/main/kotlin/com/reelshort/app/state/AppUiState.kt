@@ -33,6 +33,7 @@ data class AppUiState(
     val authPromptVisible: Boolean = false,
     val pendingPlaybackEpisode: EpisodeSummary? = null,
     val homeShelf: List<BookSummary> = emptyList(),
+    val isHomeRefreshing: Boolean = false,
     val searchQuery: String = "",
     val searchResults: List<BookSummary> = emptyList(),
     val selectedBook: BookSummary? = null,

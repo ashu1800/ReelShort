@@ -58,7 +58,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
-        assertEquals(listOf("login:demo", "home"), dataSource.calls)
+        assertEquals(listOf("login:demo", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -608,7 +608,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
-        assertEquals(listOf("home", "home"), dataSource.calls)
+        assertEquals(listOf("home", "home:cache:save", "home"), dataSource.calls)
     }
 
     @Test
@@ -623,7 +623,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
-        assertEquals(listOf("home"), dataSource.calls)
+        assertEquals(listOf("home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -730,7 +730,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertNull(state.session)
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home"), dataSource.calls)
+        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -745,7 +745,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals(session, state.session)
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
-        assertEquals(listOf("restore", "credentials:load", "home"), dataSource.calls)
+        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -760,7 +760,100 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals(session, state.session)
         assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home"), dataSource.calls)
+        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
+    }
+
+    @Test
+    fun restoreSessionShowsCachedHomeShelfThenSilentlyRefreshes() = runTest {
+        val cached = listOf(
+            BookSummary(
+                id = "cached-1",
+                title = "缓存短剧",
+                filteredTitle = "cached",
+                coverUrl = null,
+                description = "来自缓存",
+                chapterCount = 3,
+            ),
+        )
+        val dataSource = FakeAppDataSource(cachedHomeShelf = cached)
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        // 后台静默刷新成功后用最新网络数据替换缓存数据。
+        assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
+        assertNull(state.errorMessage)
+        // 读缓存（命中秒开）+ 后台网络拉取 + 写回新缓存。
+        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf(dataSource.books), dataSource.savedHomeShelves)
+    }
+
+    @Test
+    fun restoreSessionKeepsCachedHomeShelfWhenSilentRefreshFails() = runTest {
+        val cached = listOf(
+            BookSummary(
+                id = "cached-1",
+                title = "缓存短剧",
+                filteredTitle = "cached",
+                coverUrl = null,
+                description = "来自缓存",
+                chapterCount = 3,
+            ),
+        )
+        val dataSource = FakeAppDataSource(cachedHomeShelf = cached, homeError = IllegalStateException("network down"))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        // 后台刷新失败静默吞掉，保留缓存数据，不给用户报错。
+        assertEquals(listOf("cached-1"), state.homeShelf.map { it.id })
+        assertNull(state.errorMessage)
+        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
+        // 失败时不写回缓存。
+        assertTrue(dataSource.savedHomeShelves.isEmpty())
+    }
+
+    @Test
+    fun pullRefreshReplacesHomeShelfWithoutGlobalLoading() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.refreshHome()
+
+        controller.refreshHomeWithPull()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
+        // 下拉刷新只用顶部指示器，不触发居中 loading 弹窗。
+        assertFalse(state.isLoading)
+        assertFalse(state.isHomeRefreshing)
+        assertNull(state.errorMessage)
+        // 拉到新数据后写回缓存。
+        assertEquals(2, dataSource.savedHomeShelves.size)
+    }
+
+    @Test
+    fun pullRefreshKeepsOldDataAndReportsErrorOnFailure() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.refreshHome()
+        // 预置数据后，下拉刷新时让网络失败。
+        dataSource.homeError = IllegalStateException("content source unavailable")
+
+        controller.refreshHomeWithPull()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        // 失败时保留下拉前的旧数据，不替换。
+        assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
+        assertFalse(state.isLoading)
+        assertFalse(state.isHomeRefreshing)
+        // 失败通过顶部错误条提示用户。
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
     }
 
     @Test
@@ -795,7 +888,7 @@ class AppStateControllerTest {
         assertNull(state.session)
         assertEquals(emptyList(), state.homeShelf)
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home", "clear"), dataSource.calls)
+        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save", "clear"), dataSource.calls)
     }
 
     @Test
@@ -872,6 +965,7 @@ class AppStateControllerTest {
         private var restoredSession: AuthSession? = null,
         var savedCredentials: SavedCredentials? = null,
         homeError: Throwable? = null,
+        cachedHomeShelf: List<BookSummary> = emptyList(),
     ) : AppDataSource {
         var books = listOf(
             BookSummary(
@@ -893,6 +987,8 @@ class AppStateControllerTest {
         )
         var homeError: Throwable? = homeError
         var homeGate: CompletableDeferred<Unit>? = null
+        var cachedHomeShelf: List<BookSummary> = cachedHomeShelf
+        val savedHomeShelves = mutableListOf<List<BookSummary>>()
         var accountError: Throwable? = null
         var accountGate: CompletableDeferred<Unit>? = null
         var progressError: Throwable? = null
@@ -951,6 +1047,17 @@ class AppStateControllerTest {
             homeGate?.await()
             homeError?.let { throw it }
             return books
+        }
+
+        override suspend fun loadCachedHomeShelf(): List<BookSummary> {
+            calls += "home:cache:load"
+            return cachedHomeShelf
+        }
+
+        override suspend fun saveCachedHomeShelf(shelf: List<BookSummary>) {
+            calls += "home:cache:save"
+            savedHomeShelves += shelf
+            cachedHomeShelf = shelf
         }
 
         override suspend fun search(query: String): List<BookSummary> {
