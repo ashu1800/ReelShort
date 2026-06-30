@@ -488,8 +488,20 @@ class AppStateController(private val dataSource: AppDataSource) {
         mutableState.update { it.copy(screen = AppScreen.ACCOUNT, isLoading = false, errorMessage = null) }
     }
 
-    private suspend fun runSocialAction(block: suspend () -> Unit) = runWithLoading(ErrorContext.SOCIAL) {
-        block()
+    private suspend fun runSocialAction(block: suspend () -> Unit) {
+        mutableState.update { it.copy(errorMessage = null) }
+        try {
+            block()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            mutableState.update {
+                it.copy(
+                    errorMessage = userFacingErrorMessage(error, ErrorContext.SOCIAL),
+                    authPromptVisible = if (shouldPromptForLogin(error, ErrorContext.SOCIAL)) true else it.authPromptVisible,
+                )
+            }
+        }
     }
 
     suspend fun loadAccountSnapshot() {

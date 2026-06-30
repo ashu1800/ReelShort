@@ -1021,6 +1021,26 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun socialActionsDoNotShowGlobalLoadingWhileRequestIsInFlight() = runTest {
+        val socialGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.socialGate = socialGate
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.openBook(dataSource.book("book-1", "Alpha"))
+        controller.openPlayer(dataSource.episodes.first())
+
+        val likeJob = launch { controller.toggleLike() }
+        runCurrent()
+
+        assertFalse(controller.state.value.isLoading)
+
+        socialGate.complete(Unit)
+        likeJob.join()
+        assertTrue(controller.state.value.interaction.liked)
+    }
+
+    @Test
     fun submitCommentAppendsCommentAndRefreshesList() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         val controller = AppStateController(dataSource)
@@ -1121,6 +1141,7 @@ class AppStateControllerTest {
         var videoDurationSeconds: Int? = null
         var healthError: Throwable? = null
         var socialError: Throwable? = null
+        var socialGate: CompletableDeferred<Unit>? = null
         var favoritesGate: CompletableDeferred<Unit>? = null
         private val liked = mutableSetOf<String>()
         private val favorited = mutableSetOf<String>()
@@ -1273,6 +1294,7 @@ class AppStateControllerTest {
 
         override suspend fun toggleLike(book: BookSummary): SocialToggleResult {
             calls += "like:${book.id}"
+            socialGate?.await()
             socialError?.let { throw it }
             if (!liked.add(book.id)) liked.remove(book.id)
             return SocialToggleResult(liked.contains(book.id), liked.size)
@@ -1285,6 +1307,7 @@ class AppStateControllerTest {
 
         override suspend fun toggleFavorite(book: BookSummary): SocialToggleResult {
             calls += "favorite:${book.id}"
+            socialGate?.await()
             socialError?.let { throw it }
             if (!favorited.add(book.id)) favorited.remove(book.id)
             return SocialToggleResult(favorited.contains(book.id), favorited.size)
@@ -1297,6 +1320,7 @@ class AppStateControllerTest {
 
         override suspend fun addComment(book: BookSummary, content: String): Comment {
             calls += "comment-add:${book.id}"
+            socialGate?.await()
             socialError?.let { throw it }
             val comment = Comment(
                 id = "comment-${commentStore.size + 1}",
