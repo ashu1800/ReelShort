@@ -3,7 +3,6 @@ import re
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from html import unescape
-from threading import Lock
 from urllib.parse import quote
 
 import requests
@@ -38,19 +37,6 @@ MAX_CATALOG_KEYWORDS = 50
 MAX_CATALOG_PAGES_PER_KEYWORD = 5
 MAX_CATALOG_REQUESTS = 200
 MAX_CATALOG_REQUEST_WORKERS = 16
-
-
-class CatalogRequestBudget:
-    def __init__(self, remaining: int):
-        self.remaining = remaining
-        self.lock = Lock()
-
-    def claim(self):
-        with self.lock:
-            if self.remaining <= 0:
-                return False
-            self.remaining -= 1
-            return True
 
 
 class UpstreamError(Exception):
@@ -307,23 +293,22 @@ class ReelShortClient:
             default=8,
             maximum=MAX_CATALOG_REQUEST_WORKERS,
         )
-        request_budget = CatalogRequestBudget(MAX_CATALOG_REQUESTS)
         if workers <= 1:
-            return self._catalog_search_keywords_sequential(keywords, max_pages, request_budget)
-        return self._catalog_search_keywords_parallel(keywords, max_pages, workers, request_budget)
+            return self._catalog_search_keywords_sequential(keywords, max_pages)
+        return self._catalog_search_keywords_parallel(keywords, max_pages, workers)
 
-    def _catalog_search_keywords_sequential(self, keywords, max_pages: int, request_budget):
+    def _catalog_search_keywords_sequential(self, keywords, max_pages: int):
         return [
             pages
             for keyword in keywords
-            for pages in self._catalog_search_keyword_pages(keyword, max_pages, request_budget)
+            for pages in self._catalog_search_keyword_pages(keyword, max_pages)
         ]
 
-    def _catalog_search_keywords_parallel(self, keywords, max_pages: int, workers: int, request_budget):
+    def _catalog_search_keywords_parallel(self, keywords, max_pages: int, workers: int):
         results = {}
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
-                executor.submit(self._catalog_search_keyword_pages, keyword, max_pages, request_budget): keyword_index
+                executor.submit(self._catalog_search_keyword_pages, keyword, max_pages): keyword_index
                 for keyword_index, keyword in enumerate(keywords)
             }
             for future in as_completed(futures):
@@ -335,11 +320,9 @@ class ReelShortClient:
             for page_books in results[keyword_index]
         ]
 
-    def _catalog_search_keyword_pages(self, keyword: str, max_pages: int, request_budget):
+    def _catalog_search_keyword_pages(self, keyword: str, max_pages: int):
         pages = []
         for page in range(1, max_pages + 1):
-            if not request_budget.claim():
-                break
             books = self._fetch_catalog_search_books(keyword, page)
             if not books:
                 break

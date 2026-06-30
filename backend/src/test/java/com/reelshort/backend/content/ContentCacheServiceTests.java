@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -79,6 +80,38 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
+	void getShelfRefreshesCacheWhenCachedShelfJsonIsCorrupt() {
+		contentShelfCacheRepository.saveAndFlush(ContentShelfCache.create(ContentShelfType.RECOMMEND, "{broken", 1));
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND)).thenReturn(List.of(book("book-1", "Recovered")));
+
+		List<ContentBook> books = contentCacheService.getShelf(ContentShelfType.RECOMMEND);
+
+		assertThat(books).containsExactly(book("book-1", "Recovered"));
+		verify(contentProvider).getShelf(ContentShelfType.RECOMMEND);
+		assertThat(contentShelfCacheRepository.findById(ContentShelfType.RECOMMEND)).isPresent()
+				.get()
+				.satisfies(cache -> {
+					assertThat(cache.itemCount()).isEqualTo(1);
+					assertThat(cache.lastError()).isNull();
+				});
+	}
+
+	@Test
+	void getShelfRecordsCorruptCacheErrorWhenRefreshFails() {
+		contentShelfCacheRepository.saveAndFlush(ContentShelfCache.create(ContentShelfType.RECOMMEND, "{broken", 1));
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND))
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		assertThatThrownBy(() -> contentCacheService.getShelf(ContentShelfType.RECOMMEND))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content provider unavailable");
+
+		assertThat(contentShelfCacheRepository.findById(ContentShelfType.RECOMMEND)).isPresent()
+				.get()
+				.satisfies(cache -> assertThat(cache.lastError()).isEqualTo("content provider unavailable"));
+	}
+
+	@Test
 	void getShelfPropagatesProviderFailureWhenNoCacheExists() {
 		when(contentProvider.getShelf(ContentShelfType.NEW_RELEASE))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
@@ -138,16 +171,51 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
-	void getEpisodesFallsBackToCachedEpisodesWhenProviderFails() {
+	void getEpisodesReturnsCachedEpisodesWithoutCallingProviderWhenCacheExists() {
 		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1", "", ""));
 		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
-				.thenReturn(new ContentEpisodesDetail(java.util.Optional.empty(), episodes))
-				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+				.thenReturn(new ContentEpisodesDetail(java.util.Optional.empty(), episodes));
 
 		contentCacheService.getEpisodes("book-1", "love-story");
 		List<ContentEpisode> cached = contentCacheService.getEpisodes("book-1", "love-story");
 
 		assertThat(cached).containsExactlyElementsOf(episodes);
+		assertThat(contentEpisodeCacheRepository.findByBookIdAndFilteredTitle("book-1", "love-story")).isPresent()
+				.get()
+				.satisfies(cache -> assertThat(cache.lastError()).isNull());
+		verify(contentProvider, times(1)).getEpisodesDetail("book-1", "love-story");
+		verifyNoMoreInteractions(contentProvider);
+	}
+
+	@Test
+	void getEpisodesRefreshesCacheWhenCachedEpisodeJsonIsCorrupt() {
+		contentEpisodeCacheRepository.saveAndFlush(ContentEpisodeCache.create("book-1", "love-story", "{broken", 1));
+		List<ContentEpisode> episodes = List.of(new ContentEpisode(1, "chapter-1", "", ""));
+		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
+				.thenReturn(new ContentEpisodesDetail(Optional.empty(), episodes));
+
+		List<ContentEpisode> response = contentCacheService.getEpisodes("book-1", "love-story");
+
+		assertThat(response).containsExactlyElementsOf(episodes);
+		verify(contentProvider).getEpisodesDetail("book-1", "love-story");
+		assertThat(contentEpisodeCacheRepository.findByBookIdAndFilteredTitle("book-1", "love-story")).isPresent()
+				.get()
+				.satisfies(cache -> {
+					assertThat(cache.episodeCount()).isEqualTo(1);
+					assertThat(cache.lastError()).isNull();
+				});
+	}
+
+	@Test
+	void getEpisodesRecordsCorruptCacheErrorWhenRefreshFails() {
+		contentEpisodeCacheRepository.saveAndFlush(ContentEpisodeCache.create("book-1", "love-story", "{broken", 1));
+		when(contentProvider.getEpisodesDetail("book-1", "love-story"))
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		assertThatThrownBy(() -> contentCacheService.getEpisodes("book-1", "love-story"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content provider unavailable");
+
 		assertThat(contentEpisodeCacheRepository.findByBookIdAndFilteredTitle("book-1", "love-story")).isPresent()
 				.get()
 				.satisfies(cache -> assertThat(cache.lastError()).isEqualTo("content provider unavailable"));
