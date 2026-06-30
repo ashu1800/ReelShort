@@ -2,6 +2,8 @@ package com.reelshort.backend.content;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -62,18 +64,18 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
-	void getShelfFallsBackToCachedShelfWhenProviderFails() {
+	void getShelfReturnsCachedShelfWithoutCallingProviderWhenCacheExists() {
 		when(contentProvider.getShelf(ContentShelfType.RECOMMEND))
-				.thenReturn(List.of(book("book-1", "Recommended")))
-				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+				.thenReturn(List.of(book("book-1", "Recommended")));
 
 		contentCacheService.getShelf(ContentShelfType.RECOMMEND);
 		List<ContentBook> cachedBooks = contentCacheService.getShelf(ContentShelfType.RECOMMEND);
 
 		assertThat(cachedBooks).containsExactly(book("book-1", "Recommended"));
+		verify(contentProvider, times(1)).getShelf(ContentShelfType.RECOMMEND);
 		assertThat(contentShelfCacheRepository.findById(ContentShelfType.RECOMMEND)).isPresent()
 				.get()
-				.satisfies(cache -> assertThat(cache.lastError()).isEqualTo("content provider unavailable"));
+				.satisfies(cache -> assertThat(cache.lastError()).isNull());
 	}
 
 	@Test

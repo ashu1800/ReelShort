@@ -3,6 +3,7 @@ import re
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from html import unescape
+from threading import Lock
 from urllib.parse import quote
 
 import requests
@@ -32,6 +33,24 @@ DEFAULT_CATALOG_SEARCH_KEYWORDS = (
     "doctor",
     "queen",
 )
+
+MAX_CATALOG_KEYWORDS = 50
+MAX_CATALOG_PAGES_PER_KEYWORD = 5
+MAX_CATALOG_REQUESTS = 200
+MAX_CATALOG_REQUEST_WORKERS = 16
+
+
+class CatalogRequestBudget:
+    def __init__(self, remaining: int):
+        self.remaining = remaining
+        self.lock = Lock()
+
+    def claim(self):
+        with self.lock:
+            if self.remaining <= 0:
+                return False
+            self.remaining -= 1
+            return True
 
 
 class UpstreamError(Exception):
@@ -255,7 +274,7 @@ class ReelShortClient:
         return self._get(f"/_next/data/{quote(build_id, safe='')}/en{data_path}", params=params)
 
     def _expanded_recommend_books(self, base_books):
-        max_books = self._positive_int_env("REELSHORT_CATALOG_MAX_BOOKS", 500)
+        max_books = self._bounded_int_env("REELSHORT_CATALOG_MAX_BOOKS", default=500, maximum=500)
         if max_books <= 0:
             return []
 
@@ -265,7 +284,11 @@ class ReelShortClient:
             if self._append_unique_book(books, seen, book, max_books):
                 return books
 
-        max_pages = self._positive_int_env("REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD", 3)
+        max_pages = self._bounded_int_env(
+            "REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD",
+            default=3,
+            maximum=MAX_CATALOG_PAGES_PER_KEYWORD,
+        )
         search_pages = self._catalog_search_pages(self._catalog_search_keywords(), max_pages)
         for search_books in search_pages:
             for book in search_books:
@@ -277,36 +300,51 @@ class ReelShortClient:
         if max_pages <= 0:
             return []
 
-        requests_to_fetch = [
-            (index, keyword, page)
-            for index, keyword in enumerate(keywords)
-            for page in range(1, max_pages + 1)
-        ]
-        workers = self._positive_int_env("REELSHORT_CATALOG_REQUEST_WORKERS", 8)
+        keyword_limit = min(MAX_CATALOG_KEYWORDS, max(1, MAX_CATALOG_REQUESTS // max_pages))
+        keywords = keywords[:keyword_limit]
+        workers = self._bounded_int_env(
+            "REELSHORT_CATALOG_REQUEST_WORKERS",
+            default=8,
+            maximum=MAX_CATALOG_REQUEST_WORKERS,
+        )
+        request_budget = CatalogRequestBudget(MAX_CATALOG_REQUESTS)
         if workers <= 1:
-            return self._catalog_search_pages_sequential(requests_to_fetch)
-        return self._catalog_search_pages_parallel(requests_to_fetch, workers)
+            return self._catalog_search_keywords_sequential(keywords, max_pages, request_budget)
+        return self._catalog_search_keywords_parallel(keywords, max_pages, workers, request_budget)
 
-    def _catalog_search_pages_sequential(self, requests_to_fetch):
-        results = {}
-        for keyword_index, keyword, page in requests_to_fetch:
-            books = self._fetch_catalog_search_books(keyword, page)
-            if books is None:
-                continue
-            results[(keyword_index, page)] = books
-        return self._ordered_catalog_pages(results, requests_to_fetch)
+    def _catalog_search_keywords_sequential(self, keywords, max_pages: int, request_budget):
+        return [
+            pages
+            for keyword in keywords
+            for pages in self._catalog_search_keyword_pages(keyword, max_pages, request_budget)
+        ]
 
-    def _catalog_search_pages_parallel(self, requests_to_fetch, workers: int):
+    def _catalog_search_keywords_parallel(self, keywords, max_pages: int, workers: int, request_budget):
         results = {}
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
-                executor.submit(self._fetch_catalog_search_books, keyword, page): (keyword_index, page)
-                for keyword_index, keyword, page in requests_to_fetch
+                executor.submit(self._catalog_search_keyword_pages, keyword, max_pages, request_budget): keyword_index
+                for keyword_index, keyword in enumerate(keywords)
             }
             for future in as_completed(futures):
-                key = futures[future]
-                results[key] = future.result()
-        return self._ordered_catalog_pages(results, requests_to_fetch)
+                keyword_index = futures[future]
+                results[keyword_index] = future.result()
+        return [
+            page_books
+            for keyword_index in sorted(results)
+            for page_books in results[keyword_index]
+        ]
+
+    def _catalog_search_keyword_pages(self, keyword: str, max_pages: int, request_budget):
+        pages = []
+        for page in range(1, max_pages + 1):
+            if not request_budget.claim():
+                break
+            books = self._fetch_catalog_search_books(keyword, page)
+            if not books:
+                break
+            pages.append(books)
+        return pages
 
     def _fetch_catalog_search_books(self, keyword: str, page: int):
         params = {"keywords": keyword}
@@ -317,19 +355,6 @@ class ReelShortClient:
         except UpstreamError:
             return None
         return self._books(payload)
-
-    def _ordered_catalog_pages(self, results, requests_to_fetch):
-        ordered_pages = []
-        stopped_keywords = set()
-        for keyword_index, _keyword, page in requests_to_fetch:
-            if keyword_index in stopped_keywords:
-                continue
-            books = results.get((keyword_index, page))
-            if not books:
-                stopped_keywords.add(keyword_index)
-                continue
-            ordered_pages.append(books)
-        return ordered_pages
 
     def _append_unique_book(self, books, seen, book, max_books: int):
         book_id = self._book_id(book)
@@ -342,14 +367,14 @@ class ReelShortClient:
     def _catalog_search_keywords(self):
         raw_keywords = os.getenv("REELSHORT_CATALOG_SEARCH_KEYWORDS", "")
         keywords = [keyword.strip() for keyword in raw_keywords.split(",") if keyword.strip()]
-        return keywords or list(DEFAULT_CATALOG_SEARCH_KEYWORDS)
+        return (keywords or list(DEFAULT_CATALOG_SEARCH_KEYWORDS))[:MAX_CATALOG_KEYWORDS]
 
-    def _positive_int_env(self, name: str, default: int):
+    def _bounded_int_env(self, name: str, default: int, maximum: int):
         try:
             value = int(os.getenv(name, str(default)))
         except ValueError:
             return default
-        return max(value, 0)
+        return min(max(value, 0), maximum)
 
     def _select_home_shelves(self, shelves, shelf_name: str):
         if shelf_name == "recommend":

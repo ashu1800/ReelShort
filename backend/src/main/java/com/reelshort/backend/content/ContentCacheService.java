@@ -51,12 +51,9 @@ public class ContentCacheService {
 
 	@Transactional
 	public List<ContentBook> getShelf(ContentShelfType shelfType) {
-		try {
-			return refreshShelf(shelfType);
-		}
-		catch (ContentProviderException exception) {
-			return cachedShelfOrThrow(shelfType, exception);
-		}
+		return contentShelfCacheRepository.findById(shelfType)
+				.map(cache -> readBooks(cache.booksJson()))
+				.orElseGet(() -> refreshShelf(shelfType));
 	}
 
 	@Transactional(noRollbackFor = ContentProviderException.class)
@@ -119,15 +116,6 @@ public class ContentCacheService {
 				.map(cache -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), cache.itemCount(),
 						cache.refreshedAt().toString(), cache.lastError()))
 				.orElseGet(() -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), 0, null, null));
-	}
-
-	private List<ContentBook> cachedShelfOrThrow(ContentShelfType shelfType, ContentProviderException exception) {
-		return contentShelfCacheRepository.findById(shelfType)
-				.map(cache -> {
-					markShelfFailure(cache, exception);
-					return readBooks(cache.booksJson());
-				})
-				.orElseThrow(() -> exception);
 	}
 
 	private void markShelfFailure(ContentShelfType shelfType, ContentProviderException exception) {

@@ -14,11 +14,11 @@
 
 ### `GET /api/app/home/recommend`
 
-返回推荐货架内容。后端优先调用 Flask 内容源；调用成功后写入 PostgreSQL 缓存；内容源不可用且已有缓存时返回最后一次可用缓存。
+返回推荐货架内容。后端优先读取 PostgreSQL 货架缓存；缓存不存在时才调用 Flask 内容源并写入 `content_shelf_cache` 和 `content_book_cache`。后台刷新接口负责主动更新片库元数据。
 
 ### `GET /api/app/content/shelves/{shelfType}`
 
-返回指定货架内容。`shelfType` 必须是 `recommend`、`new-release` 或 `drama-dub`。
+返回指定货架内容。`shelfType` 必须是 `recommend`、`new-release` 或 `drama-dub`。读取策略与首页推荐一致：缓存优先，缺失时才拉取内容源。
 
 ### `GET /api/app/content/books/{bookId}`
 
@@ -57,6 +57,6 @@
 
 ### `POST /api/admin/content/cache/shelves/{shelfType}/refresh`
 
-强制刷新指定货架缓存。成功后写入后台审计日志 `CONTENT_CACHE_REFRESHED`。
+强制刷新指定货架缓存。成功后写入 PostgreSQL 元数据缓存和后台审计日志 `CONTENT_CACHE_REFRESHED`。
 
 刷新失败时返回内容源错误，不伪装成功；如果此前有缓存，失败原因会记录到该货架的 `lastError`。

@@ -744,6 +744,94 @@ def test_reelshort_client_recommend_catalog_reads_search_pages_until_empty(monke
     ]
 
 
+def test_reelshort_client_recommend_catalog_does_not_fetch_after_empty_page(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        ok = True
+        text = ""
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append({"url": url, "params": params})
+        if url.endswith("/_next/data/build-1/37/recommend.json"):
+            return FakeResponse({})
+        if url.endswith("/_next/data/build-1/en.json"):
+            return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
+        if url.endswith("/_next/data/build-1/en/search.json"):
+            page = params.get("page", 1)
+            if page > 2:
+                raise AssertionError(f"unexpected page after empty result: {page}")
+            return FakeResponse({"pageProps": {"books": [{"book_id": "love-1", "book_title": "Love"}] if page == 1 else []}})
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    monkeypatch.setenv("REELSHORT_CATALOG_SEARCH_KEYWORDS", "love")
+    monkeypatch.setenv("REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD", "5")
+    monkeypatch.setenv("REELSHORT_CATALOG_REQUEST_WORKERS", "8")
+
+    client = ReelShortClient("https://site.example", "37", 3)
+    client.build_id = "build-1"
+
+    results = client.shelf("recommend")
+
+    assert [book["book_id"] for book in results] == ["love-1"]
+    assert [call["params"] for call in calls if call["url"].endswith("/search.json")] == [
+        {"keywords": "love"},
+        {"keywords": "love", "page": 2},
+    ]
+
+
+def test_reelshort_client_recommend_catalog_clamps_search_limits(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        ok = True
+        text = ""
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append({"url": url, "params": params})
+        if url.endswith("/_next/data/build-1/37/recommend.json"):
+            return FakeResponse({})
+        if url.endswith("/_next/data/build-1/en.json"):
+            return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
+        if url.endswith("/_next/data/build-1/en/search.json"):
+            keyword = params["keywords"]
+            page = params.get("page", 1)
+            return FakeResponse({"pageProps": {"books": [{"book_id": f"{keyword}-{page}", "book_title": keyword}]}})
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    monkeypatch.setenv("REELSHORT_CATALOG_SEARCH_KEYWORDS", ",".join(f"kw{i}" for i in range(60)))
+    monkeypatch.setenv("REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD", "99")
+    monkeypatch.setenv("REELSHORT_CATALOG_MAX_BOOKS", "500")
+    monkeypatch.setenv("REELSHORT_CATALOG_REQUEST_WORKERS", "999")
+
+    client = ReelShortClient("https://site.example", "37", 3)
+    client.build_id = "build-1"
+
+    results = client.shelf("recommend")
+
+    search_calls = [call for call in calls if call["url"].endswith("/search.json")]
+    assert len(search_calls) == 200
+    assert len(results) == 200
+    assert {call["params"]["keywords"] for call in search_calls} == {f"kw{i}" for i in range(40)}
+    assert max(call["params"].get("page", 1) for call in search_calls) == 5
+
+
 def test_reelshort_client_recommend_catalog_parallel_fetch_keeps_configured_order(monkeypatch):
     class FakeResponse:
         status_code = 200
