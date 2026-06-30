@@ -37,6 +37,26 @@ internal fun playerSurfaceAspectRatio(): Float = 9f / 16f
 
 internal fun playerStartsAutomatically(): Boolean = true
 
+internal fun playerLoadingLabel(episodeNumber: Int): String =
+    "加载${episodeNumberLabel(episodeNumber)}..."
+
+internal fun playerLoadingOverlayVisible(
+    playableUrl: String?,
+    playbackState: Int,
+    hasFirstReady: Boolean,
+    hasError: Boolean,
+): Boolean {
+    if (playableUrl == null || hasError) {
+        return true
+    }
+    return playbackState == androidx.media3.common.Player.STATE_IDLE ||
+        playbackState == androidx.media3.common.Player.STATE_BUFFERING ||
+        !hasFirstReady
+}
+
+internal fun episodeSelectorLabel(totalEpisodes: Int): String =
+    "选集 · 已完结 · 全${totalEpisodes.coerceAtLeast(0)}集"
+
 internal fun playerSecondaryActionLabels(): List<String> = listOf("刷新地址")
 
 internal fun guestAccountEntryLabels(): List<String> = listOf("登录", "注册")

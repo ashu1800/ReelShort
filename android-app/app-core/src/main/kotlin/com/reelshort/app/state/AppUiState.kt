@@ -41,6 +41,7 @@ data class AppUiState(
     val selectedEpisode: EpisodeSummary? = null,
     val currentVideoUrl: VideoUrl? = null,
     val playback: PlaybackState = PlaybackState(),
+    val playerReturnScreen: AppScreen? = null,
     val watchHistory: List<WatchRecord> = emptyList(),
     val pointAccount: PointAccount? = null,
     val orders: List<RechargeOrderSummary> = emptyList(),

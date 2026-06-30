@@ -223,19 +223,139 @@ class AppStateControllerTest {
     }
 
     @Test
-    fun openBookSelectsBookAndLoadsEpisodes() = runTest {
-        val dataSource = FakeAppDataSource()
+    fun openBookWithSessionDirectlyOpensFirstEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = emptyList()
         val controller = AppStateController(dataSource)
         val book = dataSource.books.first()
 
+        controller.restoreSession()
+        dataSource.calls.clear()
         controller.openBook(book)
 
         val state = controller.state.value
-        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals(AppScreen.PLAYER, state.screen)
         assertSame(book, state.selectedBook)
         assertEquals(listOf(1, 2), state.episodes.map { it.number })
+        assertEquals(1, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
+        assertEquals(PlaybackStatus.READY, state.playback.status)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookWithHistoryResumesWatchedEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 60))
+        dataSource.snapshot = WatchEpisodeSnapshot(
+            bookId = "book-1",
+            episode = 2,
+            positionSeconds = 90,
+            durationSeconds = 180,
+            progressPercent = 50,
+            awardedStages = listOf(25),
+        )
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(2, state.selectedEpisode?.number)
+        assertEquals(90, state.playback.positionSeconds)
+        assertEquals(50, state.playback.progressPercent)
+        assertEquals(25, state.playback.lastReportedProgressPercent)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookWithCompletedHistoryStartsNextEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 1, progressPercent = 100))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(2, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookWithCompletedLastEpisodeKeepsLastEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 100))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(2, state.selectedEpisode?.number)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookFallsBackToFirstEpisodeWhenHistoryFails() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.accountError = IllegalStateException("history unavailable")
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(1, state.selectedEpisode?.number)
+        assertNull(state.errorMessage)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookWithoutSessionKeepsCurrentScreenAndDefersFirstEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        val controller = AppStateController(dataSource)
+
+        controller.showSearch()
+        controller.openBook(dataSource.books.first())
+
+        val state = controller.state.value
+        assertEquals(AppScreen.SEARCH, state.screen)
+        assertEquals("book-1", state.selectedBook?.id)
+        assertEquals(listOf(1, 2), state.episodes.map { it.number })
+        assertTrue(state.authPromptVisible)
+        assertEquals(1, state.pendingPlaybackEpisode?.number)
+        assertNull(state.currentVideoUrl)
+        assertEquals(PlaybackStatus.IDLE, state.playback.status)
+        assertEquals(listOf("episodes:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookWithNoEpisodesKeepsCurrentScreenAndReportsContentError() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.episodes = emptyList()
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+
+        val state = controller.state.value
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("book-1", state.selectedBook?.id)
+        assertTrue(state.episodes.isEmpty())
         assertNull(state.selectedEpisode)
         assertNull(state.currentVideoUrl)
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
         assertEquals(listOf("episodes:book-1"), dataSource.calls)
     }
 
@@ -252,7 +372,7 @@ class AppStateControllerTest {
         controller.restoreSession()
 
         val state = controller.state.value
-        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals("book-1", state.selectedBook?.id)
         assertEquals(listOf(1, 2), state.episodes.map { it.number })
         assertTrue(dataSource.calls.isEmpty())
@@ -261,12 +381,14 @@ class AppStateControllerTest {
     @Test
     fun slowerOpenBookResultDoesNotOverwriteNewerBook() = runTest {
         val firstGate = CompletableDeferred<Unit>()
-        val dataSource = FakeAppDataSource()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.episodeGates["book-1"] = firstGate
         val controller = AppStateController(dataSource)
         val firstBook = dataSource.books.first()
         val secondBook = dataSource.books.last()
 
+        controller.restoreSession()
+        dataSource.calls.clear()
         val firstOpen = launch { controller.openBook(firstBook) }
         runCurrent()
         controller.openBook(secondBook)
@@ -274,9 +396,60 @@ class AppStateControllerTest {
         firstOpen.join()
 
         val state = controller.state.value
-        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals("book-2", state.selectedBook?.id)
         assertEquals(listOf(1, 2), state.episodes.map { it.number })
+        assertEquals(1, state.selectedEpisode?.number)
+    }
+
+    @Test
+    fun slowerOpenBookHistoryDoesNotOverwriteNewerBook() = runTest {
+        val firstHistoryGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.historyGates += firstHistoryGate
+        val controller = AppStateController(dataSource)
+        val firstBook = dataSource.books.first()
+        val secondBook = dataSource.books.last()
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        val firstOpen = launch { controller.openBook(firstBook) }
+        runCurrent()
+        controller.openBook(secondBook)
+        firstHistoryGate.complete(Unit)
+        firstOpen.join()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals("book-2", state.selectedBook?.id)
+        assertEquals(1, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-2/1.m3u8", state.currentVideoUrl?.url)
+        assertFalse(state.isLoading)
+    }
+
+    @Test
+    fun slowerOpenBookVideoUrlDoesNotOverwriteNewerBook() = runTest {
+        val firstVideoGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.videoGates["book-1:1"] = firstVideoGate
+        val controller = AppStateController(dataSource)
+        val firstBook = dataSource.books.first()
+        val secondBook = dataSource.books.last()
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        val firstOpen = launch { controller.openBook(firstBook) }
+        runCurrent()
+        controller.openBook(secondBook)
+        firstVideoGate.complete(Unit)
+        firstOpen.join()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals("book-2", state.selectedBook?.id)
+        assertEquals(1, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-2/1.m3u8", state.currentVideoUrl?.url)
+        assertFalse(state.isLoading)
     }
 
     @Test
@@ -330,7 +503,6 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(book)
-        controller.openPlayer(dataSource.episodes.first())
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
@@ -343,7 +515,49 @@ class AppStateControllerTest {
         assertEquals(200, state.playback.durationSeconds)
         assertEquals(0, state.playback.positionSeconds)
         assertEquals(0, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openPlayerSwitchesEpisodeInsideCurrentBook() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+        dataSource.calls.clear()
+        controller.openPlayer(dataSource.episodes[1])
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(2, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
+        assertEquals(180, state.playback.durationSeconds)
+        assertEquals(listOf("snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun slowerOpenPlayerVideoUrlDoesNotOverwriteNewerEpisodeSelection() = runTest {
+        val firstVideoGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.videoGates["book-1:2"] = firstVideoGate
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        dataSource.calls.clear()
+        val firstSwitch = launch { controller.openPlayer(dataSource.episodes[1]) }
+        runCurrent()
+        controller.openPlayer(dataSource.episodes[0])
+        firstVideoGate.complete(Unit)
+        firstSwitch.join()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(1, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
+        assertFalse(state.isLoading)
     }
 
     @Test
@@ -352,10 +566,9 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
 
         val state = controller.state.value
-        assertEquals(AppScreen.DETAIL, state.screen)
+        assertEquals(AppScreen.HOME, state.screen)
         assertEquals(true, state.authPromptVisible)
         assertEquals(1, state.pendingPlaybackEpisode?.number)
         assertNull(state.currentVideoUrl)
@@ -369,7 +582,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.login("demo", "Password123")
 
         val state = controller.state.value
@@ -378,7 +590,114 @@ class AppStateControllerTest {
         assertFalse(state.authPromptVisible)
         assertNull(state.pendingPlaybackEpisode)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun loginAfterDeferredPlaybackUsesWatchHistoryResumeEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        dataSource.watchHistory = listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 60))
+        dataSource.snapshot = WatchEpisodeSnapshot(
+            bookId = "book-1",
+            episode = 2,
+            positionSeconds = 90,
+            durationSeconds = 180,
+            progressPercent = 50,
+            awardedStages = listOf(25),
+        )
+        val controller = AppStateController(dataSource)
+
+        controller.openBook(dataSource.books.first())
+        controller.login("demo", "Password123")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals("demo", state.session?.username)
+        assertEquals(2, state.selectedEpisode?.number)
+        assertEquals(90, state.playback.positionSeconds)
+        assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun loginAfterDeferredPlaybackStartsNextEpisodeWhenHistoryIsComplete() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        dataSource.watchHistory = listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 1, progressPercent = 100))
+        val controller = AppStateController(dataSource)
+
+        controller.openBook(dataSource.books.first())
+        controller.login("demo", "Password123")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(2, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun loginAfterDeferredPlaybackFallsBackToPendingEpisodeWhenHistoryFails() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        dataSource.accountError = IllegalStateException("history unavailable")
+        val controller = AppStateController(dataSource)
+
+        controller.openBook(dataSource.books.first())
+        controller.login("demo", "Password123")
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(1, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openBookKeepsGlobalLoadingWhileAuthenticatedPlaybackIsResolving() = runTest {
+        val videoGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.videoGates["book-1:1"] = videoGate
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        val openJob = launch { controller.openBook(dataSource.books.first()) }
+        runCurrent()
+
+        val loadingState = controller.state.value
+        assertEquals("book-1", loadingState.selectedBook?.id)
+        assertEquals(AppScreen.HOME, loadingState.screen)
+        assertTrue(loadingState.isLoading)
+        assertNull(loadingState.currentVideoUrl)
+
+        videoGate.complete(Unit)
+        openJob.join()
+
+        val readyState = controller.state.value
+        assertEquals(AppScreen.PLAYER, readyState.screen)
+        assertFalse(readyState.isLoading)
+    }
+
+    @Test
+    fun backToPlaybackSourceReturnsToOriginatingScreen() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.showSearch()
+        controller.openBook(dataSource.books.first())
+        controller.backToPlaybackSource()
+
+        assertEquals(AppScreen.SEARCH, controller.state.value.screen)
+    }
+
+    @Test
+    fun backToPlaybackSourceDefaultsToHome() {
+        val controller = AppStateController(FakeAppDataSource())
+
+        controller.backToPlaybackSource()
+
+        assertEquals(AppScreen.HOME, controller.state.value.screen)
     }
 
     @Test
@@ -397,7 +716,6 @@ class AppStateControllerTest {
 
         controller.restoreSession()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
 
         val state = controller.state.value
         assertEquals(120, state.playback.positionSeconds)
@@ -415,7 +733,6 @@ class AppStateControllerTest {
 
         controller.restoreSession()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
@@ -432,25 +749,24 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = 240, durationSeconds = 200)
 
         val state = controller.state.value
         assertEquals(200, state.playback.positionSeconds)
         assertEquals(200, state.playback.durationSeconds)
         assertEquals(100, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
     fun updatePlaybackPositionClampsNegativePositionToZero() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
 
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = -10, durationSeconds = 200)
 
         val state = controller.state.value
@@ -473,12 +789,12 @@ class AppStateControllerTest {
     @Test
     fun reportProgressRefreshesHistoryAndPointAccount() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
 
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.reportProgress(positionSeconds = 150, durationSeconds = 200)
 
         val state = controller.state.value
@@ -491,7 +807,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(
-            listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:150", "history", "points"),
+            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:150", "history", "points"),
             dataSource.calls,
         )
     }
@@ -499,12 +815,12 @@ class AppStateControllerTest {
     @Test
     fun reportProgressSilentlyAtRewardStageDoesNotUseGlobalLoading() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
 
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.reportProgressSilently(positionSeconds = 50, durationSeconds = 200)
 
         val state = controller.state.value
@@ -517,7 +833,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(
-            listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50", "history", "points"),
+            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50", "history", "points"),
             dataSource.calls,
         )
     }
@@ -525,12 +841,12 @@ class AppStateControllerTest {
     @Test
     fun reportProgressSilentlyCanSettleMultipleCrossedStages() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
 
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = 40, durationSeconds = 200)
         controller.reportProgressSilently(positionSeconds = 160, durationSeconds = 200)
 
@@ -540,18 +856,18 @@ class AppStateControllerTest {
         assertEquals(80, state.playback.progressPercent)
         assertEquals(75, state.playback.lastReportedProgressPercent)
         assertEquals(160, state.playback.lastReportedPositionSeconds)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:160", "history", "points"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:160", "history", "points"), dataSource.calls)
     }
 
     @Test
     fun reportProgressSilentlySkipsDuplicateCallsWhileReporting() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
 
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         dataSource.progressGate = CompletableDeferred()
 
         val job = launch { controller.reportProgressSilently(positionSeconds = 50, durationSeconds = 200) }
@@ -561,14 +877,14 @@ class AppStateControllerTest {
         val reportingState = controller.state.value
         assertFalse(reportingState.isLoading)
         assertEquals(true, reportingState.playback.isRewardReporting)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
 
         dataSource.progressGate?.complete(Unit)
         job.join()
 
         assertEquals(25, controller.state.value.playback.lastReportedProgressPercent)
         assertEquals(
-            listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50", "history", "points"),
+            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50", "history", "points"),
             dataSource.calls,
         )
     }
@@ -576,12 +892,12 @@ class AppStateControllerTest {
     @Test
     fun reportProgressSilentlyFailureKeepsPlaybackAndDoesNotShowGlobalError() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
 
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = 50, durationSeconds = 200)
         dataSource.progressError = IllegalStateException("backend unavailable")
         controller.reportProgressSilently(positionSeconds = 50, durationSeconds = 200)
@@ -594,18 +910,18 @@ class AppStateControllerTest {
         assertEquals(25, state.playback.progressPercent)
         assertEquals(0, state.playback.lastReportedProgressPercent)
         assertNull(state.errorMessage)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
     }
 
     @Test
     fun reportProgressSilentlySkipsUntilNextUnreportedStage() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
 
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.reportProgressSilently(positionSeconds = 150, durationSeconds = 200)
         controller.reportProgressSilently(positionSeconds = 160, durationSeconds = 200)
         controller.reportProgressSilently(positionSeconds = 200, durationSeconds = 200)
@@ -616,6 +932,7 @@ class AppStateControllerTest {
         assertEquals(
             listOf(
                 "episodes:book-1",
+                "history",
                 "snapshot:book-1:1",
                 "video:book-1:1",
                 "like-status:book-1",
@@ -635,12 +952,12 @@ class AppStateControllerTest {
     @Test
     fun refreshPlaybackUrlReloadsCurrentEpisodeUrlAndKeepsPosition() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
 
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.openPlayer(dataSource.episodes.first())
         controller.updatePlaybackPosition(positionSeconds = 80, durationSeconds = 200)
         dataSource.videoUrlVersion = 2
         dataSource.videoDurationSeconds = 400
@@ -652,7 +969,7 @@ class AppStateControllerTest {
         assertEquals(80, state.playback.positionSeconds)
         assertEquals(400, state.playback.durationSeconds)
         assertEquals(20, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "video:book-1:1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "video:book-1:1"), dataSource.calls)
     }
 
     @Test
@@ -998,7 +1315,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
         controller.restoreSession()
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
         controller.toggleLike()
 
         val state = controller.state.value
@@ -1012,7 +1328,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
         controller.restoreSession()
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
         controller.toggleFavorite()
 
         val state = controller.state.value
@@ -1028,7 +1343,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
         controller.restoreSession()
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
 
         val likeJob = launch { controller.toggleLike() }
         runCurrent()
@@ -1046,7 +1360,6 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
         controller.restoreSession()
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
 
         controller.submitComment("nice drama")
 
@@ -1061,7 +1374,6 @@ class AppStateControllerTest {
         dataSource.socialError = ApiClientException(401, 401, "unauthorized")
         val controller = AppStateController(dataSource)
         controller.openBook(dataSource.book("book-1", "Alpha"))
-        controller.openPlayer(dataSource.episodes.first())
         controller.toggleLike()
 
         assertTrue(controller.state.value.authPromptVisible)
@@ -1110,16 +1422,19 @@ class AppStateControllerTest {
         var homeGate: CompletableDeferred<Unit>? = null
         val searchGates = mutableMapOf<String, CompletableDeferred<Unit>>()
         val episodeGates = mutableMapOf<String, CompletableDeferred<Unit>>()
+        val historyGates = mutableListOf<CompletableDeferred<Unit>?>()
+        val videoGates = mutableMapOf<String, CompletableDeferred<Unit>>()
         var cachedHomeShelf: List<BookSummary> = cachedHomeShelf
         val savedHomeShelves = mutableListOf<List<BookSummary>>()
         var accountError: Throwable? = null
         var accountGate: CompletableDeferred<Unit>? = null
+        var watchHistory: List<WatchRecord> = emptyList()
         var progressError: Throwable? = null
         var progressGate: CompletableDeferred<Unit>? = null
         var pointBalance: Int = 25
         var snapshot: WatchEpisodeSnapshot = WatchEpisodeSnapshot.empty("book-1", 1)
         var snapshotError: Throwable? = null
-        val episodes = listOf(
+        var episodes = listOf(
             EpisodeSummary(
                 number = 1,
                 chapterId = "chapter-1",
@@ -1199,6 +1514,7 @@ class AppStateControllerTest {
 
         override suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl {
             calls += "video:${book.id}:${episode.number}"
+            videoGates["${book.id}:${episode.number}"]?.await()
             val suffix = if (videoUrlVersion == 1) "" else "-v$videoUrlVersion"
             return VideoUrl(
                 url = "https://media.local/${book.id}/${episode.number}$suffix.m3u8",
@@ -1245,9 +1561,12 @@ class AppStateControllerTest {
 
         override suspend fun loadWatchHistory(): List<WatchRecord> {
             calls += "history"
+            if (historyGates.isNotEmpty()) {
+                historyGates.removeAt(0)?.await()
+            }
             accountGate?.await()
             accountError?.let { throw it }
-            return listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 1, progressPercent = 75))
+            return watchHistory
         }
 
         override suspend fun loadPointAccount(): PointAccount {
@@ -1353,5 +1672,13 @@ class AppStateControllerTest {
                 description = "$title book",
                 chapterCount = 1,
             )
+
+        fun watchRecord(
+            bookId: String = "book-1",
+            bookTitle: String = "Alpha",
+            episode: Int = 1,
+            progressPercent: Int = 75,
+        ): WatchRecord =
+            WatchRecord(bookId = bookId, bookTitle = bookTitle, episode = episode, progressPercent = progressPercent)
     }
 }

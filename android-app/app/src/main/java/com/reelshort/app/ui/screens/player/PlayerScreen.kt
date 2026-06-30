@@ -21,12 +21,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Close
@@ -67,14 +71,21 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.reelshort.app.data.Comment
+import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.format.RewardBadgeState
 import com.reelshort.app.ui.format.RewardBadgeVisualState
+import com.reelshort.app.ui.format.episodeNumberLabel
+import com.reelshort.app.ui.format.episodeSelectorLabel
+import com.reelshort.app.ui.format.playerLoadingLabel
+import com.reelshort.app.ui.format.playerLoadingOverlayVisible
 import com.reelshort.app.ui.format.rewardBadgeState
 import com.reelshort.app.ui.format.playerStartsAutomatically
 import com.reelshort.app.ui.theme.DangerText
@@ -92,6 +103,7 @@ internal fun PlayerScreen(
     onAutoReportProgress: (Int, Int) -> Unit,
     onToggleLike: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onOpenPlayer: (EpisodeSummary) -> Unit,
     onSubmitComment: (String) -> Unit,
 ) {
     val playback = state.playback
@@ -99,6 +111,7 @@ internal fun PlayerScreen(
     val episode = playback.episode
     val playableUrl = playback.videoUrl?.url
     var commentSheetVisible by remember { mutableStateOf(false) }
+    var episodeSheetVisible by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         // 视频层
@@ -108,6 +121,7 @@ internal fun PlayerScreen(
             initialPositionSeconds = playback.positionSeconds,
             fallbackDurationSeconds = playback.durationSeconds,
             onProgress = onUpdatePlaybackPosition,
+            onAutoReportProgress = onAutoReportProgress,
         )
 
         // 顶部状态栏占位 + 返回键 + 奖励进度
@@ -152,7 +166,10 @@ internal fun PlayerScreen(
             bookTitle = book?.title.orEmpty(),
             episodeTitle = episode?.title.orEmpty(),
             episodeDescription = (episode?.description?.ifBlank { null } ?: book?.description).orEmpty(),
+            episodes = state.episodes,
+            selectedEpisode = state.selectedEpisode,
             progressPercent = playback.progressPercent.coerceIn(0, 100),
+            onOpenEpisodeSheet = { episodeSheetVisible = true },
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
@@ -190,6 +207,20 @@ internal fun PlayerScreen(
             },
         )
     }
+
+    if (episodeSheetVisible) {
+        EpisodeSelectorBottomSheet(
+            episodes = state.episodes,
+            selectedEpisode = state.selectedEpisode,
+            onDismiss = { episodeSheetVisible = false },
+            onSelectEpisode = { selected ->
+                episodeSheetVisible = false
+                if (selected.number != state.selectedEpisode?.number || selected.chapterId != state.selectedEpisode?.chapterId) {
+                    onOpenPlayer(selected)
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -200,6 +231,7 @@ private fun BoxScope.MediaPlayerSurface(
     initialPositionSeconds: Int,
     fallbackDurationSeconds: Int,
     onProgress: (Int, Int) -> Unit,
+    onAutoReportProgress: (Int, Int) -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -208,17 +240,37 @@ private fun BoxScope.MediaPlayerSurface(
         contentAlignment = Alignment.Center,
     ) {
         if (playableUrl == null) {
-            PlayerPlaceholder(episodeNumber)
+            PlayerPlaceholder(playerLoadingLabel(episodeNumber))
             return
         }
         val context = LocalContext.current
         val lifecycleOwner = LocalLifecycleOwner.current
+        var playbackState by remember(playableUrl) { mutableStateOf(Player.STATE_IDLE) }
+        var hasFirstReady by remember(playableUrl) { mutableStateOf(false) }
+        var playerError by remember(playableUrl) { mutableStateOf(false) }
         val player = remember(playableUrl) {
             ExoPlayer.Builder(context).build().apply {
                 setMediaItem(MediaItem.fromUri(playableUrl))
                 playWhenReady = playerStartsAutomatically()
                 prepare()
             }
+        }
+        DisposableEffect(player) {
+            val listener = object : Player.Listener {
+                override fun onPlaybackStateChanged(newPlaybackState: Int) {
+                    playbackState = newPlaybackState
+                    if (newPlaybackState == Player.STATE_READY) {
+                        hasFirstReady = true
+                        playerError = false
+                    }
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    playerError = true
+                }
+            }
+            player.addListener(listener)
+            onDispose { player.removeListener(listener) }
         }
         LaunchedEffect(player) {
             if (initialPositionSeconds > 0) {
@@ -252,9 +304,16 @@ private fun BoxScope.MediaPlayerSurface(
                 if (percent != lastPercent) {
                     lastPercent = percent
                     onProgress(positionSeconds, durationSeconds)
+                    onAutoReportProgress(positionSeconds, durationSeconds)
                 }
             }
         }
+        val loadingOverlayVisible = playerLoadingOverlayVisible(
+            playableUrl = playableUrl,
+            playbackState = playbackState,
+            hasFirstReady = hasFirstReady,
+            hasError = playerError,
+        )
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { viewContext ->
@@ -269,14 +328,36 @@ private fun BoxScope.MediaPlayerSurface(
                 view.player = player
             },
         )
+        AnimatedVisibility(
+            visible = loadingOverlayVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.matchParentSize(),
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0x99000000)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (playerError) {
+                    Text(
+                        "视频加载失败，请稍后重试",
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                } else {
+                    PlayerPlaceholder(playerLoadingLabel(episodeNumber))
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun PlayerPlaceholder(episodeNumber: Int) {
+private fun PlayerPlaceholder(label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         CircularProgressIndicator(color = PrimaryGold, strokeWidth = 2.dp, modifier = Modifier.size(36.dp))
-        Text("加载第 $episodeNumber 集…", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+        Text(label, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -398,7 +479,10 @@ private fun BottomInfo(
     bookTitle: String,
     episodeTitle: String,
     episodeDescription: String,
+    episodes: List<EpisodeSummary>,
+    selectedEpisode: EpisodeSummary?,
     progressPercent: Int,
+    onOpenEpisodeSheet: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -455,6 +539,135 @@ private fun BottomInfo(
                     .background(PrimaryGold),
             )
         }
+        if (episodes.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            EpisodeSelectorBar(
+                label = episodeSelectorLabel(episodes.size),
+                selectedEpisode = selectedEpisode,
+                onClick = onOpenEpisodeSheet,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EpisodeSelectorBar(
+    label: String,
+    selectedEpisode: EpisodeSummary?,
+    onClick: () -> Unit,
+) {
+    Surface(
+        color = Color(0xE61A1A1A),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    label,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (selectedEpisode != null) {
+                    Text(
+                        "当前 ${episodeNumberLabel(selectedEpisode.number)}",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "展开选集", tint = Color.White, modifier = Modifier.size(24.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EpisodeSelectorBottomSheet(
+    episodes: List<EpisodeSummary>,
+    selectedEpisode: EpisodeSummary?,
+    onDismiss: () -> Unit,
+    onSelectEpisode: (EpisodeSummary) -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF11151E),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(episodeSelectorLabel(episodes.size), color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "关闭",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(22.dp).clickable(onClick = onDismiss),
+                )
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 72.dp),
+                modifier = Modifier.fillMaxWidth().height(320.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 16.dp),
+            ) {
+                items(episodes, key = { "${it.chapterId}:${it.number}" }) { episode ->
+                    val selected = episode.chapterId == selectedEpisode?.chapterId && episode.number == selectedEpisode.number
+                    EpisodeSelectorItem(episode = episode, selected = selected, onClick = { onSelectEpisode(episode) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EpisodeSelectorItem(
+    episode: EpisodeSummary,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val background = if (selected) PrimaryGold else Color(0xFF1B202B)
+    val foreground = if (selected) OnPrimaryDark else TextPrimary
+    Box(
+        modifier = Modifier
+            .height(46.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(background)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            episode.number.coerceAtLeast(0).toString(),
+            color = foreground,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
     }
 }
 

@@ -8,6 +8,7 @@ import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.SavedCredentials
+import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.network.ApiClientException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +21,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     private var rewardReportInFlight = false
     private var sessionRestored = false
     private var searchRequestVersion = 0L
-    private var openBookRequestVersion = 0L
+    private var playbackRequestVersion = 0L
     private var accountRequestVersion = 0L
     private var favoritesRequestVersion = 0L
 
@@ -110,16 +111,33 @@ class AppStateController(private val dataSource: AppDataSource) {
     private suspend fun openHomeAfterAuthentication(session: AuthSession) {
         val pendingEpisode = state.value.pendingPlaybackEpisode
         if (pendingEpisode != null) {
+            val current = state.value
+            val requestVersion = ++playbackRequestVersion
             mutableState.update {
                 it.copy(
                     session = session,
                     authPromptVisible = false,
                     pendingPlaybackEpisode = null,
-                    isLoading = false,
+                    isLoading = true,
                     errorMessage = null,
                 )
             }
-            openPlayerForAuthenticatedUser(pendingEpisode)
+            val book = current.selectedBook ?: requireSelectedBook()
+            val episodes = current.episodes
+            val fallbackEpisode = playbackFallbackEpisode(episodes, pendingEpisode)
+            val episode = if (episodes.isNotEmpty()) {
+                chooseResumeEpisode(book, episodes, fallbackEpisode, requestVersion) ?: fallbackEpisode
+            } else {
+                pendingEpisode
+            }
+            if (!isActivePlaybackRequest(requestVersion)) {
+                return
+            }
+            if (episode == null) {
+                mutableState.update { it.copy(isLoading = false, errorMessage = "内容暂时加载失败，可以稍后刷新。") }
+                return
+            }
+            openPlayerForAuthenticatedUser(book, episode, requestVersion)
             return
         }
         if (state.value.screen == AppScreen.ACCOUNT) {
@@ -242,30 +260,63 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun openBook(book: BookSummary) = runWithLoading(ErrorContext.CONTENT) {
-        val requestVersion = ++openBookRequestVersion
+        val requestVersion = ++playbackRequestVersion
+        val returnScreen = playbackReturnScreenFor(state.value.screen)
         val episodes = dataSource.loadEpisodes(book)
-        if (requestVersion != openBookRequestVersion) {
+        if (!isActivePlaybackRequest(requestVersion)) {
             return@runWithLoading
         }
+        val firstEpisode = episodes.firstOrNull()
+        if (firstEpisode == null) {
+            mutableState.update {
+                it.copy(
+                    selectedBook = book,
+                    episodes = emptyList(),
+                    selectedEpisode = null,
+                    currentVideoUrl = null,
+                    playback = PlaybackState(),
+                    playerReturnScreen = returnScreen,
+                    isLoading = false,
+                    errorMessage = "内容暂时加载失败，可以稍后刷新。",
+                )
+            }
+            return@runWithLoading
+        }
+        val session = state.value.session
         mutableState.update {
             it.copy(
-                screen = AppScreen.DETAIL,
                 selectedBook = book,
                 episodes = episodes,
                 selectedEpisode = null,
                 currentVideoUrl = null,
                 playback = PlaybackState(),
-                isLoading = false,
+                playerReturnScreen = returnScreen,
+                isLoading = session != null,
             )
         }
+        if (session == null) {
+            mutableState.update {
+                it.copy(
+                    authPromptVisible = true,
+                    pendingPlaybackEpisode = firstEpisode,
+                    isLoading = false,
+                )
+            }
+            return@runWithLoading
+        }
+        val resumeEpisode = chooseResumeEpisode(book, episodes, firstEpisode, requestVersion) ?: firstEpisode
+        if (!isActivePlaybackRequest(requestVersion)) {
+            return@runWithLoading
+        }
+        openPlayerForAuthenticatedUser(book, resumeEpisode, requestVersion)
     }
 
     suspend fun openPlayer(episode: EpisodeSummary) = runWithLoading(ErrorContext.PLAYBACK) {
         val book = requireSelectedBook()
+        val requestVersion = ++playbackRequestVersion
         if (state.value.session == null) {
             mutableState.update {
                 it.copy(
-                    screen = AppScreen.DETAIL,
                     authPromptVisible = true,
                     pendingPlaybackEpisode = episode,
                     isLoading = false,
@@ -273,11 +324,14 @@ class AppStateController(private val dataSource: AppDataSource) {
             }
             return@runWithLoading
         }
-        openPlayerForAuthenticatedUser(episode)
+        openPlayerForAuthenticatedUser(book, episode, requestVersion)
     }
 
-    private suspend fun openPlayerForAuthenticatedUser(episode: EpisodeSummary) {
-        val book = requireSelectedBook()
+    private suspend fun openPlayerForAuthenticatedUser(
+        book: BookSummary,
+        episode: EpisodeSummary,
+        requestVersion: Long,
+    ) {
         val snapshot = try {
             dataSource.loadEpisodeSnapshot(book, episode)
         } catch (error: CancellationException) {
@@ -285,12 +339,24 @@ class AppStateController(private val dataSource: AppDataSource) {
         } catch (_: Throwable) {
             null
         }
+        if (!isActivePlaybackRequest(requestVersion)) {
+            return
+        }
         val videoUrl = dataSource.loadVideoUrl(book, episode)
+        if (!isActivePlaybackRequest(requestVersion)) {
+            return
+        }
         val initialPosition = snapshot?.positionSeconds ?: 0
         val initialDuration = snapshot?.durationSeconds?.takeIf { it > 0 } ?: videoUrl.durationSeconds
         val awardedProgress = snapshot?.awardedStages?.maxOrNull() ?: 0
         val interaction = loadInteractionSilently(book)
+        if (!isActivePlaybackRequest(requestVersion)) {
+            return
+        }
         val comments = loadCommentsSilently(book)
+        if (!isActivePlaybackRequest(requestVersion)) {
+            return
+        }
         mutableState.update {
             it.copy(
                 screen = AppScreen.PLAYER,
@@ -338,6 +404,30 @@ class AppStateController(private val dataSource: AppDataSource) {
         throw error
     } catch (_: Throwable) {
         emptyList()
+    }
+
+    private suspend fun chooseResumeEpisode(
+        book: BookSummary,
+        episodes: List<EpisodeSummary>,
+        fallbackEpisode: EpisodeSummary?,
+        requestVersion: Long,
+    ): EpisodeSummary? {
+        val history = try {
+            dataSource.loadWatchHistory()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            return if (isActivePlaybackRequest(requestVersion)) {
+                playbackFallbackEpisode(episodes, fallbackEpisode)
+            } else {
+                null
+            }
+        }
+        if (!isActivePlaybackRequest(requestVersion)) {
+            return null
+        }
+        val record = history.firstOrNull { it.bookId == book.id } ?: return playbackFallbackEpisode(episodes, fallbackEpisode)
+        return resumeEpisodeForRecord(episodes, record) ?: playbackFallbackEpisode(episodes, fallbackEpisode)
     }
 
     fun updatePlaybackPosition(positionSeconds: Int, durationSeconds: Int) {
@@ -480,7 +570,17 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     fun backToDetail() {
-        mutableState.update { it.copy(screen = AppScreen.DETAIL, isLoading = false, errorMessage = null) }
+        backToPlaybackSource()
+    }
+
+    fun backToPlaybackSource() {
+        mutableState.update {
+            it.copy(
+                screen = it.playerReturnScreen ?: AppScreen.HOME,
+                isLoading = false,
+                errorMessage = null,
+            )
+        }
     }
 
     fun backToAccount() {
@@ -633,8 +733,44 @@ class AppStateController(private val dataSource: AppDataSource) {
     private fun requireSelectedBook(): BookSummary =
         state.value.selectedBook ?: throw IllegalStateException("未选择剧集")
 
+    private fun isActivePlaybackRequest(requestVersion: Long): Boolean =
+        requestVersion == playbackRequestVersion
+
     private fun hasAccountSnapshot(state: AppUiState): Boolean =
         state.pointAccount != null || state.watchHistory.isNotEmpty() || state.orders.isNotEmpty()
+
+    private fun resumeEpisodeForRecord(episodes: List<EpisodeSummary>, record: WatchRecord): EpisodeSummary? {
+        val currentIndex = episodes.indexOfFirst { it.number == record.episode }
+        if (currentIndex < 0) {
+            return null
+        }
+        if (record.progressPercent < 100) {
+            return episodes[currentIndex]
+        }
+        return episodes.getOrNull(currentIndex + 1) ?: episodes[currentIndex]
+    }
+
+    private fun playbackReturnScreenFor(screen: AppScreen): AppScreen =
+        when (screen) {
+            AppScreen.SEARCH -> AppScreen.SEARCH
+            AppScreen.FAVORITES -> AppScreen.FAVORITES
+            else -> AppScreen.HOME
+        }
+
+    private fun playbackFallbackEpisode(
+        episodes: List<EpisodeSummary>,
+        fallbackEpisode: EpisodeSummary?,
+    ): EpisodeSummary? {
+        if (episodes.isEmpty()) {
+            return fallbackEpisode
+        }
+        if (fallbackEpisode == null) {
+            return episodes.firstOrNull()
+        }
+        return episodes.firstOrNull {
+            it.number == fallbackEpisode.number && it.chapterId == fallbackEpisode.chapterId
+        } ?: episodes.firstOrNull()
+    }
 
     private fun shouldPromptForLogin(error: Throwable, context: ErrorContext): Boolean =
         error is ApiClientException &&

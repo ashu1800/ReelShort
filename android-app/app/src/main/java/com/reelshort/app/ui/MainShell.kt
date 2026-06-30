@@ -67,6 +67,7 @@ internal fun MainShell(
                 onAutoReportProgress = onAutoReportProgress,
                 onToggleLike = onToggleLike,
                 onToggleFavorite = onToggleFavorite,
+                onOpenPlayer = onOpenPlayer,
                 onSubmitComment = onSubmitComment,
             )
         }
