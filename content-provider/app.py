@@ -1,11 +1,42 @@
 import os
 import re
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from html import unescape
 from urllib.parse import quote
 
 import requests
 from flask import Flask, jsonify, request
+
+
+DEFAULT_CATALOG_SEARCH_KEYWORDS = (
+    "love",
+    "billionaire",
+    "ceo",
+    "marriage",
+    "revenge",
+    "baby",
+    "divorce",
+    "mafia",
+    "werewolf",
+    "alpha",
+    "luna",
+    "contract",
+    "pregnant",
+    "secret",
+    "husband",
+    "wife",
+    "boss",
+    "romance",
+    "family",
+    "doctor",
+    "queen",
+)
+
+MAX_CATALOG_KEYWORDS = 50
+MAX_CATALOG_PAGES_PER_KEYWORD = 5
+MAX_CATALOG_REQUESTS = 200
+MAX_CATALOG_REQUEST_WORKERS = 16
 
 
 class UpstreamError(Exception):
@@ -46,6 +77,8 @@ class ReelShortClient:
                 raise
         if not books and shelf_name in {"recommend", "newrelease", "dramadub"}:
             books = self._home_shelf_books(shelf_name)
+        if shelf_name == "recommend":
+            books = self._expanded_recommend_books(books)
         return [self._map_book(book) for book in books]
 
     def episodes(self, book_id: str, filtered_title: str):
@@ -208,7 +241,7 @@ class ReelShortClient:
         return self.build_id
 
     def _home_shelf_books(self, shelf_name: str):
-        payload = self._get(f"/_next/data/{quote(self.build_id or self._discover_build_id(), safe='')}/en.json")
+        payload = self._get_locale_data(".json")
         web_info = payload.get("pageProps", {}).get("fallback", {}).get("/api/ms/hall/webInfo", {})
         shelves = web_info.get("bookShelfList") or []
         selected_shelves = self._select_home_shelves(shelves, shelf_name)
@@ -221,6 +254,110 @@ class ReelShortClient:
                     seen.add(book_id)
                     books.append(book)
         return books
+
+    def _get_locale_data(self, data_path: str, params=None):
+        build_id = self.build_id or self._discover_build_id()
+        return self._get(f"/_next/data/{quote(build_id, safe='')}/en{data_path}", params=params)
+
+    def _expanded_recommend_books(self, base_books):
+        max_books = self._bounded_int_env("REELSHORT_CATALOG_MAX_BOOKS", default=500, maximum=500)
+        if max_books <= 0:
+            return []
+
+        books = []
+        seen = set()
+        for book in base_books:
+            if self._append_unique_book(books, seen, book, max_books):
+                return books
+
+        max_pages = self._bounded_int_env(
+            "REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD",
+            default=3,
+            maximum=MAX_CATALOG_PAGES_PER_KEYWORD,
+        )
+        search_pages = self._catalog_search_pages(self._catalog_search_keywords(), max_pages)
+        for search_books in search_pages:
+            for book in search_books:
+                if self._append_unique_book(books, seen, book, max_books):
+                    return books
+        return books
+
+    def _catalog_search_pages(self, keywords, max_pages: int):
+        if max_pages <= 0:
+            return []
+
+        keyword_limit = min(MAX_CATALOG_KEYWORDS, max(1, MAX_CATALOG_REQUESTS // max_pages))
+        keywords = keywords[:keyword_limit]
+        workers = self._bounded_int_env(
+            "REELSHORT_CATALOG_REQUEST_WORKERS",
+            default=8,
+            maximum=MAX_CATALOG_REQUEST_WORKERS,
+        )
+        if workers <= 1:
+            return self._catalog_search_keywords_sequential(keywords, max_pages)
+        return self._catalog_search_keywords_parallel(keywords, max_pages, workers)
+
+    def _catalog_search_keywords_sequential(self, keywords, max_pages: int):
+        return [
+            pages
+            for keyword in keywords
+            for pages in self._catalog_search_keyword_pages(keyword, max_pages)
+        ]
+
+    def _catalog_search_keywords_parallel(self, keywords, max_pages: int, workers: int):
+        results = {}
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self._catalog_search_keyword_pages, keyword, max_pages): keyword_index
+                for keyword_index, keyword in enumerate(keywords)
+            }
+            for future in as_completed(futures):
+                keyword_index = futures[future]
+                results[keyword_index] = future.result()
+        return [
+            page_books
+            for keyword_index in sorted(results)
+            for page_books in results[keyword_index]
+        ]
+
+    def _catalog_search_keyword_pages(self, keyword: str, max_pages: int):
+        pages = []
+        for page in range(1, max_pages + 1):
+            books = self._fetch_catalog_search_books(keyword, page)
+            if not books:
+                break
+            pages.append(books)
+        return pages
+
+    def _fetch_catalog_search_books(self, keyword: str, page: int):
+        params = {"keywords": keyword}
+        if page > 1:
+            params["page"] = page
+        try:
+            payload = self._get_locale_data("/search.json", params=params)
+        except UpstreamError:
+            return None
+        return self._books(payload)
+
+    def _append_unique_book(self, books, seen, book, max_books: int):
+        book_id = self._book_id(book)
+        if not book_id or book_id in seen:
+            return len(books) >= max_books
+        seen.add(book_id)
+        books.append(book)
+        return len(books) >= max_books
+
+    def _catalog_search_keywords(self):
+        raw_keywords = os.getenv("REELSHORT_CATALOG_SEARCH_KEYWORDS", "")
+        keywords = [keyword.strip() for keyword in raw_keywords.split(",") if keyword.strip()]
+        return (keywords or list(DEFAULT_CATALOG_SEARCH_KEYWORDS))[:MAX_CATALOG_KEYWORDS]
+
+    def _bounded_int_env(self, name: str, default: int, maximum: int):
+        try:
+            value = int(os.getenv(name, str(default)))
+        except ValueError:
+            return default
+        return min(max(value, 0), maximum)
 
     def _select_home_shelves(self, shelves, shelf_name: str):
         if shelf_name == "recommend":
@@ -245,7 +382,7 @@ class ReelShortClient:
     def _map_book(self, book):
         title = book.get("book_title") or book.get("title") or ""
         return {
-            "book_id": book.get("book_id") or book.get("_id") or book.get("id") or "",
+            "book_id": self._book_id(book),
             "book_title": title,
             "filtered_title": book.get("filtered_title") or self._filtered_title(title),
             "book_pic": book.get("book_pic") or book.get("cover") or "",
@@ -268,6 +405,9 @@ class ReelShortClient:
             for chapter in chapters
             if chapter.get("chapter_id") and int(chapter.get("serial_number", 0) or 0) > 0
         ]
+
+    def _book_id(self, book):
+        return book.get("book_id") or book.get("_id") or book.get("id") or ""
 
     def _first_text(self, payload, keys):
         for key in keys:

@@ -8,6 +8,14 @@ Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProv
 - `REELSHORT_SITE_ID`：ReelShort Next.js 数据路径中的站点 ID，默认 `37`。
 - `REELSHORT_NEXT_BUILD_ID`：可选。Next.js build id；未配置时请求会从站点页面自动发现并缓存。自动发现的 build id 如果在 `_next/data` 请求中返回 404，会清空后重新发现并重试一次；显式配置的 build id 会保持固定，不自动刷新。
 - `REELSHORT_REQUEST_TIMEOUT_SECONDS`：上游请求超时时间，默认 `10`。
+- `REELSHORT_CATALOG_SEARCH_KEYWORDS`：可选。首页推荐扩容使用的搜索关键词，逗号分隔；为空时使用内置英文短剧关键词。
+- `REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD`：每个关键词最多抓取搜索页数，默认 `3`，硬上限 `5`；设为 `0` 可关闭搜索扩容。
+- `REELSHORT_CATALOG_MAX_BOOKS`：首页推荐扩容后的最大短剧数，默认 `500`，硬上限 `500`。
+- `REELSHORT_CATALOG_REQUEST_WORKERS`：片库扩展搜索请求并发数，默认 `8`，硬上限 `16`；设为 `1` 可改为串行。
+
+首页推荐扩容会限制最多 50 个关键词和最多 200 次上游搜索请求。服务会先按配置生成确定性的关键词和分页计划，关键词之间可并发，单个关键词内部按页顺序请求，遇到空页或失败即停止该关键词后续分页。
+
+内容源只负责抓取第三方元数据和播放地址。标题、封面、简介、集数和分集信息由 Spring Boot 成功拉取后沉淀到 PostgreSQL；视频文件不存放在自有服务器，播放页请求时才按需获取播放地址。
 
 ## 本地运行
 

@@ -49,14 +49,11 @@ public class ContentCacheService {
 		return books;
 	}
 
-	@Transactional
+	@Transactional(noRollbackFor = ContentProviderException.class)
 	public List<ContentBook> getShelf(ContentShelfType shelfType) {
-		try {
-			return refreshShelf(shelfType);
-		}
-		catch (ContentProviderException exception) {
-			return cachedShelfOrThrow(shelfType, exception);
-		}
+		return contentShelfCacheRepository.findById(shelfType)
+				.map(cache -> readShelfCacheOrRefresh(cache, shelfType))
+				.orElseGet(() -> refreshShelf(shelfType));
 	}
 
 	@Transactional(noRollbackFor = ContentProviderException.class)
@@ -82,6 +79,35 @@ public class ContentCacheService {
 
 	@Transactional(noRollbackFor = ContentProviderException.class)
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
+		return contentEpisodeCacheRepository.findByBookIdAndFilteredTitle(bookId, filteredTitle)
+				.map(cache -> readEpisodeCacheOrRefresh(cache, bookId, filteredTitle))
+				.orElseGet(() -> refreshEpisodes(bookId, filteredTitle));
+	}
+
+	private List<ContentBook> readShelfCacheOrRefresh(ContentShelfCache cache, ContentShelfType shelfType) {
+		try {
+			return readBooks(cache.booksJson());
+		}
+		catch (IllegalStateException exception) {
+			cache.markFailure(exception.getMessage());
+			contentShelfCacheRepository.save(cache);
+			return refreshShelf(shelfType);
+		}
+	}
+
+	private List<ContentEpisode> readEpisodeCacheOrRefresh(ContentEpisodeCache cache, String bookId,
+			String filteredTitle) {
+		try {
+			return readEpisodes(cache.episodesJson());
+		}
+		catch (IllegalStateException exception) {
+			cache.markFailure(exception.getMessage());
+			contentEpisodeCacheRepository.save(cache);
+			return refreshEpisodes(bookId, filteredTitle);
+		}
+	}
+
+	private List<ContentEpisode> refreshEpisodes(String bookId, String filteredTitle) {
 		try {
 			ContentEpisodesDetail detail = contentProvider.getEpisodesDetail(bookId, filteredTitle);
 			detail.book().ifPresent(this::saveBook);
@@ -89,7 +115,8 @@ public class ContentCacheService {
 			return detail.episodes();
 		}
 		catch (ContentProviderException exception) {
-			return cachedEpisodesOrThrow(bookId, filteredTitle, exception);
+			markEpisodeFailure(bookId, filteredTitle, exception);
+			throw exception;
 		}
 	}
 
@@ -121,18 +148,17 @@ public class ContentCacheService {
 				.orElseGet(() -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), 0, null, null));
 	}
 
-	private List<ContentBook> cachedShelfOrThrow(ContentShelfType shelfType, ContentProviderException exception) {
-		return contentShelfCacheRepository.findById(shelfType)
-				.map(cache -> {
-					markShelfFailure(cache, exception);
-					return readBooks(cache.booksJson());
-				})
-				.orElseThrow(() -> exception);
-	}
-
 	private void markShelfFailure(ContentShelfType shelfType, ContentProviderException exception) {
 		contentShelfCacheRepository.findById(shelfType)
 				.ifPresent(cache -> markShelfFailure(cache, exception));
+	}
+
+	private void markEpisodeFailure(String bookId, String filteredTitle, ContentProviderException exception) {
+		contentEpisodeCacheRepository.findByBookIdAndFilteredTitle(bookId, filteredTitle)
+				.ifPresent(cache -> {
+					cache.markFailure(exception.getMessage());
+					contentEpisodeCacheRepository.save(cache);
+				});
 	}
 
 	private void markShelfFailure(ContentShelfCache cache, ContentProviderException exception) {
@@ -190,17 +216,6 @@ public class ContentCacheService {
 					cache.markFailure(exception.getMessage());
 					contentVideoCacheRepository.save(cache);
 					return readVideo(cache.videoJson());
-				})
-				.orElseThrow(() -> exception);
-	}
-
-	private List<ContentEpisode> cachedEpisodesOrThrow(String bookId, String filteredTitle,
-			ContentProviderException exception) {
-		return contentEpisodeCacheRepository.findByBookIdAndFilteredTitle(bookId, filteredTitle)
-				.map(cache -> {
-					cache.markFailure(exception.getMessage());
-					contentEpisodeCacheRepository.save(cache);
-					return readEpisodes(cache.episodesJson());
 				})
 				.orElseThrow(() -> exception);
 	}

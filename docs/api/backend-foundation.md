@@ -63,7 +63,7 @@
 
 ### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}`
 
-通过 `ContentProvider` 获取指定剧集的分集列表。内容源调用成功后写入 PostgreSQL 分集缓存；内容源不可用且已有缓存时返回最后一次可用缓存。
+优先从 PostgreSQL 分集缓存返回指定剧集的分集列表；缓存不存在或损坏时才通过 `ContentProvider` 拉取并写入缓存。视频播放地址仍只在播放请求时实时获取。
 
 ### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}`
 
