@@ -64,7 +64,7 @@ public class ContentRefreshRun {
 		this.finishedAt = finishedAt;
 		this.durationMillis = Math.max(0, Duration.between(startedAt, finishedAt).toMillis());
 		this.itemCount = itemCount;
-		this.errorMessage = errorMessage;
+		this.errorMessage = truncate(errorMessage);
 	}
 
 	public static ContentRefreshRun success(ContentRefreshTriggerSource triggerSource, ContentShelfType shelfType,
@@ -117,5 +117,12 @@ public class ContentRefreshRun {
 
 	public String errorMessage() {
 		return errorMessage;
+	}
+
+	private static String truncate(String value) {
+		if (value == null || value.length() <= 1024) {
+			return value;
+		}
+		return value.substring(0, 1024);
 	}
 }

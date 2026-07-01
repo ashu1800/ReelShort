@@ -265,6 +265,49 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
+	void refreshShelfWithRunRecordsUnexpectedFailureAndRethrows() {
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
+				.thenThrow(new IllegalStateException("provider returned invalid metadata"));
+
+		assertThatThrownBy(() -> contentCacheService.refreshShelf(
+				ContentShelfType.RECOMMEND,
+				ContentLocale.ENGLISH,
+				ContentRefreshTriggerSource.ADMIN))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("provider returned invalid metadata");
+
+		assertThat(contentRefreshRunRepository.findTop10ByOrderByStartedAtDesc())
+				.singleElement()
+				.satisfies(run -> {
+					assertThat(run.triggerSource()).isEqualTo(ContentRefreshTriggerSource.ADMIN);
+					assertThat(run.status()).isEqualTo(ContentRefreshRunStatus.FAILED);
+					assertThat(run.errorMessage()).isEqualTo("provider returned invalid metadata");
+				});
+	}
+
+	@Test
+	void refreshShelfWithRunRecordsDatabaseFailureBeforeSuccess() {
+		String tooLongTitle = "T".repeat(300);
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
+				.thenReturn(List.of(new ContentBook("book-invalid", tooLongTitle, "invalid",
+						"https://example.com/invalid.jpg", "", 1)));
+
+		assertThatThrownBy(() -> contentCacheService.refreshShelf(
+				ContentShelfType.RECOMMEND,
+				ContentLocale.ENGLISH,
+				ContentRefreshTriggerSource.ADMIN))
+				.isInstanceOf(RuntimeException.class);
+
+		assertThat(contentRefreshRunRepository.findTop10ByOrderByStartedAtDesc())
+				.singleElement()
+				.satisfies(run -> {
+					assertThat(run.triggerSource()).isEqualTo(ContentRefreshTriggerSource.ADMIN);
+					assertThat(run.status()).isEqualTo(ContentRefreshRunStatus.FAILED);
+					assertThat(run.errorMessage()).isNotBlank();
+				});
+	}
+
+	@Test
 	void getBookReturnsCachedBookDetail() {
 		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(book("book-detail", "Detail")));
 

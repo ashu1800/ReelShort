@@ -15,7 +15,15 @@ create table content_book_cache_v6 (
 insert into content_book_cache_v6 (
     id, book_id, locale, title, filtered_title, cover_url, description, chapter_count, updated_at
 )
-select book_id, book_id, 'ENGLISH', title, filtered_title, cover_url, description, chapter_count, updated_at
+select substring(book_id, 1, 24) || '-' || row_number() over (order by book_id),
+    book_id,
+    'ENGLISH',
+    title,
+    filtered_title,
+    cover_url,
+    description,
+    chapter_count,
+    updated_at
 from content_book_cache;
 
 drop table content_book_cache;

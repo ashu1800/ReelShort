@@ -29,6 +29,7 @@ public class ContentCacheService {
 	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 	private final ContentVideoCacheRepository contentVideoCacheRepository;
 	private final ContentRefreshRunRepository contentRefreshRunRepository;
+	private final ContentRefreshRunRecorder contentRefreshRunRecorder;
 	private final ObjectMapper objectMapper;
 
 	public ContentCacheService(ContentProvider contentProvider, ContentShelfCacheRepository contentShelfCacheRepository,
@@ -36,6 +37,7 @@ public class ContentCacheService {
 			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
 			ContentVideoCacheRepository contentVideoCacheRepository,
 			ContentRefreshRunRepository contentRefreshRunRepository,
+			ContentRefreshRunRecorder contentRefreshRunRecorder,
 			ObjectMapper objectMapper) {
 		this.contentProvider = contentProvider;
 		this.contentShelfCacheRepository = contentShelfCacheRepository;
@@ -43,6 +45,7 @@ public class ContentCacheService {
 		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
 		this.contentVideoCacheRepository = contentVideoCacheRepository;
 		this.contentRefreshRunRepository = contentRefreshRunRepository;
+		this.contentRefreshRunRecorder = contentRefreshRunRecorder;
 		this.objectMapper = objectMapper;
 	}
 
@@ -104,23 +107,19 @@ public class ContentCacheService {
 		OffsetDateTime startedAt = OffsetDateTime.now();
 		try {
 			List<ContentBook> books = refreshShelf(shelfType, locale);
-			contentRefreshRunRepository.save(ContentRefreshRun.success(
+			contentBookCacheRepository.flush();
+			contentShelfCacheRepository.flush();
+			contentRefreshRunRecorder.recordSuccess(
 					triggerSource,
 					shelfType,
 					locale,
 					startedAt,
 					OffsetDateTime.now(),
-					books.size()));
+					books.size());
 			return books;
 		}
-		catch (ContentProviderException exception) {
-			contentRefreshRunRepository.save(ContentRefreshRun.failure(
-					triggerSource,
-					shelfType,
-					locale,
-					startedAt,
-					OffsetDateTime.now(),
-					exception.getMessage()));
+		catch (RuntimeException exception) {
+			recordRefreshFailure(triggerSource, shelfType, locale, startedAt, exception);
 			throw exception;
 		}
 	}
@@ -236,6 +235,17 @@ public class ContentCacheService {
 				run.durationMillis(),
 				run.itemCount(),
 				run.errorMessage());
+	}
+
+	private void recordRefreshFailure(ContentRefreshTriggerSource triggerSource, ContentShelfType shelfType,
+			ContentLocale locale, OffsetDateTime startedAt, RuntimeException exception) {
+		contentRefreshRunRecorder.recordFailure(
+				triggerSource,
+				shelfType,
+				locale,
+				startedAt,
+				OffsetDateTime.now(),
+				exception.getMessage());
 	}
 
 	private void markShelfFailure(ContentShelfType shelfType, ContentLocale locale, ContentProviderException exception) {
