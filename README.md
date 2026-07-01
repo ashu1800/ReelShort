@@ -30,3 +30,19 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/start-app-local-dev.ps1 -
 ```
 
 详细说明见 `docs/deploy/app-local-dev.md`。
+
+## 发布质量基线
+
+发布前优先运行统一验证脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1
+```
+
+Android 改动还必须安装最新 APK 到模拟器并完成手动验收：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1 -InstallApk
+```
+
+完整发布清单见 `docs/deploy/release-checklist.md`。
