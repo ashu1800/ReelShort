@@ -42,6 +42,7 @@
 ```powershell
 python -m pytest content-provider
 backend\.\gradlew.bat test --no-daemon
+cd admin-web && npm ci && npm run build
 android-app\.\gradlew.bat :app-core:test :app:testDebugUnitTest :app:assembleDebug --no-daemon
 git diff --check
 ```
