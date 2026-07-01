@@ -44,91 +44,132 @@ public class ContentCacheService {
 
 	@Transactional
 	public List<ContentBook> search(String keywords) {
-		List<ContentBook> books = contentProvider.search(keywords);
-		saveBooks(books);
-		return books;
+		return search(keywords, ContentLocale.ENGLISH);
+	}
+
+	@Transactional
+	public List<ContentBook> search(String keywords, ContentLocale locale) {
+		try {
+			List<ContentBook> books = contentProvider.search(keywords, locale);
+			saveBooks(books, locale);
+			return books;
+		}
+		catch (ContentProviderException exception) {
+			List<ContentBook> cachedBooks = searchCachedBooks(keywords, locale);
+			if (!cachedBooks.isEmpty()) {
+				return cachedBooks;
+			}
+			throw exception;
+		}
 	}
 
 	@Transactional(noRollbackFor = ContentProviderException.class)
 	public List<ContentBook> getShelf(ContentShelfType shelfType) {
-		return contentShelfCacheRepository.findById(shelfType)
-				.map(cache -> readShelfCacheOrRefresh(cache, shelfType))
-				.orElseGet(() -> refreshShelf(shelfType));
+		return getShelf(shelfType, ContentLocale.ENGLISH);
+	}
+
+	@Transactional(noRollbackFor = ContentProviderException.class)
+	public List<ContentBook> getShelf(ContentShelfType shelfType, ContentLocale locale) {
+		return contentShelfCacheRepository.findByShelfTypeAndLocale(shelfType, locale)
+				.map(cache -> readShelfCacheOrRefresh(cache, shelfType, locale))
+				.orElseGet(() -> refreshShelf(shelfType, locale));
 	}
 
 	@Transactional(noRollbackFor = ContentProviderException.class)
 	public List<ContentBook> refreshShelf(ContentShelfType shelfType) {
+		return refreshShelf(shelfType, ContentLocale.ENGLISH);
+	}
+
+	@Transactional(noRollbackFor = ContentProviderException.class)
+	public List<ContentBook> refreshShelf(ContentShelfType shelfType, ContentLocale locale) {
 		try {
-			List<ContentBook> books = contentProvider.getShelf(shelfType);
-			saveBooks(books);
-			saveShelf(shelfType, books);
+			List<ContentBook> books = contentProvider.getShelf(shelfType, locale);
+			saveBooks(books, locale);
+			saveShelf(shelfType, locale, books);
 			return books;
 		}
 		catch (ContentProviderException exception) {
-			markShelfFailure(shelfType, exception);
+			markShelfFailure(shelfType, locale, exception);
 			throw exception;
 		}
 	}
 
 	@Transactional(readOnly = true)
 	public ContentBook getBook(String bookId) {
-		return contentBookCacheRepository.findById(bookId)
+		return getBook(bookId, ContentLocale.ENGLISH);
+	}
+
+	@Transactional(readOnly = true)
+	public ContentBook getBook(String bookId, ContentLocale locale) {
+		return contentBookCacheRepository.findByBookIdAndLocale(bookId, locale)
 				.map(ContentBookCache::toContentBook)
 				.orElseThrow(() -> new ContentProviderException(404, "content book not cached"));
 	}
 
 	@Transactional(noRollbackFor = ContentProviderException.class)
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
-		return contentEpisodeCacheRepository.findByBookIdAndFilteredTitle(bookId, filteredTitle)
-				.map(cache -> readEpisodeCacheOrRefresh(cache, bookId, filteredTitle))
-				.orElseGet(() -> refreshEpisodes(bookId, filteredTitle));
+		return getEpisodes(bookId, filteredTitle, ContentLocale.ENGLISH);
 	}
 
-	private List<ContentBook> readShelfCacheOrRefresh(ContentShelfCache cache, ContentShelfType shelfType) {
+	@Transactional(noRollbackFor = ContentProviderException.class)
+	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle, ContentLocale locale) {
+		return contentEpisodeCacheRepository.findByBookIdAndFilteredTitleAndLocale(bookId, filteredTitle, locale)
+				.map(cache -> readEpisodeCacheOrRefresh(cache, bookId, filteredTitle, locale))
+				.orElseGet(() -> refreshEpisodes(bookId, filteredTitle, locale));
+	}
+
+	private List<ContentBook> readShelfCacheOrRefresh(ContentShelfCache cache, ContentShelfType shelfType,
+			ContentLocale locale) {
 		try {
 			return readBooks(cache.booksJson());
 		}
 		catch (IllegalStateException exception) {
 			cache.markFailure(exception.getMessage());
 			contentShelfCacheRepository.save(cache);
-			return refreshShelf(shelfType);
+			return refreshShelf(shelfType, locale);
 		}
 	}
 
 	private List<ContentEpisode> readEpisodeCacheOrRefresh(ContentEpisodeCache cache, String bookId,
-			String filteredTitle) {
+			String filteredTitle, ContentLocale locale) {
 		try {
 			return readEpisodes(cache.episodesJson());
 		}
 		catch (IllegalStateException exception) {
 			cache.markFailure(exception.getMessage());
 			contentEpisodeCacheRepository.save(cache);
-			return refreshEpisodes(bookId, filteredTitle);
+			return refreshEpisodes(bookId, filteredTitle, locale);
 		}
 	}
 
-	private List<ContentEpisode> refreshEpisodes(String bookId, String filteredTitle) {
+	private List<ContentEpisode> refreshEpisodes(String bookId, String filteredTitle, ContentLocale locale) {
 		try {
-			ContentEpisodesDetail detail = contentProvider.getEpisodesDetail(bookId, filteredTitle);
-			detail.book().ifPresent(this::saveBook);
-			saveEpisodes(bookId, filteredTitle, detail.episodes());
+			ContentEpisodesDetail detail = contentProvider.getEpisodesDetail(bookId, filteredTitle, locale);
+			detail.book().ifPresent(book -> saveBook(book, locale));
+			saveEpisodes(bookId, filteredTitle, locale, detail.episodes());
 			return detail.episodes();
 		}
 		catch (ContentProviderException exception) {
-			markEpisodeFailure(bookId, filteredTitle, exception);
+			markEpisodeFailure(bookId, filteredTitle, locale, exception);
 			throw exception;
 		}
 	}
 
 	@Transactional(noRollbackFor = ContentProviderException.class)
 	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId) {
+		return getVideoUrl(bookId, episodeNum, filteredTitle, chapterId, ContentLocale.ENGLISH);
+	}
+
+	@Transactional(noRollbackFor = ContentProviderException.class)
+	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId,
+			ContentLocale locale) {
 		try {
-			ContentVideo video = contentProvider.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId);
-			saveVideo(bookId, episodeNum, filteredTitle, chapterId, video);
+			ContentVideo video = contentProvider.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId, locale);
+			saveVideo(bookId, episodeNum, filteredTitle, chapterId, locale, video);
 			return video;
 		}
 		catch (ContentProviderException exception) {
-			return cachedVideoOrThrow(bookId, episodeNum, filteredTitle, chapterId, exception);
+			return cachedVideoOrThrow(bookId, episodeNum, filteredTitle, chapterId, locale, exception);
 		}
 	}
 
@@ -142,19 +183,20 @@ public class ContentCacheService {
 	}
 
 	private ContentCacheStatusResponse.ShelfStatus shelfStatus(ContentShelfType shelfType) {
-		return contentShelfCacheRepository.findById(shelfType)
+		return contentShelfCacheRepository.findByShelfTypeAndLocale(shelfType, ContentLocale.ENGLISH)
 				.map(cache -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), cache.itemCount(),
 						cache.refreshedAt().toString(), cache.lastError()))
 				.orElseGet(() -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), 0, null, null));
 	}
 
-	private void markShelfFailure(ContentShelfType shelfType, ContentProviderException exception) {
-		contentShelfCacheRepository.findById(shelfType)
+	private void markShelfFailure(ContentShelfType shelfType, ContentLocale locale, ContentProviderException exception) {
+		contentShelfCacheRepository.findByShelfTypeAndLocale(shelfType, locale)
 				.ifPresent(cache -> markShelfFailure(cache, exception));
 	}
 
-	private void markEpisodeFailure(String bookId, String filteredTitle, ContentProviderException exception) {
-		contentEpisodeCacheRepository.findByBookIdAndFilteredTitle(bookId, filteredTitle)
+	private void markEpisodeFailure(String bookId, String filteredTitle, ContentLocale locale,
+			ContentProviderException exception) {
+		contentEpisodeCacheRepository.findByBookIdAndFilteredTitleAndLocale(bookId, filteredTitle, locale)
 				.ifPresent(cache -> {
 					cache.markFailure(exception.getMessage());
 					contentEpisodeCacheRepository.save(cache);
@@ -166,52 +208,73 @@ public class ContentCacheService {
 		contentShelfCacheRepository.save(cache);
 	}
 
-	private void saveShelf(ContentShelfType shelfType, List<ContentBook> books) {
+	private void saveShelf(ContentShelfType shelfType, ContentLocale locale, List<ContentBook> books) {
 		String booksJson = writeBooks(books);
-		ContentShelfCache cache = contentShelfCacheRepository.findById(shelfType)
-				.orElseGet(() -> ContentShelfCache.create(shelfType, booksJson, books.size()));
+		ContentShelfCache cache = contentShelfCacheRepository.findByShelfTypeAndLocale(shelfType, locale)
+				.orElseGet(() -> ContentShelfCache.create(shelfType, locale, booksJson, books.size()));
 		cache.update(booksJson, books.size());
 		contentShelfCacheRepository.save(cache);
 	}
 
-	private void saveBooks(List<ContentBook> books) {
+	private void saveBooks(List<ContentBook> books, ContentLocale locale) {
 		for (ContentBook book : books) {
-			saveBook(book);
+			saveBook(book, locale);
 		}
 	}
 
-	private void saveBook(ContentBook book) {
-		ContentBookCache cache = contentBookCacheRepository.findById(book.bookId())
-				.orElseGet(() -> ContentBookCache.from(book));
+	private List<ContentBook> searchCachedBooks(String keywords, ContentLocale locale) {
+		String keyword = keywords == null ? "" : keywords.trim();
+		if (keyword.isBlank()) {
+			return List.of();
+		}
+		return contentBookCacheRepository
+				.findTop50ByLocaleAndTitleContainingIgnoreCaseOrLocaleAndDescriptionContainingIgnoreCase(
+						locale,
+						keyword,
+						locale,
+						keyword)
+				.stream()
+				.map(ContentBookCache::toContentBook)
+				.toList();
+	}
+
+	private void saveBook(ContentBook book, ContentLocale locale) {
+		ContentBookCache cache = contentBookCacheRepository.findByBookIdAndLocale(book.bookId(), locale)
+				.orElseGet(() -> ContentBookCache.from(book, locale));
 		cache.update(book);
 		contentBookCacheRepository.save(cache);
 	}
 
-	private void saveEpisodes(String bookId, String filteredTitle, List<ContentEpisode> episodes) {
+	private void saveEpisodes(String bookId, String filteredTitle, ContentLocale locale, List<ContentEpisode> episodes) {
 		String episodesJson = writeEpisodes(episodes);
-		ContentEpisodeCache cache = contentEpisodeCacheRepository.findByBookIdAndFilteredTitle(bookId, filteredTitle)
-				.orElseGet(() -> ContentEpisodeCache.create(bookId, filteredTitle, episodesJson, episodes.size()));
+		ContentEpisodeCache cache = contentEpisodeCacheRepository
+				.findByBookIdAndFilteredTitleAndLocale(bookId, filteredTitle, locale)
+				.orElseGet(() -> ContentEpisodeCache.create(bookId, filteredTitle, locale, episodesJson, episodes.size()));
 		cache.update(episodesJson, episodes.size());
 		contentEpisodeCacheRepository.save(cache);
 	}
 
-	private void saveVideo(String bookId, int episodeNum, String filteredTitle, String chapterId, ContentVideo video) {
+	private void saveVideo(String bookId, int episodeNum, String filteredTitle, String chapterId, ContentLocale locale,
+			ContentVideo video) {
 		String videoJson = writeVideo(video);
 		ContentVideoCache cache = contentVideoCacheRepository
-				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterId(bookId, episodeNum, filteredTitle, chapterId)
-				.orElseGet(() -> ContentVideoCache.create(bookId, episodeNum, filteredTitle, chapterId, videoJson));
+				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterIdAndLocale(bookId, episodeNum, filteredTitle,
+						chapterId, locale)
+				.orElseGet(() -> ContentVideoCache.create(bookId, episodeNum, filteredTitle, chapterId, locale,
+						videoJson));
 		cache.update(videoJson);
 		contentVideoCacheRepository.save(cache);
 	}
 
 	private ContentVideo cachedVideoOrThrow(String bookId, int episodeNum, String filteredTitle, String chapterId,
-			ContentProviderException exception) {
+			ContentLocale locale, ContentProviderException exception) {
 		// 播放地址具备时效性，仅当上游不可用（5xx）时回退最后一次缓存；404 表示该集不存在，不回退。
 		if (exception.statusCode() == 404) {
 			throw exception;
 		}
 		return contentVideoCacheRepository
-				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterId(bookId, episodeNum, filteredTitle, chapterId)
+				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterIdAndLocale(bookId, episodeNum, filteredTitle,
+						chapterId, locale)
 				.map(cache -> {
 					cache.markFailure(exception.getMessage());
 					contentVideoCacheRepository.save(cache);

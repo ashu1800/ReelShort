@@ -25,6 +25,8 @@ internal val OnPrimaryDark = Color(0xFF221400)
 internal val GoldStroke = Color(0x44FFC46B)
 internal val GoldSurfaceSoft = Color(0x1AFFC46B)
 internal val GoldSurfaceStrong = Color(0x26FFC46B)
+internal val AccountHeroScrim = Color(0x33191610)
+internal val TranslucentWhiteSurface = Color(0x1FFFFFFF)
 internal val WhiteEdge = Color(0x55FFFFFF)
 
 /** 导航栏底色（带不透明度）。 */

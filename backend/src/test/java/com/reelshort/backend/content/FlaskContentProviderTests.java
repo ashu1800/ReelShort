@@ -25,7 +25,7 @@ class FlaskContentProviderTests {
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
-		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/search?keywords=love"))
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/search?keywords=love&locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withSuccess("""
 						{
@@ -60,7 +60,7 @@ class FlaskContentProviderTests {
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
-		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/recommend"))
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/recommend?locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withSuccess("""
 						{
@@ -95,7 +95,7 @@ class FlaskContentProviderTests {
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
-		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/newrelease"))
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/newrelease?locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withSuccess("""
 						{
@@ -123,7 +123,7 @@ class FlaskContentProviderTests {
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
-		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/dramadub"))
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/dramadub?locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withSuccess("""
 						{
@@ -152,7 +152,7 @@ class FlaskContentProviderTests {
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
 		server.expect(once(),
-				requestTo("http://content-provider:5000/api/v1/reelshort/episodes/book-1?filtered_title=love-story"))
+				requestTo("http://content-provider:5000/api/v1/reelshort/episodes/book-1?filtered_title=love-story&locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withSuccess("""
 						{
@@ -193,7 +193,7 @@ class FlaskContentProviderTests {
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
 		server.expect(once(),
-				requestTo("http://content-provider:5000/api/v1/reelshort/episodes/book-1?filtered_title=love-story"))
+				requestTo("http://content-provider:5000/api/v1/reelshort/episodes/book-1?filtered_title=love-story&locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withSuccess("""
 						{
@@ -217,7 +217,7 @@ class FlaskContentProviderTests {
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
 		server.expect(once(),
-				requestTo("http://content-provider:5000/api/v1/reelshort/episodes/book-1?filtered_title=love-story"))
+				requestTo("http://content-provider:5000/api/v1/reelshort/episodes/book-1?filtered_title=love-story&locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withSuccess("""
 						{
@@ -239,7 +239,7 @@ class FlaskContentProviderTests {
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
 		server.expect(once(),
-				requestTo("http://content-provider:5000/api/v1/reelshort/video/book-1/1?filtered_title=love-story&chapter_id=chapter-1"))
+				requestTo("http://content-provider:5000/api/v1/reelshort/video/book-1/1?filtered_title=love-story&chapter_id=chapter-1&locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withSuccess("""
 						{
@@ -271,7 +271,7 @@ class FlaskContentProviderTests {
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
-		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/search?keywords=love"))
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/search?keywords=love&locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withServerError());
 
@@ -287,7 +287,7 @@ class FlaskContentProviderTests {
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
-		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/search?keywords=missing"))
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/search?keywords=missing&locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withResourceNotFound());
 
@@ -305,7 +305,7 @@ class FlaskContentProviderTests {
 		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
 
 		server.expect(once(),
-				requestTo("http://content-provider:5000/api/v1/reelshort/video/book-1/1?filtered_title=love-story&chapter_id=chapter-1"))
+				requestTo("http://content-provider:5000/api/v1/reelshort/video/book-1/1?filtered_title=love-story&chapter_id=chapter-1&locale=en"))
 				.andExpect(method(GET))
 				.andRespond(withSuccess("", MediaType.APPLICATION_JSON));
 

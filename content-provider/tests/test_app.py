@@ -16,13 +16,19 @@ BOOK = {
 
 
 class FakeReelShortClient:
-    def search(self, keywords):
-        return [BOOK | {"book_title": f"Search {keywords}"}]
+    def __init__(self):
+        self.calls = []
 
-    def shelf(self, shelf_name):
-        return [BOOK | {"book_title": shelf_name}]
+    def search(self, keywords, locale="en"):
+        self.calls.append(("search", keywords, locale))
+        return [BOOK | {"book_title": f"Search {keywords}", "description": locale}]
 
-    def episodes(self, book_id, filtered_title):
+    def shelf(self, shelf_name, locale="en"):
+        self.calls.append(("shelf", shelf_name, locale))
+        return [BOOK | {"book_title": shelf_name, "description": locale}]
+
+    def episodes(self, book_id, filtered_title, locale="en"):
+        self.calls.append(("episodes", book_id, filtered_title, locale))
         return {
             "book": BOOK,
             "episodes": [
@@ -31,7 +37,8 @@ class FakeReelShortClient:
             ],
         }
 
-    def video(self, book_id, episode_num, filtered_title, chapter_id):
+    def video(self, book_id, episode_num, filtered_title, chapter_id, locale="en"):
+        self.calls.append(("video", book_id, episode_num, filtered_title, chapter_id, locale))
         return {
             "video_url": "https://cdn.example.com/video.m3u8",
             "episode": episode_num,
@@ -46,7 +53,7 @@ class FakeReelShortClient:
 
 
 class FailingReelShortClient(FakeReelShortClient):
-    def search(self, keywords):
+    def search(self, keywords, locale="en"):
         raise UpstreamError(502, "upstream failed")
 
 
@@ -70,8 +77,26 @@ def test_search_returns_spring_boot_contract(client):
 
     assert response.status_code == 200
     assert response.get_json() == {
-        "results": [BOOK | {"book_title": "Search love"}],
+        "results": [BOOK | {"book_title": "Search love", "description": "en"}],
     }
+
+
+def test_search_passes_supported_locale_to_client():
+    fake = FakeReelShortClient()
+    app = create_app(client=fake)
+
+    response = app.test_client().get("/api/v1/reelshort/search?keywords=%E6%84%9B%E6%83%85&locale=zh-TW")
+
+    assert response.status_code == 200
+    assert fake.calls == [("search", "愛情", "zh-TW")]
+    assert response.get_json()["results"][0]["description"] == "zh-TW"
+
+
+def test_search_rejects_unsupported_locale(client):
+    response = client.get("/api/v1/reelshort/search?keywords=love&locale=zh-CN")
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "unsupported locale"}
 
 
 def test_search_requires_keywords(client):
@@ -103,8 +128,18 @@ def test_shelf_endpoints_return_books(client, path, shelf_name):
 
     assert response.status_code == 200
     assert response.get_json() == {
-        "books": [BOOK | {"book_title": shelf_name}],
+        "books": [BOOK | {"book_title": shelf_name, "description": "en"}],
     }
+
+
+def test_recommend_passes_locale_to_client():
+    fake = FakeReelShortClient()
+    app = create_app(client=fake)
+
+    response = app.test_client().get("/api/v1/reelshort/recommend?locale=zh-TW")
+
+    assert response.status_code == 200
+    assert fake.calls == [("shelf", "recommend", "zh-TW")]
 
 
 def test_episodes_return_spring_boot_contract(client):
@@ -127,6 +162,16 @@ def test_episodes_require_filtered_title(client):
     assert response.get_json() == {"error": "filtered_title is required"}
 
 
+def test_episodes_passes_locale_to_client():
+    fake = FakeReelShortClient()
+    app = create_app(client=fake)
+
+    response = app.test_client().get("/api/v1/reelshort/episodes/book-1?filtered_title=love-story&locale=zh-TW")
+
+    assert response.status_code == 200
+    assert fake.calls == [("episodes", "book-1", "love-story", "zh-TW")]
+
+
 def test_map_book_preserves_description_from_upstream_alias():
     mapped = ReelShortClient("https://site.example", "id", 3)._map_book(
         {
@@ -139,6 +184,21 @@ def test_map_book_preserves_description_from_upstream_alias():
     )
 
     assert mapped["description"] == "A hidden marriage is exposed."
+
+
+def test_map_book_uses_stable_ascii_filtered_title_when_localized_title_has_no_slug():
+    mapped = ReelShortClient("https://site.example", "id", 3)._map_book(
+        {
+            "book_id": "689950ba89597816250bcc7e",
+            "book_title": "愛情轟炸",
+            "book_pic": "cover.jpg",
+            "special_desc": "一段繁體中文簡介。",
+            "chapter_count": 12,
+        }
+    )
+
+    assert mapped["book_title"] == "愛情轟炸"
+    assert mapped["filtered_title"] == "book-689950ba89597816250bcc7e"
 
 
 def test_map_book_preserves_special_desc_from_current_reelshort_payload():
@@ -232,9 +292,34 @@ def test_reelshort_client_builds_search_data_url(monkeypatch):
     client.search("love story")
 
     assert captured == {
-        "url": "https://site.example/_next/data/build-1/id/search.json",
+        "url": "https://site.example/_next/data/build-1/en/search.json",
         "params": {"keywords": "love story"},
         "timeout": 3,
+    }
+
+
+def test_reelshort_client_builds_localized_search_data_url(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        ok = True
+
+        def json(self):
+            return {"pageProps": {"books": []}}
+
+    def fake_get(url, params, timeout):
+        captured["url"] = url
+        captured["params"] = params
+        return FakeResponse()
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+
+    ReelShortClient("https://site.example", "id", 3, build_id="build-1").search("愛情", locale="zh-TW")
+
+    assert captured == {
+        "url": "https://site.example/_next/data/build-1/zh-TW/search.json",
+        "params": {"keywords": "愛情"},
     }
 
 
@@ -291,7 +376,7 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_is_empty(mon
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append(url)
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -339,7 +424,7 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_is_empty(mon
     results = client.shelf("recommend")
 
     assert calls == [
-        "https://site.example/_next/data/build-1/37/recommend.json",
+        "https://site.example/_next/data/build-1/en/recommend.json",
         "https://site.example/_next/data/build-1/en.json",
     ]
     assert results == [
@@ -378,9 +463,9 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_returns_404(
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append(url)
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse(404)
-        if url.endswith("/_next/data/fresh-build/37/recommend.json"):
+        if url.endswith("/_next/data/fresh-build/en/recommend.json"):
             return FakeResponse(404)
         if url.endswith("/_next/data/fresh-build/en.json"):
             return FakeResponse(
@@ -423,8 +508,8 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_returns_404(
     results = client.shelf("recommend")
 
     assert calls == [
-        "https://site.example/_next/data/build-1/37/recommend.json",
-        "https://site.example/_next/data/fresh-build/37/recommend.json",
+        "https://site.example/_next/data/build-1/en/recommend.json",
+        "https://site.example/_next/data/fresh-build/en/recommend.json",
         "https://site.example/_next/data/fresh-build/en.json",
     ]
     assert results == [
@@ -435,6 +520,77 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_returns_404(
             "book_pic": "https://example.com/fallback.jpg",
             "description": "",
             "chapter_count": 16,
+        }
+    ]
+
+
+def test_reelshort_client_prefers_locale_shelf_data_for_traditional_chinese(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        text = ""
+
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self.ok = 200 <= status_code < 300
+            self.payload = payload or {}
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append(url)
+        if url.endswith("/_next/data/build-1/zh-TW/recommend.json"):
+            return FakeResponse(
+                200,
+                {
+                    "pageProps": {
+                        "books": [
+                            {
+                                "book_id": "book-zh",
+                                "book_title": "繁中推薦",
+                                "book_pic": "https://example.com/zh.jpg",
+                                "chapter_count": 9,
+                            }
+                        ]
+                    }
+                },
+            )
+        if url.endswith("/_next/data/build-1/37/recommend.json"):
+            return FakeResponse(
+                200,
+                {
+                    "pageProps": {
+                        "books": [
+                            {
+                                "book_id": "book-en",
+                                "book_title": "English Recommend",
+                                "book_pic": "https://example.com/en.jpg",
+                                "chapter_count": 10,
+                            }
+                        ]
+                    }
+                },
+            )
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    monkeypatch.setenv("REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD", "0")
+
+    client = ReelShortClient("https://site.example", "37", 3)
+    client.build_id = "build-1"
+
+    results = client.shelf("recommend", locale="zh-TW")
+
+    assert calls == ["https://site.example/_next/data/build-1/zh-TW/recommend.json"]
+    assert results == [
+        {
+            "book_id": "book-zh",
+            "book_title": "繁中推薦",
+            "filtered_title": "book-book-zh",
+            "book_pic": "https://example.com/zh.jpg",
+            "description": "",
+            "chapter_count": 9,
         }
     ]
 
@@ -455,7 +611,7 @@ def test_reelshort_client_expands_recommend_with_search_catalog(monkeypatch):
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -511,7 +667,7 @@ def test_reelshort_client_expands_recommend_with_search_catalog(monkeypatch):
 
     assert [book["book_id"] for book in results] == ["home-1", "love-1", "revenge-1"]
     assert calls == [
-        {"url": "https://site.example/_next/data/build-1/37/recommend.json", "params": None},
+        {"url": "https://site.example/_next/data/build-1/en/recommend.json", "params": None},
         {"url": "https://site.example/_next/data/build-1/en.json", "params": None},
         {
             "url": "https://site.example/_next/data/build-1/en/search.json",
@@ -537,7 +693,7 @@ def test_reelshort_client_recommend_catalog_keeps_home_order_and_deduplicates(mo
             return self.payload
 
     def fake_get(url, params=None, timeout=None, **kwargs):
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -599,7 +755,7 @@ def test_reelshort_client_recommend_catalog_skips_failed_search_keyword(monkeypa
             return self.payload
 
     def fake_get(url, params=None, timeout=None, **kwargs):
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse(200, {})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -646,7 +802,7 @@ def test_reelshort_client_recommend_catalog_respects_max_books(monkeypatch):
             return self.payload
 
     def fake_get(url, params=None, timeout=None, **kwargs):
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -709,7 +865,7 @@ def test_reelshort_client_recommend_catalog_reads_search_pages_until_empty(monke
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
@@ -760,7 +916,7 @@ def test_reelshort_client_recommend_catalog_does_not_fetch_after_empty_page(monk
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
@@ -804,7 +960,7 @@ def test_reelshort_client_recommend_catalog_clamps_search_limits(monkeypatch):
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
@@ -848,7 +1004,7 @@ def test_reelshort_client_recommend_catalog_uses_deterministic_keyword_plan(monk
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
@@ -891,7 +1047,7 @@ def test_reelshort_client_recommend_catalog_parallel_fetch_keeps_configured_orde
             return self.payload
 
     def fake_get(url, params=None, timeout=None, **kwargs):
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
@@ -957,7 +1113,7 @@ def test_reelshort_client_maps_episode_page_props(monkeypatch):
     )
 
     assert captured == {
-        "url": "https://site.example/_next/data/build-1/id/movie/love-story-book%2F1.json",
+        "url": "https://site.example/_next/data/build-1/en/movie/love-story-book%2F1.json",
         "params": {"slug": "love-story-book/1"},
     }
     assert episodes == {
@@ -992,7 +1148,7 @@ def test_reelshort_client_uses_book_info_when_movie_data_returns_404(monkeypatch
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/movie/fiancee-s-betrayal-6a2b.json"):
+        if url.endswith("/_next/data/build-1/en/movie/fiancee-s-betrayal-6a2b.json"):
             return FakeResponse(404)
         if url.endswith("/api/video/book/getBookInfo"):
             return FakeResponse(
@@ -1032,7 +1188,7 @@ def test_reelshort_client_uses_book_info_when_movie_data_returns_404(monkeypatch
 
     assert calls == [
         {
-            "url": "https://site.example/_next/data/build-1/37/movie/fiancee-s-betrayal-6a2b.json",
+            "url": "https://site.example/_next/data/build-1/en/movie/fiancee-s-betrayal-6a2b.json",
             "params": {"slug": "fiancee-s-betrayal-6a2b"},
         },
         {
@@ -1067,7 +1223,7 @@ def test_reelshort_client_uses_book_description_when_episode_description_is_miss
             return self.payload
 
     def fake_get(url, params=None, timeout=None, **kwargs):
-        if url.endswith("/_next/data/build-1/37/movie/love-story-book-1.json"):
+        if url.endswith("/_next/data/build-1/en/movie/love-story-book-1.json"):
             return FakeResponse(
                 200,
                 {
@@ -1212,7 +1368,7 @@ def test_reelshort_client_falls_back_to_episode_html_when_legacy_video_data_retu
             return FakeResponse(404)
         if url.endswith("/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1"):
             return FakeResponse(200, text=html)
-        if url.endswith("/_next/data/build-1/37/movie/fiancee-s-betrayal-book-1.json"):
+        if url.endswith("/_next/data/build-1/en/movie/fiancee-s-betrayal-book-1.json"):
             return FakeResponse(
                 200,
                 {
@@ -1289,12 +1445,12 @@ def test_reelshort_client_refreshes_auto_discovered_build_id_after_data_404(monk
     assert client.build_id == "fresh-build"
     assert calls == [
         {
-            "url": "https://site.example/_next/data/stale-build/id/search.json",
+            "url": "https://site.example/_next/data/stale-build/en/search.json",
             "params": {"keywords": "love"},
         },
         {"url": "https://site.example/id", "params": None},
         {
-            "url": "https://site.example/_next/data/fresh-build/id/search.json",
+            "url": "https://site.example/_next/data/fresh-build/en/search.json",
             "params": {"keywords": "love"},
         },
     ]
@@ -1322,7 +1478,7 @@ def test_reelshort_client_does_not_refresh_explicit_build_id_after_data_404(monk
         client.search("love")
 
     assert error.value.status_code == 404
-    assert calls == ["https://site.example/_next/data/fixed-build/id/search.json"]
+    assert calls == ["https://site.example/_next/data/fixed-build/en/search.json"]
 
 
 def test_reelshort_client_retries_auto_build_id_404_only_once(monkeypatch):
@@ -1355,12 +1511,12 @@ def test_reelshort_client_retries_auto_build_id_404_only_once(monkeypatch):
     assert error.value.status_code == 404
     assert calls == [
         {
-            "url": "https://site.example/_next/data/stale-build/id/search.json",
+            "url": "https://site.example/_next/data/stale-build/en/search.json",
             "params": {"keywords": "missing"},
         },
         {"url": "https://site.example/id", "params": None},
         {
-            "url": "https://site.example/_next/data/fresh-build/id/search.json",
+            "url": "https://site.example/_next/data/fresh-build/en/search.json",
             "params": {"keywords": "missing"},
         },
     ]

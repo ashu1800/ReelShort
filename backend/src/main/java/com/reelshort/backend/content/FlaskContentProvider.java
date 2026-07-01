@@ -37,27 +37,32 @@ public class FlaskContentProvider implements ContentProvider {
 	}
 
 	@Override
-	public List<ContentBook> search(String keywords) {
+	public List<ContentBook> search(String keywords, ContentLocale locale) {
 		SearchResponse response = get(SearchResponse.class,
-				uri("/api/v1/reelshort/search").queryParam("keywords", keywords).toUriString());
+				uri("/api/v1/reelshort/search")
+						.queryParam("keywords", keywords)
+						.queryParam("locale", locale.apiValue())
+						.toUriString());
 		return response.results() == null
 				? List.of()
 				: response.results().stream().map(FlaskBook::toContentBook).toList();
 	}
 
 	@Override
-	public List<ContentBook> getShelf(ContentShelfType shelfType) {
-		ShelfResponse response = get(ShelfResponse.class, uri(shelfType.providerPath()).toUriString());
+	public List<ContentBook> getShelf(ContentShelfType shelfType, ContentLocale locale) {
+		ShelfResponse response = get(ShelfResponse.class,
+				uri(shelfType.providerPath()).queryParam("locale", locale.apiValue()).toUriString());
 		return response.books() == null
 				? List.of()
 				: response.books().stream().map(FlaskBook::toContentBook).toList();
 	}
 
 	@Override
-	public ContentEpisodesDetail getEpisodesDetail(String bookId, String filteredTitle) {
+	public ContentEpisodesDetail getEpisodesDetail(String bookId, String filteredTitle, ContentLocale locale) {
 		EpisodesResponse response = get(EpisodesResponse.class,
 				uri("/api/v1/reelshort/episodes/{bookId}")
 						.queryParam("filtered_title", filteredTitle)
+						.queryParam("locale", locale.apiValue())
 						.buildAndExpand(bookId)
 						.toUriString());
 		Optional<ContentBook> book = Optional.ofNullable(response.book())
@@ -70,11 +75,13 @@ public class FlaskContentProvider implements ContentProvider {
 	}
 
 	@Override
-	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId) {
+	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId,
+			ContentLocale locale) {
 		FlaskVideo response = get(FlaskVideo.class,
 				uri("/api/v1/reelshort/video/{bookId}/{episodeNum}")
 						.queryParam("filtered_title", filteredTitle)
 						.queryParam("chapter_id", chapterId)
+						.queryParam("locale", locale.apiValue())
 						.buildAndExpand(bookId, episodeNum)
 						.toUriString());
 		return response.toContentVideo();

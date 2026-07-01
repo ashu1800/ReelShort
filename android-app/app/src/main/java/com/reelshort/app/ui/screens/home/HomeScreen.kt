@@ -10,20 +10,24 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.ui.components.EmptyState
 import com.reelshort.app.ui.components.PosterCard
 import com.reelshort.app.ui.components.SectionHeader
 import com.reelshort.app.ui.format.homeEmptyState
+import com.reelshort.app.ui.format.strings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun HomeScreen(
     books: List<BookSummary>,
     isRefreshing: Boolean,
+    language: AppLanguage,
     onOpenBook: (BookSummary) -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val copy = strings(language)
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = onRefresh,
@@ -35,13 +39,13 @@ internal fun HomeScreen(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                SectionHeader("今日推荐", "为你整理 ${books.size} 部短剧")
+                SectionHeader(copy.homeHeaderTitle, "${books.size} ${copy.homeHeaderSubtitleSuffix}")
             }
             if (books.isEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) { EmptyState(homeEmptyState()) }
+                item(span = { GridItemSpan(maxLineSpan) }) { EmptyState(homeEmptyState(language)) }
             }
             items(books, key = { it.id }) { book ->
-                PosterCard(book = book, onClick = { onOpenBook(book) })
+                PosterCard(book = book, onClick = { onOpenBook(book) }, language = language)
             }
         }
     }

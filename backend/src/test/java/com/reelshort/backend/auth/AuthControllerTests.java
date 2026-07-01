@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.content.ContentBook;
+import com.reelshort.backend.content.ContentLocale;
 import com.reelshort.backend.content.ContentProvider;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
@@ -102,7 +103,7 @@ class AuthControllerTests {
 	void loginTokenCanAccessProtectedAppApi() throws Exception {
 		registerUser("carol-api", "Password123");
 		String token = loginUserAndExtractToken("carol-api", "Password123");
-		when(contentProvider.search("love")).thenReturn(List.of(
+		when(contentProvider.search("love", ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentBook("book-login-token", "Love", "love", "https://example.com/cover.jpg", "", 3)));
 
 		mockMvc.perform(get("/api/app/content/search")

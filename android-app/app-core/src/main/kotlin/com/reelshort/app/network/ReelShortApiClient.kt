@@ -20,13 +20,21 @@ interface ReelShortApiClient {
 
     suspend fun register(username: String, password: String): AuthSession
 
-    suspend fun getHomeShelf(): List<BookSummary>
+    suspend fun getHomeShelf(locale: String = "en"): List<BookSummary>
 
-    suspend fun search(query: String): List<BookSummary>
+    suspend fun search(query: String, locale: String = "en"): List<BookSummary>
 
-    suspend fun getEpisodes(bookId: String, filteredTitle: String): List<EpisodeSummary>
+    suspend fun getBook(bookId: String, locale: String = "en"): BookSummary
 
-    suspend fun getVideoUrl(bookId: String, episode: Int, filteredTitle: String, chapterId: String): VideoUrl
+    suspend fun getEpisodes(bookId: String, filteredTitle: String, locale: String = "en"): List<EpisodeSummary>
+
+    suspend fun getVideoUrl(
+        bookId: String,
+        episode: Int,
+        filteredTitle: String,
+        chapterId: String,
+        locale: String = "en",
+    ): VideoUrl
 
     suspend fun getEpisodeSnapshot(bookId: String, episode: Int): WatchEpisodeSnapshot
 

@@ -2,6 +2,7 @@ package com.reelshort.app.state
 
 import com.reelshort.app.data.AppDataSource
 import com.reelshort.app.data.ApiHealthStatus
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.Comment
@@ -301,6 +302,79 @@ class AppStateControllerTest {
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openWatchRecordLoadsBookAndOpensRecordedEpisodeFromAccount() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        val record = WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 60)
+
+        controller.restoreSession()
+        controller.openAccount()
+        dataSource.calls.clear()
+        controller.openWatchRecord(record)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals("book-1", state.selectedBook?.id)
+        assertEquals(2, state.selectedEpisode?.number)
+        assertEquals(AppScreen.ACCOUNT, state.playerReturnScreen)
+        assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
+        assertEquals(listOf("book:book-1", "episodes:book-1", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openWatchRecordFallsBackWhenRecordedEpisodeIsMissing() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        val record = WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 99, progressPercent = 60)
+
+        controller.restoreSession()
+        controller.openAccount()
+        dataSource.calls.clear()
+        controller.openWatchRecord(record)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(1, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
+    }
+
+    @Test
+    fun openWatchRecordFailureStaysOnAccountAndShowsContentError() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.bookError = IllegalStateException("book missing")
+        val controller = AppStateController(dataSource)
+        val record = WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 60)
+
+        controller.restoreSession()
+        controller.openAccount()
+        dataSource.calls.clear()
+        controller.openWatchRecord(record)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
+        assertNull(state.currentVideoUrl)
+        assertEquals(listOf("book:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openWatchRecordWithoutSessionPromptsLoginAndDoesNotLoadBook() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        val controller = AppStateController(dataSource)
+        val record = WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 60)
+
+        controller.openAccount()
+        dataSource.calls.clear()
+        controller.openWatchRecord(record)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertTrue(state.authPromptVisible)
+        assertFalse(state.isLoading)
+        assertTrue(dataSource.calls.isEmpty())
     }
 
     @Test
@@ -1148,7 +1222,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertNull(state.session)
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -1163,7 +1237,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals(session, state.session)
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -1178,7 +1252,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals(session, state.session)
         assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
     }
 
     @Test
@@ -1204,7 +1278,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
         assertNull(state.errorMessage)
         // 读缓存（命中秒开）+ 后台网络拉取 + 写回新缓存。
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
         assertEquals(listOf(dataSource.books), dataSource.savedHomeShelves)
     }
 
@@ -1230,7 +1304,7 @@ class AppStateControllerTest {
         // 后台刷新失败静默吞掉，保留缓存数据，不给用户报错。
         assertEquals(listOf("cached-1"), state.homeShelf.map { it.id })
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home"), dataSource.calls)
         // 失败时不写回缓存。
         assertTrue(dataSource.savedHomeShelves.isEmpty())
     }
@@ -1306,7 +1380,43 @@ class AppStateControllerTest {
         assertNull(state.session)
         assertEquals(emptyList(), state.homeShelf)
         assertNull(state.errorMessage)
-        assertEquals(listOf("restore", "credentials:load", "home:cache:load", "home", "home:cache:save", "clear"), dataSource.calls)
+        assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home", "home:cache:save", "clear"), dataSource.calls)
+    }
+
+    @Test
+    fun setLanguagePersistsPreferenceRefreshesHomeAndClearsSearchResults() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.search("Alpha")
+        dataSource.calls.clear()
+
+        controller.setLanguage(AppLanguage.TRADITIONAL_CHINESE)
+
+        val state = controller.state.value
+        assertEquals(AppLanguage.TRADITIONAL_CHINESE, state.language)
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("", state.searchQuery)
+        assertEquals(emptyList(), state.searchResults)
+        assertEquals(listOf("language:save:zh-TW", "home", "home:cache:save"), dataSource.calls)
+    }
+
+    @Test
+    fun setLanguageKeepsUiLanguageWhenHomeRefreshFails() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.search("Alpha")
+        dataSource.calls.clear()
+        dataSource.homeError = IllegalStateException("content unavailable")
+
+        controller.setLanguage(AppLanguage.TRADITIONAL_CHINESE)
+
+        val state = controller.state.value
+        assertEquals(AppLanguage.TRADITIONAL_CHINESE, state.language)
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("", state.searchQuery)
+        assertEquals(emptyList(), state.searchResults)
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
+        assertEquals(listOf("language:save:zh-TW", "home"), dataSource.calls)
     }
 
     @Test
@@ -1419,6 +1529,7 @@ class AppStateControllerTest {
             ),
         )
         var homeError: Throwable? = homeError
+        var bookError: Throwable? = null
         var homeGate: CompletableDeferred<Unit>? = null
         val searchGates = mutableMapOf<String, CompletableDeferred<Unit>>()
         val episodeGates = mutableMapOf<String, CompletableDeferred<Unit>>()
@@ -1462,6 +1573,7 @@ class AppStateControllerTest {
         private val favorited = mutableSetOf<String>()
         private val commentStore = mutableListOf<Comment>()
         var favoritesList: List<BookSummary> = emptyList()
+        var language: AppLanguage = AppLanguage.ENGLISH
 
         override val apiBaseUrl: String = "https://reelshort.hjj888.cc/api/app"
 
@@ -1504,6 +1616,12 @@ class AppStateControllerTest {
             calls += "search:$query"
             searchGates[query]?.await()
             return books.filter { it.title.contains(query, ignoreCase = true) }
+        }
+
+        override suspend fun loadBook(bookId: String): BookSummary {
+            calls += "book:$bookId"
+            bookError?.let { throw it }
+            return books.first { it.id == bookId }
         }
 
         override suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary> {
@@ -1609,6 +1727,16 @@ class AppStateControllerTest {
 
         override suspend fun clearSavedCredentials() {
             savedCredentials = null
+        }
+
+        override suspend fun loadLanguagePreference(): AppLanguage {
+            calls += "language:load"
+            return language
+        }
+
+        override suspend fun saveLanguagePreference(language: AppLanguage) {
+            calls += "language:save:${language.locale}"
+            this.language = language
         }
 
         override suspend fun toggleLike(book: BookSummary): SocialToggleResult {

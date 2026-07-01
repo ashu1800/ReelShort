@@ -59,6 +59,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onLogout = remember(viewModel) { viewModel::logout }
     val onSearch = remember(viewModel) { viewModel::search }
     val onOpenBook = remember(viewModel) { viewModel::openBook }
+    val onOpenWatchRecord = remember(viewModel) { viewModel::openWatchRecord }
     val onOpenPlayer = remember(viewModel) { viewModel::openPlayer }
     val onUpdatePlaybackPosition = remember(viewModel) { viewModel::updatePlaybackPosition }
     val onAutoReportProgress = remember(viewModel) { viewModel::reportProgressSilently }
@@ -71,6 +72,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onCheckApiHealth = remember(viewModel) { viewModel::checkApiHealth }
     val onShowAuthPrompt = remember(viewModel) { viewModel::showAuthPrompt }
     val onRefreshHome = remember(viewModel) { viewModel::refreshHome }
+    val onSetLanguage = remember(viewModel) { viewModel::setLanguage }
 
     // 播放器与收藏页为全屏沉浸式，系统返回键回到上一级而非退出 App
     BackHandler(enabled = state.screen == AppScreen.PLAYER) {
@@ -92,6 +94,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onLogout = onLogout,
                 onSearch = onSearch,
                 onOpenBook = onOpenBook,
+                onOpenWatchRecord = onOpenWatchRecord,
                 onOpenPlayer = onOpenPlayer,
                 onUpdatePlaybackPosition = onUpdatePlaybackPosition,
                 onAutoReportProgress = onAutoReportProgress,
@@ -104,6 +107,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onCheckApiHealth = onCheckApiHealth,
                 onShowAuthPrompt = onShowAuthPrompt,
                 onRefreshHome = onRefreshHome,
+                onSetLanguage = onSetLanguage,
             )
             AuthBottomSheet(
                 visible = state.authPromptVisible,
@@ -124,6 +128,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
             )
             LoadingDialog(
                 visible = state.isLoading,
+                language = state.language,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .zIndex(1f),

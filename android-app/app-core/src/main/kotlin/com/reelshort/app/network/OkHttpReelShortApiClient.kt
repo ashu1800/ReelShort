@@ -66,24 +66,42 @@ class OkHttpReelShortApiClient(
     override suspend fun register(username: String, password: String): AuthSession =
         post<AuthRequestDto, AuthSessionDto>("/auth/register", AuthRequestDto(username, password)).toDomain()
 
-    override suspend fun getHomeShelf(): List<BookSummary> =
-        get<List<ContentBookDto>>("/home/recommend", authenticated = false).map { it.toDomain() }
-
-    override suspend fun search(query: String): List<BookSummary> =
-        get<List<ContentBookDto>>("/content/search", mapOf("keywords" to query), authenticated = false)
+    override suspend fun getHomeShelf(locale: String): List<BookSummary> =
+        get<List<ContentBookDto>>("/home/recommend", mapOf("locale" to locale), authenticated = false)
             .map { it.toDomain() }
 
-    override suspend fun getEpisodes(bookId: String, filteredTitle: String): List<EpisodeSummary> =
+    override suspend fun search(query: String, locale: String): List<BookSummary> =
+        get<List<ContentBookDto>>(
+            "/content/search",
+            mapOf("keywords" to query, "locale" to locale),
+            authenticated = false,
+        )
+            .map { it.toDomain() }
+
+    override suspend fun getBook(bookId: String, locale: String): BookSummary =
+        get<ContentBookDto>(
+            listOf("content", "books", bookId),
+            mapOf("locale" to locale),
+            authenticated = false,
+        ).toDomain()
+
+    override suspend fun getEpisodes(bookId: String, filteredTitle: String, locale: String): List<EpisodeSummary> =
         get<List<ContentEpisodeDto>>(
             listOf("content", "books", bookId, "episodes"),
-            mapOf("filteredTitle" to filteredTitle),
+            mapOf("filteredTitle" to filteredTitle, "locale" to locale),
             authenticated = false,
         ).map { it.toDomain() }
 
-    override suspend fun getVideoUrl(bookId: String, episode: Int, filteredTitle: String, chapterId: String): VideoUrl =
+    override suspend fun getVideoUrl(
+        bookId: String,
+        episode: Int,
+        filteredTitle: String,
+        chapterId: String,
+        locale: String,
+    ): VideoUrl =
         get<ContentVideoDto>(
             listOf("content", "books", bookId, "episodes", episode.toString(), "play"),
-            mapOf("filteredTitle" to filteredTitle, "chapterId" to chapterId),
+            mapOf("filteredTitle" to filteredTitle, "chapterId" to chapterId, "locale" to locale),
             authenticated = true,
         ).toDomain()
 

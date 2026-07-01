@@ -15,17 +15,17 @@ class ContentEmptyStateContractTest {
     fun homeEmptyStateGuidesUserToSearch() {
         val state = homeEmptyState()
 
-        assertEquals("今日暂无推荐", state.title)
-        assertEquals("内容源暂时没有返回推荐短剧，可以先搜索片名或关键词。", state.message)
-        assertEquals("去搜索", state.actionLabel)
+        assertEquals("今日暫無推薦", state.title)
+        assertEquals("內容源暫時沒有返回推薦短劇，可以先搜尋片名或關鍵詞。", state.message)
+        assertEquals("去搜尋", state.actionLabel)
     }
 
     @Test
     fun searchEmptyStateBeforeQueryGuidesInput() {
         val state = assertNotNull(searchEmptyState(query = "", resultCount = 0))
 
-        assertEquals("发现短剧", state.title)
-        assertEquals("输入剧名、角色或关键词，快速找到想看的短剧。", state.message)
+        assertEquals("發現短劇", state.title)
+        assertEquals("輸入劇名、角色或關鍵詞，快速找到想看的短劇。", state.message)
         assertNull(state.actionLabel)
     }
 
@@ -33,9 +33,9 @@ class ContentEmptyStateContractTest {
     fun searchEmptyStateAfterZeroResultsIncludesKeyword() {
         val state = assertNotNull(searchEmptyState(query = "Alpha Love", resultCount = 0))
 
-        assertEquals("没有找到相关短剧", state.title)
-        assertEquals("没有匹配“Alpha Love”的内容，换个关键词再试。", state.message)
-        assertEquals("重新搜索", state.actionLabel)
+        assertEquals("沒有找到相關短劇", state.title)
+        assertEquals("沒有匹配“Alpha Love”的內容，換個關鍵詞再試。", state.message)
+        assertEquals("重新搜尋", state.actionLabel)
     }
 
     @Test
@@ -47,9 +47,9 @@ class ContentEmptyStateContractTest {
     fun detailEmptyStateBeforeSelectionGuidesSelection() {
         val state = assertNotNull(detailEmptyState(book = null, episodeCount = 0))
 
-        assertEquals("先选择一部短剧", state.title)
-        assertEquals("从首页推荐或搜索结果进入详情后，这里会展示分集列表。", state.message)
-        assertEquals("返回首页", state.actionLabel)
+        assertEquals("先選擇一部短劇", state.title)
+        assertEquals("從首頁推薦或搜尋結果進入詳情後，這裡會展示分集列表。", state.message)
+        assertEquals("返回首頁", state.actionLabel)
     }
 
     @Test
@@ -65,9 +65,9 @@ class ContentEmptyStateContractTest {
 
         val state = assertNotNull(detailEmptyState(book = book, episodeCount = 0))
 
-        assertEquals("分集暂不可用", state.title)
-        assertEquals("“Alpha Love”暂时没有可播放分集，可以稍后刷新或选择其他短剧。", state.message)
-        assertEquals("换一部", state.actionLabel)
+        assertEquals("分集暫不可用", state.title)
+        assertEquals("“Alpha Love”暫時沒有可播放分集，可以稍後刷新或選擇其他短劇。", state.message)
+        assertEquals("換一部", state.actionLabel)
     }
 
     @Test

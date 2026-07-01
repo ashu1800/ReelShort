@@ -5,13 +5,16 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 @Entity
 @Table(name = "content_video_cache",
-		uniqueConstraints = @UniqueConstraint(columnNames = { "book_id", "episode_num", "filtered_title", "chapter_id" }))
+		uniqueConstraints = @UniqueConstraint(columnNames = { "book_id", "episode_num", "filtered_title", "chapter_id",
+				"locale" }))
 public class ContentVideoCache {
 
 	@Id
@@ -29,6 +32,10 @@ public class ContentVideoCache {
 	@Column(name = "chapter_id", nullable = false, length = 128)
 	private String chapterId;
 
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 32)
+	private ContentLocale locale;
+
 	@Column(name = "video_json", nullable = false, columnDefinition = "text")
 	private String videoJson;
 
@@ -42,19 +49,25 @@ public class ContentVideoCache {
 	}
 
 	private ContentVideoCache(UUID id, String bookId, int episodeNum, String filteredTitle, String chapterId,
-			String videoJson, OffsetDateTime refreshedAt) {
+			ContentLocale locale, String videoJson, OffsetDateTime refreshedAt) {
 		this.id = id;
 		this.bookId = bookId;
 		this.episodeNum = episodeNum;
 		this.filteredTitle = filteredTitle;
 		this.chapterId = chapterId;
+		this.locale = locale;
 		this.videoJson = videoJson;
 		this.refreshedAt = refreshedAt;
 	}
 
 	public static ContentVideoCache create(String bookId, int episodeNum, String filteredTitle, String chapterId,
 			String videoJson) {
-		return new ContentVideoCache(UUID.randomUUID(), bookId, episodeNum, filteredTitle, chapterId, videoJson,
+		return create(bookId, episodeNum, filteredTitle, chapterId, ContentLocale.ENGLISH, videoJson);
+	}
+
+	public static ContentVideoCache create(String bookId, int episodeNum, String filteredTitle, String chapterId,
+			ContentLocale locale, String videoJson) {
+		return new ContentVideoCache(UUID.randomUUID(), bookId, episodeNum, filteredTitle, chapterId, locale, videoJson,
 				OffsetDateTime.now());
 	}
 
@@ -86,6 +99,10 @@ public class ContentVideoCache {
 
 	public String chapterId() {
 		return chapterId;
+	}
+
+	public ContentLocale locale() {
+		return locale;
 	}
 
 	public String videoJson() {

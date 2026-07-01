@@ -20,7 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.state.AppScreen
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.format.navigationLabel
@@ -44,6 +46,7 @@ internal fun MainShell(
     onLogout: () -> Unit,
     onSearch: (String) -> Unit,
     onOpenBook: (BookSummary) -> Unit,
+    onOpenWatchRecord: (WatchRecord) -> Unit,
     onOpenPlayer: (EpisodeSummary) -> Unit,
     onUpdatePlaybackPosition: (Int, Int) -> Unit,
     onAutoReportProgress: (Int, Int) -> Unit,
@@ -56,6 +59,7 @@ internal fun MainShell(
     onCheckApiHealth: () -> Unit,
     onShowAuthPrompt: () -> Unit,
     onRefreshHome: () -> Unit,
+    onSetLanguage: (AppLanguage) -> Unit,
 ) {
     // 播放器全屏渲染：跳出底部导航与状态栏占位，沉浸式短剧播放
     if (state.screen == AppScreen.PLAYER) {
@@ -83,7 +87,7 @@ internal fun MainShell(
                             selected = state.screen == screen,
                             onClick = { onScreenSelected(screen) },
                             icon = { NavigationIcon(screen) },
-                            label = { Text(screen.navigationLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            label = { Text(screen.navigationLabel(state.language), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = NavItemSelectedIcon,
                                 selectedTextColor = PrimaryGold,
@@ -111,13 +115,14 @@ internal fun MainShell(
                         AppScreen.HOME -> HomeScreen(
                             books = state.homeShelf,
                             isRefreshing = state.isHomeRefreshing,
+                            language = state.language,
                             onOpenBook = onOpenBook,
                             onRefresh = onRefreshHome,
                         )
                         AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
-                        AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, onOpenPlayer)
+                        AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, state.language, onOpenPlayer)
                         AppScreen.PLAYER -> Unit
-                        AppScreen.FAVORITES -> FavoritesScreen(state.favorites, onOpenBook, onBackFromFavorites)
+                        AppScreen.FAVORITES -> FavoritesScreen(state.favorites, state.language, onOpenBook, onBackFromFavorites)
                         AppScreen.ACCOUNT -> AccountScreen(
                             records = state.watchHistory,
                             isLoggedIn = state.session != null,
@@ -130,7 +135,10 @@ internal fun MainShell(
                             onCheckApiHealth = onCheckApiHealth,
                             onShowAuthPrompt = onShowAuthPrompt,
                             onOpenFavorites = onOpenFavorites,
+                            onOpenWatchRecord = onOpenWatchRecord,
                             onLogout = onLogout,
+                            language = state.language,
+                            onSetLanguage = onSetLanguage,
                         )
                     }
                 }
@@ -147,5 +155,5 @@ private fun NavigationIcon(screen: AppScreen) {
         AppScreen.ACCOUNT -> Icons.Rounded.AccountCircle
         else -> Icons.Rounded.Home
     }
-    Icon(imageVector = imageVector, contentDescription = screen.navigationLabel)
+    Icon(imageVector = imageVector, contentDescription = null)
 }

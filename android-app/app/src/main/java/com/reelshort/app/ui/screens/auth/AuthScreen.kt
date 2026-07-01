@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.components.AccentLine
 import com.reelshort.app.ui.components.LoginTextField
@@ -30,6 +31,7 @@ import com.reelshort.app.ui.components.PrimaryActionButton
 import com.reelshort.app.ui.components.RememberPasswordRow
 import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.format.authPromptTitle
+import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.AppBackground
 import com.reelshort.app.ui.theme.PrimaryGold
 import com.reelshort.app.ui.theme.TextSecondary
@@ -40,6 +42,7 @@ internal fun LoginScreen(
     onLogin: (String, String, Boolean) -> Unit,
     onRegister: (String, String, Boolean) -> Unit,
 ) {
+    val copy = strings(state.language)
     AppBackground {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -47,13 +50,13 @@ internal fun LoginScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             item {
-                BrandLockup()
+                BrandLockup(state.language)
                 Spacer(Modifier.height(34.dp))
                 SurfacePanel {
                     AuthForm(
                         state = state,
-                        title = "账号登录",
-                        subtitle = "继续浏览推荐短剧和观看记录",
+                        title = copy.authLoginTitle,
+                        subtitle = copy.authLoginSubtitle,
                         registerAsPrimary = false,
                         onLogin = onLogin,
                         onRegister = onRegister,
@@ -73,6 +76,7 @@ internal fun AuthBottomSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val copy = strings(state.language)
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
         enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
@@ -88,11 +92,11 @@ internal fun AuthBottomSheet(
         ) {
             AuthForm(
                 state = state,
-                title = authPromptTitle(state.pendingPlaybackEpisode != null),
+                title = authPromptTitle(state.pendingPlaybackEpisode != null, state.language),
                 subtitle = if (state.pendingPlaybackEpisode != null) {
-                    "播放、积分和账户数据需要登录账号。"
+                    copy.authBottomSheetPlaybackSubtitle
                 } else {
-                    "登录后可以查看积分、观看记录和订单。"
+                    copy.authBottomSheetAccountSubtitle
                 },
                 registerAsPrimary = true,
                 onLogin = onLogin,
@@ -105,10 +109,11 @@ internal fun AuthBottomSheet(
 }
 
 @Composable
-private fun BrandLockup() {
+private fun BrandLockup(language: AppLanguage) {
+    val copy = strings(language)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("ReelShort", style = MaterialTheme.typography.displaySmall)
-        Text("聚合短剧播放平台", style = MaterialTheme.typography.titleMedium, color = TextSecondary)
+        Text(copy.authBrandSubtitle, style = MaterialTheme.typography.titleMedium, color = TextSecondary)
         AccentLine()
     }
 }
@@ -128,6 +133,7 @@ internal fun AuthForm(
     onDismiss: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val copy = strings(state.language)
     var username by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.username ?: state.session?.username.orEmpty()) }
     var password by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.password.orEmpty()) }
     var rememberPassword by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.rememberPassword == true) }
@@ -140,20 +146,20 @@ internal fun AuthForm(
             }
             if (onDismiss != null) {
                 TextButton(onClick = onDismiss, enabled = !state.isLoading) {
-                    Text("关闭", color = TextSecondary)
+                    Text(copy.authClose, color = TextSecondary)
                 }
             }
         }
         LoginTextField(
             value = username,
             onValueChange = { username = it },
-            label = "用户名",
+            label = copy.authUsernameLabel,
             enabled = !state.isLoading,
         )
         LoginTextField(
             value = password,
             onValueChange = { password = it },
-            label = "密码",
+            label = copy.authPasswordLabel,
             enabled = !state.isLoading,
             isPassword = true,
         )
@@ -161,15 +167,16 @@ internal fun AuthForm(
             checked = rememberPassword,
             onCheckedChange = { rememberPassword = it },
             enabled = !state.isLoading,
+            language = state.language,
         )
         PrimaryActionButton(
-            text = if (state.isLoading) "登录中" else "登录",
+            text = if (state.isLoading) copy.authLoginLoading else copy.authLoginAction,
             enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
             onClick = { onLogin(username, password, rememberPassword) },
         )
         if (registerAsPrimary) {
             com.reelshort.app.ui.components.GoldOutlinedButton(
-                text = "注册",
+                text = copy.authRegisterAction,
                 enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
                 onClick = { onRegister(username, password, rememberPassword) },
                 modifier = Modifier.fillMaxWidth(),
@@ -181,7 +188,7 @@ internal fun AuthForm(
                 enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("注册新账号", color = PrimaryGold)
+                Text(copy.authRegisterSecondary, color = PrimaryGold)
             }
         }
     }

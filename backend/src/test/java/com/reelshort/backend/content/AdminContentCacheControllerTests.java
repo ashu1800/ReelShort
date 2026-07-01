@@ -72,7 +72,7 @@ class AdminContentCacheControllerTests {
 	@Test
 	void adminCanRefreshShelfAndAuditIsRecorded() throws Exception {
 		String adminToken = adminLogin();
-		when(contentProvider.getShelf(ContentShelfType.RECOMMEND)).thenReturn(List.of(
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentBook("book-refresh", "Refresh", "refresh", "https://example.com/refresh.jpg", "", 4)));
 
 		mockMvc.perform(post("/api/admin/content/cache/shelves/recommend/refresh")
@@ -96,7 +96,7 @@ class AdminContentCacheControllerTests {
 	void contentCacheStatusIncludesEpisodeCacheCount() throws Exception {
 		String adminToken = adminLogin();
 		String appToken = registerAndExtractAppToken("episode-cache-user");
-		when(contentProvider.getEpisodesDetail("book-episodes", "episodes"))
+		when(contentProvider.getEpisodesDetail("book-episodes", "episodes", ContentLocale.ENGLISH))
 				.thenReturn(new ContentEpisodesDetail(java.util.Optional.empty(),
 						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
 

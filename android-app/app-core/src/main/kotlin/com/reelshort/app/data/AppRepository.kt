@@ -5,7 +5,9 @@ import com.reelshort.app.session.CredentialStore
 import com.reelshort.app.session.HomeShelfStore
 import com.reelshort.app.session.InMemoryCredentialStore
 import com.reelshort.app.session.InMemoryHomeShelfStore
+import com.reelshort.app.session.InMemoryLanguagePreferenceStore
 import com.reelshort.app.session.InMemorySessionStore
+import com.reelshort.app.session.LanguagePreferenceStore
 import com.reelshort.app.session.SessionStore
 
 class AppRepository(
@@ -13,6 +15,7 @@ class AppRepository(
     private val sessionStore: SessionStore = InMemorySessionStore(),
     private val credentialStore: CredentialStore = InMemoryCredentialStore(),
     private val homeShelfStore: HomeShelfStore = InMemoryHomeShelfStore(),
+    private val languagePreferenceStore: LanguagePreferenceStore = InMemoryLanguagePreferenceStore(),
     override val apiBaseUrl: String = "",
 ) : AppDataSource {
     var currentToken: String? = null
@@ -34,7 +37,8 @@ class AppRepository(
         return session
     }
 
-    override suspend fun loadHomeShelf(): List<BookSummary> = apiClient.getHomeShelf()
+    override suspend fun loadHomeShelf(): List<BookSummary> =
+        apiClient.getHomeShelf(loadLanguagePreference().locale)
 
     override suspend fun loadCachedHomeShelf(): List<BookSummary> = homeShelfStore.loadHomeShelf()
 
@@ -42,12 +46,17 @@ class AppRepository(
         homeShelfStore.saveHomeShelf(shelf)
     }
 
-    override suspend fun search(query: String): List<BookSummary> = apiClient.search(query)
+    override suspend fun search(query: String): List<BookSummary> =
+        apiClient.search(query, loadLanguagePreference().locale)
 
-    override suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary> = apiClient.getEpisodes(book.id, book.filteredTitle)
+    override suspend fun loadBook(bookId: String): BookSummary =
+        apiClient.getBook(bookId, loadLanguagePreference().locale)
+
+    override suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary> =
+        apiClient.getEpisodes(book.id, book.filteredTitle, loadLanguagePreference().locale)
 
     override suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl =
-        apiClient.getVideoUrl(book.id, episode.number, book.filteredTitle, episode.chapterId)
+        apiClient.getVideoUrl(book.id, episode.number, book.filteredTitle, episode.chapterId, loadLanguagePreference().locale)
 
     override suspend fun loadEpisodeSnapshot(book: BookSummary, episode: EpisodeSummary): WatchEpisodeSnapshot =
         apiClient.getEpisodeSnapshot(book.id, episode.number)
@@ -110,5 +119,12 @@ class AppRepository(
 
     override suspend fun clearSavedCredentials() {
         credentialStore.clearCredentials()
+    }
+
+    override suspend fun loadLanguagePreference(): AppLanguage =
+        languagePreferenceStore.loadLanguage()
+
+    override suspend fun saveLanguagePreference(language: AppLanguage) {
+        languagePreferenceStore.saveLanguage(language)
     }
 }

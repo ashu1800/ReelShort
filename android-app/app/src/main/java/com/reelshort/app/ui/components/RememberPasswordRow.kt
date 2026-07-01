@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.ui.format.rememberPasswordLabel
 import com.reelshort.app.ui.theme.OnPrimaryDark
 import com.reelshort.app.ui.theme.PrimaryGold
@@ -25,6 +26,7 @@ internal fun RememberPasswordRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
 ) {
     Row(
         modifier = Modifier
@@ -46,7 +48,7 @@ internal fun RememberPasswordRow(
             ),
         )
         Text(
-            text = rememberPasswordLabel(),
+            text = rememberPasswordLabel(language),
             color = TextSecondary,
             style = MaterialTheme.typography.bodyMedium,
         )

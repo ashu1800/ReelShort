@@ -19,12 +19,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
+import com.reelshort.app.data.AppLanguage
+import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.Divider
 import com.reelshort.app.ui.theme.PrimaryGold
 import com.reelshort.app.ui.theme.TextPrimary
 
 @Composable
-internal fun LoadingDialog(visible: Boolean, modifier: Modifier = Modifier) {
+internal fun LoadingDialog(
+    visible: Boolean,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    modifier: Modifier = Modifier,
+) {
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(),
@@ -37,19 +43,22 @@ internal fun LoadingDialog(visible: Boolean, modifier: Modifier = Modifier) {
             border = BorderStroke(1.dp, Divider),
             shape = RoundedCornerShape(22.dp),
         ) {
-            LoadingContent(Modifier.padding(horizontal = 22.dp, vertical = 18.dp))
+            LoadingContent(language = language, modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp))
         }
     }
 }
 
 @Composable
-private fun LoadingContent(modifier: Modifier = Modifier) {
+private fun LoadingContent(
+    language: AppLanguage,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp, color = PrimaryGold)
-        Text("正在加载", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+        Text(strings(language).loadingDialogTitle, color = TextPrimary, style = MaterialTheme.typography.titleMedium)
     }
 }

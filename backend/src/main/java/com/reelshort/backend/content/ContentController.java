@@ -29,29 +29,34 @@ public class ContentController {
 	}
 
 	@GetMapping("/search")
-	public ApiResponse<List<ContentBook>> search(@RequestParam @NotBlank String keywords, HttpServletRequest request) {
+	public ApiResponse<List<ContentBook>> search(@RequestParam @NotBlank String keywords,
+			@RequestParam(required = false) String locale, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentCacheService.search(keywords), requestId);
+		return ApiResponse.success(contentCacheService.search(keywords, parseLocale(locale)), requestId);
 	}
 
 	@GetMapping("/shelves/{shelfType}")
-	public ApiResponse<List<ContentBook>> shelf(@PathVariable @NotBlank String shelfType, HttpServletRequest request) {
+	public ApiResponse<List<ContentBook>> shelf(@PathVariable @NotBlank String shelfType,
+			@RequestParam(required = false) String locale, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentCacheService.getShelf(ContentShelfType.fromApiValue(shelfType)), requestId);
+		return ApiResponse.success(contentCacheService.getShelf(ContentShelfType.fromApiValue(shelfType),
+				parseLocale(locale)), requestId);
 	}
 
 	@GetMapping("/books/{bookId}")
-	public ApiResponse<ContentBook> detail(@PathVariable @NotBlank String bookId, HttpServletRequest request) {
+	public ApiResponse<ContentBook> detail(@PathVariable @NotBlank String bookId,
+			@RequestParam(required = false) String locale, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentCacheService.getBook(bookId), requestId);
+		return ApiResponse.success(contentCacheService.getBook(bookId, parseLocale(locale)), requestId);
 	}
 
 	@GetMapping("/books/{bookId}/episodes")
 	public ApiResponse<List<ContentEpisode>> episodes(@PathVariable @NotBlank String bookId,
 			@RequestParam @NotBlank String filteredTitle,
+			@RequestParam(required = false) String locale,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentCacheService.getEpisodes(bookId, filteredTitle), requestId);
+		return ApiResponse.success(contentCacheService.getEpisodes(bookId, filteredTitle, parseLocale(locale)), requestId);
 	}
 
 	@GetMapping("/books/{bookId}/episodes/{episodeNum}/play")
@@ -59,9 +64,20 @@ public class ContentController {
 			@PathVariable @Min(1) int episodeNum,
 			@RequestParam @NotBlank String filteredTitle,
 			@RequestParam @NotBlank String chapterId,
+			@RequestParam(required = false) String locale,
 			CurrentUser currentUser,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId), requestId);
+		return ApiResponse.success(contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId,
+				parseLocale(locale)), requestId);
+	}
+
+	private ContentLocale parseLocale(String locale) {
+		try {
+			return ContentLocale.fromApiValue(locale);
+		}
+		catch (IllegalArgumentException exception) {
+			throw new ContentProviderException(400, "unsupported locale");
+		}
 	}
 }

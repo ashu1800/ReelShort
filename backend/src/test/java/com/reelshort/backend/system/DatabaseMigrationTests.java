@@ -72,6 +72,33 @@ class DatabaseMigrationTests {
 			.hasMessageContaining("duplicate-user");
 	}
 
+	@Test
+	void contentBookCacheSupportsTraditionalChineseLocaleKeysAfterMigration() {
+		var now = Timestamp.from(OffsetDateTime.now().toInstant());
+
+		jdbcTemplate.update("""
+				insert into content_book_cache (id, book_id, locale, title, filtered_title, cover_url, description, chapter_count, updated_at)
+				values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""",
+				"12345678-1234-1234-1234-1234567890ab",
+				"670f2d8f4f3f2cb1c8ab1234",
+				"TRADITIONAL_CHINESE",
+				"億萬戀人",
+				"billionaire-lover",
+				"https://example.com/cover.jpg",
+				"desc",
+				88,
+				now);
+
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(*)
+				from content_book_cache
+				where book_id = ? and locale = ?
+				""", Integer.class, "670f2d8f4f3f2cb1c8ab1234", "TRADITIONAL_CHINESE");
+
+		assertThat(count).isEqualTo(1);
+	}
+
 	private List<String> existingTables() {
 		return jdbcTemplate.queryForList("""
 				select table_name

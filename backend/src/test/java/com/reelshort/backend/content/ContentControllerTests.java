@@ -1,6 +1,7 @@
 package com.reelshort.backend.content;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -47,7 +48,7 @@ class ContentControllerTests {
 
 	@Test
 	void searchReturnsBooksInUnifiedEnvelope() throws Exception {
-		when(contentCacheService.search("love")).thenReturn(List.of(
+		when(contentCacheService.search("love", ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentBook("book-1", "Love Story", "love-story", "https://example.com/cover.jpg",
 						"A dramatic short series.", 12)));
 
@@ -59,6 +60,29 @@ class ContentControllerTests {
 				.andExpect(jsonPath("$.data[0].bookId").value("book-1"))
 				.andExpect(jsonPath("$.data[0].title").value("Love Story"))
 				.andExpect(jsonPath("$.data[0].description").value("A dramatic short series."));
+	}
+
+	@Test
+	void searchPassesRequestedLocaleToContentCache() throws Exception {
+		when(contentCacheService.search("愛情", ContentLocale.TRADITIONAL_CHINESE)).thenReturn(List.of(
+				new ContentBook("book-1", "愛情轟炸", "book-1", "https://example.com/cover.jpg",
+						"繁體中文簡介。", 12)));
+
+		mockMvc.perform(get("/api/app/content/search")
+				.param("keywords", "愛情")
+				.param("locale", "zh-TW"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[0].title").value("愛情轟炸"))
+				.andExpect(jsonPath("$.data[0].description").value("繁體中文簡介。"));
+	}
+
+	@Test
+	void contentEndpointsRejectUnsupportedLocale() throws Exception {
+		mockMvc.perform(get("/api/app/content/search")
+				.param("keywords", "love")
+				.param("locale", "zh-CN"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
 	}
 
 	@Test
@@ -79,7 +103,7 @@ class ContentControllerTests {
 
 	@Test
 	void contentProviderFailureReturnsServiceUnavailable() throws Exception {
-		when(contentCacheService.search(anyString()))
+		when(contentCacheService.search(anyString(), any(ContentLocale.class)))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		mockMvc.perform(get("/api/app/content/search").param("keywords", "love"))
@@ -91,7 +115,7 @@ class ContentControllerTests {
 
 	@Test
 	void episodesReturnsProviderEpisodesInUnifiedEnvelope() throws Exception {
-		when(contentCacheService.getEpisodes("book-1", "love-story")).thenReturn(List.of(
+		when(contentCacheService.getEpisodes("book-1", "love-story", ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentEpisode(1, "chapter-1", "The Beginning", "The first conflict starts."),
 				new ContentEpisode(2, "chapter-2", "The Choice", "A risky choice follows.")));
 
@@ -108,7 +132,7 @@ class ContentControllerTests {
 
 	@Test
 	void detailReturnsCachedBookInUnifiedEnvelope() throws Exception {
-		when(contentCacheService.getBook("book-1"))
+		when(contentCacheService.getBook("book-1", ContentLocale.ENGLISH))
 				.thenReturn(new ContentBook("book-1", "Love Story", "love-story",
 						"https://example.com/cover.jpg", "A dramatic short series.", 12));
 
@@ -124,7 +148,7 @@ class ContentControllerTests {
 
 	@Test
 	void playReturnsProviderVideoInUnifiedEnvelope() throws Exception {
-		when(contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+		when(contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1", ContentLocale.ENGLISH))
 				.thenReturn(new ContentVideo(
 						"https://cdn.example.com/video.m3u8",
 						1,
@@ -146,7 +170,7 @@ class ContentControllerTests {
 
 	@Test
 	void homeRecommendReturnsRecommendShelf() throws Exception {
-		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND)).thenReturn(List.of(
+		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentBook("book-home", "Home Pick", "home-pick", "https://example.com/home.jpg",
 						"Home shelf description.", 6)));
 
@@ -159,8 +183,19 @@ class ContentControllerTests {
 	}
 
 	@Test
+	void homeRecommendPassesRequestedLocale() throws Exception {
+		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE)).thenReturn(List.of(
+				new ContentBook("book-home", "首頁推薦", "book-home", "https://example.com/home.jpg",
+						"繁體首頁描述。", 6)));
+
+		mockMvc.perform(get("/api/app/home/recommend").param("locale", "zh-TW"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[0].title").value("首頁推薦"));
+	}
+
+	@Test
 	void shelfEndpointReturnsSelectedShelf() throws Exception {
-		when(contentCacheService.getShelf(ContentShelfType.NEW_RELEASE)).thenReturn(List.of(
+		when(contentCacheService.getShelf(ContentShelfType.NEW_RELEASE, ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentBook("book-new", "New", "new", "https://example.com/new.jpg", "New release.", 2)));
 
 		mockMvc.perform(get("/api/app/content/shelves/new-release"))

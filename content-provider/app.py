@@ -33,6 +33,27 @@ DEFAULT_CATALOG_SEARCH_KEYWORDS = (
     "queen",
 )
 
+SUPPORTED_LOCALES = {"en", "zh-TW"}
+DEFAULT_LOCALE = "en"
+DEFAULT_CATALOG_SEARCH_KEYWORDS_ZH_TW = (
+    "愛情",
+    "億萬富翁",
+    "霸總",
+    "婚姻",
+    "復仇",
+    "黑幫",
+    "狼人",
+    "Alpha",
+    "Luna",
+    "契約",
+    "懷孕",
+    "秘密",
+    "老闆",
+    "家庭",
+    "醫生",
+    "女王",
+)
+
 MAX_CATALOG_KEYWORDS = 50
 MAX_CATALOG_PAGES_PER_KEYWORD = 5
 MAX_CATALOG_REQUESTS = 200
@@ -63,27 +84,27 @@ class ReelShortClient:
             os.getenv("REELSHORT_NEXT_BUILD_ID"),
         )
 
-    def search(self, keywords: str):
-        payload = self._get_data("/search.json", params={"keywords": keywords})
+    def search(self, keywords: str, locale: str = DEFAULT_LOCALE):
+        payload = self._get_locale_data("/search.json", locale=locale, params={"keywords": keywords})
         return [self._map_book(book) for book in self._books(payload)]
 
-    def shelf(self, shelf_name: str):
+    def shelf(self, shelf_name: str, locale: str = DEFAULT_LOCALE):
         books = []
         try:
-            payload = self._get_data(f"/{shelf_name}.json")
+            payload = self._get_locale_data(f"/{shelf_name}.json", locale=locale)
             books = self._books(payload)
         except UpstreamError as exception:
-            if exception.status_code != 404 or shelf_name not in {"recommend", "newrelease", "dramadub"}:
+            if exception.status_code != 404:
                 raise
         if not books and shelf_name in {"recommend", "newrelease", "dramadub"}:
-            books = self._home_shelf_books(shelf_name)
+            books = self._home_shelf_books(shelf_name, locale)
         if shelf_name == "recommend":
-            books = self._expanded_recommend_books(books)
+            books = self._expanded_recommend_books(books, locale)
         return [self._map_book(book) for book in books]
 
-    def episodes(self, book_id: str, filtered_title: str):
+    def episodes(self, book_id: str, filtered_title: str, locale: str = DEFAULT_LOCALE):
         try:
-            book_data = self._movie_payload(book_id, filtered_title).get("pageProps", {}).get("data", {})
+            book_data = self._movie_payload(book_id, filtered_title, locale).get("pageProps", {}).get("data", {})
         except UpstreamError as exception:
             if exception.status_code != 404:
                 raise
@@ -111,7 +132,14 @@ class ReelShortClient:
             view.setdefault("chapter_count", len(view["online_base"]))
         return view
 
-    def video(self, book_id: str, episode_num: int, filtered_title: str, chapter_id: str):
+    def video(
+        self,
+        book_id: str,
+        episode_num: int,
+        filtered_title: str,
+        chapter_id: str,
+        locale: str = DEFAULT_LOCALE,
+    ):
         slug = f"episode-{episode_num}-{filtered_title}-{book_id}-{chapter_id}"
         try:
             payload = self._get_data(
@@ -126,7 +154,7 @@ class ReelShortClient:
         if not episode_data.get("video_url"):
             raise UpstreamError(404, "upstream not found")
 
-        chapters = self.episodes(book_id, filtered_title).get("episodes", [])
+        chapters = self.episodes(book_id, filtered_title, locale).get("episodes", [])
         next_chapter = None
         for index, chapter in enumerate(chapters):
             if chapter.get("episode") == episode_num and index + 1 < len(chapters):
@@ -139,12 +167,17 @@ class ReelShortClient:
             "next_episode": next_chapter,
         }
 
-    def _movie_payload(self, book_id: str, filtered_title: str):
+    def _movie_payload(self, book_id: str, filtered_title: str, locale: str = DEFAULT_LOCALE):
         slug = f"{filtered_title}-{book_id}"
-        return self._get_data(
-            f"/movie/{quote(slug, safe='')}.json",
-            params={"slug": slug},
-        )
+        try:
+            return self._get_locale_data(f"/movie/{quote(slug, safe='')}.json", locale=locale, params={"slug": slug})
+        except UpstreamError as exception:
+            if locale == DEFAULT_LOCALE or exception.status_code != 404:
+                raise
+            return self._get_data(
+                f"/movie/{quote(slug, safe='')}.json",
+                params={"slug": slug},
+            )
 
     def _book_info_chapters(self, book_id: str):
         return self._book_info(book_id).get("online_base", [])
@@ -240,8 +273,8 @@ class ReelShortClient:
         self.build_id = match.group(1)
         return self.build_id
 
-    def _home_shelf_books(self, shelf_name: str):
-        payload = self._get_locale_data(".json")
+    def _home_shelf_books(self, shelf_name: str, locale: str = DEFAULT_LOCALE):
+        payload = self._get_locale_data(".json", locale=locale)
         web_info = payload.get("pageProps", {}).get("fallback", {}).get("/api/ms/hall/webInfo", {})
         shelves = web_info.get("bookShelfList") or []
         selected_shelves = self._select_home_shelves(shelves, shelf_name)
@@ -255,11 +288,21 @@ class ReelShortClient:
                     books.append(book)
         return books
 
-    def _get_locale_data(self, data_path: str, params=None):
+    def _get_locale_data(self, data_path: str, locale: str = DEFAULT_LOCALE, params=None):
         build_id = self.build_id or self._discover_build_id()
-        return self._get(f"/_next/data/{quote(build_id, safe='')}/en{data_path}", params=params)
+        try:
+            return self._get(f"/_next/data/{quote(build_id, safe='')}/{quote(locale, safe='-')}{data_path}", params=params)
+        except UpstreamError as exception:
+            if exception.status_code != 404 or self.fixed_build_id:
+                raise
+            self.build_id = None
+            fresh_build_id = self._discover_build_id()
+            return self._get(
+                f"/_next/data/{quote(fresh_build_id, safe='')}/{quote(locale, safe='-')}{data_path}",
+                params=params,
+            )
 
-    def _expanded_recommend_books(self, base_books):
+    def _expanded_recommend_books(self, base_books, locale: str = DEFAULT_LOCALE):
         max_books = self._bounded_int_env("REELSHORT_CATALOG_MAX_BOOKS", default=500, maximum=500)
         if max_books <= 0:
             return []
@@ -275,14 +318,14 @@ class ReelShortClient:
             default=3,
             maximum=MAX_CATALOG_PAGES_PER_KEYWORD,
         )
-        search_pages = self._catalog_search_pages(self._catalog_search_keywords(), max_pages)
+        search_pages = self._catalog_search_pages(self._catalog_search_keywords(locale), max_pages, locale)
         for search_books in search_pages:
             for book in search_books:
                 if self._append_unique_book(books, seen, book, max_books):
                     return books
         return books
 
-    def _catalog_search_pages(self, keywords, max_pages: int):
+    def _catalog_search_pages(self, keywords, max_pages: int, locale: str = DEFAULT_LOCALE):
         if max_pages <= 0:
             return []
 
@@ -294,21 +337,21 @@ class ReelShortClient:
             maximum=MAX_CATALOG_REQUEST_WORKERS,
         )
         if workers <= 1:
-            return self._catalog_search_keywords_sequential(keywords, max_pages)
-        return self._catalog_search_keywords_parallel(keywords, max_pages, workers)
+            return self._catalog_search_keywords_sequential(keywords, max_pages, locale)
+        return self._catalog_search_keywords_parallel(keywords, max_pages, workers, locale)
 
-    def _catalog_search_keywords_sequential(self, keywords, max_pages: int):
+    def _catalog_search_keywords_sequential(self, keywords, max_pages: int, locale: str = DEFAULT_LOCALE):
         return [
             pages
             for keyword in keywords
-            for pages in self._catalog_search_keyword_pages(keyword, max_pages)
+            for pages in self._catalog_search_keyword_pages(keyword, max_pages, locale)
         ]
 
-    def _catalog_search_keywords_parallel(self, keywords, max_pages: int, workers: int):
+    def _catalog_search_keywords_parallel(self, keywords, max_pages: int, workers: int, locale: str = DEFAULT_LOCALE):
         results = {}
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
-                executor.submit(self._catalog_search_keyword_pages, keyword, max_pages): keyword_index
+                executor.submit(self._catalog_search_keyword_pages, keyword, max_pages, locale): keyword_index
                 for keyword_index, keyword in enumerate(keywords)
             }
             for future in as_completed(futures):
@@ -320,21 +363,21 @@ class ReelShortClient:
             for page_books in results[keyword_index]
         ]
 
-    def _catalog_search_keyword_pages(self, keyword: str, max_pages: int):
+    def _catalog_search_keyword_pages(self, keyword: str, max_pages: int, locale: str = DEFAULT_LOCALE):
         pages = []
         for page in range(1, max_pages + 1):
-            books = self._fetch_catalog_search_books(keyword, page)
+            books = self._fetch_catalog_search_books(keyword, page, locale)
             if not books:
                 break
             pages.append(books)
         return pages
 
-    def _fetch_catalog_search_books(self, keyword: str, page: int):
+    def _fetch_catalog_search_books(self, keyword: str, page: int, locale: str = DEFAULT_LOCALE):
         params = {"keywords": keyword}
         if page > 1:
             params["page"] = page
         try:
-            payload = self._get_locale_data("/search.json", params=params)
+            payload = self._get_locale_data("/search.json", locale=locale, params=params)
         except UpstreamError:
             return None
         return self._books(payload)
@@ -347,10 +390,18 @@ class ReelShortClient:
         books.append(book)
         return len(books) >= max_books
 
-    def _catalog_search_keywords(self):
-        raw_keywords = os.getenv("REELSHORT_CATALOG_SEARCH_KEYWORDS", "")
+    def _catalog_search_keywords(self, locale: str = DEFAULT_LOCALE):
+        if locale == "zh-TW":
+            raw_keywords = os.getenv("REELSHORT_CATALOG_SEARCH_KEYWORDS_ZH_TW", "")
+            defaults = list(DEFAULT_CATALOG_SEARCH_KEYWORDS_ZH_TW)
+        else:
+            raw_keywords = os.getenv(
+                "REELSHORT_CATALOG_SEARCH_KEYWORDS_EN",
+                os.getenv("REELSHORT_CATALOG_SEARCH_KEYWORDS", ""),
+            )
+            defaults = list(DEFAULT_CATALOG_SEARCH_KEYWORDS)
         keywords = [keyword.strip() for keyword in raw_keywords.split(",") if keyword.strip()]
-        return (keywords or list(DEFAULT_CATALOG_SEARCH_KEYWORDS))[:MAX_CATALOG_KEYWORDS]
+        return (keywords or defaults)[:MAX_CATALOG_KEYWORDS]
 
     def _bounded_int_env(self, name: str, default: int, maximum: int):
         try:
@@ -381,10 +432,13 @@ class ReelShortClient:
 
     def _map_book(self, book):
         title = book.get("book_title") or book.get("title") or ""
+        book_id = self._book_id(book)
         return {
-            "book_id": self._book_id(book),
+            "book_id": book_id,
             "book_title": title,
-            "filtered_title": book.get("filtered_title") or self._filtered_title(title),
+            "filtered_title": book.get("filtered_title")
+            or self._filtered_title(book.get("title_en") or book.get("slug") or title)
+            or (f"book-{book_id}" if book_id else ""),
             "book_pic": book.get("book_pic") or book.get("cover") or "",
             "description": self._first_text(
                 book, ("description", "introduction", "book_intro", "summary", "special_desc", "desc")
@@ -433,15 +487,30 @@ def create_app(client=None) -> Flask:
     def upstream_error(error: UpstreamError):
         return jsonify({"error": error.message}), error.status_code
 
+    def request_locale():
+        locale = request.args.get("locale", DEFAULT_LOCALE).strip() or DEFAULT_LOCALE
+        if locale not in SUPPORTED_LOCALES:
+            return None
+        return locale
+
+    def locale_error():
+        return jsonify({"error": "unsupported locale"}), 400
+
     @app.get("/api/v1/reelshort/search")
     def search():
+        locale = request_locale()
+        if locale is None:
+            return locale_error()
         keywords = request.args.get("keywords", "").strip()
         if not keywords:
             return jsonify({"error": "keywords is required"}), 400
-        return jsonify({"results": reelshort_client.search(keywords)})
+        return jsonify({"results": reelshort_client.search(keywords, locale)})
 
     def shelf_response(shelf_name: str):
-        return jsonify({"books": reelshort_client.shelf(shelf_name)})
+        locale = request_locale()
+        if locale is None:
+            return locale_error()
+        return jsonify({"books": reelshort_client.shelf(shelf_name, locale)})
 
     @app.get("/api/v1/reelshort/recommend")
     def recommend():
@@ -457,20 +526,26 @@ def create_app(client=None) -> Flask:
 
     @app.get("/api/v1/reelshort/episodes/<book_id>")
     def episodes(book_id: str):
+        locale = request_locale()
+        if locale is None:
+            return locale_error()
         filtered_title = request.args.get("filtered_title", "").strip()
         if not filtered_title:
             return jsonify({"error": "filtered_title is required"}), 400
-        return jsonify(reelshort_client.episodes(book_id, filtered_title))
+        return jsonify(reelshort_client.episodes(book_id, filtered_title, locale))
 
     @app.get("/api/v1/reelshort/video/<book_id>/<int:episode_num>")
     def video(book_id: str, episode_num: int):
+        locale = request_locale()
+        if locale is None:
+            return locale_error()
         filtered_title = request.args.get("filtered_title", "").strip()
         if not filtered_title:
             return jsonify({"error": "filtered_title is required"}), 400
         chapter_id = request.args.get("chapter_id", "").strip()
         if not chapter_id:
             return jsonify({"error": "chapter_id is required"}), 400
-        return jsonify(reelshort_client.video(book_id, episode_num, filtered_title, chapter_id))
+        return jsonify(reelshort_client.video(book_id, episode_num, filtered_title, chapter_id, locale))
 
     return app
 

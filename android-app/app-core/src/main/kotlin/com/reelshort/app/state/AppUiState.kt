@@ -1,6 +1,7 @@
 package com.reelshort.app.state
 
 import com.reelshort.app.data.ApiHealthStatus
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookInteractionState
 import com.reelshort.app.data.BookSummary
@@ -24,6 +25,7 @@ enum class AppScreen {
 
 data class AppUiState(
     val screen: AppScreen = AppScreen.HOME,
+    val language: AppLanguage = AppLanguage.DEFAULT,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val apiBaseUrl: String = "",
