@@ -43,11 +43,15 @@ class AdminContentCacheControllerTests {
 	@Autowired
 	private ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 
+	@Autowired
+	private ContentRefreshRunRepository contentRefreshRunRepository;
+
 	@MockitoBean
 	private ContentProvider contentProvider;
 
 	@BeforeEach
 	void cleanCache() {
+		contentRefreshRunRepository.deleteAll();
 		contentShelfCacheRepository.deleteAll();
 		contentBookCacheRepository.deleteAll();
 		contentEpisodeCacheRepository.deleteAll();
@@ -63,10 +67,14 @@ class AdminContentCacheControllerTests {
 				.andExpect(jsonPath("$.code").value(0))
 				.andExpect(jsonPath("$.data.bookCount").value(0))
 				.andExpect(jsonPath("$.data.episodeCacheCount").value(0))
-				.andExpect(jsonPath("$.data.shelves", hasSize(3)))
+				.andExpect(jsonPath("$.data.videoCacheCount").value(0))
+				.andExpect(jsonPath("$.data.shelves", hasSize(6)))
 				.andExpect(jsonPath("$.data.shelves[*].shelfType", hasItem("recommend")))
 				.andExpect(jsonPath("$.data.shelves[*].shelfType", hasItem("new-release")))
-				.andExpect(jsonPath("$.data.shelves[*].shelfType", hasItem("drama-dub")));
+				.andExpect(jsonPath("$.data.shelves[*].shelfType", hasItem("drama-dub")))
+				.andExpect(jsonPath("$.data.shelves[*].locale", hasItem("en")))
+				.andExpect(jsonPath("$.data.shelves[*].locale", hasItem("zh-TW")))
+				.andExpect(jsonPath("$.data.recentRefreshRuns", hasSize(0)));
 	}
 
 	@Test
@@ -84,12 +92,34 @@ class AdminContentCacheControllerTests {
 		mockMvc.perform(get("/api/admin/content/cache")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.bookCount").value(1));
+				.andExpect(jsonPath("$.data.bookCount").value(1))
+				.andExpect(jsonPath("$.data.recentRefreshRuns", hasSize(1)))
+				.andExpect(jsonPath("$.data.recentRefreshRuns[0].triggerSource").value("ADMIN"))
+				.andExpect(jsonPath("$.data.recentRefreshRuns[0].status").value("SUCCESS"))
+				.andExpect(jsonPath("$.data.recentRefreshRuns[0].itemCount").value(1));
 
 		mockMvc.perform(get("/api/admin/audit-logs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data[*].action", hasItem("CONTENT_CACHE_REFRESHED")));
+	}
+
+	@Test
+	void adminCanRefreshTraditionalChineseShelf() throws Exception {
+		String adminToken = adminLogin();
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE)).thenReturn(List.of(
+				new ContentBook("book-zh", "繁中短劇", "zh-drama", "https://example.com/zh.jpg", "", 8)));
+
+		mockMvc.perform(post("/api/admin/content/cache/shelves/recommend/refresh")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.param("locale", "zh-TW"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[0].bookId").value("book-zh"));
+
+		mockMvc.perform(get("/api/admin/content/cache")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.recentRefreshRuns[0].locale").value("zh-TW"));
 	}
 
 	@Test

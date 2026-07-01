@@ -2,6 +2,7 @@ package com.reelshort.backend.content;
 
 import java.util.Arrays;
 import java.util.List;
+import java.time.OffsetDateTime;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,18 +28,21 @@ public class ContentCacheService {
 	private final ContentBookCacheRepository contentBookCacheRepository;
 	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 	private final ContentVideoCacheRepository contentVideoCacheRepository;
+	private final ContentRefreshRunRepository contentRefreshRunRepository;
 	private final ObjectMapper objectMapper;
 
 	public ContentCacheService(ContentProvider contentProvider, ContentShelfCacheRepository contentShelfCacheRepository,
 			ContentBookCacheRepository contentBookCacheRepository,
 			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
 			ContentVideoCacheRepository contentVideoCacheRepository,
+			ContentRefreshRunRepository contentRefreshRunRepository,
 			ObjectMapper objectMapper) {
 		this.contentProvider = contentProvider;
 		this.contentShelfCacheRepository = contentShelfCacheRepository;
 		this.contentBookCacheRepository = contentBookCacheRepository;
 		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
 		this.contentVideoCacheRepository = contentVideoCacheRepository;
+		this.contentRefreshRunRepository = contentRefreshRunRepository;
 		this.objectMapper = objectMapper;
 	}
 
@@ -90,6 +94,33 @@ public class ContentCacheService {
 		}
 		catch (ContentProviderException exception) {
 			markShelfFailure(shelfType, locale, exception);
+			throw exception;
+		}
+	}
+
+	@Transactional(noRollbackFor = ContentProviderException.class)
+	public List<ContentBook> refreshShelf(ContentShelfType shelfType, ContentLocale locale,
+			ContentRefreshTriggerSource triggerSource) {
+		OffsetDateTime startedAt = OffsetDateTime.now();
+		try {
+			List<ContentBook> books = refreshShelf(shelfType, locale);
+			contentRefreshRunRepository.save(ContentRefreshRun.success(
+					triggerSource,
+					shelfType,
+					locale,
+					startedAt,
+					OffsetDateTime.now(),
+					books.size()));
+			return books;
+		}
+		catch (ContentProviderException exception) {
+			contentRefreshRunRepository.save(ContentRefreshRun.failure(
+					triggerSource,
+					shelfType,
+					locale,
+					startedAt,
+					OffsetDateTime.now(),
+					exception.getMessage()));
 			throw exception;
 		}
 	}
@@ -176,17 +207,35 @@ public class ContentCacheService {
 	@Transactional(readOnly = true)
 	public ContentCacheStatusResponse status() {
 		List<ContentCacheStatusResponse.ShelfStatus> shelves = Arrays.stream(ContentShelfType.values())
-				.map(this::shelfStatus)
+				.flatMap(shelfType -> Arrays.stream(ContentLocale.values()).map(locale -> shelfStatus(shelfType, locale)))
+				.toList();
+		List<ContentCacheStatusResponse.RefreshRunStatus> refreshRuns = contentRefreshRunRepository
+				.findTop10ByOrderByStartedAtDesc()
+				.stream()
+				.map(this::refreshRunStatus)
 				.toList();
 		return new ContentCacheStatusResponse(contentBookCacheRepository.count(), contentEpisodeCacheRepository.count(),
-				shelves);
+				contentVideoCacheRepository.count(), shelves, refreshRuns);
 	}
 
-	private ContentCacheStatusResponse.ShelfStatus shelfStatus(ContentShelfType shelfType) {
-		return contentShelfCacheRepository.findByShelfTypeAndLocale(shelfType, ContentLocale.ENGLISH)
-				.map(cache -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), cache.itemCount(),
+	private ContentCacheStatusResponse.ShelfStatus shelfStatus(ContentShelfType shelfType, ContentLocale locale) {
+		return contentShelfCacheRepository.findByShelfTypeAndLocale(shelfType, locale)
+				.map(cache -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), locale.apiValue(), cache.itemCount(),
 						cache.refreshedAt().toString(), cache.lastError()))
-				.orElseGet(() -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), 0, null, null));
+				.orElseGet(() -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), locale.apiValue(), 0, null, null));
+	}
+
+	private ContentCacheStatusResponse.RefreshRunStatus refreshRunStatus(ContentRefreshRun run) {
+		return new ContentCacheStatusResponse.RefreshRunStatus(
+				run.triggerSource().name(),
+				run.shelfType().apiValue(),
+				run.locale().apiValue(),
+				run.status().name(),
+				run.startedAt().toString(),
+				run.finishedAt().toString(),
+				run.durationMillis(),
+				run.itemCount(),
+				run.errorMessage());
 	}
 
 	private void markShelfFailure(ContentShelfType shelfType, ContentLocale locale, ContentProviderException exception) {

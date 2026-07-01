@@ -37,7 +37,7 @@ public class ContentMetadataRefreshService {
 				try {
 					ContentShelfType shelfType = ContentShelfType.fromApiValue(shelfValue);
 					ContentLocale locale = ContentLocale.fromApiValue(localeValue);
-					contentCacheService.refreshShelf(shelfType, locale);
+					contentCacheService.refreshShelf(shelfType, locale, ContentRefreshTriggerSource.SCHEDULED);
 					refreshed++;
 				}
 				catch (IllegalArgumentException | ContentProviderException exception) {

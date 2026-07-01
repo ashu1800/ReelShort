@@ -50,6 +50,7 @@ class DatabaseMigrationTests {
 				"point_accounts",
 				"recharge_orders",
 				"payment_events",
+				"content_refresh_runs",
 				"system_configs"
 		);
 	}
@@ -95,6 +96,38 @@ class DatabaseMigrationTests {
 				from content_book_cache
 				where book_id = ? and locale = ?
 				""", Integer.class, "670f2d8f4f3f2cb1c8ab1234", "TRADITIONAL_CHINESE");
+
+		assertThat(count).isEqualTo(1);
+	}
+
+	@Test
+	void contentRefreshRunsStoresOperationalRefreshHistory() {
+		var now = Timestamp.from(OffsetDateTime.now().toInstant());
+		var id = UUID.randomUUID();
+
+		jdbcTemplate.update("""
+				insert into content_refresh_runs (
+					id, trigger_source, shelf_type, locale, status,
+					started_at, finished_at, duration_millis, item_count, error_message
+				)
+				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""",
+				id,
+				"ADMIN",
+				"RECOMMEND",
+				"ENGLISH",
+				"SUCCESS",
+				now,
+				now,
+				123L,
+				500,
+				null);
+
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(*)
+				from content_refresh_runs
+				where trigger_source = ? and shelf_type = ? and locale = ? and status = ?
+				""", Integer.class, "ADMIN", "RECOMMEND", "ENGLISH", "SUCCESS");
 
 		assertThat(count).isEqualTo(1);
 	}

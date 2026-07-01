@@ -34,11 +34,15 @@ class ContentCacheServiceTests {
 	@Autowired
 	private ContentVideoCacheRepository contentVideoCacheRepository;
 
+	@Autowired
+	private ContentRefreshRunRepository contentRefreshRunRepository;
+
 	@MockitoBean
 	private ContentProvider contentProvider;
 
 	@BeforeEach
 	void cleanCache() {
+		contentRefreshRunRepository.deleteAll();
 		contentShelfCacheRepository.deleteAll();
 		contentBookCacheRepository.deleteAll();
 		contentEpisodeCacheRepository.deleteAll();
@@ -214,6 +218,53 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
+	void refreshShelfWithRunRecordsSuccess() {
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
+				.thenReturn(List.of(book("book-1", "Recommended")));
+
+		List<ContentBook> books = contentCacheService.refreshShelf(
+				ContentShelfType.RECOMMEND,
+				ContentLocale.ENGLISH,
+				ContentRefreshTriggerSource.ADMIN);
+
+		assertThat(books).hasSize(1);
+		assertThat(contentRefreshRunRepository.findTop10ByOrderByStartedAtDesc())
+				.singleElement()
+				.satisfies(run -> {
+					assertThat(run.triggerSource()).isEqualTo(ContentRefreshTriggerSource.ADMIN);
+					assertThat(run.shelfType()).isEqualTo(ContentShelfType.RECOMMEND);
+					assertThat(run.locale()).isEqualTo(ContentLocale.ENGLISH);
+					assertThat(run.status()).isEqualTo(ContentRefreshRunStatus.SUCCESS);
+					assertThat(run.itemCount()).isEqualTo(1);
+					assertThat(run.errorMessage()).isNull();
+					assertThat(run.durationMillis()).isGreaterThanOrEqualTo(0);
+				});
+	}
+
+	@Test
+	void refreshShelfWithRunRecordsFailureAndRethrows() {
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE))
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		assertThatThrownBy(() -> contentCacheService.refreshShelf(
+				ContentShelfType.RECOMMEND,
+				ContentLocale.TRADITIONAL_CHINESE,
+				ContentRefreshTriggerSource.SCHEDULED))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content provider unavailable");
+
+		assertThat(contentRefreshRunRepository.findTop10ByOrderByStartedAtDesc())
+				.singleElement()
+				.satisfies(run -> {
+					assertThat(run.triggerSource()).isEqualTo(ContentRefreshTriggerSource.SCHEDULED);
+					assertThat(run.locale()).isEqualTo(ContentLocale.TRADITIONAL_CHINESE);
+					assertThat(run.status()).isEqualTo(ContentRefreshRunStatus.FAILED);
+					assertThat(run.itemCount()).isZero();
+					assertThat(run.errorMessage()).isEqualTo("content provider unavailable");
+				});
+	}
+
+	@Test
 	void getBookReturnsCachedBookDetail() {
 		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(book("book-detail", "Detail")));
 
@@ -315,13 +366,18 @@ class ContentCacheServiceTests {
 		ContentCacheStatusResponse status = contentCacheService.status();
 
 		assertThat(status.bookCount()).isEqualTo(1);
+		assertThat(status.videoCacheCount()).isZero();
+		assertThat(status.recentRefreshRuns()).isEmpty();
 		assertThat(status.shelves())
-				.extracting(ContentCacheStatusResponse.ShelfStatus::shelfType)
-				.containsExactlyInAnyOrder("recommend", "new-release", "drama-dub");
+				.hasSize(6);
 		assertThat(status.shelves())
-				.filteredOn(shelf -> shelf.shelfType().equals("drama-dub"))
+				.filteredOn(shelf -> shelf.shelfType().equals("drama-dub") && shelf.locale().equals("en"))
 				.singleElement()
 				.satisfies(shelf -> assertThat(shelf.itemCount()).isEqualTo(1));
+		assertThat(status.shelves())
+				.filteredOn(shelf -> shelf.shelfType().equals("drama-dub") && shelf.locale().equals("zh-TW"))
+				.singleElement()
+				.satisfies(shelf -> assertThat(shelf.itemCount()).isZero());
 	}
 
 	@Test
