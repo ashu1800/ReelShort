@@ -57,11 +57,24 @@ export type PointRecord = {
 export type ContentCacheStatus = {
   bookCount: number
   episodeCacheCount: number
+  videoCacheCount: number
   shelves: Array<{
     shelfType: string
+    locale: string
     itemCount: number
     refreshedAt: string | null
     lastError: string | null
+  }>
+  recentRefreshRuns: Array<{
+    triggerSource: 'ADMIN' | 'SCHEDULED'
+    shelfType: string
+    locale: string
+    status: 'SUCCESS' | 'FAILED'
+    startedAt: string
+    finishedAt: string
+    durationMillis: number
+    itemCount: number
+    errorMessage: string | null
   }>
 }
 
@@ -248,8 +261,10 @@ export async function fetchContentCacheStatus() {
   return response.data.data
 }
 
-export async function refreshContentShelf(shelfType: string) {
-  const response = await http.post<ApiResponse<unknown[]>>(`/content/cache/shelves/${shelfType}/refresh`)
+export async function refreshContentShelf(shelfType: string, locale: string) {
+  const response = await http.post<ApiResponse<unknown[]>>(`/content/cache/shelves/${shelfType}/refresh`, null, {
+    params: { locale },
+  })
   return response.data.data
 }
 

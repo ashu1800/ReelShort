@@ -40,6 +40,7 @@
 
 - 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh` 强制刷新指定货架。
 - 后端定时任务默认每 6 小时刷新 `recommend` 货架的 `en` 和 `zh-TW` 元数据，可通过 `REELSHORT_CONTENT_REFRESH_ENABLED`、`REELSHORT_CONTENT_REFRESH_INTERVAL`、`REELSHORT_CONTENT_REFRESH_SHELVES` 和 `REELSHORT_CONTENT_REFRESH_LOCALES` 调整。
+- 后台手动刷新和后端定时刷新都会写入 `content_refresh_runs`，用于后台查看最近刷新来源、locale、状态、耗时、返回数量和失败原因。
 
 视频文件和播放流不存放在自有服务器；只有播放页请求单集播放地址时才按需调用内容源。
 
@@ -60,14 +61,26 @@
 
 - `bookCount`：当前缓存的剧集索引数量。
 - `episodeCacheCount`：当前缓存的剧集分集列表数量。
-- `shelves`：每个货架的缓存状态。
+- `videoCacheCount`：当前缓存的播放地址数量；播放地址只作为内容源不可用时的兜底，不参与片库预热。
+- `shelves`：每个货架和 locale 组合的缓存状态。
 - `shelves[].shelfType`
+- `shelves[].locale`
 - `shelves[].itemCount`
 - `shelves[].refreshedAt`
 - `shelves[].lastError`
+- `recentRefreshRuns`：最近 10 次货架刷新运行记录。
+- `recentRefreshRuns[].triggerSource`：`ADMIN` 或 `SCHEDULED`。
+- `recentRefreshRuns[].shelfType`
+- `recentRefreshRuns[].locale`
+- `recentRefreshRuns[].status`：`SUCCESS` 或 `FAILED`。
+- `recentRefreshRuns[].startedAt`
+- `recentRefreshRuns[].finishedAt`
+- `recentRefreshRuns[].durationMillis`
+- `recentRefreshRuns[].itemCount`
+- `recentRefreshRuns[].errorMessage`
 
 ### `POST /api/admin/content/cache/shelves/{shelfType}/refresh`
 
-强制刷新指定货架缓存。成功后写入 PostgreSQL 元数据缓存和后台审计日志 `CONTENT_CACHE_REFRESHED`。
+强制刷新指定货架缓存，支持可选 `locale=en|zh-TW`，默认 `en`。成功后写入 PostgreSQL 元数据缓存、刷新运行记录和后台审计日志 `CONTENT_CACHE_REFRESHED`。
 
-刷新失败时返回内容源错误，不伪装成功；如果此前有缓存，失败原因会记录到该货架的 `lastError`。
+刷新失败时返回内容源错误，不伪装成功；如果此前有缓存，失败原因会记录到该货架的 `lastError`，同时写入一条 `FAILED` 刷新运行记录。

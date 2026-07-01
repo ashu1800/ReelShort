@@ -9,10 +9,15 @@ const refreshing = ref(false)
 const error = ref('')
 const status = ref<ContentCacheStatus | null>(null)
 const shelfType = ref('recommend')
+const locale = ref('en')
 const shelfOptions = [
   { label: '推荐', value: 'recommend' },
   { label: '新剧', value: 'new-release' },
   { label: '配音', value: 'drama-dub' },
+]
+const localeOptions = [
+  { label: 'English', value: 'en' },
+  { label: '繁體中文', value: 'zh-TW' },
 ]
 
 async function loadStatus() {
@@ -30,7 +35,7 @@ async function loadStatus() {
 async function refreshShelf() {
   refreshing.value = true
   try {
-    await refreshContentShelf(shelfType.value)
+    await refreshContentShelf(shelfType.value, locale.value)
     ElMessage.success('内容货架刷新完成')
   } catch {
     ElMessage.error('内容货架刷新失败')
@@ -63,6 +68,14 @@ onMounted(loadStatus)
             :value="option.value"
           />
         </el-select>
+        <el-select v-model="locale" class="locale-select" placeholder="选择语言">
+          <el-option
+            v-for="option in localeOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
         <el-button :loading="refreshing" type="primary" @click="refreshShelf">刷新货架</el-button>
         <el-button @click="loadStatus">刷新状态</el-button>
       </div>
@@ -77,12 +90,32 @@ onMounted(loadStatus)
         <div class="metric-label">分集缓存</div>
         <div class="metric-value">{{ status?.episodeCacheCount ?? 0 }}</div>
       </div>
+      <div class="metric">
+        <div class="metric-label">播放地址缓存</div>
+        <div class="metric-value">{{ status?.videoCacheCount ?? 0 }}</div>
+      </div>
     </div>
     <el-table :data="status?.shelves ?? []" border>
       <el-table-column label="货架" prop="shelfType" width="160" />
+      <el-table-column label="语言" prop="locale" width="120" />
       <el-table-column align="right" label="条目数" prop="itemCount" width="120" />
       <el-table-column label="最近刷新" min-width="220" prop="refreshedAt" />
       <el-table-column label="最近错误" min-width="260" prop="lastError" />
+    </el-table>
+    <h2 class="section-title">最近刷新任务</h2>
+    <el-table :data="status?.recentRefreshRuns ?? []" border>
+      <el-table-column label="来源" prop="triggerSource" width="120" />
+      <el-table-column label="货架" prop="shelfType" width="140" />
+      <el-table-column label="语言" prop="locale" width="120" />
+      <el-table-column label="状态" width="120">
+        <template #default="{ row }">
+          <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'">{{ row.status }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column align="right" label="条目数" prop="itemCount" width="100" />
+      <el-table-column align="right" label="耗时(ms)" prop="durationMillis" width="120" />
+      <el-table-column label="开始时间" min-width="220" prop="startedAt" />
+      <el-table-column label="错误" min-width="260" prop="errorMessage" />
     </el-table>
   </section>
 </template>

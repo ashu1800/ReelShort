@@ -44,7 +44,8 @@ public class AdminContentCacheController {
 			@RequestParam(required = false) String locale, HttpServletRequest request) {
 		ContentShelfType resolvedShelfType = ContentShelfType.fromApiValue(shelfType);
 		ContentLocale resolvedLocale = parseLocale(locale);
-		List<ContentBook> books = contentCacheService.refreshShelf(resolvedShelfType, resolvedLocale);
+		List<ContentBook> books = contentCacheService.refreshShelf(resolvedShelfType, resolvedLocale,
+				ContentRefreshTriggerSource.ADMIN);
 		adminAuditService.record(currentAdmin.username(), "CONTENT_CACHE_REFRESHED", "CONTENT_SHELF",
 				targetId(resolvedShelfType), "Refreshed content shelf " + resolvedShelfType.apiValue()
 						+ " locale " + resolvedLocale.apiValue());
