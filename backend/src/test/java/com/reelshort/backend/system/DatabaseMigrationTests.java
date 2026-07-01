@@ -9,10 +9,12 @@ import java.util.List;
 import java.util.UUID;
 
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.TestPropertySource;
 
 @SpringBootTest
@@ -98,6 +100,50 @@ class DatabaseMigrationTests {
 				""", Integer.class, "670f2d8f4f3f2cb1c8ab1234", "TRADITIONAL_CHINESE");
 
 		assertThat(count).isEqualTo(1);
+	}
+
+	@Test
+	void contentLocaleMigrationUsesStableIdForExistingLongBookIds() {
+		DriverManagerDataSource dataSource = new DriverManagerDataSource();
+		dataSource.setDriverClassName("org.h2.Driver");
+		dataSource.setUrl("jdbc:h2:mem:flyway-upgrade-long-book-id;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1");
+		dataSource.setUsername("sa");
+		dataSource.setPassword("");
+		Flyway baselineFlyway = Flyway.configure()
+				.dataSource(dataSource)
+				.locations("classpath:db/migration")
+				.target(MigrationVersion.fromVersion("5"))
+				.load();
+		baselineFlyway.migrate();
+		JdbcTemplate upgradeJdbc = new JdbcTemplate(dataSource);
+		String longBookId = "670f2d8f4f3f2cb1c8ab1234567890abcdef";
+		var now = Timestamp.from(OffsetDateTime.now().toInstant());
+
+		upgradeJdbc.update("""
+				insert into content_book_cache (book_id, title, filtered_title, cover_url, description, chapter_count, updated_at)
+				values (?, ?, ?, ?, ?, ?, ?)
+				""",
+				longBookId,
+				"Long Id Drama",
+				"long-id-drama",
+				"https://example.com/long.jpg",
+				"desc",
+				66,
+				now);
+		Flyway upgradeFlyway = Flyway.configure()
+				.dataSource(dataSource)
+				.locations("classpath:db/migration")
+				.load();
+		upgradeFlyway.migrate();
+
+		String storedId = upgradeJdbc.queryForObject("""
+				select id
+				from content_book_cache
+				where book_id = ? and locale = ?
+				""", String.class, longBookId, "ENGLISH");
+
+		assertThat(storedId).hasSizeLessThanOrEqualTo(36);
+		assertThat(storedId).isNotEqualTo(longBookId);
 	}
 
 	@Test
