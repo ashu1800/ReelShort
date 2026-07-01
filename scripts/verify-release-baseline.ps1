@@ -35,11 +35,23 @@ function Invoke-Step {
     }
 }
 
+function Invoke-Native {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments = @()
+    )
+
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FilePath exited with code $LASTEXITCODE"
+    }
+}
+
 Invoke-Step "Show git baseline" {
     Push-Location $repoRoot
     try {
-        git status --short --branch
-        git log --oneline -5
+        Invoke-Native "git" @("status", "--short", "--branch")
+        Invoke-Native "git" @("log", "--oneline", "-5")
     } finally {
         Pop-Location
     }
@@ -49,7 +61,7 @@ if (-not $SkipContentProvider) {
     Invoke-Step "content-provider pytest" {
         Push-Location $repoRoot
         try {
-            python -m pytest content-provider
+            Invoke-Native "python" @("-m", "pytest", "content-provider")
         } finally {
             Pop-Location
         }
@@ -60,7 +72,7 @@ if (-not $SkipBackend) {
     Invoke-Step "backend tests" {
         Push-Location $backendDir
         try {
-            .\gradlew.bat test --no-daemon
+            Invoke-Native ".\gradlew.bat" @("test", "--no-daemon")
         } finally {
             Pop-Location
         }
@@ -72,9 +84,9 @@ if (-not $SkipAdminWeb) {
         Push-Location $adminWebDir
         try {
             if (-not (Test-Path "node_modules")) {
-                npm ci
+                Invoke-Native "npm" @("ci")
             }
-            npm run build
+            Invoke-Native "npm" @("run", "build")
         } finally {
             Pop-Location
         }
@@ -85,7 +97,7 @@ if (-not $SkipAndroid) {
     Invoke-Step "Android unit tests and debug APK" {
         Push-Location $androidDir
         try {
-            .\gradlew.bat :app-core:test :app:testDebugUnitTest :app:assembleDebug --no-daemon
+            Invoke-Native ".\gradlew.bat" @(":app-core:test", ":app:testDebugUnitTest", ":app:assembleDebug", "--no-daemon")
         } finally {
             Pop-Location
         }
@@ -96,7 +108,7 @@ if (-not $SkipAndroid) {
             if (-not (Test-Path $apkPath)) {
                 throw "APK not found: $apkPath"
             }
-            & $Adb install -r $apkPath
+            Invoke-Native $Adb @("install", "-r", $apkPath)
         }
     }
 }
@@ -105,7 +117,7 @@ if (-not $SkipDiffCheck) {
     Invoke-Step "git diff --check" {
         Push-Location $repoRoot
         try {
-            git diff --check
+            Invoke-Native "git" @("diff", "--check")
         } finally {
             Pop-Location
         }

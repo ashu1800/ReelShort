@@ -28,6 +28,12 @@ git log --oneline origin/master..HEAD
 powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1
 ```
 
+修改发布验证脚本本身时，先运行脚本回归测试：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/tests/verify-release-baseline-tests.ps1
+```
+
 脚本默认执行：
 
 - `python -m pytest content-provider`
