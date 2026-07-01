@@ -24,6 +24,8 @@ interface ReelShortApiClient {
 
     suspend fun search(query: String, locale: String = "en"): List<BookSummary>
 
+    suspend fun getBook(bookId: String, locale: String = "en"): BookSummary
+
     suspend fun getEpisodes(bookId: String, filteredTitle: String, locale: String = "en"): List<EpisodeSummary>
 
     suspend fun getVideoUrl(

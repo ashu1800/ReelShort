@@ -1,6 +1,7 @@
 package com.reelshort.app
 
 import com.reelshort.app.data.AppLanguage
+import com.reelshort.app.ui.format.searchShowsResultsFirst
 import com.reelshort.app.ui.format.searchDiscoveryGroups
 import com.reelshort.app.ui.format.searchDiscoveryTags
 import com.reelshort.app.ui.format.strings
@@ -48,5 +49,12 @@ class SearchDiscoveryContractTest {
         assertEquals("搜尋結果", traditionalChinese.searchResultTitle)
         assertEquals("部短劇", traditionalChinese.searchResultCountSuffix)
         assertEquals("發現短劇", traditionalChinese.searchEmptyTitle)
+    }
+
+    @Test
+    fun searchResultsMoveAheadOfDiscoveryGroupsOnceUserStartsSearching() {
+        assertEquals(false, searchShowsResultsFirst(query = "", resultCount = 0))
+        assertEquals(true, searchShowsResultsFirst(query = "Love", resultCount = 0))
+        assertEquals(true, searchShowsResultsFirst(query = "", resultCount = 3))
     }
 }

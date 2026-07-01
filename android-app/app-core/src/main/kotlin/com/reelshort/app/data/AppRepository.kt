@@ -49,6 +49,9 @@ class AppRepository(
     override suspend fun search(query: String): List<BookSummary> =
         apiClient.search(query, loadLanguagePreference().locale)
 
+    override suspend fun loadBook(bookId: String): BookSummary =
+        apiClient.getBook(bookId, loadLanguagePreference().locale)
+
     override suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary> =
         apiClient.getEpisodes(book.id, book.filteredTitle, loadLanguagePreference().locale)
 

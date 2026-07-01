@@ -57,6 +57,7 @@ import com.reelshort.app.ui.format.AppStrings
 import com.reelshort.app.ui.format.SearchDiscoveryGroup
 import com.reelshort.app.ui.format.searchDiscoveryGroups
 import com.reelshort.app.ui.format.searchEmptyState
+import com.reelshort.app.ui.format.searchShowsResultsFirst
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.Divider
 import com.reelshort.app.ui.theme.GoldStroke
@@ -79,6 +80,7 @@ internal fun SearchScreen(
     val copy = strings(state.language)
     val groups = searchDiscoveryGroups(state.language)
     var query by remember(state.searchQuery, state.language) { mutableStateOf(state.searchQuery) }
+    val showResultsFirst = searchShowsResultsFirst(state.searchQuery, state.searchResults.size)
 
     fun submit(value: String) {
         val trimmed = value.trim()
@@ -101,6 +103,24 @@ internal fun SearchScreen(
                 onSubmit = { submit(query) },
             )
         }
+        if (showResultsFirst) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SearchResultHeader(copy, state.searchQuery, state.searchResults.size)
+            }
+        }
+        val emptyState = searchEmptyState(state.searchQuery, state.searchResults.size, state.language)
+        if (showResultsFirst && (emptyState != null || state.searchResults.isNotEmpty())) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    if (emptyState != null) {
+                        EmptyState(emptyState.copy(title = copy.searchEmptyTitle, message = copy.searchEmpty))
+                    }
+                }
+            }
+        }
+        items(state.searchResults, key = { it.id }) { book ->
+            PosterCard(book = book, onClick = { onOpenBook(book) }, language = state.language)
+        }
         item(span = { GridItemSpan(maxLineSpan) }) {
             DiscoveryGroups(
                 title = copy.searchTagsTitle,
@@ -111,36 +131,29 @@ internal fun SearchScreen(
                 },
             )
         }
-        if (state.searchQuery.isNotBlank() || state.searchResults.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                SearchResultHeader(copy, state.searchQuery, state.searchResults.size)
-            }
-        }
-        val emptyState = searchEmptyState(state.searchQuery, state.searchResults.size)
-        if (emptyState != null || (state.searchQuery.isBlank() && state.searchResults.isEmpty())) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    if (emptyState != null) {
-                        EmptyState(emptyState.copy(title = copy.searchEmptyTitle, message = copy.searchEmpty))
-                    } else {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = Panel.copy(alpha = 0.7f),
-                            shape = RoundedCornerShape(18.dp),
-                        ) {
-                            Text(
-                                copy.searchInitialHint,
-                                color = TextSecondary,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(16.dp),
-                            )
+        if (!showResultsFirst) {
+            if (emptyState != null || (state.searchQuery.isBlank() && state.searchResults.isEmpty())) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        if (emptyState != null) {
+                            EmptyState(emptyState.copy(title = copy.searchEmptyTitle, message = copy.searchEmpty))
+                        } else {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Panel.copy(alpha = 0.7f),
+                                shape = RoundedCornerShape(18.dp),
+                            ) {
+                                Text(
+                                    copy.searchInitialHint,
+                                    color = TextSecondary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(16.dp),
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
-        items(state.searchResults, key = { it.id }) { book ->
-            PosterCard(book = book, onClick = { onOpenBook(book) })
         }
         item(span = { GridItemSpan(maxLineSpan) }) {
             Spacer(Modifier.height(4.dp))

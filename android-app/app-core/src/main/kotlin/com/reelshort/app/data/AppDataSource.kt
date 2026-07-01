@@ -17,6 +17,8 @@ interface AppDataSource {
 
     suspend fun search(query: String): List<BookSummary>
 
+    suspend fun loadBook(bookId: String): BookSummary
+
     suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary>
 
     suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl

@@ -59,6 +59,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onLogout = remember(viewModel) { viewModel::logout }
     val onSearch = remember(viewModel) { viewModel::search }
     val onOpenBook = remember(viewModel) { viewModel::openBook }
+    val onOpenWatchRecord = remember(viewModel) { viewModel::openWatchRecord }
     val onOpenPlayer = remember(viewModel) { viewModel::openPlayer }
     val onUpdatePlaybackPosition = remember(viewModel) { viewModel::updatePlaybackPosition }
     val onAutoReportProgress = remember(viewModel) { viewModel::reportProgressSilently }
@@ -93,6 +94,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onLogout = onLogout,
                 onSearch = onSearch,
                 onOpenBook = onOpenBook,
+                onOpenWatchRecord = onOpenWatchRecord,
                 onOpenPlayer = onOpenPlayer,
                 onUpdatePlaybackPosition = onUpdatePlaybackPosition,
                 onAutoReportProgress = onAutoReportProgress,
@@ -126,6 +128,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
             )
             LoadingDialog(
                 visible = state.isLoading,
+                language = state.language,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .zIndex(1f),

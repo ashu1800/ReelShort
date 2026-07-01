@@ -1,6 +1,8 @@
 package com.reelshort.backend.content;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -113,6 +115,6 @@ public class ContentBookCache {
 	}
 
 	static String key(String bookId, ContentLocale locale) {
-		return locale == ContentLocale.ENGLISH ? bookId : bookId + "::" + locale.name();
+		return UUID.nameUUIDFromBytes((bookId + "::" + locale.name()).getBytes(StandardCharsets.UTF_8)).toString();
 	}
 }

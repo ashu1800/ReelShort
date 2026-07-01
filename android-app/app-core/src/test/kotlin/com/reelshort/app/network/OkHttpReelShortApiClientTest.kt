@@ -180,6 +180,32 @@ class OkHttpReelShortApiClientTest {
     }
 
     @Test
+    fun bookDetailUsesPublicContentEndpointWithLocale() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                {
+                  "bookId": "book 1",
+                  "title": "Alpha",
+                  "filteredTitle": "alpha",
+                  "coverUrl": "https://example.com/alpha.jpg",
+                  "description": "Alpha description.",
+                  "chapterCount": 12
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val book = client.getBook("book 1", "zh-TW")
+            val request = server.takeRequest()
+
+            assertEquals("/api/app/content/books/book%201?locale=zh-TW", request.path)
+            assertEquals(null, request.getHeader("Authorization"))
+            assertEquals("book 1", book.id)
+            assertEquals("Alpha", book.title)
+            assertEquals("alpha", book.filteredTitle)
+        }
+    }
+
+    @Test
     fun contentEpisodesArePublicButVideoUrlRequiresBearerToken() = runTest {
         MockWebServer().use { server ->
             server.enqueue(successBody("""

@@ -14,9 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.Panel
 import com.reelshort.app.ui.theme.PrimaryGold
 import com.reelshort.app.ui.theme.TextPrimary
@@ -43,29 +45,45 @@ internal fun ListRow(title: String, subtitle: String, trailing: String, highligh
 }
 
 @Composable
-internal fun WatchRecordRow(record: WatchRecord) {
+internal fun WatchRecordRow(
+    record: WatchRecord,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+) {
+    val copy = strings(language)
     ListRow(
         title = record.bookTitle,
-        subtitle = "第 ${record.episode} 集",
+        subtitle = if (language == AppLanguage.ENGLISH) {
+            "${copy.listEpisodePrefix}${record.episode}"
+        } else {
+            "${copy.listEpisodePrefix}${record.episode}${copy.playerEpisodeUnit}"
+        },
         trailing = "${record.progressPercent}%",
     )
 }
 
 @Composable
-internal fun PointRecordRow(record: PointRecord) {
+internal fun PointRecordRow(
+    record: PointRecord,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+) {
+    val copy = strings(language)
     ListRow(
-        title = record.reason ?: "积分变动",
-        subtitle = "积分流水",
+        title = record.reason ?: copy.listPointsChangeFallback,
+        subtitle = copy.listPointRecordSubtitle,
         trailing = if (record.amount > 0) "+${record.amount}" else "${record.amount}",
         highlight = record.amount > 0,
     )
 }
 
 @Composable
-internal fun OrderRow(order: RechargeOrderSummary) {
+internal fun OrderRow(
+    order: RechargeOrderSummary,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+) {
+    val copy = strings(language)
     ListRow(
         title = order.orderNo,
-        subtitle = "¥${order.amountCents / 100}.${(order.amountCents % 100).toString().padStart(2, '0')} · ${order.pointAmount} 积分",
+        subtitle = "${copy.listCurrencySymbol}${order.amountCents / 100}.${(order.amountCents % 100).toString().padStart(2, '0')} · ${order.pointAmount} ${copy.listPointsLabel}",
         trailing = order.status,
     )
 }

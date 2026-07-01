@@ -31,7 +31,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.PrimaryGold
 import com.reelshort.app.ui.theme.TextPrimary
 
@@ -39,7 +41,12 @@ import com.reelshort.app.ui.theme.TextPrimary
  * 首页海报网格卡片：以竖版海报为视觉主体，标题与集数覆盖在底部渐变遮罩上。
  */
 @Composable
-internal fun PosterCard(book: BookSummary, onClick: () -> Unit) {
+internal fun PosterCard(
+    book: BookSummary,
+    onClick: () -> Unit,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+) {
+    val copy = strings(language)
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -92,7 +99,7 @@ internal fun PosterCard(book: BookSummary, onClick: () -> Unit) {
                     tint = PrimaryGold,
                 )
                 Text(
-                    "${book.chapterCount} 集",
+                    "${book.chapterCount}${copy.posterEpisodeUnit}",
                     color = PrimaryGold,
                     style = MaterialTheme.typography.labelSmall,
                 )

@@ -305,6 +305,79 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun openWatchRecordLoadsBookAndOpensRecordedEpisodeFromAccount() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        val record = WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 60)
+
+        controller.restoreSession()
+        controller.openAccount()
+        dataSource.calls.clear()
+        controller.openWatchRecord(record)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals("book-1", state.selectedBook?.id)
+        assertEquals(2, state.selectedEpisode?.number)
+        assertEquals(AppScreen.ACCOUNT, state.playerReturnScreen)
+        assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
+        assertEquals(listOf("book:book-1", "episodes:book-1", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openWatchRecordFallsBackWhenRecordedEpisodeIsMissing() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        val record = WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 99, progressPercent = 60)
+
+        controller.restoreSession()
+        controller.openAccount()
+        dataSource.calls.clear()
+        controller.openWatchRecord(record)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(1, state.selectedEpisode?.number)
+        assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
+    }
+
+    @Test
+    fun openWatchRecordFailureStaysOnAccountAndShowsContentError() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.bookError = IllegalStateException("book missing")
+        val controller = AppStateController(dataSource)
+        val record = WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 60)
+
+        controller.restoreSession()
+        controller.openAccount()
+        dataSource.calls.clear()
+        controller.openWatchRecord(record)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
+        assertNull(state.currentVideoUrl)
+        assertEquals(listOf("book:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun openWatchRecordWithoutSessionPromptsLoginAndDoesNotLoadBook() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        val controller = AppStateController(dataSource)
+        val record = WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 60)
+
+        controller.openAccount()
+        dataSource.calls.clear()
+        controller.openWatchRecord(record)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertTrue(state.authPromptVisible)
+        assertFalse(state.isLoading)
+        assertTrue(dataSource.calls.isEmpty())
+    }
+
+    @Test
     fun openBookFallsBackToFirstEpisodeWhenHistoryFails() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.accountError = IllegalStateException("history unavailable")
@@ -1328,6 +1401,25 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun setLanguageKeepsUiLanguageWhenHomeRefreshFails() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.search("Alpha")
+        dataSource.calls.clear()
+        dataSource.homeError = IllegalStateException("content unavailable")
+
+        controller.setLanguage(AppLanguage.TRADITIONAL_CHINESE)
+
+        val state = controller.state.value
+        assertEquals(AppLanguage.TRADITIONAL_CHINESE, state.language)
+        assertEquals(AppScreen.HOME, state.screen)
+        assertEquals("", state.searchQuery)
+        assertEquals(emptyList(), state.searchResults)
+        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
+        assertEquals(listOf("language:save:zh-TW", "home"), dataSource.calls)
+    }
+
+    @Test
     fun toggleLikeFlipsInteractionStateForCurrentBook() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         val controller = AppStateController(dataSource)
@@ -1437,6 +1529,7 @@ class AppStateControllerTest {
             ),
         )
         var homeError: Throwable? = homeError
+        var bookError: Throwable? = null
         var homeGate: CompletableDeferred<Unit>? = null
         val searchGates = mutableMapOf<String, CompletableDeferred<Unit>>()
         val episodeGates = mutableMapOf<String, CompletableDeferred<Unit>>()
@@ -1523,6 +1616,12 @@ class AppStateControllerTest {
             calls += "search:$query"
             searchGates[query]?.await()
             return books.filter { it.title.contains(query, ignoreCase = true) }
+        }
+
+        override suspend fun loadBook(bookId: String): BookSummary {
+            calls += "book:$bookId"
+            bookError?.let { throw it }
+            return books.first { it.id == bookId }
         }
 
         override suspend fun loadEpisodes(book: BookSummary): List<EpisodeSummary> {

@@ -376,7 +376,7 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_is_empty(mon
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append(url)
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -424,7 +424,7 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_is_empty(mon
     results = client.shelf("recommend")
 
     assert calls == [
-        "https://site.example/_next/data/build-1/37/recommend.json",
+        "https://site.example/_next/data/build-1/en/recommend.json",
         "https://site.example/_next/data/build-1/en.json",
     ]
     assert results == [
@@ -463,9 +463,9 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_returns_404(
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append(url)
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse(404)
-        if url.endswith("/_next/data/fresh-build/37/recommend.json"):
+        if url.endswith("/_next/data/fresh-build/en/recommend.json"):
             return FakeResponse(404)
         if url.endswith("/_next/data/fresh-build/en.json"):
             return FakeResponse(
@@ -508,8 +508,8 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_returns_404(
     results = client.shelf("recommend")
 
     assert calls == [
-        "https://site.example/_next/data/build-1/37/recommend.json",
-        "https://site.example/_next/data/fresh-build/37/recommend.json",
+        "https://site.example/_next/data/build-1/en/recommend.json",
+        "https://site.example/_next/data/fresh-build/en/recommend.json",
         "https://site.example/_next/data/fresh-build/en.json",
     ]
     assert results == [
@@ -520,6 +520,77 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_returns_404(
             "book_pic": "https://example.com/fallback.jpg",
             "description": "",
             "chapter_count": 16,
+        }
+    ]
+
+
+def test_reelshort_client_prefers_locale_shelf_data_for_traditional_chinese(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        text = ""
+
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self.ok = 200 <= status_code < 300
+            self.payload = payload or {}
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        calls.append(url)
+        if url.endswith("/_next/data/build-1/zh-TW/recommend.json"):
+            return FakeResponse(
+                200,
+                {
+                    "pageProps": {
+                        "books": [
+                            {
+                                "book_id": "book-zh",
+                                "book_title": "繁中推薦",
+                                "book_pic": "https://example.com/zh.jpg",
+                                "chapter_count": 9,
+                            }
+                        ]
+                    }
+                },
+            )
+        if url.endswith("/_next/data/build-1/37/recommend.json"):
+            return FakeResponse(
+                200,
+                {
+                    "pageProps": {
+                        "books": [
+                            {
+                                "book_id": "book-en",
+                                "book_title": "English Recommend",
+                                "book_pic": "https://example.com/en.jpg",
+                                "chapter_count": 10,
+                            }
+                        ]
+                    }
+                },
+            )
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    monkeypatch.setenv("REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD", "0")
+
+    client = ReelShortClient("https://site.example", "37", 3)
+    client.build_id = "build-1"
+
+    results = client.shelf("recommend", locale="zh-TW")
+
+    assert calls == ["https://site.example/_next/data/build-1/zh-TW/recommend.json"]
+    assert results == [
+        {
+            "book_id": "book-zh",
+            "book_title": "繁中推薦",
+            "filtered_title": "book-book-zh",
+            "book_pic": "https://example.com/zh.jpg",
+            "description": "",
+            "chapter_count": 9,
         }
     ]
 
@@ -540,7 +611,7 @@ def test_reelshort_client_expands_recommend_with_search_catalog(monkeypatch):
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -596,7 +667,7 @@ def test_reelshort_client_expands_recommend_with_search_catalog(monkeypatch):
 
     assert [book["book_id"] for book in results] == ["home-1", "love-1", "revenge-1"]
     assert calls == [
-        {"url": "https://site.example/_next/data/build-1/37/recommend.json", "params": None},
+        {"url": "https://site.example/_next/data/build-1/en/recommend.json", "params": None},
         {"url": "https://site.example/_next/data/build-1/en.json", "params": None},
         {
             "url": "https://site.example/_next/data/build-1/en/search.json",
@@ -622,7 +693,7 @@ def test_reelshort_client_recommend_catalog_keeps_home_order_and_deduplicates(mo
             return self.payload
 
     def fake_get(url, params=None, timeout=None, **kwargs):
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -684,7 +755,7 @@ def test_reelshort_client_recommend_catalog_skips_failed_search_keyword(monkeypa
             return self.payload
 
     def fake_get(url, params=None, timeout=None, **kwargs):
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse(200, {})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -731,7 +802,7 @@ def test_reelshort_client_recommend_catalog_respects_max_books(monkeypatch):
             return self.payload
 
     def fake_get(url, params=None, timeout=None, **kwargs):
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse(
@@ -794,7 +865,7 @@ def test_reelshort_client_recommend_catalog_reads_search_pages_until_empty(monke
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
@@ -845,7 +916,7 @@ def test_reelshort_client_recommend_catalog_does_not_fetch_after_empty_page(monk
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
@@ -889,7 +960,7 @@ def test_reelshort_client_recommend_catalog_clamps_search_limits(monkeypatch):
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
@@ -933,7 +1004,7 @@ def test_reelshort_client_recommend_catalog_uses_deterministic_keyword_plan(monk
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})
@@ -976,7 +1047,7 @@ def test_reelshort_client_recommend_catalog_parallel_fetch_keeps_configured_orde
             return self.payload
 
     def fake_get(url, params=None, timeout=None, **kwargs):
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
+        if url.endswith("/_next/data/build-1/en/recommend.json"):
             return FakeResponse({})
         if url.endswith("/_next/data/build-1/en.json"):
             return FakeResponse({"pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": []}}}})

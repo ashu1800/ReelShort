@@ -41,6 +41,9 @@ class FakeReelShortApiClient : ReelShortApiClient {
     override suspend fun search(query: String, locale: String): List<BookSummary> =
         books.filter { it.title.contains(query, ignoreCase = true) || query.isBlank() }
 
+    override suspend fun getBook(bookId: String, locale: String): BookSummary =
+        books.first { it.id == bookId }
+
     override suspend fun getEpisodes(bookId: String, filteredTitle: String, locale: String): List<EpisodeSummary> =
         (1..8).map {
             EpisodeSummary(

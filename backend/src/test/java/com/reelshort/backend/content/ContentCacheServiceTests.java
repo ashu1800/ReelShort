@@ -88,6 +88,29 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
+	void getShelfPersistsTraditionalChineseBookUsingStableIdForRealBookIdLength() {
+		String longBookId = "670f2d8f4f3f2cb1c8ab1234";
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE))
+				.thenReturn(List.of(new ContentBook(
+						longBookId,
+						"億萬戀人",
+						"billionaire-lover",
+						"https://example.com/cover.jpg",
+						"desc",
+						88)));
+
+		List<ContentBook> books = contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE);
+
+		assertThat(books).extracting(ContentBook::bookId).containsExactly(longBookId);
+		assertThat(contentBookCacheRepository.findByBookIdAndLocale(longBookId, ContentLocale.TRADITIONAL_CHINESE)).isPresent()
+				.get()
+				.satisfies(cache -> {
+					assertThat(cache.title()).isEqualTo("億萬戀人");
+					assertThat(cache.filteredTitle()).isEqualTo("billionaire-lover");
+				});
+	}
+
+	@Test
 	void searchFallsBackToCachedMetadataWhenProviderFails() {
 		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(
 				new ContentBook("book-local", "Don't Toy with My Heart, Mr. Billionaire", "billionaire",

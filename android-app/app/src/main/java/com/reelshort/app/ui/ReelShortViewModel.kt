@@ -9,6 +9,7 @@ import com.reelshort.app.data.AppRepository
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.network.OkHttpReelShortApiClient
 import com.reelshort.app.session.FileHomeShelfStore
 import com.reelshort.app.session.FileSessionStore
@@ -60,6 +61,10 @@ class ReelShortViewModel(
 
     fun openBook(book: BookSummary) {
         viewModelScope.launch { controller.openBook(book) }
+    }
+
+    fun openWatchRecord(record: WatchRecord) {
+        viewModelScope.launch { controller.openWatchRecord(record) }
     }
 
     fun openPlayer(episode: EpisodeSummary) {

@@ -264,21 +264,39 @@ class AppStateController(private val dataSource: AppDataSource) {
         mutableState.update { it.copy(screen = AppScreen.SEARCH, errorMessage = null) }
     }
 
-    suspend fun setLanguage(language: AppLanguage) = runWithLoading(ErrorContext.CONTENT) {
-        dataSource.saveLanguagePreference(language)
-        val homeShelf = dataSource.loadHomeShelf()
+    suspend fun setLanguage(language: AppLanguage) {
         mutableState.update {
             it.copy(
                 language = language,
                 screen = AppScreen.HOME,
-                homeShelf = homeShelf,
                 searchQuery = "",
                 searchResults = emptyList(),
-                isLoading = false,
+                isLoading = true,
                 errorMessage = null,
             )
         }
-        dataSource.saveCachedHomeShelf(homeShelf)
+        try {
+            dataSource.saveLanguagePreference(language)
+            val homeShelf = dataSource.loadHomeShelf()
+            mutableState.update {
+                it.copy(
+                    homeShelf = homeShelf,
+                    isLoading = false,
+                    errorMessage = null,
+                )
+            }
+            dataSource.saveCachedHomeShelf(homeShelf)
+        } catch (error: CancellationException) {
+            mutableState.update { it.copy(isLoading = false) }
+            throw error
+        } catch (error: Throwable) {
+            mutableState.update {
+                it.copy(
+                    isLoading = false,
+                    errorMessage = userFacingErrorMessage(error, ErrorContext.CONTENT),
+                )
+            }
+        }
     }
 
     suspend fun openBook(book: BookSummary) = runWithLoading(ErrorContext.CONTENT) {
@@ -345,6 +363,58 @@ class AppStateController(private val dataSource: AppDataSource) {
                 )
             }
             return@runWithLoading
+        }
+        openPlayerForAuthenticatedUser(book, episode, requestVersion)
+    }
+
+    suspend fun openWatchRecord(record: WatchRecord) = runWithLoading(ErrorContext.CONTENT) {
+        if (state.value.session == null) {
+            mutableState.update {
+                it.copy(
+                    screen = AppScreen.ACCOUNT,
+                    authPromptVisible = true,
+                    isLoading = false,
+                    errorMessage = null,
+                )
+            }
+            return@runWithLoading
+        }
+        val requestVersion = ++playbackRequestVersion
+        val book = dataSource.loadBook(record.bookId)
+        if (!isActivePlaybackRequest(requestVersion)) {
+            return@runWithLoading
+        }
+        val episodes = dataSource.loadEpisodes(book)
+        if (!isActivePlaybackRequest(requestVersion)) {
+            return@runWithLoading
+        }
+        val episode = resumeEpisodeForRecord(episodes, record) ?: episodes.firstOrNull()
+        if (episode == null) {
+            mutableState.update {
+                it.copy(
+                    screen = AppScreen.ACCOUNT,
+                    selectedBook = book,
+                    episodes = emptyList(),
+                    selectedEpisode = null,
+                    currentVideoUrl = null,
+                    playback = PlaybackState(),
+                    playerReturnScreen = AppScreen.ACCOUNT,
+                    isLoading = false,
+                    errorMessage = "内容暂时加载失败，可以稍后刷新。",
+                )
+            }
+            return@runWithLoading
+        }
+        mutableState.update {
+            it.copy(
+                selectedBook = book,
+                episodes = episodes,
+                selectedEpisode = null,
+                currentVideoUrl = null,
+                playback = PlaybackState(),
+                playerReturnScreen = AppScreen.ACCOUNT,
+                isLoading = true,
+            )
         }
         openPlayerForAuthenticatedUser(book, episode, requestVersion)
     }
@@ -777,6 +847,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         when (screen) {
             AppScreen.SEARCH -> AppScreen.SEARCH
             AppScreen.FAVORITES -> AppScreen.FAVORITES
+            AppScreen.ACCOUNT -> AppScreen.ACCOUNT
             else -> AppScreen.HOME
         }
 

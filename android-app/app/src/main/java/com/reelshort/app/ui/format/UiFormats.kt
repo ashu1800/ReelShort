@@ -1,6 +1,7 @@
 package com.reelshort.app.ui.format
 
 import androidx.media3.common.C
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
 
 internal fun String?.coverUrlOrNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
@@ -20,25 +21,39 @@ internal fun mediaDurationSeconds(durationMs: Long, fallbackDurationSeconds: Int
         (maxOf(durationMs, 0L) / 1_000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
-internal fun episodeNumberLabel(number: Int): String =
-    "第 ${number.coerceAtLeast(0).toString().padStart(2, '0')} 集"
+internal fun episodeNumberLabel(
+    number: Int,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+): String {
+    val copy = strings(language)
+    return "${copy.playerEpisodePrefix}${number.coerceAtLeast(0).toString().padStart(2, '0')}${copy.playerEpisodeUnit}"
+}
 
-internal fun episodeTitle(episode: EpisodeSummary): String =
+internal fun episodeTitle(
+    episode: EpisodeSummary,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+): String =
     episode.title.trim().takeIf { it.isNotBlank() }
-        ?.let { "${episodeNumberLabel(episode.number)} · $it" }
-        ?: episodeNumberLabel(episode.number)
+        ?.let { "${episodeNumberLabel(episode.number, language)} · $it" }
+        ?: episodeNumberLabel(episode.number, language)
 
 internal fun episodeSubtitle(episodeDescription: String, bookDescription: String): String =
     episodeDescription.trim().ifBlank { bookDescription.trim() }
 
-internal fun episodeRowActionLabel(): String = "播放"
+internal fun episodeRowActionLabel(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): String =
+    strings(language).playerPlayAction
 
 internal fun playerSurfaceAspectRatio(): Float = 9f / 16f
 
 internal fun playerStartsAutomatically(): Boolean = true
 
-internal fun playerLoadingLabel(episodeNumber: Int): String =
-    "加载${episodeNumberLabel(episodeNumber)}..."
+internal fun playerLoadingLabel(
+    episodeNumber: Int,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+): String {
+    val copy = strings(language)
+    return "${copy.playerLoadingPrefix}${episodeNumberLabel(episodeNumber, language)}${copy.playerLoadingSuffix}"
+}
 
 internal fun playerLoadingOverlayVisible(
     playableUrl: String?,
@@ -54,17 +69,30 @@ internal fun playerLoadingOverlayVisible(
         !hasFirstReady
 }
 
-internal fun episodeSelectorLabel(totalEpisodes: Int): String =
-    "选集 · 已完结 · 全${totalEpisodes.coerceAtLeast(0)}集"
+internal fun episodeSelectorLabel(
+    totalEpisodes: Int,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+): String {
+    val copy = strings(language)
+    return "${copy.playerEpisodeSelectorPrefix} · ${copy.playerEpisodeSelectorCompleted} · ${copy.playerEpisodeSelectorTotalPrefix}${totalEpisodes.coerceAtLeast(0)}${copy.playerEpisodeSelectorTotalSuffix}"
+}
 
-internal fun playerSecondaryActionLabels(): List<String> = listOf("刷新地址")
+internal fun playerSecondaryActionLabels(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): List<String> =
+    listOf(strings(language).playerRefreshAction)
 
-internal fun guestAccountEntryLabels(): List<String> = listOf("登录", "注册")
+internal fun guestAccountEntryLabels(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): List<String> {
+    val copy = strings(language)
+    return listOf(copy.accountGuestSignIn, copy.accountGuestRegister)
+}
 
-internal fun authPromptTitle(hasPendingPlayback: Boolean): String =
-    if (hasPendingPlayback) "登录后继续播放" else "登录后查看账户"
+internal fun authPromptTitle(
+    hasPendingPlayback: Boolean,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+): String =
+    if (hasPendingPlayback) strings(language).authPromptPlayback else strings(language).authPromptAccount
 
-internal fun rememberPasswordLabel(): String = "记住密码"
+internal fun rememberPasswordLabel(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): String =
+    strings(language).rememberPassword
 
 internal fun String.posterInitials(): String =
     trim()

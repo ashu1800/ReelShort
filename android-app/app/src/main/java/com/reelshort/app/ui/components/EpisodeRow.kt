@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.ui.format.episodeRowActionLabel
 import com.reelshort.app.ui.format.episodeSubtitle
@@ -42,7 +43,12 @@ import com.reelshort.app.ui.theme.TextPrimary
 import com.reelshort.app.ui.theme.TextSecondary
 
 @Composable
-internal fun EpisodeRow(episode: EpisodeSummary, bookDescription: String, onClick: () -> Unit) {
+internal fun EpisodeRow(
+    episode: EpisodeSummary,
+    bookDescription: String,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    onClick: () -> Unit,
+) {
     val subtitle = episodeSubtitle(episode.description, bookDescription)
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -78,7 +84,7 @@ internal fun EpisodeRow(episode: EpisodeSummary, bookDescription: String, onClic
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    episodeTitle(episode),
+                    episodeTitle(episode, language),
                     color = TextPrimary,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
@@ -94,7 +100,7 @@ internal fun EpisodeRow(episode: EpisodeSummary, bookDescription: String, onClic
                     )
                 }
             }
-            Text(episodeRowActionLabel(), color = PrimaryGold, style = MaterialTheme.typography.bodyMedium)
+            Text(episodeRowActionLabel(language), color = PrimaryGold, style = MaterialTheme.typography.bodyMedium)
             Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
         }
     }

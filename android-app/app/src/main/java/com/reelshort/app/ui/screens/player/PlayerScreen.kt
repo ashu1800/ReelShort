@@ -3,6 +3,8 @@ package com.reelshort.app.ui.screens.player
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.ModeComment
+import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -77,6 +80,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.state.AppUiState
@@ -86,8 +90,14 @@ import com.reelshort.app.ui.format.episodeNumberLabel
 import com.reelshort.app.ui.format.episodeSelectorLabel
 import com.reelshort.app.ui.format.playerLoadingLabel
 import com.reelshort.app.ui.format.playerLoadingOverlayVisible
+import com.reelshort.app.ui.format.rewardBadgeContentDescription
+import com.reelshort.app.ui.format.rewardBadgeIncludesProgressRing
+import com.reelshort.app.ui.format.rewardBadgeInfoBody
+import com.reelshort.app.ui.format.rewardBadgeInfoTitle
+import com.reelshort.app.ui.format.rewardBadgeStageAwardLabel
 import com.reelshort.app.ui.format.rewardBadgeState
 import com.reelshort.app.ui.format.playerStartsAutomatically
+import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.DangerText
 import com.reelshort.app.ui.theme.OnPrimaryDark
 import com.reelshort.app.ui.theme.PrimaryGold
@@ -110,14 +120,33 @@ internal fun PlayerScreen(
     val book = playback.book
     val episode = playback.episode
     val playableUrl = playback.videoUrl?.url
+    val copy = strings(state.language)
     var commentSheetVisible by remember { mutableStateOf(false) }
     var episodeSheetVisible by remember { mutableStateOf(false) }
+    var rewardInfoSheetVisible by remember { mutableStateOf(false) }
+    var visibleAwardStage by remember { mutableStateOf<Int?>(null) }
+    var lastAwardStage by remember(book?.id, episode?.number) {
+        mutableStateOf(playback.lastReportedProgressPercent.coerceIn(0, 100))
+    }
+
+    LaunchedEffect(playback.lastReportedProgressPercent, state.language) {
+        val reported = playback.lastReportedProgressPercent.coerceIn(0, 100)
+        if (reported > lastAwardStage) {
+            visibleAwardStage = reported
+            kotlinx.coroutines.delay(1100)
+            if (visibleAwardStage == reported) {
+                visibleAwardStage = null
+            }
+        }
+        lastAwardStage = reported
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         // 视频层
         MediaPlayerSurface(
             playableUrl = playableUrl,
             episodeNumber = episode?.number ?: 1,
+            language = state.language,
             initialPositionSeconds = playback.positionSeconds,
             fallbackDurationSeconds = playback.durationSeconds,
             onProgress = onUpdatePlaybackPosition,
@@ -134,15 +163,30 @@ internal fun PlayerScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            CircleIconButton(icon = Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回", onClick = onBack)
+            CircleIconButton(icon = Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = copy.playerScreen, onClick = onBack)
             val badgeState = rewardBadgeState(
                 progressPercent = playback.progressPercent,
                 lastReportedProgressPercent = playback.lastReportedProgressPercent,
                 isReporting = playback.isRewardReporting,
                 hasError = playback.rewardReportError,
+                language = state.language,
             )
             if (badgeState.visualState != RewardBadgeVisualState.WAITING || playback.progressPercent > 0) {
-                RewardBadgeChip(state = badgeState)
+                Box(contentAlignment = Alignment.TopEnd) {
+                    RewardBadgeChip(
+                        state = badgeState,
+                        language = state.language,
+                        onClick = { rewardInfoSheetVisible = true },
+                    )
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = visibleAwardStage != null,
+                        enter = fadeIn() + slideInVertically { it / 2 },
+                        exit = fadeOut() + slideOutVertically { -it / 2 },
+                        modifier = Modifier.padding(top = 42.dp, end = 4.dp),
+                    ) {
+                        RewardAwardToast(language = state.language)
+                    }
+                }
             }
         }
 
@@ -152,6 +196,7 @@ internal fun PlayerScreen(
             likeCount = state.interaction.likeCount,
             favorited = state.interaction.favorited,
             commentCount = state.comments.size,
+            language = state.language,
             onToggleLike = onToggleLike,
             onToggleFavorite = onToggleFavorite,
             onOpenComments = { commentSheetVisible = true },
@@ -168,6 +213,7 @@ internal fun PlayerScreen(
             episodeDescription = (episode?.description?.ifBlank { null } ?: book?.description).orEmpty(),
             episodes = state.episodes,
             selectedEpisode = state.selectedEpisode,
+            language = state.language,
             progressPercent = playback.progressPercent.coerceIn(0, 100),
             onOpenEpisodeSheet = { episodeSheetVisible = true },
             modifier = Modifier
@@ -188,7 +234,7 @@ internal fun PlayerScreen(
                         .padding(top = 8.dp),
                 ) {
                     Text(
-                        "奖励领取失败，可继续观看",
+                        copy.playerRewardError,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                         color = DangerText,
                         style = MaterialTheme.typography.bodySmall,
@@ -201,6 +247,7 @@ internal fun PlayerScreen(
     if (commentSheetVisible) {
         CommentBottomSheet(
             comments = state.comments,
+            language = state.language,
             onDismiss = { commentSheetVisible = false },
             onSubmit = { content ->
                 onSubmitComment(content)
@@ -212,6 +259,7 @@ internal fun PlayerScreen(
         EpisodeSelectorBottomSheet(
             episodes = state.episodes,
             selectedEpisode = state.selectedEpisode,
+            language = state.language,
             onDismiss = { episodeSheetVisible = false },
             onSelectEpisode = { selected ->
                 episodeSheetVisible = false
@@ -221,6 +269,13 @@ internal fun PlayerScreen(
             },
         )
     }
+
+    if (rewardInfoSheetVisible) {
+        RewardInfoBottomSheet(
+            language = state.language,
+            onDismiss = { rewardInfoSheetVisible = false },
+        )
+    }
 }
 
 @Composable
@@ -228,6 +283,7 @@ internal fun PlayerScreen(
 private fun BoxScope.MediaPlayerSurface(
     playableUrl: String?,
     episodeNumber: Int,
+    language: AppLanguage,
     initialPositionSeconds: Int,
     fallbackDurationSeconds: Int,
     onProgress: (Int, Int) -> Unit,
@@ -240,7 +296,7 @@ private fun BoxScope.MediaPlayerSurface(
         contentAlignment = Alignment.Center,
     ) {
         if (playableUrl == null) {
-            PlayerPlaceholder(playerLoadingLabel(episodeNumber))
+            PlayerPlaceholder(playerLoadingLabel(episodeNumber, language))
             return
         }
         val context = LocalContext.current
@@ -340,13 +396,13 @@ private fun BoxScope.MediaPlayerSurface(
             ) {
                 if (playerError) {
                     Text(
-                        "视频加载失败，请稍后重试",
+                        strings(language).playerVideoError,
                         color = TextPrimary,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                     )
                 } else {
-                    PlayerPlaceholder(playerLoadingLabel(episodeNumber))
+                    PlayerPlaceholder(playerLoadingLabel(episodeNumber, language))
                 }
             }
         }
@@ -380,32 +436,118 @@ private fun CircleIconButton(
 }
 
 @Composable
-private fun RewardBadgeChip(state: RewardBadgeState) {
+private fun RewardBadgeChip(
+    state: RewardBadgeState,
+    language: AppLanguage,
+    onClick: () -> Unit,
+) {
     val ringColor = if (state.visualState == RewardBadgeVisualState.ERROR) DangerText else PrimaryGold
-    val text = when (state.visualState) {
-        RewardBadgeVisualState.COMPLETED -> "✓"
-        else -> state.displayText
-    }
     Surface(
         color = Color(0xE611151E),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(18.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, ringColor),
-        modifier = Modifier.height(34.dp),
+        modifier = Modifier
+            .height(36.dp)
+            .clickable(onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp),
+            modifier = Modifier.padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (state.visualState == RewardBadgeVisualState.REPORTING) {
+            Icon(
+                Icons.Rounded.MonetizationOn,
+                contentDescription = rewardBadgeContentDescription(state, language),
+                tint = ringColor,
+                modifier = Modifier.size(17.dp),
+            )
+            Text(
+                state.displayText,
+                color = ringColor,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (rewardBadgeIncludesProgressRing(state)) {
                 CircularProgressIndicator(
                     progress = { state.ringProgress },
-                    color = PrimaryGold,
+                    color = ringColor,
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(14.dp),
                 )
             }
-            Text(text, color = ringColor, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun RewardAwardToast(language: AppLanguage) {
+    Surface(
+        color = Color(0xF0212510),
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryGold.copy(alpha = 0.72f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(Icons.Rounded.MonetizationOn, contentDescription = null, tint = PrimaryGold, modifier = Modifier.size(16.dp))
+            Text(
+                rewardBadgeStageAwardLabel(language),
+                color = PrimaryGold,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RewardInfoBottomSheet(language: AppLanguage, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF11151E),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.MonetizationOn, contentDescription = null, tint = PrimaryGold, modifier = Modifier.size(22.dp))
+                    Text(
+                        rewardBadgeInfoTitle(language),
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = strings(language).playerClose,
+                    tint = TextSecondary,
+                    modifier = Modifier.size(22.dp).clickable(onClick = onDismiss),
+                )
+            }
+            Text(
+                rewardBadgeInfoBody(language),
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(bottom = 20.dp),
+            )
         }
     }
 }
@@ -416,6 +558,7 @@ private fun ActionRail(
     likeCount: Int,
     favorited: Boolean,
     commentCount: Int,
+    language: AppLanguage,
     onToggleLike: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenComments: () -> Unit,
@@ -441,7 +584,7 @@ private fun ActionRail(
         RailAction(
             icon = if (favorited) Icons.Rounded.Bookmark else Icons.Rounded.BookmarkBorder,
             tint = if (favorited) PrimaryGold else Color.White,
-            label = "收藏",
+            label = strings(language).playerFavoriteLabel,
             onClick = onToggleFavorite,
         )
     }
@@ -481,6 +624,7 @@ private fun BottomInfo(
     episodeDescription: String,
     episodes: List<EpisodeSummary>,
     selectedEpisode: EpisodeSummary?,
+    language: AppLanguage,
     progressPercent: Int,
     onOpenEpisodeSheet: () -> Unit,
     modifier: Modifier = Modifier,
@@ -542,8 +686,9 @@ private fun BottomInfo(
         if (episodes.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             EpisodeSelectorBar(
-                label = episodeSelectorLabel(episodes.size),
+                label = episodeSelectorLabel(episodes.size, language),
                 selectedEpisode = selectedEpisode,
+                language = language,
                 onClick = onOpenEpisodeSheet,
             )
         }
@@ -554,6 +699,7 @@ private fun BottomInfo(
 private fun EpisodeSelectorBar(
     label: String,
     selectedEpisode: EpisodeSummary?,
+    language: AppLanguage,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -580,7 +726,7 @@ private fun EpisodeSelectorBar(
                 )
                 if (selectedEpisode != null) {
                     Text(
-                        "当前 ${episodeNumberLabel(selectedEpisode.number)}",
+                        "${strings(language).playerCurrentEpisodePrefix}${episodeNumberLabel(selectedEpisode.number, language)}",
                         color = TextSecondary,
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
@@ -588,7 +734,7 @@ private fun EpisodeSelectorBar(
                     )
                 }
             }
-            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = "展开选集", tint = Color.White, modifier = Modifier.size(24.dp))
+            Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = strings(language).playerExpandEpisodes, tint = Color.White, modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -598,6 +744,7 @@ private fun EpisodeSelectorBar(
 private fun EpisodeSelectorBottomSheet(
     episodes: List<EpisodeSummary>,
     selectedEpisode: EpisodeSummary?,
+    language: AppLanguage,
     onDismiss: () -> Unit,
     onSelectEpisode: (EpisodeSummary) -> Unit,
 ) {
@@ -621,10 +768,10 @@ private fun EpisodeSelectorBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(episodeSelectorLabel(episodes.size), color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                Text(episodeSelectorLabel(episodes.size, language), color = TextPrimary, style = MaterialTheme.typography.titleMedium)
                 Icon(
                     Icons.Rounded.Close,
-                    contentDescription = "关闭",
+                    contentDescription = strings(language).playerClose,
                     tint = TextSecondary,
                     modifier = Modifier.size(22.dp).clickable(onClick = onDismiss),
                 )
@@ -675,6 +822,7 @@ private fun EpisodeSelectorItem(
 @Composable
 private fun CommentBottomSheet(
     comments: List<Comment>,
+    language: AppLanguage,
     onDismiss: () -> Unit,
     onSubmit: (String) -> Unit,
 ) {
@@ -698,17 +846,17 @@ private fun CommentBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("评论 ${comments.size}", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
+                Text("${strings(language).playerCommentsTitlePrefix}${comments.size}", color = TextPrimary, style = MaterialTheme.typography.titleMedium)
                 Icon(
                     Icons.Rounded.Close,
-                    contentDescription = "关闭",
+                    contentDescription = strings(language).playerClose,
                     tint = TextSecondary,
                     modifier = Modifier.size(22.dp).clickable(onClick = onDismiss),
                 )
             }
             if (comments.isEmpty()) {
                 Text(
-                    "还没有评论，快来抢沙发吧",
+                    strings(language).playerCommentsEmpty,
                     color = TextSecondary,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(vertical = 28.dp).align(Alignment.CenterHorizontally),
@@ -731,7 +879,7 @@ private fun CommentBottomSheet(
                     value = draft,
                     onValueChange = { draft = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("写下你的评论…", color = TextSecondary, style = MaterialTheme.typography.bodyMedium) },
+                    placeholder = { Text(strings(language).playerCommentPlaceholder, color = TextSecondary, style = MaterialTheme.typography.bodyMedium) },
                     singleLine = true,
                     shape = RoundedCornerShape(22.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
@@ -755,7 +903,7 @@ private fun CommentBottomSheet(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.Send, contentDescription = "发送", tint = if (draft.isBlank()) TextSecondary else OnPrimaryDark, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.Send, contentDescription = strings(language).playerSend, tint = if (draft.isBlank()) TextSecondary else OnPrimaryDark, modifier = Modifier.size(20.dp))
                 }
             }
         }

@@ -91,10 +91,10 @@ class ReelShortClient:
     def shelf(self, shelf_name: str, locale: str = DEFAULT_LOCALE):
         books = []
         try:
-            payload = self._get_data(f"/{shelf_name}.json")
+            payload = self._get_locale_data(f"/{shelf_name}.json", locale=locale)
             books = self._books(payload)
         except UpstreamError as exception:
-            if exception.status_code != 404 or shelf_name not in {"recommend", "newrelease", "dramadub"}:
+            if exception.status_code != 404:
                 raise
         if not books and shelf_name in {"recommend", "newrelease", "dramadub"}:
             books = self._home_shelf_books(shelf_name, locale)

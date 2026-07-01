@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.ui.components.EpisodeRow
@@ -23,15 +24,18 @@ import com.reelshort.app.ui.components.PosterBlock
 import com.reelshort.app.ui.components.SectionHeader
 import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.format.detailEmptyState
+import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.TextSecondary
 
 @Composable
 internal fun DetailScreen(
     book: BookSummary?,
     episodes: List<EpisodeSummary>,
+    language: AppLanguage,
     onOpenPlayer: (EpisodeSummary) -> Unit,
 ) {
-    val emptyState = detailEmptyState(book, episodes.size)
+    val copy = strings(language)
+    val emptyState = detailEmptyState(book, episodes.size, language)
     if (book == null) {
         EmptyState(emptyState ?: return)
         return
@@ -41,13 +45,13 @@ internal fun DetailScreen(
             BookHero(book)
         }
         item {
-            SectionHeader("剧集列表", "共 ${episodes.size} 集")
+            SectionHeader(copy.detailScreen, "${copy.playerEpisodeSelectorTotalPrefix}${episodes.size}${copy.playerEpisodeSelectorTotalSuffix}")
         }
         if (emptyState != null) {
             item { EmptyState(emptyState) }
         }
         items(episodes, key = { "${it.chapterId}-${it.number}" }) { episode ->
-            EpisodeRow(episode, book.description, onClick = { onOpenPlayer(episode) })
+            EpisodeRow(episode, book.description, language = language, onClick = { onOpenPlayer(episode) })
         }
     }
 }

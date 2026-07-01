@@ -78,6 +78,13 @@ class OkHttpReelShortApiClient(
         )
             .map { it.toDomain() }
 
+    override suspend fun getBook(bookId: String, locale: String): BookSummary =
+        get<ContentBookDto>(
+            listOf("content", "books", bookId),
+            mapOf("locale" to locale),
+            authenticated = false,
+        ).toDomain()
+
     override suspend fun getEpisodes(bookId: String, filteredTitle: String, locale: String): List<EpisodeSummary> =
         get<List<ContentEpisodeDto>>(
             listOf("content", "books", bookId, "episodes"),
