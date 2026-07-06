@@ -80,6 +80,14 @@ export type ContentCacheStatus = {
   }>
 }
 
+export type ContentShelfRefreshResult = {
+  shelfType: string
+  locale: string
+  status: 'SUCCESS' | 'FAILED'
+  itemCount: number
+  errorMessage: string | null
+}
+
 export type AdminAuditLog = {
   id: string
   adminUsername: string
@@ -280,6 +288,13 @@ export async function refreshContentShelf(shelfType: string, locale: string) {
   const response = await http.post<ApiResponse<unknown[]>>(`/content/cache/shelves/${shelfType}/refresh`, null, {
     params: { locale },
   })
+  return response.data.data
+}
+
+export async function refreshContentShelfLocales(shelfType: string) {
+  const response = await http.post<ApiResponse<ContentShelfRefreshResult[]>>(
+    `/content/cache/shelves/${shelfType}/refresh-locales`,
+  )
   return response.data.data
 }
 

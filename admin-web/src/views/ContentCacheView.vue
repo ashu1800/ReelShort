@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
 import { onMounted, ref } from 'vue'
-import { fetchContentCacheStatus, refreshContentShelf } from '../services/adminApi'
+import { fetchContentCacheStatus, refreshContentShelf, refreshContentShelfLocales } from '../services/adminApi'
 import type { ContentCacheStatus } from '../services/adminApi'
 
 const loading = ref(false)
 const refreshing = ref(false)
+const refreshingLocales = ref(false)
 const error = ref('')
 const status = ref<ContentCacheStatus | null>(null)
 const shelfType = ref('recommend')
@@ -49,6 +50,29 @@ async function refreshShelf() {
   }
 }
 
+async function refreshShelfLocales() {
+  refreshingLocales.value = true
+  try {
+    const results = await refreshContentShelfLocales(shelfType.value)
+    const successCount = results.filter((result) => result.status === 'SUCCESS').length
+    const failedCount = results.length - successCount
+    if (failedCount > 0) {
+      ElMessage.warning(`双语刷新完成：成功 ${successCount} / 失败 ${failedCount}`)
+    } else {
+      ElMessage.success(`双语刷新完成：成功 ${successCount}`)
+    }
+  } catch {
+    ElMessage.error('双语货架刷新失败')
+    refreshingLocales.value = false
+    return
+  }
+  try {
+    await loadStatus()
+  } finally {
+    refreshingLocales.value = false
+  }
+}
+
 function shelfHealthType(health: string) {
   if (health === 'HEALTHY') {
     return 'success'
@@ -87,6 +111,7 @@ onMounted(loadStatus)
           />
         </el-select>
         <el-button :loading="refreshing" type="primary" @click="refreshShelf">刷新货架</el-button>
+        <el-button :loading="refreshingLocales" @click="refreshShelfLocales">刷新双语货架</el-button>
         <el-button @click="loadStatus">刷新状态</el-button>
       </div>
     </div>
