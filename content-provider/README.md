@@ -33,11 +33,20 @@ python -m venv .venv
 GET http://localhost:5000/health
 ```
 
+运行诊断：
+
+```http
+GET http://localhost:5000/diagnostics
+```
+
+`/diagnostics` 返回内存中的内容源异常摘要，包括最近事件和按事件类型聚合的计数。当前记录的事件包括搜索空结果、Next data 404 后刷新 build id、播放页 HTML 解析失败和播放地址缺失等，用于后台运行诊断判断上游结构是否发生变化。该数据不参与 App 内容读取，服务重启后会清空。
+
 ## 内部接口
 
 Spring Boot 当前依赖以下端点：
 
 ```http
+GET /diagnostics
 GET /api/v1/reelshort/search?keywords=love&locale=en
 GET /api/v1/reelshort/episodes/{book_id}?filtered_title=love-story&locale=en
 GET /api/v1/reelshort/video/{book_id}/{episode_num}?filtered_title=love-story&chapter_id=chapter-1&locale=en
