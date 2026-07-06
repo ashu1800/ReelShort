@@ -80,6 +80,40 @@ class SystemAlertServiceTests {
 		assertThat(alert.resolvedAt()).isEqualTo("2026-06-27T10:10:00Z");
 	}
 
+	@Test
+	void contentProviderDiagnosticsEventsCreateWarningAlert() {
+		SystemRuntimeResponse runtime = runtime(List.of(RuntimeDependencyStatus.up(
+				"content-provider",
+				"reachable; diagnostics events=3, next_data_404=2, video_url_missing=1")));
+
+		List<SystemAlertResponse> alerts = service.evaluate(runtime);
+
+		assertThat(alerts).hasSize(1);
+		SystemAlertResponse alert = alerts.get(0);
+		assertThat(alert.alertKey()).isEqualTo("runtime:dependency:content-provider:diagnostics");
+		assertThat(alert.status()).isEqualTo(SystemAlertStatus.OPEN.name());
+		assertThat(alert.severity()).isEqualTo(SystemAlertSeverity.WARNING.name());
+		assertThat(alert.title()).isEqualTo("Content provider diagnostics reported events");
+		assertThat(alert.detail()).contains("diagnostics events=3");
+	}
+
+	@Test
+	void cleanContentProviderDiagnosticsResolvesWarningAlert() {
+		service.evaluate(runtime(List.of(RuntimeDependencyStatus.up(
+				"content-provider",
+				"reachable; diagnostics events=2, search_empty=2"))));
+		SystemAlertService laterService = new SystemAlertService(repository,
+				Clock.fixed(Instant.parse("2026-06-27T10:15:00Z"), ZoneOffset.UTC));
+
+		List<SystemAlertResponse> alerts = laterService.evaluate(
+				runtime(List.of(RuntimeDependencyStatus.up("content-provider", "reachable; diagnostics clean"))));
+
+		SystemAlertResponse alert = alerts.get(0);
+		assertThat(alert.alertKey()).isEqualTo("runtime:dependency:content-provider:diagnostics");
+		assertThat(alert.status()).isEqualTo(SystemAlertStatus.RESOLVED.name());
+		assertThat(alert.resolvedAt()).isEqualTo("2026-06-27T10:15:00Z");
+	}
+
 	private SystemRuntimeResponse runtime(List<RuntimeDependencyStatus> dependencies) {
 		String status = dependencies.stream().allMatch(dependency -> "UP".equals(dependency.status()))
 				? "UP"

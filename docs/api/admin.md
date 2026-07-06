@@ -324,6 +324,7 @@ Authorization: Bearer <admin-token>
 - 告警唯一键为 `runtime:dependency:<name>`。
 - `database` 依赖为 `CRITICAL`，其他依赖为 `WARNING`。
 - 依赖恢复为 `UP` 后，对应 `OPEN` 或 `ACKNOWLEDGED` 告警会转为 `RESOLVED`。
+- `content-provider` 依赖为 `UP` 但运行诊断 detail 含 `diagnostics events=` 时，额外生成 `runtime:dependency:content-provider:diagnostics` 的 `WARNING` 告警；诊断恢复 clean 或内容源不可用时，该诊断告警会转为 `RESOLVED`。
 
 ## `POST /api/admin/system/alerts/{alertId}/acknowledge`
 
