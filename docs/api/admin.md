@@ -273,9 +273,26 @@ Authorization: Bearer <admin-token>
     {
       "name": "content-provider",
       "status": "UP",
-      "detail": "reachable"
+      "detail": "reachable; diagnostics events=2, next_data_404=1, search_empty=1"
     }
-  ]
+  ],
+  "contentProviderDiagnostics": {
+    "totalEvents": 2,
+    "counters": {
+      "next_data_404": 1,
+      "search_empty": 1
+    },
+    "recentEvents": [
+      {
+        "eventType": "next_data_404",
+        "observedAt": "2026-07-06T10:00:00Z",
+        "context": {
+          "data_path": "/search.json",
+          "locale": "en"
+        }
+      }
+    ]
+  }
 }
 ```
 
@@ -285,6 +302,8 @@ Authorization: Bearer <admin-token>
 - `DEGRADED`：至少一个依赖检查为 `DOWN`。
 
 依赖异常不会导致接口整体失败；接口仍返回 `200` 和统一成功响应，具体异常由 `dependencies[].status` 和脱敏 `detail` 表达。该接口保持只读；需要沉淀异常告警时调用 `POST /api/admin/system/alerts/evaluate`。
+
+`contentProviderDiagnostics` 为内容源 `/diagnostics` 的结构化快照；当内容源不可达或诊断端点不可用时为 `null`。后台运行诊断页会展示事件总数、事件类型计数和最近事件上下文，便于定位上游结构变化。
 
 ## `GET /api/admin/system/alerts`
 

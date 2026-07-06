@@ -7,6 +7,8 @@ const loading = ref(false)
 const error = ref('')
 const runtime = ref<SystemRuntimeResponse | null>(null)
 
+const contentProviderDiagnostics = computed(() => runtime.value?.contentProviderDiagnostics ?? null)
+
 const memoryUsagePercent = computed(() => {
   const memory = runtime.value?.memory
   if (!memory || memory.maxBytes <= 0) {
@@ -14,6 +16,15 @@ const memoryUsagePercent = computed(() => {
   }
   return Math.round((memory.usedBytes / memory.maxBytes) * 100)
 })
+
+const diagnosticCounters = computed(() => {
+  const counters = contentProviderDiagnostics.value?.counters ?? {}
+  return Object.entries(counters)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([eventType, count]) => ({ eventType, count }))
+})
+
+const diagnosticsAreClean = computed(() => (contentProviderDiagnostics.value?.totalEvents ?? 0) === 0)
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) {
@@ -43,6 +54,14 @@ function formatDuration(seconds: number) {
     return '小于 1 分钟'
   }
   return `${minutes}分钟`
+}
+
+function formatContext(context: Record<string, string>) {
+  const entries = Object.entries(context)
+  if (entries.length === 0) {
+    return '-'
+  }
+  return entries.map(([key, value]) => `${key}: ${value}`).join(' / ')
 }
 
 function statusType(status: string) {
@@ -127,6 +146,50 @@ onMounted(loadRuntime)
         <el-progress :percentage="memoryUsagePercent" :status="memoryUsagePercent > 85 ? 'warning' : undefined" />
       </div>
 
+      <div class="panel">
+        <div class="panel-title">内容源诊断事件</div>
+        <template v-if="contentProviderDiagnostics">
+          <div class="diagnostics-summary">
+            <div>
+              <div class="muted">事件总数</div>
+              <div class="diagnostics-total">{{ contentProviderDiagnostics.totalEvents }}</div>
+            </div>
+            <div class="diagnostics-counters">
+              <el-tag
+                v-for="counter in diagnosticCounters"
+                :key="counter.eventType"
+                effect="plain"
+                type="warning"
+              >
+                {{ counter.eventType }}: {{ counter.count }}
+              </el-tag>
+              <el-tag v-if="diagnosticCounters.length === 0 && diagnosticsAreClean" effect="plain" type="success">
+                diagnostics clean
+              </el-tag>
+              <el-tag v-else-if="diagnosticCounters.length === 0" effect="plain" type="warning">
+                未提供类型计数
+              </el-tag>
+            </div>
+          </div>
+
+          <el-table
+            v-if="contentProviderDiagnostics.recentEvents.length > 0"
+            :data="contentProviderDiagnostics.recentEvents"
+            border
+          >
+            <el-table-column label="事件类型" min-width="180" prop="eventType" />
+            <el-table-column label="观察时间" min-width="190" prop="observedAt" />
+            <el-table-column label="上下文" min-width="260">
+              <template #default="{ row }">
+                <span class="mono context-text">{{ formatContext(row.context) }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else description="暂无内容源异常事件" />
+        </template>
+        <el-empty v-else description="内容源诊断暂不可用" />
+      </div>
+
       <el-table :data="runtime.dependencies" border>
         <el-table-column label="依赖" min-width="180" prop="name" />
         <el-table-column label="状态" width="140">
@@ -151,5 +214,42 @@ onMounted(loadRuntime)
 .runtime-metric-text {
   font-size: 18px;
   overflow-wrap: anywhere;
+}
+
+.diagnostics-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.diagnostics-total {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.diagnostics-counters {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.context-text {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .diagnostics-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .diagnostics-counters {
+    justify-content: flex-start;
+  }
 }
 </style>
