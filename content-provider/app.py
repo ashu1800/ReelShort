@@ -1,7 +1,10 @@
 import os
 import re
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import Counter, deque
+from datetime import datetime, timezone
 from html import unescape
 from urllib.parse import quote
 
@@ -67,13 +70,47 @@ class UpstreamError(Exception):
         self.message = message
 
 
+class ProviderDiagnostics:
+    def __init__(self, max_events: int = 20):
+        self.max_events = max_events
+        self._events = deque(maxlen=max_events)
+        self._counters = Counter()
+        self._lock = threading.Lock()
+
+    def record(self, event_type: str, **context):
+        event = {
+            "event_type": event_type,
+            "observed_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "context": {key: value for key, value in context.items() if value not in (None, "")},
+        }
+        with self._lock:
+            self._events.appendleft(event)
+            self._counters[event_type] += 1
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "total_events": sum(self._counters.values()),
+                "counters": dict(self._counters),
+                "recent_events": list(self._events),
+            }
+
+
 class ReelShortClient:
-    def __init__(self, site_url: str, site_id: str, timeout_seconds: float, build_id: str | None = None):
+    def __init__(
+        self,
+        site_url: str,
+        site_id: str,
+        timeout_seconds: float,
+        build_id: str | None = None,
+        diagnostics: ProviderDiagnostics | None = None,
+    ):
         self.site_url = site_url.rstrip("/")
         self.site_id = site_id
         self.timeout_seconds = timeout_seconds
         self.build_id = build_id
         self.fixed_build_id = build_id is not None
+        self.diagnostics = diagnostics or ProviderDiagnostics()
 
     @classmethod
     def from_env(cls):
@@ -86,7 +123,10 @@ class ReelShortClient:
 
     def search(self, keywords: str, locale: str = DEFAULT_LOCALE):
         payload = self._get_locale_data("/search.json", locale=locale, params={"keywords": keywords})
-        return [self._map_book(book) for book in self._books(payload)]
+        books = self._books(payload)
+        if not books:
+            self.diagnostics.record("search_empty", keywords=keywords, locale=locale)
+        return [self._map_book(book) for book in books]
 
     def shelf(self, shelf_name: str, locale: str = DEFAULT_LOCALE):
         books = []
@@ -152,6 +192,13 @@ class ReelShortClient:
             payload = self._episode_html_payload(slug)
         episode_data = payload.get("pageProps", {}).get("data", {})
         if not episode_data.get("video_url"):
+            self.diagnostics.record(
+                "video_url_missing",
+                book_id=book_id,
+                episode_num=episode_num,
+                filtered_title=filtered_title,
+                chapter_id=chapter_id,
+            )
             raise UpstreamError(404, "upstream not found")
 
         chapters = self.episodes(book_id, filtered_title, locale).get("episodes", [])
@@ -196,10 +243,12 @@ class ReelShortClient:
             re.DOTALL,
         )
         if not match:
+            self.diagnostics.record("episode_html_missing_next_data", slug=slug)
             raise UpstreamError(404, "upstream not found")
         try:
             next_data = json.loads(unescape(match.group(1)))
         except json.JSONDecodeError as exception:
+            self.diagnostics.record("episode_html_invalid_json", slug=slug)
             raise UpstreamError(502, "upstream returned invalid json") from exception
         return next_data.get("props", {})
 
@@ -210,6 +259,7 @@ class ReelShortClient:
         except UpstreamError as exception:
             if exception.status_code != 404 or self.fixed_build_id:
                 raise
+            self.diagnostics.record("next_data_404", data_path=data_path)
             self.build_id = None
             fresh_build_id = self._discover_build_id()
             return self._get(
@@ -295,6 +345,7 @@ class ReelShortClient:
         except UpstreamError as exception:
             if exception.status_code != 404 or self.fixed_build_id:
                 raise
+            self.diagnostics.record("next_data_404", data_path=data_path, locale=locale)
             self.build_id = None
             fresh_build_id = self._discover_build_id()
             return self._get(
@@ -380,7 +431,10 @@ class ReelShortClient:
             payload = self._get_locale_data("/search.json", locale=locale, params=params)
         except UpstreamError:
             return None
-        return self._books(payload)
+        books = self._books(payload)
+        if not books:
+            self.diagnostics.record("catalog_search_empty", keywords=keyword, page=page, locale=locale)
+        return books
 
     def _append_unique_book(self, books, seen, book, max_books: int):
         book_id = self._book_id(book)
@@ -482,6 +536,15 @@ def create_app(client=None) -> Flask:
     @app.get("/health")
     def health():
         return jsonify({"status": "UP", "service": "reelshort-content-provider"})
+
+    @app.get("/diagnostics")
+    def diagnostics():
+        snapshot = getattr(reelshort_client, "diagnostics", ProviderDiagnostics()).snapshot()
+        return jsonify({
+            "status": "UP",
+            "service": "reelshort-content-provider",
+            "diagnostics": snapshot,
+        })
 
     @app.errorhandler(UpstreamError)
     def upstream_error(error: UpstreamError):

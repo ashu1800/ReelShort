@@ -72,6 +72,21 @@ def test_health_returns_up(client):
     }
 
 
+def test_diagnostics_returns_empty_snapshot_for_fake_client(client):
+    response = client.get("/diagnostics")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "service": "reelshort-content-provider",
+        "status": "UP",
+        "diagnostics": {
+            "total_events": 0,
+            "counters": {},
+            "recent_events": [],
+        },
+    }
+
+
 def test_search_returns_spring_boot_contract(client):
     response = client.get("/api/v1/reelshort/search?keywords=love")
 
@@ -295,6 +310,29 @@ def test_reelshort_client_builds_search_data_url(monkeypatch):
         "url": "https://site.example/_next/data/build-1/en/search.json",
         "params": {"keywords": "love story"},
         "timeout": 3,
+    }
+
+
+def test_reelshort_client_records_empty_search_diagnostic(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        ok = True
+
+        def json(self):
+            return {"pageProps": {"books": []}}
+
+    monkeypatch.setattr("app.requests.get", lambda *args, **kwargs: FakeResponse())
+
+    client = ReelShortClient("https://site.example", "id", 3, build_id="build-1")
+    assert client.search("missing") == []
+
+    diagnostics = client.diagnostics.snapshot()
+    assert diagnostics["total_events"] == 1
+    assert diagnostics["counters"] == {"search_empty": 1}
+    assert diagnostics["recent_events"][0]["event_type"] == "search_empty"
+    assert diagnostics["recent_events"][0]["context"] == {
+        "keywords": "missing",
+        "locale": "en",
     }
 
 
@@ -1443,6 +1481,9 @@ def test_reelshort_client_refreshes_auto_discovered_build_id_after_data_404(monk
 
     assert results == [BOOK]
     assert client.build_id == "fresh-build"
+    diagnostics = client.diagnostics.snapshot()
+    assert diagnostics["counters"] == {"next_data_404": 1}
+    assert diagnostics["recent_events"][0]["context"]["data_path"] == "/search.json"
     assert calls == [
         {
             "url": "https://site.example/_next/data/stale-build/en/search.json",
