@@ -34,9 +34,18 @@ public class SystemAlertService {
 			if ("DOWN".equals(dependency.status())) {
 				observedKeys.add(alertKey);
 				upsertDependencyAlert(alertKey, dependency, now);
+				resolveProviderDiagnosticsAlert(dependency.name(), now);
 			}
 			else {
 				resolveAlert(alertKey, now);
+				if (hasContentProviderDiagnosticsEvents(dependency)) {
+					String diagnosticsAlertKey = contentProviderDiagnosticsAlertKey();
+					observedKeys.add(diagnosticsAlertKey);
+					upsertContentProviderDiagnosticsAlert(diagnosticsAlertKey, dependency, now);
+				}
+				else {
+					resolveProviderDiagnosticsAlert(dependency.name(), now);
+				}
 			}
 		}
 		systemAlertRepository.findAllByOrderByLastSeenAtDesc().stream()
@@ -73,6 +82,15 @@ public class SystemAlertService {
 		systemAlertRepository.save(alert);
 	}
 
+	private void upsertContentProviderDiagnosticsAlert(String alertKey, RuntimeDependencyStatus dependency, Instant now) {
+		String title = "Content provider diagnostics reported events";
+		String detail = sanitizeDetail(dependency.detail());
+		SystemAlert alert = systemAlertRepository.findByAlertKey(alertKey)
+				.orElseGet(() -> SystemAlert.open(alertKey, SystemAlertSeverity.WARNING, title, detail, now));
+		alert.observe(SystemAlertSeverity.WARNING, title, detail, now);
+		systemAlertRepository.save(alert);
+	}
+
 	private void resolveAlert(String alertKey, Instant now) {
 		systemAlertRepository.findByAlertKey(alertKey)
 				.filter(alert -> alert.status() != SystemAlertStatus.RESOLVED)
@@ -81,6 +99,24 @@ public class SystemAlertService {
 
 	private String dependencyAlertKey(String dependencyName) {
 		return "runtime:dependency:" + dependencyName;
+	}
+
+	private void resolveProviderDiagnosticsAlert(String dependencyName, Instant now) {
+		if ("content-provider".equals(dependencyName)) {
+			resolveAlert(contentProviderDiagnosticsAlertKey(), now);
+		}
+	}
+
+	private String contentProviderDiagnosticsAlertKey() {
+		return "runtime:dependency:content-provider:diagnostics";
+	}
+
+	private boolean hasContentProviderDiagnosticsEvents(RuntimeDependencyStatus dependency) {
+		if (!"content-provider".equals(dependency.name())) {
+			return false;
+		}
+		String detail = dependency.detail();
+		return detail != null && detail.contains("diagnostics events=");
 	}
 
 	private SystemAlertSeverity dependencySeverity(String dependencyName) {
