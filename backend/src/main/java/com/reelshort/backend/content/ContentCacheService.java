@@ -33,6 +33,7 @@ public class ContentCacheService {
 	private final ContentVideoCacheRepository contentVideoCacheRepository;
 	private final ContentRefreshRunRepository contentRefreshRunRepository;
 	private final ContentRefreshRunRecorder contentRefreshRunRecorder;
+	private final ContentCacheProperties contentCacheProperties;
 	private final ObjectMapper objectMapper;
 
 	public ContentCacheService(ContentProvider contentProvider, ContentShelfCacheRepository contentShelfCacheRepository,
@@ -41,6 +42,7 @@ public class ContentCacheService {
 			ContentVideoCacheRepository contentVideoCacheRepository,
 			ContentRefreshRunRepository contentRefreshRunRepository,
 			ContentRefreshRunRecorder contentRefreshRunRecorder,
+			ContentCacheProperties contentCacheProperties,
 			ObjectMapper objectMapper) {
 		this.contentProvider = contentProvider;
 		this.contentShelfCacheRepository = contentShelfCacheRepository;
@@ -49,6 +51,7 @@ public class ContentCacheService {
 		this.contentVideoCacheRepository = contentVideoCacheRepository;
 		this.contentRefreshRunRepository = contentRefreshRunRepository;
 		this.contentRefreshRunRecorder = contentRefreshRunRecorder;
+		this.contentCacheProperties = contentCacheProperties;
 		this.objectMapper = objectMapper;
 	}
 
@@ -362,8 +365,8 @@ public class ContentCacheService {
 
 	private ContentVideo cachedVideoOrThrow(String bookId, int episodeNum, String filteredTitle, String chapterId,
 			ContentLocale locale, ContentProviderException exception) {
-		// 播放地址具备时效性，仅当上游不可用（5xx）时回退最后一次缓存；404 表示该集不存在，不回退。
-		if (exception.statusCode() == 404) {
+		// 播放地址具备时效性，仅当上游不可用（5xx）且缓存仍在短 TTL 内时兜底；404 表示该集不存在，不回退。
+		if (exception.statusCode() < 500) {
 			throw exception;
 		}
 		return contentVideoCacheRepository
@@ -372,9 +375,20 @@ public class ContentCacheService {
 				.map(cache -> {
 					cache.markFailure(exception.getMessage());
 					contentVideoCacheRepository.save(cache);
+					if (!isVideoFallbackCacheFresh(cache)) {
+						throw exception;
+					}
 					return readVideo(cache.videoJson());
 				})
 				.orElseThrow(() -> exception);
+	}
+
+	private boolean isVideoFallbackCacheFresh(ContentVideoCache cache) {
+		Duration ttl = contentCacheProperties.getVideoFallbackTtl();
+		if (ttl == null || ttl.isZero() || ttl.isNegative()) {
+			return false;
+		}
+		return Duration.between(cache.refreshedAt(), OffsetDateTime.now()).compareTo(ttl) <= 0;
 	}
 
 	private String writeBooks(List<ContentBook> books) {

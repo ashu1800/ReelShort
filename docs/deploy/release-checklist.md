@@ -103,6 +103,7 @@ curl "https://reelshort.hjj888.cc/api/app/home/recommend?locale=zh-TW"
 - backend、content-provider、PostgreSQL、Redis 容器或进程均处于健康状态。
 - 首页推荐优先从自有 PostgreSQL 缓存返回，不因上游短暂失败直接空白。
 - 播放地址只在播放时按需拉取，不在片库刷新时预抓视频流。
+- 播放地址缓存只作为短期 5xx 兜底，确认 `REELSHORT_CONTENT_VIDEO_FALLBACK_TTL` 符合发布预期；默认 `10m`，设为 `0` 可禁用兜底。
 - 后台缓存刷新可执行，并能看到推荐货架数量变化。
 
 完成标准：
