@@ -39,6 +39,7 @@
 首页、货架、剧集详情和分集列表等元数据以 PostgreSQL 自有缓存为主。上游新增短剧时，不依赖 App 首页实时拉上游，而是通过两条路径进入自有库：
 
 - 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh` 强制刷新指定货架。
+- 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh-locales` 一次刷新所有支持的 locale，适合运营手动同步双语元数据。
 - 后端定时任务默认每 6 小时刷新 `recommend` 货架的 `en` 和 `zh-TW` 元数据，可通过 `REELSHORT_CONTENT_REFRESH_ENABLED`、`REELSHORT_CONTENT_REFRESH_INTERVAL`、`REELSHORT_CONTENT_REFRESH_SHELVES` 和 `REELSHORT_CONTENT_REFRESH_LOCALES` 调整。
 - 后台手动刷新和后端定时刷新都会写入 `content_refresh_runs`，用于后台查看最近刷新来源、locale、状态、耗时、返回数量和失败原因。
 - Flask 内容源提供 `/diagnostics` 内部诊断端点，记录搜索空结果、Next data 404、播放页 HTML 解析失败、播放地址缺失等最近事件；后端运行诊断页会展示结构化事件总数、类型计数和最近事件上下文，方便定位上游结构变化。
@@ -87,3 +88,17 @@
 强制刷新指定货架缓存，支持可选 `locale=en|zh-TW`，默认 `en`。成功后写入 PostgreSQL 元数据缓存、刷新运行记录和后台审计日志 `CONTENT_CACHE_REFRESHED`。
 
 刷新失败时返回内容源错误，不伪装成功；如果此前有缓存，失败原因会记录到该货架的 `lastError`，同时写入一条 `FAILED` 刷新运行记录。
+
+### `POST /api/admin/content/cache/shelves/{shelfType}/refresh-locales`
+
+强制刷新指定货架的全部支持语言缓存，目前包含 `en` 和 `zh-TW`。接口逐个 locale 调用同一套货架刷新逻辑，因此每个 locale 都会写入独立的 `content_refresh_runs` 运行记录；批量操作本身写入后台审计日志 `CONTENT_CACHE_REFRESHED_LOCALES`。
+
+单个 locale 刷新失败不会中断其他 locale。只要请求本身合法，接口返回 `200`，并在响应行里用 `status=FAILED` 表达局部失败；未知 `shelfType` 仍返回 `400`。
+
+响应 `data[]` 字段：
+
+- `shelfType`：货架 API 值，例如 `recommend`。
+- `locale`：刷新语言，当前为 `en` 或 `zh-TW`。
+- `status`：`SUCCESS` 或 `FAILED`。
+- `itemCount`：成功刷新时写入的短剧数量；失败时为 `0`。
+- `errorMessage`：失败原因；成功时为 `null`。

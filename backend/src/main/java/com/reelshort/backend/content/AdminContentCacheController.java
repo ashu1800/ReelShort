@@ -1,6 +1,7 @@
 package com.reelshort.backend.content;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -52,6 +53,31 @@ public class AdminContentCacheController {
 		return ApiResponse.success(books, requestId(request));
 	}
 
+	@PostMapping("/shelves/{shelfType}/refresh-locales")
+	@RequireAdminPermission(AdminPermissions.CONTENT_CACHE_WRITE)
+	public ApiResponse<List<ContentShelfRefreshResult>> refreshShelfLocales(CurrentAdmin currentAdmin,
+			@PathVariable String shelfType, HttpServletRequest request) {
+		ContentShelfType resolvedShelfType = ContentShelfType.fromApiValue(shelfType);
+		List<ContentShelfRefreshResult> results = new ArrayList<>();
+		for (ContentLocale locale : ContentLocale.values()) {
+			try {
+				List<ContentBook> books = contentCacheService.refreshShelf(
+						resolvedShelfType,
+						locale,
+						ContentRefreshTriggerSource.ADMIN);
+				results.add(ContentShelfRefreshResult.success(resolvedShelfType, locale, books.size()));
+			}
+			catch (RuntimeException exception) {
+				results.add(ContentShelfRefreshResult.failed(resolvedShelfType, locale, errorMessage(exception)));
+			}
+		}
+		long successCount = results.stream().filter(result -> "SUCCESS".equals(result.status())).count();
+		adminAuditService.record(currentAdmin.username(), "CONTENT_CACHE_REFRESHED_LOCALES", "CONTENT_SHELF",
+				targetId(resolvedShelfType), "Refreshed content shelf " + resolvedShelfType.apiValue()
+						+ " for " + successCount + "/" + results.size() + " locales");
+		return ApiResponse.success(results, requestId(request));
+	}
+
 	private ContentLocale parseLocale(String locale) {
 		try {
 			return ContentLocale.fromApiValue(locale);
@@ -63,6 +89,12 @@ public class AdminContentCacheController {
 
 	private UUID targetId(ContentShelfType shelfType) {
 		return UUID.nameUUIDFromBytes(shelfType.apiValue().getBytes(StandardCharsets.UTF_8));
+	}
+
+	private String errorMessage(RuntimeException exception) {
+		return exception.getMessage() == null || exception.getMessage().isBlank()
+				? "refresh failed"
+				: exception.getMessage();
 	}
 
 	private String requestId(HttpServletRequest request) {

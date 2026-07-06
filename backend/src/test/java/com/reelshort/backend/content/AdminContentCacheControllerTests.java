@@ -125,6 +125,38 @@ class AdminContentCacheControllerTests {
 	}
 
 	@Test
+	void adminCanRefreshShelfForAllSupportedLocalesWithPartialFailure() throws Exception {
+		String adminToken = adminLogin();
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(
+				new ContentBook("book-en", "English Drama", "english-drama", "https://example.com/en.jpg", "", 6)));
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE))
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		mockMvc.perform(post("/api/admin/content/cache/shelves/recommend/refresh-locales")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data", hasSize(2)))
+				.andExpect(jsonPath("$.data[*].locale", hasItem("en")))
+				.andExpect(jsonPath("$.data[*].locale", hasItem("zh-TW")))
+				.andExpect(jsonPath("$.data[*].status", hasItem("SUCCESS")))
+				.andExpect(jsonPath("$.data[*].status", hasItem("FAILED")))
+				.andExpect(jsonPath("$.data[*].itemCount", hasItem(1)))
+				.andExpect(jsonPath("$.data[*].errorMessage", hasItem("content provider unavailable")));
+
+		mockMvc.perform(get("/api/admin/content/cache")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.recentRefreshRuns", hasSize(2)))
+				.andExpect(jsonPath("$.data.recentRefreshRuns[*].status", hasItem("SUCCESS")))
+				.andExpect(jsonPath("$.data.recentRefreshRuns[*].status", hasItem("FAILED")));
+
+		mockMvc.perform(get("/api/admin/audit-logs")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[*].action", hasItem("CONTENT_CACHE_REFRESHED_LOCALES")));
+	}
+
+	@Test
 	void contentCacheStatusIncludesEpisodeCacheCount() throws Exception {
 		String adminToken = adminLogin();
 		String appToken = registerAndExtractAppToken("episode-cache-user");
