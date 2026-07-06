@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.admin.AdminBearerTokenAuthenticationFilter;
 import com.reelshort.backend.admin.AdminProperties;
 import com.reelshort.backend.admin.AdminSessionProperties;
+import com.reelshort.backend.content.ContentCacheProperties;
 import com.reelshort.backend.content.ContentRefreshProperties;
 import com.reelshort.backend.system.api.ApiErrorResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
@@ -27,7 +28,7 @@ import jakarta.servlet.http.HttpServletResponse;
 @Configuration
 @EnableConfigurationProperties(
 		{AdminProperties.class, AdminSessionProperties.class, AuthSessionProperties.class,
-				ContentRefreshProperties.class})
+				ContentRefreshProperties.class, ContentCacheProperties.class})
 public class SecurityConfig {
 
 	private final BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter;

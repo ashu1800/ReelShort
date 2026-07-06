@@ -32,7 +32,9 @@
 
 ### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}&locale={locale}`
 
-返回单集播放地址。播放地址具备时效性，正常路径总是实时调用内容源获取最新地址，成功后写入 PostgreSQL 播放缓存；当内容源返回 `502`/`503`（不可用）且已有缓存时，回退返回最后一次播放地址缓存（尽力而为，旧地址可能已失效）；内容源返回 `404`（该集确实不存在）时不回退。
+返回单集播放地址。播放地址具备时效性，正常路径总是实时调用内容源获取最新地址，成功后写入 PostgreSQL 播放缓存；当内容源返回 `502`/`503`（不可用）且已有短期缓存时，才回退返回最后一次播放地址缓存；内容源返回 `404`（该集确实不存在）时不回退。
+
+播放地址缓存只作为短期故障兜底，不参与片库预热。兜底 TTL 由 `REELSHORT_CONTENT_VIDEO_FALLBACK_TTL` 控制，默认 `10m`；设置为 `0` 可禁用播放地址缓存兜底。
 
 ## 元数据刷新策略
 
@@ -63,7 +65,7 @@
 
 - `bookCount`：当前缓存的剧集索引数量。
 - `episodeCacheCount`：当前缓存的剧集分集列表数量。
-- `videoCacheCount`：当前缓存的播放地址数量；播放地址只作为内容源不可用时的兜底，不参与片库预热。
+- `videoCacheCount`：当前缓存的播放地址数量；播放地址只作为内容源不可用时的短 TTL 兜底，不参与片库预热。
 - `shelves`：每个货架和 locale 组合的缓存状态。
 - `shelves[].shelfType`
 - `shelves[].locale`

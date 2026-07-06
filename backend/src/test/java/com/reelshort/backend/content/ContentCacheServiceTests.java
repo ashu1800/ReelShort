@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.time.OffsetDateTime;
@@ -39,6 +40,9 @@ class ContentCacheServiceTests {
 	@Autowired
 	private ContentRefreshRunRepository contentRefreshRunRepository;
 
+	@Autowired
+	private ContentCacheProperties contentCacheProperties;
+
 	@MockitoBean
 	private ContentProvider contentProvider;
 
@@ -49,6 +53,7 @@ class ContentCacheServiceTests {
 		contentBookCacheRepository.deleteAll();
 		contentEpisodeCacheRepository.deleteAll();
 		contentVideoCacheRepository.deleteAll();
+		contentCacheProperties.setVideoFallbackTtl(Duration.ofMinutes(10));
 	}
 
 	@Test
@@ -552,6 +557,54 @@ class ContentCacheServiceTests {
 				.isPresent()
 				.get()
 				.satisfies(cache -> assertThat(cache.lastError()).isEqualTo("content provider unavailable"));
+	}
+
+	@Test
+	void getVideoUrlDoesNotFallbackToExpiredCachedVideoWhenProviderUnavailable() {
+		ContentVideo video = new ContentVideo("https://cdn.example.com/1.m3u8", 1, 120, null);
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1", ContentLocale.ENGLISH))
+				.thenReturn(video)
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1");
+		ContentVideoCache cache = contentVideoCacheRepository
+				.findByBookIdAndEpisodeNumAndFilteredTitleAndChapterId("book-1", 1, "love-story", "chapter-1")
+				.orElseThrow();
+		ReflectionTestUtils.setField(cache, "refreshedAt", OffsetDateTime.now().minusMinutes(11));
+		contentVideoCacheRepository.saveAndFlush(cache);
+
+		assertThatThrownBy(() -> contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content provider unavailable");
+	}
+
+	@Test
+	void getVideoUrlDoesNotFallbackWhenVideoFallbackTtlIsDisabled() {
+		contentCacheProperties.setVideoFallbackTtl(Duration.ZERO);
+		ContentVideo video = new ContentVideo("https://cdn.example.com/1.m3u8", 1, 120, null);
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1", ContentLocale.ENGLISH))
+				.thenReturn(video)
+				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
+
+		contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1");
+
+		assertThatThrownBy(() -> contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("content provider unavailable");
+	}
+
+	@Test
+	void getVideoUrlDoesNotFallbackToCachedVideoForNonServerProviderFailure() {
+		ContentVideo video = new ContentVideo("https://cdn.example.com/1.m3u8", 1, 120, null);
+		when(contentProvider.getVideoUrl("book-1", 1, "love-story", "chapter-1", ContentLocale.ENGLISH))
+				.thenReturn(video)
+				.thenThrow(new ContentProviderException(400, "bad playback request"));
+
+		contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1");
+
+		assertThatThrownBy(() -> contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1"))
+				.isInstanceOf(ContentProviderException.class)
+				.hasMessage("bad playback request");
 	}
 
 	@Test
