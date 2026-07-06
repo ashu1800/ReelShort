@@ -41,7 +41,7 @@
 - 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh` 强制刷新指定货架。
 - 后端定时任务默认每 6 小时刷新 `recommend` 货架的 `en` 和 `zh-TW` 元数据，可通过 `REELSHORT_CONTENT_REFRESH_ENABLED`、`REELSHORT_CONTENT_REFRESH_INTERVAL`、`REELSHORT_CONTENT_REFRESH_SHELVES` 和 `REELSHORT_CONTENT_REFRESH_LOCALES` 调整。
 - 后台手动刷新和后端定时刷新都会写入 `content_refresh_runs`，用于后台查看最近刷新来源、locale、状态、耗时、返回数量和失败原因。
-- Flask 内容源提供 `/diagnostics` 内部诊断端点，记录搜索空结果、Next data 404、播放页 HTML 解析失败、播放地址缺失等最近事件；后端运行诊断页会在 `content-provider` 依赖说明中展示事件总数和类型计数，方便定位上游结构变化。
+- Flask 内容源提供 `/diagnostics` 内部诊断端点，记录搜索空结果、Next data 404、播放页 HTML 解析失败、播放地址缺失等最近事件；后端运行诊断页会展示结构化事件总数、类型计数和最近事件上下文，方便定位上游结构变化。
 
 视频文件和播放流不存放在自有服务器；只有播放页请求单集播放地址时才按需调用内容源。
 

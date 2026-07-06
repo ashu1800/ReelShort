@@ -59,7 +59,7 @@ class SystemRuntimeControllerTests {
 	void adminCanReadRuntimeDiagnostics() throws Exception {
 		String adminToken = adminLogin();
 
-		mockMvc.perform(get("/api/admin/system/runtime")
+		MvcResult result = mockMvc.perform(get("/api/admin/system/runtime")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value(0))
@@ -67,7 +67,10 @@ class SystemRuntimeControllerTests {
 				.andExpect(jsonPath("$.data.application.service").value("reelshort-backend"))
 				.andExpect(jsonPath("$.data.application.version").isString())
 				.andExpect(jsonPath("$.data.memory.usedBytes").isNumber())
-				.andExpect(jsonPath("$.data.dependencies").isArray());
+				.andExpect(jsonPath("$.data.dependencies").isArray())
+				.andReturn();
+		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+		org.assertj.core.api.Assertions.assertThat(response.path("data").has("contentProviderDiagnostics")).isTrue();
 	}
 
 	@Test

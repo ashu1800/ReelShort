@@ -3,6 +3,7 @@ package com.reelshort.backend.system.runtime;
 import java.lang.management.ManagementFactory;
 import java.time.Clock;
 import java.util.List;
+import java.util.Objects;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -44,7 +45,8 @@ public class SystemRuntimeService {
 						System.getProperty("java.version", "unknown"),
 						uptimeSeconds),
 				new SystemRuntimeResponse.MemoryInfo(usedBytes, runtime.maxMemory()),
-				dependencies);
+				dependencies,
+				contentProviderDiagnostics());
 	}
 
 	private RuntimeDependencyStatus safeCheck(RuntimeDependencyChecker checker) {
@@ -55,5 +57,15 @@ public class SystemRuntimeService {
 		catch (RuntimeException exception) {
 			return RuntimeDependencyStatus.down("unknown", "check failed");
 		}
+	}
+
+	private SystemRuntimeResponse.ContentProviderDiagnostics contentProviderDiagnostics() {
+		return dependencyCheckers.stream()
+				.filter(ContentProviderRuntimeDependencyChecker.class::isInstance)
+				.map(ContentProviderRuntimeDependencyChecker.class::cast)
+				.map(ContentProviderRuntimeDependencyChecker::latestDiagnostics)
+				.filter(Objects::nonNull)
+				.findFirst()
+				.orElse(null);
 	}
 }

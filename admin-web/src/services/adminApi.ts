@@ -160,6 +160,18 @@ export type RuntimeDependencyStatus = {
   detail: string
 }
 
+export type ContentProviderDiagnosticEvent = {
+  eventType: string
+  observedAt: string
+  context: Record<string, string>
+}
+
+export type ContentProviderDiagnostics = {
+  totalEvents: number
+  counters: Record<string, number>
+  recentEvents: ContentProviderDiagnosticEvent[]
+}
+
 export type SystemRuntimeResponse = {
   status: 'UP' | 'DEGRADED'
   checkedAt: string
@@ -174,6 +186,7 @@ export type SystemRuntimeResponse = {
     maxBytes: number
   }
   dependencies: RuntimeDependencyStatus[]
+  contentProviderDiagnostics: ContentProviderDiagnostics | null
 }
 
 export type SystemLogResponse = {
