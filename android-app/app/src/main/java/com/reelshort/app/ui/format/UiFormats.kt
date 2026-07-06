@@ -60,13 +60,48 @@ internal fun playerLoadingOverlayVisible(
     playbackState: Int,
     hasFirstReady: Boolean,
     hasError: Boolean,
-): Boolean {
-    if (playableUrl == null || hasError) {
-        return true
+): Boolean =
+    playerOverlayMode(playableUrl, playbackState, hasFirstReady, hasError) != PlayerOverlayMode.NONE
+
+internal enum class PlayerOverlayMode {
+    NONE,
+    COVER_LOADING,
+    BUFFERING,
+    ERROR,
+}
+
+internal fun playerOverlayMode(
+    playableUrl: String?,
+    playbackState: Int,
+    hasFirstReady: Boolean,
+    hasError: Boolean,
+): PlayerOverlayMode {
+    if (hasError) {
+        return PlayerOverlayMode.ERROR
     }
-    return playbackState == androidx.media3.common.Player.STATE_IDLE ||
-        playbackState == androidx.media3.common.Player.STATE_BUFFERING ||
-        !hasFirstReady
+    if (playableUrl == null || playbackState == androidx.media3.common.Player.STATE_IDLE || !hasFirstReady) {
+        return PlayerOverlayMode.COVER_LOADING
+    }
+    if (playbackState == androidx.media3.common.Player.STATE_BUFFERING) {
+        return PlayerOverlayMode.BUFFERING
+    }
+    return PlayerOverlayMode.NONE
+}
+
+internal fun playerErrorNextEpisode(
+    currentEpisode: EpisodeSummary?,
+    episodes: List<EpisodeSummary>,
+): EpisodeSummary? {
+    if (currentEpisode == null) {
+        return null
+    }
+    val currentIndex = episodes.indexOfFirst {
+        it.number == currentEpisode.number && it.chapterId == currentEpisode.chapterId
+    }
+    if (currentIndex < 0 || currentIndex >= episodes.lastIndex) {
+        return null
+    }
+    return episodes[currentIndex + 1]
 }
 
 internal fun episodeSelectorLabel(
