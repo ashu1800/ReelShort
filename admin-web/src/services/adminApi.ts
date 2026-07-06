@@ -64,6 +64,8 @@ export type ContentCacheStatus = {
     itemCount: number
     refreshedAt: string | null
     lastError: string | null
+    health: 'HEALTHY' | 'STALE' | 'EMPTY' | 'ERROR' | 'MISSING'
+    healthMessage: string
   }>
   recentRefreshRuns: Array<{
     triggerSource: 'ADMIN' | 'SCHEDULED'

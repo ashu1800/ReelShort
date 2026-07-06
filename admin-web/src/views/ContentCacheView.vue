@@ -49,6 +49,16 @@ async function refreshShelf() {
   }
 }
 
+function shelfHealthType(health: string) {
+  if (health === 'HEALTHY') {
+    return 'success'
+  }
+  if (health === 'ERROR') {
+    return 'danger'
+  }
+  return 'warning'
+}
+
 onMounted(loadStatus)
 </script>
 
@@ -98,8 +108,14 @@ onMounted(loadStatus)
     <el-table :data="status?.shelves ?? []" border>
       <el-table-column label="货架" prop="shelfType" width="160" />
       <el-table-column label="语言" prop="locale" width="120" />
+      <el-table-column label="健康状态" width="140">
+        <template #default="{ row }">
+          <el-tag :type="shelfHealthType(row.health)">{{ row.health }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column align="right" label="条目数" prop="itemCount" width="120" />
       <el-table-column label="最近刷新" min-width="220" prop="refreshedAt" />
+      <el-table-column label="健康说明" min-width="240" prop="healthMessage" />
       <el-table-column label="最近错误" min-width="260" prop="lastError" />
     </el-table>
     <h2 class="section-title">最近刷新任务</h2>

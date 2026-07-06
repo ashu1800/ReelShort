@@ -9,12 +9,14 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.OffsetDateTime;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @SpringBootTest
 class ContentCacheServiceTests {
@@ -421,6 +423,99 @@ class ContentCacheServiceTests {
 				.filteredOn(shelf -> shelf.shelfType().equals("drama-dub") && shelf.locale().equals("zh-TW"))
 				.singleElement()
 				.satisfies(shelf -> assertThat(shelf.itemCount()).isZero());
+	}
+
+	@Test
+	void cacheStatusMarksMissingShelfHealth() {
+		ContentCacheStatusResponse status = contentCacheService.status();
+
+		assertThat(status.shelves())
+				.filteredOn(shelf -> shelf.shelfType().equals("recommend") && shelf.locale().equals("en"))
+				.singleElement()
+				.satisfies(shelf -> {
+					assertThat(shelf.health()).isEqualTo("MISSING");
+					assertThat(shelf.healthMessage()).isEqualTo("not refreshed yet");
+				});
+	}
+
+	@Test
+	void cacheStatusMarksEmptyShelfHealth() {
+		contentShelfCacheRepository.saveAndFlush(ContentShelfCache.create(
+				ContentShelfType.RECOMMEND,
+				ContentLocale.ENGLISH,
+				"[]",
+				0));
+
+		ContentCacheStatusResponse status = contentCacheService.status();
+
+		assertThat(status.shelves())
+				.filteredOn(shelf -> shelf.shelfType().equals("recommend") && shelf.locale().equals("en"))
+				.singleElement()
+				.satisfies(shelf -> {
+					assertThat(shelf.health()).isEqualTo("EMPTY");
+					assertThat(shelf.healthMessage()).isEqualTo("last refresh returned no books");
+				});
+	}
+
+	@Test
+	void cacheStatusMarksErrorShelfHealthBeforeOtherWarnings() {
+		ContentShelfCache cache = ContentShelfCache.create(
+				ContentShelfType.RECOMMEND,
+				ContentLocale.ENGLISH,
+				"[]",
+				0);
+		cache.markFailure("content provider unavailable");
+		contentShelfCacheRepository.saveAndFlush(cache);
+
+		ContentCacheStatusResponse status = contentCacheService.status();
+
+		assertThat(status.shelves())
+				.filteredOn(shelf -> shelf.shelfType().equals("recommend") && shelf.locale().equals("en"))
+				.singleElement()
+				.satisfies(shelf -> {
+					assertThat(shelf.health()).isEqualTo("ERROR");
+					assertThat(shelf.healthMessage()).isEqualTo("content provider unavailable");
+				});
+	}
+
+	@Test
+	void cacheStatusMarksStaleShelfHealth() {
+		ContentShelfCache cache = ContentShelfCache.create(
+				ContentShelfType.RECOMMEND,
+				ContentLocale.ENGLISH,
+				"[{}]",
+				1);
+		ReflectionTestUtils.setField(cache, "refreshedAt", OffsetDateTime.now().minusHours(13));
+		contentShelfCacheRepository.saveAndFlush(cache);
+
+		ContentCacheStatusResponse status = contentCacheService.status();
+
+		assertThat(status.shelves())
+				.filteredOn(shelf -> shelf.shelfType().equals("recommend") && shelf.locale().equals("en"))
+				.singleElement()
+				.satisfies(shelf -> {
+					assertThat(shelf.health()).isEqualTo("STALE");
+					assertThat(shelf.healthMessage()).isEqualTo("last refresh is older than 12 hours");
+				});
+	}
+
+	@Test
+	void cacheStatusMarksHealthyShelfHealth() {
+		contentShelfCacheRepository.saveAndFlush(ContentShelfCache.create(
+				ContentShelfType.RECOMMEND,
+				ContentLocale.ENGLISH,
+				"[{}]",
+				1));
+
+		ContentCacheStatusResponse status = contentCacheService.status();
+
+		assertThat(status.shelves())
+				.filteredOn(shelf -> shelf.shelfType().equals("recommend") && shelf.locale().equals("en"))
+				.singleElement()
+				.satisfies(shelf -> {
+					assertThat(shelf.health()).isEqualTo("HEALTHY");
+					assertThat(shelf.healthMessage()).isEqualTo("cache is fresh");
+				});
 	}
 
 	@Test
