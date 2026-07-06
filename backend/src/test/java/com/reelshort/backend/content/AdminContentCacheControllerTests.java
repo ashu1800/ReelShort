@@ -74,6 +74,8 @@ class AdminContentCacheControllerTests {
 				.andExpect(jsonPath("$.data.shelves[*].shelfType", hasItem("drama-dub")))
 				.andExpect(jsonPath("$.data.shelves[*].locale", hasItem("en")))
 				.andExpect(jsonPath("$.data.shelves[*].locale", hasItem("zh-TW")))
+				.andExpect(jsonPath("$.data.shelves[*].health", hasItem("MISSING")))
+				.andExpect(jsonPath("$.data.shelves[*].healthMessage", hasItem("not refreshed yet")))
 				.andExpect(jsonPath("$.data.recentRefreshRuns", hasSize(0)));
 	}
 

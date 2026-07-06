@@ -2,6 +2,7 @@ package com.reelshort.backend.content;
 
 import java.util.Arrays;
 import java.util.List;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 
 import org.springframework.stereotype.Service;
@@ -13,6 +14,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class ContentCacheService {
+
+	private static final Duration SHELF_STALE_AFTER = Duration.ofHours(12);
 
 	private static final TypeReference<List<ContentBook>> CONTENT_BOOK_LIST = new TypeReference<>() {
 	};
@@ -219,9 +222,41 @@ public class ContentCacheService {
 
 	private ContentCacheStatusResponse.ShelfStatus shelfStatus(ContentShelfType shelfType, ContentLocale locale) {
 		return contentShelfCacheRepository.findByShelfTypeAndLocale(shelfType, locale)
-				.map(cache -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), locale.apiValue(), cache.itemCount(),
-						cache.refreshedAt().toString(), cache.lastError()))
-				.orElseGet(() -> new ContentCacheStatusResponse.ShelfStatus(shelfType.apiValue(), locale.apiValue(), 0, null, null));
+				.map(cache -> {
+					ShelfHealthStatus health = shelfHealth(cache);
+					return new ContentCacheStatusResponse.ShelfStatus(
+							shelfType.apiValue(),
+							locale.apiValue(),
+							cache.itemCount(),
+							cache.refreshedAt().toString(),
+							cache.lastError(),
+							health.health().name(),
+							health.message());
+				})
+				.orElseGet(() -> new ContentCacheStatusResponse.ShelfStatus(
+						shelfType.apiValue(),
+						locale.apiValue(),
+						0,
+						null,
+						null,
+						ContentShelfCacheHealth.MISSING.name(),
+						"not refreshed yet"));
+	}
+
+	private ShelfHealthStatus shelfHealth(ContentShelfCache cache) {
+		if (cache.lastError() != null && !cache.lastError().isBlank()) {
+			return new ShelfHealthStatus(ContentShelfCacheHealth.ERROR, cache.lastError());
+		}
+		if (cache.itemCount() <= 0) {
+			return new ShelfHealthStatus(ContentShelfCacheHealth.EMPTY, "last refresh returned no books");
+		}
+		if (Duration.between(cache.refreshedAt(), OffsetDateTime.now()).compareTo(SHELF_STALE_AFTER) > 0) {
+			return new ShelfHealthStatus(ContentShelfCacheHealth.STALE, "last refresh is older than 12 hours");
+		}
+		return new ShelfHealthStatus(ContentShelfCacheHealth.HEALTHY, "cache is fresh");
+	}
+
+	private record ShelfHealthStatus(ContentShelfCacheHealth health, String message) {
 	}
 
 	private ContentCacheStatusResponse.RefreshRunStatus refreshRunStatus(ContentRefreshRun run) {

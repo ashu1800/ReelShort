@@ -14,7 +14,9 @@ public record ContentCacheStatusResponse(
 			String locale,
 			int itemCount,
 			String refreshedAt,
-			String lastError) {
+			String lastError,
+			String health,
+			String healthMessage) {
 	}
 
 	public record RefreshRunStatus(

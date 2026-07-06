@@ -69,6 +69,8 @@
 - `shelves[].itemCount`
 - `shelves[].refreshedAt`
 - `shelves[].lastError`
+- `shelves[].health`：`HEALTHY`、`STALE`、`EMPTY`、`ERROR` 或 `MISSING`。
+- `shelves[].healthMessage`：后台可展示的健康说明。`STALE` 表示该货架超过 12 小时未成功刷新；`ERROR` 优先展示最近错误。
 - `recentRefreshRuns`：最近 10 次货架刷新运行记录。
 - `recentRefreshRuns[].triggerSource`：`ADMIN` 或 `SCHEDULED`。
 - `recentRefreshRuns[].shelfType`
