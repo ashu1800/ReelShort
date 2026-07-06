@@ -40,6 +40,8 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.ModeComment
 import androidx.compose.material.icons.rounded.MonetizationOn
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -80,16 +83,20 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import coil.compose.AsyncImage
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.state.AppUiState
+import com.reelshort.app.ui.format.PlayerOverlayMode
 import com.reelshort.app.ui.format.RewardBadgeState
 import com.reelshort.app.ui.format.RewardBadgeVisualState
+import com.reelshort.app.ui.format.coverUrlOrNull
 import com.reelshort.app.ui.format.episodeNumberLabel
 import com.reelshort.app.ui.format.episodeSelectorLabel
+import com.reelshort.app.ui.format.playerErrorNextEpisode
 import com.reelshort.app.ui.format.playerLoadingLabel
-import com.reelshort.app.ui.format.playerLoadingOverlayVisible
+import com.reelshort.app.ui.format.playerOverlayMode
 import com.reelshort.app.ui.format.rewardBadgeContentDescription
 import com.reelshort.app.ui.format.rewardBadgeIncludesProgressRing
 import com.reelshort.app.ui.format.rewardBadgeInfoBody
@@ -145,12 +152,22 @@ internal fun PlayerScreen(
         // 视频层
         MediaPlayerSurface(
             playableUrl = playableUrl,
+            coverUrl = book?.coverUrl,
+            currentEpisode = episode,
+            episodes = state.episodes,
             episodeNumber = episode?.number ?: 1,
             language = state.language,
             initialPositionSeconds = playback.positionSeconds,
             fallbackDurationSeconds = playback.durationSeconds,
             onProgress = onUpdatePlaybackPosition,
             onAutoReportProgress = onAutoReportProgress,
+            onRetryPlayback = {
+                if (episode != null) {
+                    onOpenPlayer(episode)
+                }
+            },
+            onOpenNextEpisode = onOpenPlayer,
+            onBack = onBack,
         )
 
         // 顶部状态栏占位 + 返回键 + 奖励进度
@@ -282,12 +299,18 @@ internal fun PlayerScreen(
 @UnstableApi
 private fun BoxScope.MediaPlayerSurface(
     playableUrl: String?,
+    coverUrl: String?,
+    currentEpisode: EpisodeSummary?,
+    episodes: List<EpisodeSummary>,
     episodeNumber: Int,
     language: AppLanguage,
     initialPositionSeconds: Int,
     fallbackDurationSeconds: Int,
     onProgress: (Int, Int) -> Unit,
     onAutoReportProgress: (Int, Int) -> Unit,
+    onRetryPlayback: () -> Unit,
+    onOpenNextEpisode: (EpisodeSummary) -> Unit,
+    onBack: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -296,7 +319,10 @@ private fun BoxScope.MediaPlayerSurface(
         contentAlignment = Alignment.Center,
     ) {
         if (playableUrl == null) {
-            PlayerPlaceholder(playerLoadingLabel(episodeNumber, language))
+            PlayerCoverLoadingOverlay(
+                coverUrl = coverUrl,
+                label = playerLoadingLabel(episodeNumber, language),
+            )
             return
         }
         val context = LocalContext.current
@@ -364,7 +390,7 @@ private fun BoxScope.MediaPlayerSurface(
                 }
             }
         }
-        val loadingOverlayVisible = playerLoadingOverlayVisible(
+        val overlayMode = playerOverlayMode(
             playableUrl = playableUrl,
             playbackState = playbackState,
             hasFirstReady = hasFirstReady,
@@ -385,27 +411,182 @@ private fun BoxScope.MediaPlayerSurface(
             },
         )
         AnimatedVisibility(
-            visible = loadingOverlayVisible,
+            visible = overlayMode != PlayerOverlayMode.NONE,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.matchParentSize(),
         ) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color(0x99000000)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (playerError) {
-                    Text(
-                        strings(language).playerVideoError,
-                        color = TextPrimary,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                } else {
-                    PlayerPlaceholder(playerLoadingLabel(episodeNumber, language))
-                }
+            when (overlayMode) {
+                PlayerOverlayMode.COVER_LOADING -> PlayerCoverLoadingOverlay(
+                    coverUrl = coverUrl,
+                    label = playerLoadingLabel(episodeNumber, language),
+                )
+                PlayerOverlayMode.BUFFERING -> PlayerBufferingOverlay(
+                    label = playerLoadingLabel(episodeNumber, language),
+                )
+                PlayerOverlayMode.ERROR -> PlayerErrorOverlay(
+                    language = language,
+                    nextEpisode = playerErrorNextEpisode(currentEpisode, episodes),
+                    onRetry = onRetryPlayback,
+                    onNext = onOpenNextEpisode,
+                    onBack = onBack,
+                )
+                PlayerOverlayMode.NONE -> Unit
             }
         }
+    }
+}
+
+@Composable
+private fun PlayerCoverLoadingOverlay(coverUrl: String?, label: String) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val normalizedCoverUrl = coverUrl.coverUrlOrNull()
+        if (normalizedCoverUrl != null) {
+            val context = LocalContext.current
+            AsyncImage(
+                model = coil.request.ImageRequest.Builder(context)
+                    .data(normalizedCoverUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color(0xFF2B2412),
+                            0.52f to Color(0xFF10141D),
+                            1f to Color.Black,
+                        ),
+                    ),
+            )
+        }
+        Box(modifier = Modifier.matchParentSize().background(Color(0xB3000000)))
+        PlayerPlaceholder(label)
+    }
+}
+
+@Composable
+private fun PlayerBufferingOverlay(label: String) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Surface(
+            color = Color(0xD611151E),
+            shape = RoundedCornerShape(18.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryGold.copy(alpha = 0.46f)),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(color = PrimaryGold, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                Text(label, color = TextPrimary, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerErrorOverlay(
+    language: AppLanguage,
+    nextEpisode: EpisodeSummary?,
+    onRetry: () -> Unit,
+    onNext: (EpisodeSummary) -> Unit,
+    onBack: () -> Unit,
+) {
+    val copy = strings(language)
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color(0xA6000000)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            color = Color(0xE611151E),
+            shape = RoundedCornerShape(18.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33FFFFFF)),
+            modifier = Modifier.padding(horizontal = 36.dp),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    copy.playerVideoError,
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    PlayerRecoveryButton(
+                        label = copy.playerRetryAction,
+                        icon = Icons.Rounded.PlayArrow,
+                        emphasized = true,
+                        onClick = onRetry,
+                    )
+                    if (nextEpisode != null) {
+                        PlayerRecoveryButton(
+                            label = copy.playerNextEpisodeAction,
+                            icon = Icons.Rounded.SkipNext,
+                            emphasized = false,
+                            onClick = { onNext(nextEpisode) },
+                        )
+                    }
+                }
+                PlayerRecoveryTextButton(label = copy.playerBackAction, onClick = onBack)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerRecoveryButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    emphasized: Boolean,
+    onClick: () -> Unit,
+) {
+    val background = if (emphasized) PrimaryGold else Color(0xFF252C3A)
+    val foreground = if (emphasized) OnPrimaryDark else TextPrimary
+    Surface(
+        color = background,
+        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.height(48.dp).clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(icon, contentDescription = null, tint = foreground, modifier = Modifier.size(18.dp))
+            Text(
+                label,
+                color = foreground,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerRecoveryTextButton(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = TextSecondary, style = MaterialTheme.typography.labelMedium)
     }
 }
 
