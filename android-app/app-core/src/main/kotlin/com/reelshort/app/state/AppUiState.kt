@@ -45,6 +45,7 @@ data class AppUiState(
     val playback: PlaybackState = PlaybackState(),
     val playerReturnScreen: AppScreen? = null,
     val watchHistory: List<WatchRecord> = emptyList(),
+    val continueWatchingBooks: Map<String, BookSummary> = emptyMap(),
     val pointAccount: PointAccount? = null,
     val orders: List<RechargeOrderSummary> = emptyList(),
     val interaction: BookInteractionState = BookInteractionState(),

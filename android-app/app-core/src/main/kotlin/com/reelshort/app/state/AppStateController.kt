@@ -714,8 +714,9 @@ class AppStateController(private val dataSource: AppDataSource) {
             return
         }
 
+        val requestVersion = ++accountRequestVersion
         mutableState.update { it.copy(screen = AppScreen.ACCOUNT, errorMessage = null) }
-        refreshAccountSilently()
+        refreshAccountSilently(requestVersion)
     }
 
     private suspend fun loadAccountSnapshot(requestVersion: Long) = runWithLoading(ErrorContext.ACCOUNT) {
@@ -729,10 +730,15 @@ class AppStateController(private val dataSource: AppDataSource) {
         if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
             return
         }
+        val continueWatchingBooks = loadContinueWatchingBooks(history, requestVersion)
+        if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            return
+        }
         mutableState.update {
             it.copy(
                 screen = AppScreen.ACCOUNT,
                 watchHistory = history,
+                continueWatchingBooks = continueWatchingBooks,
                 pointAccount = points,
                 orders = orders,
                 isLoading = false,
@@ -740,15 +746,29 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    private suspend fun refreshAccountSilently() {
+    private suspend fun refreshAccountSilently(requestVersion: Long = accountRequestVersion) {
         try {
             val history = dataSource.loadWatchHistory()
+            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                return
+            }
             val points = dataSource.loadPointAccount()
+            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                return
+            }
             val orders = dataSource.loadOrders()
+            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                return
+            }
+            val continueWatchingBooks = loadContinueWatchingBooks(history, requestVersion)
+            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                return
+            }
             mutableState.update {
                 it.copy(
                     screen = AppScreen.ACCOUNT,
                     watchHistory = history,
+                    continueWatchingBooks = continueWatchingBooks,
                     pointAccount = points,
                     orders = orders,
                 )
@@ -831,6 +851,26 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     private fun hasAccountSnapshot(state: AppUiState): Boolean =
         state.pointAccount != null || state.watchHistory.isNotEmpty() || state.orders.isNotEmpty()
+
+    private suspend fun loadContinueWatchingBooks(history: List<WatchRecord>, requestVersion: Long): Map<String, BookSummary> {
+        val books = linkedMapOf<String, BookSummary>()
+        history.asSequence()
+            .map { it.bookId }
+            .distinct()
+            .take(2)
+            .forEach { bookId ->
+                if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                    return books
+                }
+                try {
+                    books[bookId] = dataSource.loadBook(bookId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                }
+            }
+        return books
+    }
 
     private fun resumeEpisodeForRecord(episodes: List<EpisodeSummary>, record: WatchRecord): EpisodeSummary? {
         val currentIndex = episodes.indexOfFirst { it.number == record.episode }

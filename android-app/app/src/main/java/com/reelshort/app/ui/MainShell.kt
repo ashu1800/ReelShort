@@ -125,6 +125,7 @@ internal fun MainShell(
                         AppScreen.FAVORITES -> FavoritesScreen(state.favorites, state.language, onOpenBook, onBackFromFavorites)
                         AppScreen.ACCOUNT -> AccountScreen(
                             records = state.watchHistory,
+                            continueWatchingBooks = state.continueWatchingBooks,
                             isLoggedIn = state.session != null,
                             username = state.session?.username.orEmpty(),
                             balance = state.pointAccount?.balance ?: 0,

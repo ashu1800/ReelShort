@@ -1061,6 +1061,28 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun loadAccountSnapshotLoadsContinueWatchingBooksForPreviewCards() = runTest {
+        val dataSource = FakeAppDataSource()
+        dataSource.watchHistory = listOf(
+            WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 1, progressPercent = 35),
+            WatchRecord(bookId = "book-2", bookTitle = "Beta", episode = 2, progressPercent = 70),
+            WatchRecord(bookId = "book-3", bookTitle = "Gamma", episode = 3, progressPercent = 15),
+        )
+        dataSource.books = listOf(
+            dataSource.book("book-1", "Alpha"),
+            dataSource.book("book-2", "Beta"),
+            dataSource.book("book-3", "Gamma"),
+        )
+        val controller = AppStateController(dataSource)
+
+        controller.loadAccountSnapshot()
+
+        val state = controller.state.value
+        assertEquals(listOf("book-1", "book-2"), state.continueWatchingBooks.keys.toList())
+        assertEquals(listOf("history", "points", "orders", "book:book-1", "book:book-2"), dataSource.calls)
+    }
+
+    @Test
     fun openHomeWithCachedShelfShowsCacheWithoutGlobalLoadingAndReplacesAfterRefresh() = runTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
@@ -1165,6 +1187,25 @@ class AppStateControllerTest {
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
         assertEquals(listOf("history", "points", "orders", "history"), dataSource.calls)
+    }
+
+    @Test
+    fun accountSilentRefreshDoesNotReturnToAccountAfterUserLeaves() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(dataSource.watchRecord())
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.loadAccountSnapshot()
+        dataSource.accountGate = CompletableDeferred()
+
+        val job = launch { controller.openAccount() }
+        runCurrent()
+        controller.openHome()
+        dataSource.accountGate?.complete(Unit)
+        job.join()
+
+        assertEquals(AppScreen.HOME, controller.state.value.screen)
     }
 
     @Test
