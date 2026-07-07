@@ -65,16 +65,18 @@ class FileSessionStore(
     @Serializable
     private data class SessionDto(
         val username: String,
+        val phoneE164: String? = null,
         val token: String,
         val tokenType: String,
     ) {
         fun toAuthSession(): AuthSession =
-            AuthSession(username = username, token = token, tokenType = tokenType)
+            AuthSession(username = username, token = token, tokenType = tokenType, phoneE164 = phoneE164)
 
         companion object {
             fun from(session: AuthSession): SessionDto =
                 SessionDto(
                     username = session.username,
+                    phoneE164 = session.phoneE164,
                     token = session.token,
                     tokenType = session.tokenType,
                 )

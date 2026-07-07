@@ -23,13 +23,31 @@ public class AuthController {
 	}
 
 	@PostMapping("/register")
-	public ApiResponse<AuthToken> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
-		return ApiResponse.success(authService.register(request.username(), request.password()), requestId(httpRequest));
+	public ApiResponse<RegisterSimulationResponse> register(@Valid @RequestBody RegisterRequest request,
+			HttpServletRequest httpRequest) {
+		return ApiResponse.success(authService.register(request.countryCode(), request.phoneNumber(),
+				request.password(), request.verificationCode()), requestId(httpRequest));
 	}
 
 	@PostMapping("/login")
 	public ApiResponse<AuthToken> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-		return ApiResponse.success(authService.login(request.username(), request.password()), requestId(httpRequest));
+		return ApiResponse.success(authService.login(request.countryCode(), request.phoneNumber(), request.password()),
+				requestId(httpRequest));
+	}
+
+	@PostMapping("/sms/send")
+	public ApiResponse<SmsSendResponse> sendSms(@Valid @RequestBody SmsSendRequest request,
+			HttpServletRequest httpRequest) {
+		return ApiResponse.success(authService.sendSms(request.purpose(), request.countryCode(), request.phoneNumber()),
+				requestId(httpRequest));
+	}
+
+	@PostMapping("/password/change")
+	public ApiResponse<String> changePassword(CurrentUser currentUser,
+			@Valid @RequestBody PasswordChangeRequest request,
+			HttpServletRequest httpRequest) {
+		authService.changePassword(currentUser, request.oldPassword(), request.newPassword(), request.verificationCode());
+		return ApiResponse.success("password changed", requestId(httpRequest));
 	}
 
 	@PostMapping("/logout")

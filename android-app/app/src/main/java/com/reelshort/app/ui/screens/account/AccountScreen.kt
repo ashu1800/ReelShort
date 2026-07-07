@@ -38,6 +38,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,13 +57,21 @@ import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.PointRecord
+import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.data.WalletInfo
+import com.reelshort.app.data.WithdrawalRecord
+import com.reelshort.app.data.WithdrawalSummary
 import com.reelshort.app.ui.components.AvatarGradient
 import com.reelshort.app.ui.components.GoldOutlinedButton
+import com.reelshort.app.ui.components.LoginTextField
+import com.reelshort.app.ui.components.ListRow
 import com.reelshort.app.ui.components.MetaPill
 import com.reelshort.app.ui.components.OrderRow
 import com.reelshort.app.ui.components.PosterBlock
+import com.reelshort.app.ui.components.PrimaryActionButton
 import com.reelshort.app.ui.components.PointRecordRow
 import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.components.verticalGradient
@@ -72,6 +81,7 @@ import com.reelshort.app.ui.format.accountContinueWatchingLimit
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.apiDiagnosticsText
 import com.reelshort.app.ui.format.guestAccountEntryLabels
+import com.reelshort.app.ui.format.smsVerificationSeconds
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.AccountHeroScrim
 import com.reelshort.app.ui.theme.DangerText
@@ -87,6 +97,7 @@ import com.reelshort.app.ui.theme.TextPrimary
 import com.reelshort.app.ui.theme.TextSecondary
 import com.reelshort.app.ui.theme.TranslucentWhiteSurface
 import com.reelshort.app.ui.theme.WhiteEdge
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,14 +107,28 @@ internal fun AccountScreen(
     isLoggedIn: Boolean,
     username: String,
     balance: Int,
+    frozenPoints: Int,
+    availablePoints: Int,
     pointRecords: List<PointRecord>,
     orders: List<RechargeOrderSummary>,
+    wallet: WalletInfo?,
+    withdrawalSummary: WithdrawalSummary?,
+    withdrawals: List<WithdrawalRecord>,
+    pointTransfers: List<PointTransferRecord>,
     apiBaseUrl: String,
     apiHealthStatus: ApiHealthStatus?,
     onCheckApiHealth: () -> Unit,
     onShowAuthPrompt: () -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenWatchRecord: (WatchRecord) -> Unit,
+    onSendWalletVerification: (SmsVerificationPurpose) -> Unit,
+    onSendPasswordChangeVerification: () -> Unit,
+    onBindWallet: (String, String) -> Unit,
+    onUnbindWallet: (String) -> Unit,
+    onSubmitBankCard: (String, String) -> Unit,
+    onSubmitWithdrawal: (Int) -> Unit,
+    onTransferPoints: (String, Int) -> Unit,
+    onChangePassword: (String, String, String) -> Unit,
     onLogout: () -> Unit,
     language: AppLanguage,
     onSetLanguage: (AppLanguage) -> Unit,
@@ -112,6 +137,10 @@ internal fun AccountScreen(
     var showDiagnostics by remember { mutableStateOf(false) }
     var languageSheetVisible by remember { mutableStateOf(false) }
     var detailSheet by remember { mutableStateOf<AccountDetailSheet?>(null) }
+    var walletSheetVisible by remember { mutableStateOf(false) }
+    var transferSheetVisible by remember { mutableStateOf(false) }
+    var passwordSheetVisible by remember { mutableStateOf(false) }
+    var bankCardSheetVisible by remember { mutableStateOf(false) }
     val copy = strings(language)
 
     LazyColumn(
@@ -122,6 +151,8 @@ internal fun AccountScreen(
             AccountHero(
                 username = username,
                 balance = balance,
+                frozenPoints = frozenPoints,
+                availablePoints = availablePoints,
                 isLoggedIn = isLoggedIn,
                 language = language,
                 onShowAuthPrompt = onShowAuthPrompt,
@@ -132,8 +163,10 @@ internal fun AccountScreen(
             AccountPrimaryActions(
                 isLoggedIn = isLoggedIn,
                 balance = balance,
+                availablePoints = availablePoints,
                 records = records,
                 pointRecords = pointRecords,
+                withdrawalSummary = withdrawalSummary,
                 orders = orders,
                 language = language,
                 onOpenFavorites = onOpenFavorites,
@@ -154,6 +187,54 @@ internal fun AccountScreen(
         } else if (!isLoggedIn) {
             item {
                 GuestActionPanel(language = language, onShowAuthPrompt = onShowAuthPrompt)
+            }
+        }
+
+        if (isLoggedIn) {
+            item {
+                AccountMenuGroup {
+                    AccountMenuRow(
+                        icon = Icons.Rounded.MonetizationOn,
+                        title = copy.accountWalletTitle,
+                        subtitle = wallet?.walletAddress ?: "TRC20",
+                        onClick = { walletSheetVisible = true },
+                    )
+                    AccountMenuDivider()
+                    AccountMenuRow(
+                        icon = Icons.Rounded.MonetizationOn,
+                        title = copy.accountTransferTitle,
+                        subtitle = copy.accountTransferRecordsTitle,
+                        onClick = { transferSheetVisible = true },
+                    )
+                    AccountMenuDivider()
+                    AccountMenuRow(
+                        icon = Icons.Rounded.History,
+                        title = copy.accountTransferRecordsTitle,
+                        subtitle = "${pointTransfers.size}",
+                        onClick = { detailSheet = AccountDetailSheet.TRANSFERS },
+                    )
+                    AccountMenuDivider()
+                    AccountMenuRow(
+                        icon = Icons.Rounded.Settings,
+                        title = copy.accountChangePasswordTitle,
+                        subtitle = "000000",
+                        onClick = { passwordSheetVisible = true },
+                    )
+                    AccountMenuDivider()
+                    AccountMenuRow(
+                        icon = Icons.AutoMirrored.Rounded.ReceiptLong,
+                        title = copy.accountBankCardTitle,
+                        subtitle = copy.commonNotSupported,
+                        onClick = { bankCardSheetVisible = true },
+                    )
+                    AccountMenuDivider()
+                    AccountMenuRow(
+                        icon = Icons.AutoMirrored.Rounded.ReceiptLong,
+                        title = copy.accountOrdersTitle,
+                        subtitle = if (orders.isEmpty()) copy.accountOrdersReserved else "${orders.size}",
+                        onClick = { detailSheet = AccountDetailSheet.ORDERS },
+                    )
+                }
             }
         }
 
@@ -203,18 +284,66 @@ internal fun AccountScreen(
         }
     }
 
-    if (detailSheet != null) {
+    if (detailSheet != null && detailSheet != AccountDetailSheet.WITHDRAWALS) {
         AccountDetailBottomSheet(
             sheet = detailSheet!!,
             records = records,
             pointRecords = pointRecords,
             orders = orders,
+            withdrawals = withdrawals,
+            pointTransfers = pointTransfers,
             language = language,
             onDismiss = { detailSheet = null },
             onOpenWatchRecord = {
                 detailSheet = null
                 onOpenWatchRecord(it)
             },
+        )
+    }
+
+    if (walletSheetVisible) {
+        WalletBottomSheet(
+            wallet = wallet,
+            language = language,
+            onDismiss = { walletSheetVisible = false },
+            onSendVerification = onSendWalletVerification,
+            onBindWallet = onBindWallet,
+            onUnbindWallet = onUnbindWallet,
+        )
+    }
+
+    if (detailSheet == AccountDetailSheet.WITHDRAWALS) {
+        WithdrawalBottomSheet(
+            summary = withdrawalSummary,
+            withdrawals = withdrawals,
+            language = language,
+            onDismiss = { detailSheet = null },
+            onSubmitWithdrawal = onSubmitWithdrawal,
+        )
+    }
+
+    if (transferSheetVisible) {
+        TransferBottomSheet(
+            language = language,
+            onDismiss = { transferSheetVisible = false },
+            onTransferPoints = onTransferPoints,
+        )
+    }
+
+    if (passwordSheetVisible) {
+        PasswordBottomSheet(
+            language = language,
+            onDismiss = { passwordSheetVisible = false },
+            onSendVerification = onSendPasswordChangeVerification,
+            onChangePassword = onChangePassword,
+        )
+    }
+
+    if (bankCardSheetVisible) {
+        BankCardBottomSheet(
+            language = language,
+            onDismiss = { bankCardSheetVisible = false },
+            onSubmitBankCard = onSubmitBankCard,
         )
     }
 
@@ -247,6 +376,8 @@ internal fun AccountScreen(
 private fun AccountHero(
     username: String,
     balance: Int,
+    frozenPoints: Int,
+    availablePoints: Int,
     isLoggedIn: Boolean,
     language: AppLanguage,
     onShowAuthPrompt: () -> Unit,
@@ -318,8 +449,8 @@ private fun AccountHero(
                         modifier = Modifier.weight(1f),
                     )
                     AccountHeroMetric(
-                        label = if (isLoggedIn) copy.accountLoggedInRewardHint else copy.accountGuestRewardHint,
-                        value = if (isLoggedIn) "ReelShort" else copy.accountGuestPill,
+                        label = if (isLoggedIn) copy.accountFrozenAvailableLabel else copy.accountGuestRewardHint,
+                        value = if (isLoggedIn) "$frozenPoints / $availablePoints" else copy.accountGuestPill,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -356,8 +487,10 @@ private fun AccountHeroMetric(label: String, value: String, modifier: Modifier =
 private fun AccountPrimaryActions(
     isLoggedIn: Boolean,
     balance: Int,
+    availablePoints: Int,
     records: List<WatchRecord>,
     pointRecords: List<PointRecord>,
+    withdrawalSummary: WithdrawalSummary?,
     orders: List<RechargeOrderSummary>,
     language: AppLanguage,
     onOpenFavorites: () -> Unit,
@@ -408,16 +541,16 @@ private fun AccountPrimaryActions(
             )
             AccountActionTile(
                 icon = Icons.AutoMirrored.Rounded.ReceiptLong,
-                title = copy.accountOrdersTitle,
-                subtitle = if (isLoggedIn && orders.isNotEmpty()) {
-                    "${copy.accountRecentCountPrefix}${orders.size}${copy.accountOrdersRecentSuffix}"
+                title = copy.accountWithdrawTitle,
+                subtitle = if (isLoggedIn) {
+                    "${availablePoints}${copy.accountPointsSuffix} · ${copy.accountWithdrawMinimumLabel} ${withdrawalSummary?.minimumPoints ?: 0}"
                 } else {
-                    copy.accountOrdersReserved
+                    copy.accountGuestSignInSubtitle
                 },
-                trailing = orders.firstOrNull()?.status.orEmpty(),
+                trailing = withdrawalSummary?.usdtPerPoint?.let { "USDT $it" }.orEmpty(),
                 modifier = Modifier.weight(1f),
                 onClick = if (isLoggedIn) {
-                    { openSheetForAction(copy.accountOrdersTitle) }
+                    { openSheetForAction(copy.accountWithdrawTitle) }
                 } else {
                     onShowAuthPrompt
                 },
@@ -636,6 +769,8 @@ private fun AccountDetailBottomSheet(
     records: List<WatchRecord>,
     pointRecords: List<PointRecord>,
     orders: List<RechargeOrderSummary>,
+    withdrawals: List<WithdrawalRecord>,
+    pointTransfers: List<PointTransferRecord>,
     language: AppLanguage,
     onDismiss: () -> Unit,
     onOpenWatchRecord: (WatchRecord) -> Unit,
@@ -679,9 +814,50 @@ private fun AccountDetailBottomSheet(
                         items(orders, key = { it.orderNo }) { OrderRow(it, language) }
                     }
                 }
+                AccountDetailSheet.WITHDRAWALS -> {
+                    if (withdrawals.isEmpty()) {
+                        item { AccountEmptyDetail(copy.accountWithdrawalsTitle) }
+                    } else {
+                        items(withdrawals, key = { it.id }) { WithdrawalRow(it, language) }
+                    }
+                }
+                AccountDetailSheet.TRANSFERS -> {
+                    if (pointTransfers.isEmpty()) {
+                        item { AccountEmptyDetail(copy.accountTransferRecordsTitle) }
+                    } else {
+                        items(pointTransfers, key = { it.id }) { TransferRow(it, language) }
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun WithdrawalRow(record: WithdrawalRecord, language: AppLanguage) {
+    val copy = strings(language)
+    ListRow(
+        title = "${record.pointAmount} ${copy.listPointsLabel} · ${record.usdtAmount} USDT",
+        subtitle = "${record.network} · ${record.walletAddress}",
+        trailing = record.status,
+        highlight = record.status == "APPROVED",
+    )
+}
+
+@Composable
+private fun TransferRow(record: PointTransferRecord, language: AppLanguage) {
+    val copy = strings(language)
+    val title = if (record.direction == "IN") {
+        "${copy.accountTransferInLabel} · ${record.senderAccount}"
+    } else {
+        "${copy.accountTransferOutLabel} · ${record.recipientAccount}"
+    }
+    ListRow(
+        title = title,
+        subtitle = record.createdAt,
+        trailing = if (record.direction == "IN") "+${record.pointAmount}" else "-${record.pointAmount}",
+        highlight = record.direction == "IN",
+    )
 }
 
 @Composable
@@ -698,6 +874,244 @@ private fun AccountEmptyDetail(message: String) {
             color = TextSecondary,
             style = MaterialTheme.typography.bodyMedium,
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WalletBottomSheet(
+    wallet: WalletInfo?,
+    language: AppLanguage,
+    onDismiss: () -> Unit,
+    onSendVerification: (SmsVerificationPurpose) -> Unit,
+    onBindWallet: (String, String) -> Unit,
+    onUnbindWallet: (String) -> Unit,
+) {
+    val copy = strings(language)
+    var walletAddress by remember(wallet) { mutableStateOf(wallet?.walletAddress.orEmpty()) }
+    var code by remember { mutableStateOf("") }
+    var smsCountdown by remember { mutableStateOf(0) }
+    LaunchedEffect(smsCountdown) {
+        if (smsCountdown > 0) {
+            delay(1_000)
+            smsCountdown -= 1
+        }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Panel) {
+        SheetForm(title = copy.accountWalletTitle) {
+            Text(wallet?.walletAddress ?: copy.accountWalletNoBound, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            LoginTextField(walletAddress, { walletAddress = it.trim() }, copy.accountWalletAddressLabel, enabled = true)
+            LoginTextField(code, { code = it.filter(Char::isDigit).take(6) }, "000000", enabled = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GoldOutlinedButton(
+                    text = if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
+                    enabled = smsCountdown == 0,
+                    onClick = {
+                        smsCountdown = smsVerificationSeconds()
+                        onSendVerification(
+                            if (wallet?.walletAddress.isNullOrBlank()) {
+                                SmsVerificationPurpose.WALLET_BIND
+                            } else {
+                                SmsVerificationPurpose.WALLET_REPLACE
+                            },
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    contentColor = PrimaryGold,
+                )
+                GoldOutlinedButton(
+                    text = if (smsCountdown > 0) "${smsCountdown}s" else copy.accountWalletUnbindCode,
+                    enabled = !wallet?.walletAddress.isNullOrBlank() && smsCountdown == 0,
+                    onClick = {
+                        smsCountdown = smsVerificationSeconds()
+                        onSendVerification(SmsVerificationPurpose.WALLET_UNBIND)
+                    },
+                    modifier = Modifier.weight(1f),
+                    contentColor = DangerText,
+                )
+            }
+            PrimaryWalletActionRow(
+                primary = if (wallet?.walletAddress.isNullOrBlank()) copy.accountWalletBindAction else copy.accountWalletReplaceAction,
+                primaryEnabled = walletAddress.isNotBlank() && code.length == 6,
+                onPrimary = {
+                    onBindWallet(walletAddress, code)
+                    onDismiss()
+                },
+                secondary = copy.accountWalletUnbindAction,
+                secondaryEnabled = !wallet?.walletAddress.isNullOrBlank() && code.length == 6,
+                onSecondary = {
+                    onUnbindWallet(code)
+                    onDismiss()
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WithdrawalBottomSheet(
+    summary: WithdrawalSummary?,
+    withdrawals: List<WithdrawalRecord>,
+    language: AppLanguage,
+    onDismiss: () -> Unit,
+    onSubmitWithdrawal: (Int) -> Unit,
+) {
+    val copy = strings(language)
+    var points by remember { mutableStateOf("") }
+    val amount = points.toIntOrNull() ?: 0
+    val minimumPoints = summary?.minimumPoints ?: Int.MAX_VALUE
+    val availablePoints = summary?.availablePoints ?: 0
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Panel) {
+        SheetForm(title = copy.accountWithdrawTitle) {
+            Text(
+                "${copy.accountWithdrawAvailableLabel} ${summary?.availablePoints ?: 0} ${copy.listPointsLabel} · ${copy.accountWithdrawMinimumLabel} ${summary?.minimumPoints ?: 0} · ${copy.accountWithdrawRateLabel} = ${summary?.usdtPerPoint ?: "-"} USDT",
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                summary?.walletAddress?.let { "TRC20 · $it" } ?: copy.accountWithdrawWalletRequired,
+                color = if (summary?.walletAddress == null) DangerText else TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            LoginTextField(points, { points = it.filter(Char::isDigit) }, copy.accountWithdrawPointAmountLabel, enabled = true)
+            PrimaryActionButton(
+                text = copy.accountWithdrawSubmitAction,
+                enabled = summary?.walletAddress != null && amount >= minimumPoints && amount <= availablePoints,
+                onClick = {
+                    onSubmitWithdrawal(amount)
+                    onDismiss()
+                },
+            )
+            withdrawals.take(3).forEach { WithdrawalRow(it, language) }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TransferBottomSheet(
+    language: AppLanguage,
+    onDismiss: () -> Unit,
+    onTransferPoints: (String, Int) -> Unit,
+) {
+    val copy = strings(language)
+    var recipient by remember { mutableStateOf("") }
+    var points by remember { mutableStateOf("") }
+    val amount = points.toIntOrNull() ?: 0
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Panel) {
+        SheetForm(title = copy.accountTransferTitle) {
+            Text(copy.accountTransferHelp, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            LoginTextField(recipient, { recipient = it.trim() }, copy.accountTransferRecipientLabel, enabled = true)
+            LoginTextField(points, { points = it.filter(Char::isDigit) }, copy.accountTransferPointsLabel, enabled = true)
+            PrimaryActionButton(
+                text = copy.accountTransferTitle,
+                enabled = recipient.startsWith("+") && amount > 0,
+                onClick = {
+                    onTransferPoints(recipient, amount)
+                    onDismiss()
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PasswordBottomSheet(
+    language: AppLanguage,
+    onDismiss: () -> Unit,
+    onSendVerification: () -> Unit,
+    onChangePassword: (String, String, String) -> Unit,
+) {
+    val copy = strings(language)
+    var oldPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    var smsCountdown by remember { mutableStateOf(0) }
+    LaunchedEffect(smsCountdown) {
+        if (smsCountdown > 0) {
+            delay(1_000)
+            smsCountdown -= 1
+        }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Panel) {
+        SheetForm(title = copy.accountChangePasswordTitle) {
+            LoginTextField(oldPassword, { oldPassword = it }, copy.authPasswordLabel, enabled = true, isPassword = true)
+            LoginTextField(newPassword, { newPassword = it }, copy.accountPasswordNewLabel, enabled = true, isPassword = true)
+            LoginTextField(code, { code = it.filter(Char::isDigit).take(6) }, "000000", enabled = true)
+            GoldOutlinedButton(
+                if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
+                smsCountdown == 0,
+                {
+                    smsCountdown = smsVerificationSeconds()
+                    onSendVerification()
+                },
+                Modifier.fillMaxWidth(),
+                PrimaryGold,
+            )
+            PrimaryActionButton(
+                text = copy.accountChangePasswordTitle,
+                enabled = oldPassword.isNotBlank() && newPassword.length >= 8 && code.length == 6,
+                onClick = {
+                    onChangePassword(oldPassword, newPassword, code)
+                    onDismiss()
+                },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BankCardBottomSheet(
+    language: AppLanguage,
+    onDismiss: () -> Unit,
+    onSubmitBankCard: (String, String) -> Unit,
+) {
+    val copy = strings(language)
+    var holderName by remember { mutableStateOf("") }
+    var cardNumber by remember { mutableStateOf("") }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Panel) {
+        SheetForm(title = copy.accountBankCardTitle) {
+            Text(copy.accountBankCardUnsupported, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            LoginTextField(holderName, { holderName = it }, copy.accountBankCardHolderLabel, enabled = true)
+            LoginTextField(cardNumber, { cardNumber = it.filter(Char::isDigit) }, copy.accountBankCardNumberLabel, enabled = true)
+            PrimaryActionButton(
+                text = copy.accountBankCardTitle,
+                enabled = holderName.isNotBlank() && cardNumber.length >= 8,
+                onClick = {
+                    onSubmitBankCard(holderName, cardNumber)
+                    onDismiss()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SheetForm(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(title, color = TextPrimary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        content()
+    }
+}
+
+@Composable
+private fun PrimaryWalletActionRow(
+    primary: String,
+    primaryEnabled: Boolean,
+    onPrimary: () -> Unit,
+    secondary: String,
+    secondaryEnabled: Boolean,
+    onSecondary: () -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        GoldOutlinedButton(primary, primaryEnabled, onPrimary, Modifier.weight(1f), PrimaryGold)
+        GoldOutlinedButton(secondary, secondaryEnabled, onSecondary, Modifier.weight(1f), DangerText)
     }
 }
 

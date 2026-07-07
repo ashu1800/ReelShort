@@ -24,57 +24,64 @@ class AuthServiceTests {
 	private UserAccountRepository userAccountRepository;
 
 	@Test
-	void registerStoresPasswordHashInsteadOfPlaintext() {
-		AuthToken token = authService.register("frank", "Password123");
+	void internalPhoneRegistrationStoresPasswordHashInsteadOfPlaintext() {
+		AuthToken token = authService.internalRegisterPhone("+1", "4155550301", "Password123");
 
 		UserAccount user = userAccountRepository.findById(token.userId()).orElseThrow();
+		assertThat(user.username()).isEqualTo("+14155550301");
+		assertThat(user.phoneE164()).isEqualTo("+14155550301");
 		assertThat(user.passwordHash()).isNotEqualTo("Password123");
 		assertThat(passwordHasher.matches("Password123", user.passwordHash())).isTrue();
 		assertThat(user.status()).isEqualTo(UserStatus.ACTIVE);
 	}
 
 	@Test
-	void registerRejectsDuplicateUsername() {
-		authService.register("grace", "Password123");
+	void internalPhoneRegistrationRejectsDuplicatePhone() {
+		authService.internalRegisterPhone("+1", "4155550302", "Password123");
 
-		assertThatThrownBy(() -> authService.register("grace", "Password123"))
+		assertThatThrownBy(() -> authService.internalRegisterPhone("+1", "4155550302", "Password123"))
 				.isInstanceOf(AuthException.class)
 				.extracting("statusCode")
 				.isEqualTo(409);
 	}
 
 	@Test
-	void registerTrimsUsernameBeforeSaving() {
-		AuthToken token = authService.register(" kim ", "Password123");
+	void loginNormalizesPhoneBeforeLookup() {
+		authService.internalRegisterPhone("+1", "(415) 555-0303", "Password123");
 
-		assertThat(token.username()).isEqualTo("kim");
-		assertThat(userAccountRepository.findByUsername("kim")).isPresent();
-		assertThat(userAccountRepository.findByUsername(" kim ")).isEmpty();
+		AuthToken token = authService.login("1", "415-555-0303", "Password123");
+
+		assertThat(token.username()).isEqualTo("+14155550303");
 	}
 
 	@Test
-	void loginTrimsUsernameBeforeLookup() {
-		authService.register("lisa", "Password123");
-
-		AuthToken token = authService.login(" lisa ", "Password123");
-
-		assertThat(token.username()).isEqualTo("lisa");
-	}
-
-	@Test
-	void loginRejectsMissingUserWithGenericMessage() {
-		assertThatThrownBy(() -> authService.login("missing", "Password123"))
+	void loginRejectsMissingPhoneWithGenericMessage() {
+		assertThatThrownBy(() -> authService.login("+1", "4155550399", "Password123"))
 				.isInstanceOf(AuthException.class)
-				.hasMessage("invalid username or password")
+				.hasMessage("invalid phone or password")
 				.extracting("statusCode")
 				.isEqualTo(401);
 	}
 
 	@Test
-	void loginRejectsDisabledUserBeforePasswordCheck() {
-		userAccountRepository.save(UserAccount.create("helen", passwordHasher.hash("Password123"), UserStatus.DISABLED));
+	void loginRejectsDisabledAndBlacklistedUsersBeforePasswordCheck() {
+		userAccountRepository.save(UserAccount.createPhoneAccount("+1", "4155550304", "+14155550304",
+				passwordHasher.hash("Password123")));
+		UserAccount disabled = userAccountRepository.findByPhoneE164("+14155550304").orElseThrow();
+		disabled.changeStatus(UserStatus.DISABLED);
+		userAccountRepository.save(disabled);
+		userAccountRepository.save(UserAccount.createPhoneAccount("+1", "4155550305", "+14155550305",
+				passwordHasher.hash("Password123")));
+		UserAccount blacklisted = userAccountRepository.findByPhoneE164("+14155550305").orElseThrow();
+		blacklisted.changeStatus(UserStatus.BLACKLISTED);
+		userAccountRepository.save(blacklisted);
 
-		assertThatThrownBy(() -> authService.login("helen", "wrong"))
+		assertThatThrownBy(() -> authService.login("+1", "4155550304", "wrong"))
+				.isInstanceOf(AuthException.class)
+				.hasMessage("user disabled")
+				.extracting("statusCode")
+				.isEqualTo(403);
+		assertThatThrownBy(() -> authService.login("+1", "4155550305", "wrong"))
 				.isInstanceOf(AuthException.class)
 				.hasMessage("user disabled")
 				.extracting("statusCode")

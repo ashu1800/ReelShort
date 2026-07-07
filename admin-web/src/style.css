@@ -182,6 +182,13 @@ h1 {
   align-items: start;
 }
 
+.status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .login-page {
   min-height: 100vh;
   display: grid;
@@ -243,7 +250,9 @@ h1 {
   }
 
   .operation-block,
-  .inline-form {
+  .inline-form,
+  .status-actions {
     grid-template-columns: 1fr;
+    justify-content: flex-start;
   }
 }

@@ -63,7 +63,8 @@ class RateLimitInterceptorTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "username": "missing-user",
+						  "countryCode": "+1",
+						  "phoneNumber": "4155559999",
 						  "password": "Password123"
 						}
 						"""));

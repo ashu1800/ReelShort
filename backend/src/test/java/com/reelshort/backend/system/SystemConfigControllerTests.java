@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
 
@@ -39,6 +40,9 @@ class SystemConfigControllerTests {
 	void resetConfigs() {
 		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_STAGE_POINTS, "1");
 		systemConfigService.update(SystemConfigRegistry.CONTENT_RECOMMENDATION_STRATEGY, "LATEST");
+		systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_POINTS, "100");
+		systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT, "0.001");
+		systemConfigService.update(SystemConfigRegistry.POINTS_TRANSFER_MINIMUM_POINTS, "1");
 	}
 
 	@Test
@@ -48,9 +52,12 @@ class SystemConfigControllerTests {
 		mockMvc.perform(get("/api/admin/system/configs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data", hasSize(2)))
+				.andExpect(jsonPath("$.data", hasSize(5)))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.watch.stage-points")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("content.recommendation.strategy")));
+				.andExpect(jsonPath("$.data[*].key", hasItem("content.recommendation.strategy")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.minimum-points")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.usdt-per-point")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("points.transfer.minimum-points")));
 	}
 
 	@Test
@@ -207,17 +214,6 @@ class SystemConfigControllerTests {
 	}
 
 	private String registerAndExtractAppToken(String username) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/app/auth/register")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "username": "%s",
-						  "password": "Password123"
-						}
-						""".formatted(username)))
-				.andExpect(status().isOk())
-				.andReturn();
-		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-		return response.path("data").path("token").asText();
+		return TestAppUsers.token(mockMvc, objectMapper, username);
 	}
 }

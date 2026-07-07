@@ -5,9 +5,22 @@ interface AppDataSource {
 
     suspend fun checkSystemHealth(): ApiHealthStatus
 
-    suspend fun login(username: String, password: String): AuthSession
+    suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession
 
-    suspend fun register(username: String, password: String): AuthSession
+    suspend fun register(
+        countryCode: String,
+        phoneNumber: String,
+        password: String,
+        verificationCode: String,
+    ): RegisterSimulationResult
+
+    suspend fun sendAuthSms(
+        purpose: SmsVerificationPurpose,
+        countryCode: String,
+        phoneNumber: String,
+    ): SmsSendResult
+
+    suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String)
 
     suspend fun loadHomeShelf(): List<BookSummary>
 
@@ -37,6 +50,26 @@ interface AppDataSource {
     suspend fun loadPointAccount(): PointAccount
 
     suspend fun loadOrders(): List<RechargeOrderSummary>
+
+    suspend fun loadWallet(): WalletInfo
+
+    suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult
+
+    suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo
+
+    suspend fun unbindWallet(verificationCode: String): WalletInfo
+
+    suspend fun submitBankCard(holderName: String, cardNumber: String)
+
+    suspend fun loadWithdrawalSummary(): WithdrawalSummary
+
+    suspend fun loadWithdrawals(): List<WithdrawalRecord>
+
+    suspend fun submitWithdrawal(pointAmount: Int): WithdrawalRecord
+
+    suspend fun loadPointTransfers(): List<PointTransferRecord>
+
+    suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord
 
     suspend fun toggleLike(book: BookSummary): SocialToggleResult
 

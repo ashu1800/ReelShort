@@ -15,9 +15,10 @@ class AndroidSessionStore private constructor(
         val prefs = preferences ?: return fallback.loadSession()
         return runCatching {
             val username = prefs.getString(KEY_USERNAME, null)?.takeIf { it.isNotBlank() } ?: return@runCatching null
+            val phoneE164 = prefs.getString(KEY_PHONE_E164, null)?.takeIf { it.isNotBlank() }
             val token = prefs.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() } ?: return@runCatching null
             val tokenType = prefs.getString(KEY_TOKEN_TYPE, null)?.takeIf { it.isNotBlank() } ?: "Bearer"
-            AuthSession(username = username, token = token, tokenType = tokenType)
+            AuthSession(username = username, token = token, tokenType = tokenType, phoneE164 = phoneE164)
         }.getOrNull()
     }
 
@@ -27,11 +28,16 @@ class AndroidSessionStore private constructor(
             fallback.saveSession(session)
             return
         }
-        prefs.edit()
+        val editor = prefs.edit()
             .putString(KEY_USERNAME, session.username)
             .putString(KEY_TOKEN, session.token)
             .putString(KEY_TOKEN_TYPE, session.tokenType)
-            .apply()
+        if (session.phoneE164.isNullOrBlank()) {
+            editor.remove(KEY_PHONE_E164)
+        } else {
+            editor.putString(KEY_PHONE_E164, session.phoneE164)
+        }
+        editor.apply()
     }
 
     override suspend fun clearSession() {
@@ -42,6 +48,7 @@ class AndroidSessionStore private constructor(
     companion object {
         private const val PREFS_NAME = "reelshort-session"
         private const val KEY_USERNAME = "username"
+        private const val KEY_PHONE_E164 = "phoneE164"
         private const val KEY_TOKEN = "token"
         private const val KEY_TOKEN_TYPE = "tokenType"
 

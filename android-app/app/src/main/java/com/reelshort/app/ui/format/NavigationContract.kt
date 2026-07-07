@@ -34,6 +34,12 @@ internal fun accountEntryLabels(language: AppLanguage = AppLanguage.TRADITIONAL_
         copy.accountWatchHistoryTitle,
         copy.accountPointRecordsTitle,
         copy.accountOrdersTitle,
+        copy.accountWalletTitle,
+        copy.accountWithdrawTitle,
+        copy.accountTransferTitle,
+        copy.accountTransferRecordsTitle,
+        copy.accountChangePasswordTitle,
+        copy.accountBankCardTitle,
         copy.accountDiagnosticsTitle,
         copy.accountSignOutTitle,
     )
@@ -50,6 +56,8 @@ internal enum class AccountDetailSheet {
     POINT_RECORDS,
     WATCH_HISTORY,
     ORDERS,
+    WITHDRAWALS,
+    TRANSFERS,
 }
 
 internal fun accountDashboardSections(): List<AccountDashboardSection> =
@@ -66,7 +74,7 @@ internal fun accountPrimaryActionLabels(language: AppLanguage = AppLanguage.TRAD
         copy.accountFavoritesTitle,
         copy.accountPointsTitle,
         copy.accountWatchHistoryTitle,
-        copy.accountOrdersTitle,
+        copy.accountWithdrawTitle,
     )
 }
 
@@ -82,6 +90,8 @@ internal fun accountPrimaryActionSheet(label: String, language: AppLanguage = Ap
         copy.accountPointsTitle -> AccountDetailSheet.POINT_RECORDS
         copy.accountWatchHistoryTitle -> AccountDetailSheet.WATCH_HISTORY
         copy.accountOrdersTitle -> AccountDetailSheet.ORDERS
+        copy.accountWithdrawTitle -> AccountDetailSheet.WITHDRAWALS
+        copy.accountTransferRecordsTitle -> AccountDetailSheet.TRANSFERS
         else -> null
     }
 }
@@ -95,6 +105,8 @@ internal fun accountDetailSheetTitle(
         AccountDetailSheet.POINT_RECORDS -> copy.accountPointRecordsTitle
         AccountDetailSheet.WATCH_HISTORY -> copy.accountWatchHistoryTitle
         AccountDetailSheet.ORDERS -> copy.accountOrdersTitle
+        AccountDetailSheet.WITHDRAWALS -> copy.accountWithdrawalsTitle
+        AccountDetailSheet.TRANSFERS -> copy.accountTransferRecordsTitle
     }
 }
 

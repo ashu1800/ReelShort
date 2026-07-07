@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.TestAppUsers;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -75,17 +76,6 @@ class AdminDashboardControllerTests {
 	}
 
 	private String registerAndExtractAppToken(String username) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/app/auth/register")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "username": "%s",
-						  "password": "Password123"
-						}
-						""".formatted(username)))
-				.andExpect(status().isOk())
-				.andReturn();
-		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-		return response.path("data").path("token").asText();
+		return TestAppUsers.token(mockMvc, objectMapper, username);
 	}
 }

@@ -14,7 +14,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,21 +29,27 @@ import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.components.AccentLine
+import com.reelshort.app.ui.components.GoldOutlinedButton
 import com.reelshort.app.ui.components.LoginTextField
 import com.reelshort.app.ui.components.PrimaryActionButton
 import com.reelshort.app.ui.components.RememberPasswordRow
 import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.format.authPromptTitle
+import com.reelshort.app.ui.format.authRegisterEnabled
 import com.reelshort.app.ui.format.strings
+import com.reelshort.app.ui.format.supportedPhoneCountryCodes
+import com.reelshort.app.ui.format.smsVerificationSeconds
 import com.reelshort.app.ui.theme.AppBackground
 import com.reelshort.app.ui.theme.PrimaryGold
 import com.reelshort.app.ui.theme.TextSecondary
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun LoginScreen(
     state: AppUiState,
-    onLogin: (String, String, Boolean) -> Unit,
-    onRegister: (String, String, Boolean) -> Unit,
+    onLogin: (String, String, String, Boolean) -> Unit,
+    onRegister: (String, String, String, String) -> Unit,
+    onSendVerification: (String, String) -> Unit,
 ) {
     val copy = strings(state.language)
     AppBackground {
@@ -60,6 +69,7 @@ internal fun LoginScreen(
                         registerAsPrimary = false,
                         onLogin = onLogin,
                         onRegister = onRegister,
+                        onSendVerification = onSendVerification,
                     )
                 }
             }
@@ -71,8 +81,9 @@ internal fun LoginScreen(
 internal fun AuthBottomSheet(
     visible: Boolean,
     state: AppUiState,
-    onLogin: (String, String, Boolean) -> Unit,
-    onRegister: (String, String, Boolean) -> Unit,
+    onLogin: (String, String, String, Boolean) -> Unit,
+    onRegister: (String, String, String, String) -> Unit,
+    onSendVerification: (String, String) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -101,6 +112,7 @@ internal fun AuthBottomSheet(
                 registerAsPrimary = true,
                 onLogin = onLogin,
                 onRegister = onRegister,
+                onSendVerification = onSendVerification,
                 onDismiss = onDismiss,
                 modifier = Modifier.padding(horizontal = 22.dp, vertical = 20.dp),
             )
@@ -128,15 +140,26 @@ internal fun AuthForm(
     title: String,
     subtitle: String,
     registerAsPrimary: Boolean,
-    onLogin: (String, String, Boolean) -> Unit,
-    onRegister: (String, String, Boolean) -> Unit,
+    onLogin: (String, String, String, Boolean) -> Unit,
+    onRegister: (String, String, String, String) -> Unit,
+    onSendVerification: (String, String) -> Unit,
     onDismiss: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val copy = strings(state.language)
-    var username by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.username ?: state.session?.username.orEmpty()) }
+    var countryCode by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.countryCode ?: "+1") }
+    var phoneNumber by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.phoneNumber ?: "") }
     var password by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.password.orEmpty()) }
+    var verificationCode by remember { mutableStateOf("") }
     var rememberPassword by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.rememberPassword == true) }
+    var smsCountdown by remember { mutableStateOf(0) }
+
+    LaunchedEffect(smsCountdown) {
+        if (smsCountdown > 0) {
+            delay(1_000)
+            smsCountdown -= 1
+        }
+    }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -150,9 +173,14 @@ internal fun AuthForm(
                 }
             }
         }
+        CountryCodeSelector(
+            selectedCode = countryCode,
+            onSelected = { countryCode = it },
+            enabled = !state.isLoading,
+        )
         LoginTextField(
-            value = username,
-            onValueChange = { username = it },
+            value = phoneNumber,
+            onValueChange = { phoneNumber = it.filter(Char::isDigit) },
             label = copy.authUsernameLabel,
             enabled = !state.isLoading,
         )
@@ -171,24 +199,72 @@ internal fun AuthForm(
         )
         PrimaryActionButton(
             text = if (state.isLoading) copy.authLoginLoading else copy.authLoginAction,
-            enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
-            onClick = { onLogin(username, password, rememberPassword) },
+            enabled = !state.isLoading && phoneNumber.isNotBlank() && password.isNotBlank(),
+            onClick = { onLogin(countryCode, phoneNumber, password, rememberPassword) },
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            LoginTextField(
+                value = verificationCode,
+                onValueChange = { verificationCode = it.filter(Char::isDigit).take(6) },
+                label = "000000",
+                enabled = !state.isLoading,
+                modifier = Modifier.weight(1f),
+            )
+            GoldOutlinedButton(
+                text = if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
+                enabled = !state.isLoading && smsCountdown == 0 && phoneNumber.isNotBlank(),
+                onClick = {
+                    smsCountdown = smsVerificationSeconds()
+                    onSendVerification(countryCode, phoneNumber)
+                },
+                contentColor = PrimaryGold,
+            )
+        }
         if (registerAsPrimary) {
             com.reelshort.app.ui.components.GoldOutlinedButton(
                 text = copy.authRegisterAction,
-                enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
-                onClick = { onRegister(username, password, rememberPassword) },
+                enabled = authRegisterEnabled(state.isLoading, phoneNumber, password, verificationCode),
+                onClick = { onRegister(countryCode, phoneNumber, password, verificationCode) },
                 modifier = Modifier.fillMaxWidth(),
                 contentColor = PrimaryGold,
             )
         } else {
             TextButton(
-                onClick = { onRegister(username, password, rememberPassword) },
-                enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
+                onClick = { onRegister(countryCode, phoneNumber, password, verificationCode) },
+                enabled = authRegisterEnabled(state.isLoading, phoneNumber, password, verificationCode),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(copy.authRegisterSecondary, color = PrimaryGold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CountryCodeSelector(
+    selectedCode: String,
+    onSelected: (String) -> Unit,
+    enabled: Boolean,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val codes = supportedPhoneCountryCodes()
+    Column {
+        GoldOutlinedButton(
+            text = codes.firstOrNull { it.code == selectedCode }?.let { "${it.code} · ${it.label}" } ?: selectedCode,
+            enabled = enabled,
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            contentColor = PrimaryGold,
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            codes.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text("${option.code} · ${option.label}") },
+                    onClick = {
+                        expanded = false
+                        onSelected(option.code)
+                    },
+                )
             }
         }
     }

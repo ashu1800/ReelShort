@@ -1,6 +1,7 @@
 package com.reelshort.backend.system.config;
 
 import java.util.Locale;
+import java.math.BigDecimal;
 import java.util.Set;
 
 import com.reelshort.backend.admin.AdminException;
@@ -31,6 +32,18 @@ public record SystemConfigDefinition(
 				throw new AdminException(400, "bad request");
 			}
 		}
+		if (valueType == ValueType.DECIMAL) {
+			try {
+				BigDecimal parsed = new BigDecimal(trimmed);
+				if (parsed.compareTo(BigDecimal.ZERO) < 0) {
+					throw new AdminException(400, "bad request");
+				}
+				return parsed.stripTrailingZeros().toPlainString();
+			}
+			catch (NumberFormatException exception) {
+				throw new AdminException(400, "bad request");
+			}
+		}
 		String normalized = trimmed.toUpperCase(Locale.ROOT);
 		if (!allowedValues.contains(normalized)) {
 			throw new AdminException(400, "bad request");
@@ -40,6 +53,7 @@ public record SystemConfigDefinition(
 
 	public enum ValueType {
 		INTEGER,
+		DECIMAL,
 		ENUM
 	}
 }

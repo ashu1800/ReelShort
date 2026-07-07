@@ -1,6 +1,7 @@
 package com.reelshort.backend.system.config;
 
 import java.util.List;
+import java.math.BigDecimal;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,5 +42,14 @@ public class SystemConfigService {
 				.map(SystemConfig::value)
 				.orElse(definition.defaultValue());
 		return Integer.parseInt(definition.validate(value));
+	}
+
+	@Transactional(readOnly = true)
+	public BigDecimal decimalValue(String key) {
+		SystemConfigDefinition definition = systemConfigRegistry.definition(key);
+		String value = systemConfigRepository.findById(key)
+				.map(SystemConfig::value)
+				.orElse(definition.defaultValue());
+		return new BigDecimal(definition.validate(value));
 	}
 }

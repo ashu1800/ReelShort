@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.TestAppUsers;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -77,15 +78,15 @@ class SocialControllerTests {
 
 	@Test
 	void commentsCanBeAddedAndListed() throws Exception {
-		String token = registerAndExtractToken("social-carol");
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, "social-carol");
 
 		mockMvc.perform(post("/api/app/social/books/book-comment/comments")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(commentBody("nice drama")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value(0))
-				.andExpect(jsonPath("$.data.username").value("social-carol"))
+				.andExpect(jsonPath("$.data.username").value(user.username()))
 				.andExpect(jsonPath("$.data.content").value("nice drama"));
 
 		// 评论列表对游客开放阅读
@@ -108,18 +109,7 @@ class SocialControllerTests {
 	}
 
 	private String registerAndExtractToken(String username) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/app/auth/register")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "username": "%s",
-						  "password": "Password123"
-						}
-						""".formatted(username)))
-				.andExpect(status().isOk())
-				.andReturn();
-		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-		return response.path("data").path("token").asText();
+		return TestAppUsers.token(mockMvc, objectMapper, username);
 	}
 
 	private String favoriteBody(String bookTitle, String filteredTitle, String coverUrl, int chapterCount) {

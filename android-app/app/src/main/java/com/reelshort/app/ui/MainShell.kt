@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.state.AppScreen
 import com.reelshort.app.state.AppUiState
@@ -60,6 +61,14 @@ internal fun MainShell(
     onShowAuthPrompt: () -> Unit,
     onRefreshHome: () -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
+    onSendWalletVerification: (SmsVerificationPurpose) -> Unit,
+    onSendPasswordChangeVerification: () -> Unit,
+    onBindWallet: (String, String) -> Unit,
+    onUnbindWallet: (String) -> Unit,
+    onSubmitBankCard: (String, String) -> Unit,
+    onSubmitWithdrawal: (Int) -> Unit,
+    onTransferPoints: (String, Int) -> Unit,
+    onChangePassword: (String, String, String) -> Unit,
 ) {
     // 播放器全屏渲染：跳出底部导航与状态栏占位，沉浸式短剧播放
     if (state.screen == AppScreen.PLAYER) {
@@ -129,14 +138,28 @@ internal fun MainShell(
                             isLoggedIn = state.session != null,
                             username = state.session?.username.orEmpty(),
                             balance = state.pointAccount?.balance ?: 0,
+                            frozenPoints = state.pointAccount?.frozenPoints ?: 0,
+                            availablePoints = state.pointAccount?.availablePoints ?: 0,
                             pointRecords = state.pointAccount?.records ?: emptyList(),
                             orders = state.orders,
+                            wallet = state.wallet,
+                            withdrawalSummary = state.withdrawalSummary,
+                            withdrawals = state.withdrawals,
+                            pointTransfers = state.pointTransfers,
                             apiBaseUrl = state.apiBaseUrl,
                             apiHealthStatus = state.apiHealthStatus,
                             onCheckApiHealth = onCheckApiHealth,
                             onShowAuthPrompt = onShowAuthPrompt,
                             onOpenFavorites = onOpenFavorites,
                             onOpenWatchRecord = onOpenWatchRecord,
+                            onSendWalletVerification = onSendWalletVerification,
+                            onSendPasswordChangeVerification = onSendPasswordChangeVerification,
+                            onBindWallet = onBindWallet,
+                            onUnbindWallet = onUnbindWallet,
+                            onSubmitBankCard = onSubmitBankCard,
+                            onSubmitWithdrawal = onSubmitWithdrawal,
+                            onTransferPoints = onTransferPoints,
+                            onChangePassword = onChangePassword,
                             onLogout = onLogout,
                             language = state.language,
                             onSetLanguage = onSetLanguage,

@@ -11,13 +11,47 @@ data class BackendApiResponse<T>(
 
 @Serializable
 data class AuthRequestDto(
-    val username: String,
+    val countryCode: String,
+    val phoneNumber: String,
     val password: String,
+)
+
+@Serializable
+data class RegisterRequestDto(
+    val countryCode: String,
+    val phoneNumber: String,
+    val password: String,
+    val verificationCode: String,
+)
+
+@Serializable
+data class RegisterSimulationResponseDto(
+    val status: String,
+)
+
+@Serializable
+data class SmsSendRequestDto(
+    val purpose: String,
+    val countryCode: String,
+    val phoneNumber: String,
+)
+
+@Serializable
+data class SmsSendResponseDto(
+    val expiresInSeconds: Int,
+)
+
+@Serializable
+data class PasswordChangeRequestDto(
+    val oldPassword: String,
+    val newPassword: String,
+    val verificationCode: String,
 )
 
 @Serializable
 data class AuthSessionDto(
     val username: String,
+    val phoneE164: String? = null,
     val token: String,
     val tokenType: String,
 )
@@ -88,7 +122,11 @@ data class WatchEpisodeSnapshotDto(
 )
 
 @Serializable
-data class PointAccountDto(val balance: Int)
+data class PointAccountDto(
+    val balance: Int,
+    val frozenPoints: Int = 0,
+    val availablePoints: Int = balance - frozenPoints,
+)
 
 @Serializable
 data class PointRecordDto(
@@ -102,6 +140,81 @@ data class RechargeOrderDto(
     val amountCents: Int,
     val pointAmount: Int,
     val status: String,
+)
+
+@Serializable
+data class WalletResponseDto(
+    val network: String,
+    val walletAddress: String? = null,
+    val updatedAt: String? = null,
+)
+
+@Serializable
+data class WalletVerificationRequestDto(
+    val purpose: String,
+)
+
+@Serializable
+data class WalletBindRequestDto(
+    val walletAddress: String,
+    val verificationCode: String,
+)
+
+@Serializable
+data class WalletUnbindRequestDto(
+    val verificationCode: String,
+)
+
+@Serializable
+data class BankCardBindRequestDto(
+    val holderName: String,
+    val cardNumber: String,
+)
+
+@Serializable
+data class WithdrawalSummaryDto(
+    val balance: Int,
+    val frozenPoints: Int,
+    val availablePoints: Int,
+    val minimumPoints: Int,
+    val usdtPerPoint: String,
+    val walletAddress: String? = null,
+)
+
+@Serializable
+data class WithdrawalDto(
+    val id: String,
+    val pointAmount: Int,
+    val usdtAmount: String,
+    val usdtPerPoint: String,
+    val network: String,
+    val walletAddress: String,
+    val status: String,
+    val txHash: String? = null,
+    val adminNote: String? = null,
+    val createdAt: String,
+    val reviewedAt: String? = null,
+)
+
+@Serializable
+data class WithdrawalCreateRequestDto(
+    val pointAmount: Int,
+)
+
+@Serializable
+data class PointTransferDto(
+    val id: String,
+    val direction: String,
+    val senderAccount: String,
+    val recipientAccount: String,
+    val pointAmount: Int,
+    val createdAt: String,
+)
+
+@Serializable
+data class PointTransferRequestDto(
+    val recipientAccount: String,
+    val pointAmount: Int,
 )
 
 @Serializable

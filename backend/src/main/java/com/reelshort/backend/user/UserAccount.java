@@ -20,6 +20,15 @@ public class UserAccount {
 	@Column(nullable = false, unique = true, length = 64)
 	private String username;
 
+	@Column(name = "phone_country_code", length = 8)
+	private String phoneCountryCode;
+
+	@Column(name = "phone_number", length = 32)
+	private String phoneNumber;
+
+	@Column(name = "phone_e164", unique = true, length = 32)
+	private String phoneE164;
+
 	@Column(nullable = false, length = 120)
 	private String passwordHash;
 
@@ -33,16 +42,26 @@ public class UserAccount {
 	protected UserAccount() {
 	}
 
-	private UserAccount(UUID id, String username, String passwordHash, UserStatus status, OffsetDateTime createdAt) {
+	private UserAccount(UUID id, String username, String phoneCountryCode, String phoneNumber, String phoneE164,
+			String passwordHash, UserStatus status, OffsetDateTime createdAt) {
 		this.id = id;
 		this.username = username;
+		this.phoneCountryCode = phoneCountryCode;
+		this.phoneNumber = phoneNumber;
+		this.phoneE164 = phoneE164;
 		this.passwordHash = passwordHash;
 		this.status = status;
 		this.createdAt = createdAt;
 	}
 
 	public static UserAccount create(String username, String passwordHash, UserStatus status) {
-		return new UserAccount(UUID.randomUUID(), username, passwordHash, status, OffsetDateTime.now());
+		return new UserAccount(UUID.randomUUID(), username, null, null, null, passwordHash, status, OffsetDateTime.now());
+	}
+
+	public static UserAccount createPhoneAccount(String phoneCountryCode, String phoneNumber, String phoneE164,
+			String passwordHash) {
+		return new UserAccount(UUID.randomUUID(), phoneE164, phoneCountryCode, phoneNumber, phoneE164,
+				passwordHash, UserStatus.ACTIVE, OffsetDateTime.now());
 	}
 
 	public UUID id() {
@@ -53,8 +72,24 @@ public class UserAccount {
 		return username;
 	}
 
+	public String phoneCountryCode() {
+		return phoneCountryCode;
+	}
+
+	public String phoneNumber() {
+		return phoneNumber;
+	}
+
+	public String phoneE164() {
+		return phoneE164;
+	}
+
 	public String passwordHash() {
 		return passwordHash;
+	}
+
+	public void changePasswordHash(String passwordHash) {
+		this.passwordHash = passwordHash;
 	}
 
 	public UserStatus status() {

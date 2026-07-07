@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.auth.PasswordHasher;
 
 @SpringBootTest
@@ -53,7 +54,7 @@ class AdminPermissionControllerTests {
 		mockMvc.perform(get("/api/admin/users")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data[*].username", hasItem("limited-admin-target")));
+				.andExpect(jsonPath("$.data[*].username", hasItem(user.username())));
 
 		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
@@ -94,21 +95,10 @@ class AdminPermissionControllerTests {
 	}
 
 	private RegisteredUser registerAppUser(String username) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/app/auth/register")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "username": "%s",
-						  "password": "Password123"
-						}
-						""".formatted(username)))
-				.andExpect(status().isOk())
-				.andReturn();
-		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-		return new RegisteredUser(UUID.fromString(response.path("data").path("userId").asText()),
-				response.path("data").path("token").asText());
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, username);
+		return new RegisteredUser(user.userId(), user.token(), user.username());
 	}
 
-	private record RegisteredUser(UUID userId, String token) {
+	private record RegisteredUser(UUID userId, String token, String username) {
 	}
 }

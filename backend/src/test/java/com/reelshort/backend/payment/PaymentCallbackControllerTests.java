@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.TestAppUsers;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -121,18 +122,7 @@ class PaymentCallbackControllerTests {
 	}
 
 	private RegisteredUser registerAppUser(String username) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/app/auth/register")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "username": "%s",
-						  "password": "Password123"
-						}
-						""".formatted(username)))
-				.andExpect(status().isOk())
-				.andReturn();
-		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-		return new RegisteredUser(response.path("data").path("token").asText());
+		return new RegisteredUser(TestAppUsers.token(mockMvc, objectMapper, username));
 	}
 
 	private String createOrder(String token, int amountCents, int pointAmount) throws Exception {

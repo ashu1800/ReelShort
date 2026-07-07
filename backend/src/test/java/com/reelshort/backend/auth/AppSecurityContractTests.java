@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.content.ContentBook;
 import com.reelshort.backend.content.ContentLocale;
 import com.reelshort.backend.content.ContentProvider;
@@ -59,16 +60,30 @@ class AppSecurityContractTests {
 
 	@Test
 	void authEndpointsRemainPublic() throws Exception {
+		mockMvc.perform(post("/api/app/auth/sms/send")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "purpose": "PUBLIC_REGISTER",
+						  "countryCode": "+1",
+						  "phoneNumber": "4155550401"
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.expiresInSeconds").value(120));
+
 		mockMvc.perform(post("/api/app/auth/register")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "username": "security-public",
-						  "password": "Password123"
+						  "countryCode": "+1",
+						  "phoneNumber": "4155550401",
+						  "password": "Password123",
+						  "verificationCode": "000000"
 						}
 						"""))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.token").isNotEmpty());
+				.andExpect(jsonPath("$.data.status").value("SIMULATED"));
 	}
 
 	@Test
@@ -149,7 +164,7 @@ class AppSecurityContractTests {
 
 	@Test
 	void contentSearchAcceptsValidBearerToken() throws Exception {
-		String token = registerAndExtractToken("security-active");
+		String token = TestAppUsers.token(mockMvc, objectMapper, "security-active");
 		when(contentProvider.search("love", ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentBook("book-1", "Love Story", "love-story", "https://example.com/cover.jpg",
 						"Authenticated browse.", 12)));
@@ -179,17 +194,6 @@ class AppSecurityContractTests {
 	}
 
 	private String registerAndExtractToken(String username) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/app/auth/register")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "username": "%s",
-						  "password": "Password123"
-						}
-						""".formatted(username)))
-				.andExpect(status().isOk())
-				.andReturn();
-		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-		return response.path("data").path("token").asText();
+		return TestAppUsers.token(mockMvc, objectMapper, username);
 	}
 }

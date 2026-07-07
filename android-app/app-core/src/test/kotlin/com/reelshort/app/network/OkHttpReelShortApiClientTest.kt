@@ -50,7 +50,7 @@ class OkHttpReelShortApiClientTest {
             )
 
             val error = assertFailsWith<ApiClientException> {
-                client.login("demo", "bad-password")
+                client.login("+1", "4155550101", "bad-password")
             }
 
             assertEquals(200, error.statusCode)
@@ -81,7 +81,7 @@ class OkHttpReelShortApiClientTest {
             )
 
             val error = assertFailsWith<ApiClientException> {
-                client.login("demo", "bad-password")
+                client.login("+1", "4155550101", "bad-password")
             }
 
             assertEquals(401, error.statusCode)
@@ -95,20 +95,22 @@ class OkHttpReelShortApiClientTest {
         MockWebServer().use { server ->
             server.enqueue(successBody("""
                 {
-                  "username": "demo",
+                  "username": "+14155550101",
+                  "phoneE164": "+14155550101",
                   "token": "token-123",
                   "tokenType": "Bearer"
                 }
             """.trimIndent()))
             val client = client(server)
 
-            val session = client.login("demo", "Password123")
+            val session = client.login("+1", "4155550101", "Password123")
             val request = server.takeRequest()
 
             assertEquals("/api/app/auth/login", request.path)
             assertEquals("POST", request.method)
-            assertEquals("""{"username":"demo","password":"Password123"}""", request.body.readUtf8())
-            assertEquals("demo", session.username)
+            assertEquals("""{"countryCode":"+1","phoneNumber":"4155550101","password":"Password123"}""", request.body.readUtf8())
+            assertEquals("+14155550101", session.username)
+            assertEquals("+14155550101", session.phoneE164)
             assertEquals("token-123", session.token)
         }
     }

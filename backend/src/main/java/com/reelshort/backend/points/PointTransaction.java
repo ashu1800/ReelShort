@@ -73,6 +73,21 @@ public class PointTransaction {
 				null, orderNo, OffsetDateTime.now());
 	}
 
+	public static PointTransaction withdrawal(UUID userId, int amount, int balanceAfter, String withdrawalId) {
+		return new PointTransaction(UUID.randomUUID(), userId, -Math.abs(amount), balanceAfter, "WITHDRAWAL", null, null,
+				null, withdrawalId, OffsetDateTime.now());
+	}
+
+	public static PointTransaction transferOut(UUID userId, int amount, int balanceAfter, String transferId) {
+		return new PointTransaction(UUID.randomUUID(), userId, -Math.abs(amount), balanceAfter, "TRANSFER_OUT", null, null,
+				null, transferId, OffsetDateTime.now());
+	}
+
+	public static PointTransaction transferIn(UUID userId, int amount, int balanceAfter, String transferId) {
+		return new PointTransaction(UUID.randomUUID(), userId, Math.abs(amount), balanceAfter, "TRANSFER_IN", null, null,
+				null, transferId, OffsetDateTime.now());
+	}
+
 	public UUID id() {
 		return id;
 	}

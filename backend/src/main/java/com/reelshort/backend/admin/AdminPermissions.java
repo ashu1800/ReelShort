@@ -20,6 +20,9 @@ public final class AdminPermissions {
 	public static final String SYSTEM_ALERT_WRITE = "SYSTEM_ALERT_WRITE";
 	public static final String ORDER_READ = "ORDER_READ";
 	public static final String PAYMENT_EVENT_READ = "PAYMENT_EVENT_READ";
+	public static final String WITHDRAWAL_READ = "WITHDRAWAL_READ";
+	public static final String WITHDRAWAL_WRITE = "WITHDRAWAL_WRITE";
+	public static final String POINT_TRANSFER_READ = "POINT_TRANSFER_READ";
 
 	public static final Set<String> ALL = Set.copyOf(new LinkedHashSet<>(Set.of(
 			USER_READ,
@@ -36,7 +39,10 @@ public final class AdminPermissions {
 			SYSTEM_ALERT_READ,
 			SYSTEM_ALERT_WRITE,
 			ORDER_READ,
-			PAYMENT_EVENT_READ)));
+			PAYMENT_EVENT_READ,
+			WITHDRAWAL_READ,
+			WITHDRAWAL_WRITE,
+			POINT_TRANSFER_READ)));
 
 	private AdminPermissions() {
 	}

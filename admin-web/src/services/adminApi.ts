@@ -14,17 +14,29 @@ export type AdminLoginResponse = {
   tokenType: 'Bearer'
 }
 
+export type UserStatus = 'ACTIVE' | 'DISABLED' | 'BLACKLISTED'
+
 export type AdminUserSummary = {
   id: string
   username: string
-  status: 'ACTIVE' | 'DISABLED'
+  phoneE164: string | null
+  status: UserStatus
   pointBalance: number
+  frozenPoints: number
+  availablePoints: number
   createdAt: string
 }
 
 export type AdminUserDetail = AdminUserSummary & {
+  phoneCountryCode: string | null
+  phoneNumber: string | null
+  walletNetwork: string | null
+  walletAddress: string | null
+  walletUpdatedAt: string | null
   watchRecordCount: number
   pointRecordCount: number
+  withdrawalRecordCount: number
+  pointTransferRecordCount: number
 }
 
 export type WatchRecord = {
@@ -52,6 +64,33 @@ export type PointRecord = {
   stage: number | null
   reason: string | null
   createdAt: string
+}
+
+export type PointTransfer = {
+  id: string
+  direction: 'IN' | 'OUT'
+  senderAccount: string
+  recipientAccount: string
+  pointAmount: number
+  createdAt: string
+}
+
+export type WithdrawalStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
+export type WithdrawalRequest = {
+  id: string
+  userId: string
+  userAccount: string | null
+  pointAmount: number
+  usdtAmount: string
+  usdtPerPoint: string
+  network: string
+  walletAddress: string
+  status: WithdrawalStatus
+  txHash: string | null
+  adminNote: string | null
+  createdAt: string
+  reviewedAt: string | null
 }
 
 export type ContentCacheStatus = {
@@ -279,6 +318,16 @@ export async function fetchUserPointRecords(userId: string) {
   return response.data.data
 }
 
+export async function fetchUserPointTransfers(userId: string) {
+  const response = await http.get<ApiResponse<PointTransfer[]>>(`/users/${userId}/point-transfers`)
+  return response.data.data
+}
+
+export async function fetchUserWithdrawals(userId: string) {
+  const response = await http.get<ApiResponse<WithdrawalRequest[]>>(`/users/${userId}/withdrawals`)
+  return response.data.data
+}
+
 export async function fetchContentCacheStatus() {
   const response = await http.get<ApiResponse<ContentCacheStatus>>('/content/cache')
   return response.data.data
@@ -347,6 +396,26 @@ export async function updateSystemConfig(configKey: string, value: string) {
 
 export async function fetchOrders() {
   const response = await http.get<ApiResponse<RechargeOrder[]>>('/orders')
+  return response.data.data
+}
+
+export async function fetchWithdrawals() {
+  const response = await http.get<ApiResponse<WithdrawalRequest[]>>('/withdrawals')
+  return response.data.data
+}
+
+export async function approveWithdrawal(withdrawalId: string, txHash: string, note: string) {
+  const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/approve`, {
+    txHash,
+    note,
+  })
+  return response.data.data
+}
+
+export async function rejectWithdrawal(withdrawalId: string, reason: string) {
+  const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/reject`, {
+    reason,
+  })
   return response.data.data
 }
 

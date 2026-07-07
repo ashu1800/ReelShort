@@ -11,12 +11,18 @@ import com.reelshort.backend.points.PointAccountResponse;
 import com.reelshort.backend.points.PointAccountRepository;
 import com.reelshort.backend.points.PointTransactionRepository;
 import com.reelshort.backend.points.PointTransactionResponse;
+import com.reelshort.backend.points.PointTransferRepository;
+import com.reelshort.backend.points.PointTransferResponse;
 import com.reelshort.backend.points.PointsService;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
+import com.reelshort.backend.wallet.UserWallet;
+import com.reelshort.backend.wallet.UserWalletRepository;
 import com.reelshort.backend.watch.WatchRecordRepository;
 import com.reelshort.backend.watch.WatchRecordResponse;
+import com.reelshort.backend.withdrawal.WithdrawalRequestRepository;
+import com.reelshort.backend.withdrawal.WithdrawalResponse;
 
 @Service
 public class AdminUserService {
@@ -24,18 +30,26 @@ public class AdminUserService {
 	private final UserAccountRepository userAccountRepository;
 	private final PointAccountRepository pointAccountRepository;
 	private final PointTransactionRepository pointTransactionRepository;
+	private final PointTransferRepository pointTransferRepository;
 	private final PointsService pointsService;
 	private final WatchRecordRepository watchRecordRepository;
+	private final UserWalletRepository userWalletRepository;
+	private final WithdrawalRequestRepository withdrawalRequestRepository;
 	private final AdminAuditService adminAuditService;
 
 	public AdminUserService(UserAccountRepository userAccountRepository, PointAccountRepository pointAccountRepository,
-			PointTransactionRepository pointTransactionRepository, PointsService pointsService,
-			WatchRecordRepository watchRecordRepository, AdminAuditService adminAuditService) {
+			PointTransactionRepository pointTransactionRepository, PointTransferRepository pointTransferRepository,
+			PointsService pointsService, WatchRecordRepository watchRecordRepository,
+			UserWalletRepository userWalletRepository, WithdrawalRequestRepository withdrawalRequestRepository,
+			AdminAuditService adminAuditService) {
 		this.userAccountRepository = userAccountRepository;
 		this.pointAccountRepository = pointAccountRepository;
 		this.pointTransactionRepository = pointTransactionRepository;
+		this.pointTransferRepository = pointTransferRepository;
 		this.pointsService = pointsService;
 		this.watchRecordRepository = watchRecordRepository;
+		this.userWalletRepository = userWalletRepository;
+		this.withdrawalRequestRepository = withdrawalRequestRepository;
 		this.adminAuditService = adminAuditService;
 	}
 
@@ -43,8 +57,12 @@ public class AdminUserService {
 	public List<AdminUserSummaryResponse> users() {
 		return userAccountRepository.findAll().stream()
 				.sorted(Comparator.comparing(UserAccount::createdAt).reversed())
-				.map(user -> new AdminUserSummaryResponse(user.id(), user.username(), user.status(),
-						pointBalance(user.id()), user.createdAt().toString()))
+				.map(user -> {
+					AccountSnapshot account = accountSnapshot(user.id());
+					return new AdminUserSummaryResponse(user.id(), user.username(), user.phoneE164(), user.status(),
+							account.balance(), account.frozenPoints(), account.availablePoints(),
+							user.createdAt().toString());
+				})
 				.toList();
 	}
 
@@ -73,9 +91,7 @@ public class AdminUserService {
 		PointAccountResponse account = pointsService.adjustByAdmin(userId, amount, reason.trim());
 		adminAuditService.record(adminUsername, "POINTS_ADJUSTED", "USER", userId,
 				"Adjusted points by " + amount + ": " + reason.trim());
-		return new AdminUserDetailResponse(user.id(), user.username(), user.status(), account.balance(),
-				watchRecordRepository.countByUserId(user.id()), pointTransactionRepository.countByUserId(user.id()),
-				user.createdAt().toString());
+		return detailResponse(user, account.balance(), account.frozenPoints(), account.availablePoints());
 	}
 
 	@Transactional(readOnly = true)
@@ -94,9 +110,35 @@ public class AdminUserService {
 				.toList();
 	}
 
+	@Transactional(readOnly = true)
+	public List<PointTransferResponse> pointTransfers(UUID userId) {
+		user(userId);
+		return pointsService.transfers(userId);
+	}
+
+	@Transactional(readOnly = true)
+	public List<WithdrawalResponse> withdrawals(UUID userId) {
+		user(userId);
+		return withdrawalRequestRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
+				.map(WithdrawalResponse::from)
+				.toList();
+	}
+
 	private AdminUserDetailResponse detailResponse(UserAccount user) {
-		return new AdminUserDetailResponse(user.id(), user.username(), user.status(), pointBalance(user.id()),
+		AccountSnapshot account = accountSnapshot(user.id());
+		return detailResponse(user, account.balance(), account.frozenPoints(), account.availablePoints());
+	}
+
+	private AdminUserDetailResponse detailResponse(UserAccount user, int balance, int frozenPoints,
+			int availablePoints) {
+		UserWallet wallet = userWalletRepository.findByUserId(user.id()).orElse(null);
+		return new AdminUserDetailResponse(user.id(), user.username(), user.phoneCountryCode(), user.phoneNumber(),
+				user.phoneE164(), user.status(), balance, frozenPoints, availablePoints,
+				wallet == null ? null : wallet.network(), wallet == null ? null : wallet.walletAddress(),
+				wallet == null ? null : wallet.updatedAt().toString(),
 				watchRecordRepository.countByUserId(user.id()), pointTransactionRepository.countByUserId(user.id()),
+				withdrawalRequestRepository.countByUserId(user.id()),
+				pointTransferRepository.countBySenderUserIdOrRecipientUserId(user.id(), user.id()),
 				user.createdAt().toString());
 	}
 
@@ -105,9 +147,13 @@ public class AdminUserService {
 				.orElseThrow(() -> new AdminException(404, "user not found"));
 	}
 
-	private int pointBalance(UUID userId) {
+	private AccountSnapshot accountSnapshot(UUID userId) {
 		return pointAccountRepository.findByUserId(userId)
-				.map(account -> account.balance())
-				.orElse(0);
+				.map(account -> new AccountSnapshot(account.balance(), account.frozenPoints(),
+						account.availablePoints()))
+				.orElse(new AccountSnapshot(0, 0, 0));
+	}
+
+	private record AccountSnapshot(int balance, int frozenPoints, int availablePoints) {
 	}
 }

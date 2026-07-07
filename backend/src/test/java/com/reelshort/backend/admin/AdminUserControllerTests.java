@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.TestAppUsers;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -34,12 +35,12 @@ class AdminUserControllerTests {
 	@Test
 	void adminCanListUsersWithPointBalance() throws Exception {
 		String adminToken = adminLogin();
-		registerAppUser("admin-list-alice");
+		RegisteredUser user = registerAppUser("admin-list-alice");
 
 		mockMvc.perform(get("/api/admin/users")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data[*].username", hasItem("admin-list-alice")))
+				.andExpect(jsonPath("$.data[*].username", hasItem(user.username())))
 				.andExpect(jsonPath("$.data[*].status", hasItem("ACTIVE")));
 	}
 
@@ -53,11 +54,17 @@ class AdminUserControllerTests {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.id").value(user.userId().toString()))
-				.andExpect(jsonPath("$.data.username").value("admin-detail-alice"))
+				.andExpect(jsonPath("$.data.username").value(user.username()))
+				.andExpect(jsonPath("$.data.phoneE164").value(user.username()))
 				.andExpect(jsonPath("$.data.status").value("ACTIVE"))
 				.andExpect(jsonPath("$.data.pointBalance").value(3))
+				.andExpect(jsonPath("$.data.frozenPoints").value(0))
+				.andExpect(jsonPath("$.data.availablePoints").value(3))
+				.andExpect(jsonPath("$.data.walletAddress").doesNotExist())
 				.andExpect(jsonPath("$.data.watchRecordCount").value(1))
-				.andExpect(jsonPath("$.data.pointRecordCount").value(3));
+				.andExpect(jsonPath("$.data.pointRecordCount").value(3))
+				.andExpect(jsonPath("$.data.withdrawalRecordCount").value(0))
+				.andExpect(jsonPath("$.data.pointTransferRecordCount").value(0));
 	}
 
 	@Test
@@ -263,19 +270,8 @@ class AdminUserControllerTests {
 	}
 
 	private RegisteredUser registerAppUser(String username) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/app/auth/register")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "username": "%s",
-						  "password": "Password123"
-						}
-						""".formatted(username)))
-				.andExpect(status().isOk())
-				.andReturn();
-		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-		return new RegisteredUser(UUID.fromString(response.path("data").path("userId").asText()),
-				response.path("data").path("token").asText());
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, username);
+		return new RegisteredUser(user.userId(), user.token(), user.username());
 	}
 
 	private void reportProgress(String token, String bookId, int episodeNum, int positionSeconds, int durationSeconds)
@@ -310,6 +306,6 @@ class AdminUserControllerTests {
 				.andExpect(status().isOk());
 	}
 
-	private record RegisteredUser(UUID userId, String token) {
+	private record RegisteredUser(UUID userId, String token, String username) {
 	}
 }

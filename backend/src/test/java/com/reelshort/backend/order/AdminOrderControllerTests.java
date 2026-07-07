@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.admin.AdminPermission;
 import com.reelshort.backend.admin.AdminPermissionRepository;
 import com.reelshort.backend.admin.AdminPermissions;
@@ -120,18 +121,7 @@ class AdminOrderControllerTests {
 	}
 
 	private String registerAndExtractToken(String username) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/app/auth/register")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "username": "%s",
-						  "password": "Password123"
-						}
-						""".formatted(username)))
-				.andExpect(status().isOk())
-				.andReturn();
-		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-		return response.path("data").path("token").asText();
+		return TestAppUsers.token(mockMvc, objectMapper, username);
 	}
 
 	private void createOrder(String token, int amountCents, int pointAmount) throws Exception {

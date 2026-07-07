@@ -21,21 +21,25 @@ public class PointAccount {
 	@Column(nullable = false)
 	private int balance;
 
+	@Column(name = "frozen_points", nullable = false)
+	private int frozenPoints;
+
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
 	protected PointAccount() {
 	}
 
-	private PointAccount(UUID id, UUID userId, int balance, OffsetDateTime updatedAt) {
+	private PointAccount(UUID id, UUID userId, int balance, int frozenPoints, OffsetDateTime updatedAt) {
 		this.id = id;
 		this.userId = userId;
 		this.balance = balance;
+		this.frozenPoints = frozenPoints;
 		this.updatedAt = updatedAt;
 	}
 
 	public static PointAccount create(UUID userId) {
-		return new PointAccount(UUID.randomUUID(), userId, 0, OffsetDateTime.now());
+		return new PointAccount(UUID.randomUUID(), userId, 0, 0, OffsetDateTime.now());
 	}
 
 	public void add(int amount) {
@@ -45,7 +49,44 @@ public class PointAccount {
 
 	public boolean canAdjust(int amount) {
 		long adjustedBalance = (long) this.balance + amount;
-		return adjustedBalance >= 0 && adjustedBalance <= Integer.MAX_VALUE;
+		return adjustedBalance >= this.frozenPoints && adjustedBalance <= Integer.MAX_VALUE;
+	}
+
+	public boolean canUseAvailable(int amount) {
+		return amount > 0 && availablePoints() >= amount;
+	}
+
+	public void freeze(int amount) {
+		if (!canUseAvailable(amount)) {
+			throw new IllegalStateException("insufficient available point balance");
+		}
+		this.frozenPoints += amount;
+		this.updatedAt = OffsetDateTime.now();
+	}
+
+	public void releaseFrozen(int amount) {
+		if (amount <= 0 || amount > this.frozenPoints) {
+			throw new IllegalStateException("invalid frozen point amount");
+		}
+		this.frozenPoints -= amount;
+		this.updatedAt = OffsetDateTime.now();
+	}
+
+	public void deductFrozen(int amount) {
+		if (amount <= 0 || amount > this.frozenPoints || amount > this.balance) {
+			throw new IllegalStateException("invalid frozen point amount");
+		}
+		this.frozenPoints -= amount;
+		this.balance -= amount;
+		this.updatedAt = OffsetDateTime.now();
+	}
+
+	public void deductAvailable(int amount) {
+		if (!canUseAvailable(amount)) {
+			throw new IllegalStateException("insufficient available point balance");
+		}
+		this.balance -= amount;
+		this.updatedAt = OffsetDateTime.now();
 	}
 
 	public UUID id() {
@@ -58,6 +99,14 @@ public class PointAccount {
 
 	public int balance() {
 		return balance;
+	}
+
+	public int frozenPoints() {
+		return frozenPoints;
+	}
+
+	public int availablePoints() {
+		return balance - frozenPoints;
 	}
 
 	public OffsetDateTime updatedAt() {

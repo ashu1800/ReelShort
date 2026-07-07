@@ -14,7 +14,10 @@ import com.reelshort.app.ui.format.accountDetailSheetTitle
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.authPromptTitle
+import com.reelshort.app.ui.format.authRegisterEnabled
 import com.reelshort.app.ui.format.rememberPasswordLabel
+import com.reelshort.app.ui.format.supportedPhoneCountryCodes
+import com.reelshort.app.ui.format.smsVerificationSeconds
 import com.reelshort.app.ui.format.LoadingFeedbackMode
 import com.reelshort.app.ui.format.loadingFeedbackMode
 import com.reelshort.app.ui.format.TabRefreshMode
@@ -68,7 +71,7 @@ class VisualTextContractTest {
     @Test
     fun accountPageUsesMeStyleEntryLabels() {
         assertEquals(
-            listOf("我的收藏", "積分餘額", "觀看記錄", "積分流水", "充值訂單", "開發診斷", "退出登入"),
+            listOf("我的收藏", "積分餘額", "觀看記錄", "積分流水", "充值訂單", "冷錢包", "提現", "積分交易", "交易記錄", "修改密碼", "銀行卡", "開發診斷", "退出登入"),
             accountEntryLabels(),
         )
     }
@@ -76,7 +79,7 @@ class VisualTextContractTest {
     @Test
     fun accountPageUsesLocalizedEntryLabelsInEnglish() {
         assertEquals(
-            listOf("Favorites", "Points", "Watch history", "Point records", "Orders", "Diagnostics", "Sign out"),
+            listOf("Favorites", "Points", "Watch history", "Point records", "Orders", "Cold wallet", "Withdraw", "Transfer points", "Transfer records", "Change password", "Bank card", "Diagnostics", "Sign out"),
             accountEntryLabels(AppLanguage.ENGLISH),
         )
     }
@@ -97,11 +100,11 @@ class VisualTextContractTest {
     @Test
     fun accountDashboardPromotesFourPrimaryActions() {
         assertEquals(
-            listOf("Favorites", "Points", "Watch history", "Orders"),
+            listOf("Favorites", "Points", "Watch history", "Withdraw"),
             accountPrimaryActionLabels(AppLanguage.ENGLISH),
         )
         assertEquals(
-            listOf("我的收藏", "積分餘額", "觀看記錄", "充值訂單"),
+            listOf("我的收藏", "積分餘額", "觀看記錄", "提現"),
             accountPrimaryActionLabels(),
         )
     }
@@ -126,7 +129,7 @@ class VisualTextContractTest {
         assertEquals(null, accountPrimaryActionSheet("Favorites"))
         assertEquals(AccountDetailSheet.POINT_RECORDS, accountPrimaryActionSheet("Points"))
         assertEquals(AccountDetailSheet.WATCH_HISTORY, accountPrimaryActionSheet("Watch history"))
-        assertEquals(AccountDetailSheet.ORDERS, accountPrimaryActionSheet("Orders"))
+        assertEquals(AccountDetailSheet.WITHDRAWALS, accountPrimaryActionSheet("Withdraw"))
     }
 
     @Test
@@ -134,9 +137,13 @@ class VisualTextContractTest {
         assertEquals("Point records", accountDetailSheetTitle(AccountDetailSheet.POINT_RECORDS, AppLanguage.ENGLISH))
         assertEquals("Watch history", accountDetailSheetTitle(AccountDetailSheet.WATCH_HISTORY, AppLanguage.ENGLISH))
         assertEquals("Orders", accountDetailSheetTitle(AccountDetailSheet.ORDERS, AppLanguage.ENGLISH))
+        assertEquals("Withdrawals", accountDetailSheetTitle(AccountDetailSheet.WITHDRAWALS, AppLanguage.ENGLISH))
+        assertEquals("Transfer records", accountDetailSheetTitle(AccountDetailSheet.TRANSFERS, AppLanguage.ENGLISH))
         assertEquals("積分流水", accountDetailSheetTitle(AccountDetailSheet.POINT_RECORDS))
         assertEquals("觀看記錄", accountDetailSheetTitle(AccountDetailSheet.WATCH_HISTORY))
         assertEquals("充值訂單", accountDetailSheetTitle(AccountDetailSheet.ORDERS))
+        assertEquals("提現記錄", accountDetailSheetTitle(AccountDetailSheet.WITHDRAWALS))
+        assertEquals("交易記錄", accountDetailSheetTitle(AccountDetailSheet.TRANSFERS))
     }
 
     @Test
@@ -169,6 +176,32 @@ class VisualTextContractTest {
     @Test
     fun authFormProvidesLocalizedRememberPasswordEntryInEnglish() {
         assertEquals("Remember password", rememberPasswordLabel(AppLanguage.ENGLISH))
+    }
+
+    @Test
+    fun phoneAuthUsesSupportedNonMainlandCountryCodesAndMockSmsTimeout() {
+        val codes = supportedPhoneCountryCodes()
+
+        assertEquals("+1", codes.first().code)
+        assertTrue(codes.none { it.code == "+86" })
+        assertTrue(codes.map { it.code }.containsAll(listOf("+44", "+61", "+852", "+886", "+81", "+82")))
+        assertEquals(120, smsVerificationSeconds())
+    }
+
+    @Test
+    fun phoneRegisterRequiresEnteredVerificationCode() {
+        assertEquals(false, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = ""))
+        assertEquals(false, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = "12345"))
+        assertEquals(true, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = "000000"))
+        assertEquals(false, authRegisterEnabled(isLoading = true, phoneNumber = "4155550101", password = "Password123", verificationCode = "000000"))
+    }
+
+    @Test
+    fun commercialAccountActionsHaveLocalizedCopy() {
+        assertEquals("Received", strings(AppLanguage.ENGLISH).accountTransferInLabel)
+        assertEquals("Sent", strings(AppLanguage.ENGLISH).accountTransferOutLabel)
+        assertEquals("轉入", strings(AppLanguage.TRADITIONAL_CHINESE).accountTransferInLabel)
+        assertEquals("轉出", strings(AppLanguage.TRADITIONAL_CHINESE).accountTransferOutLabel)
     }
 
     @Test

@@ -8,15 +8,23 @@ import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
+import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.RegisterSimulationResult
+import com.reelshort.app.data.SmsSendResult
+import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.data.WalletInfo
+import com.reelshort.app.data.WithdrawalRecord
+import com.reelshort.app.data.WithdrawalSummary
 import com.reelshort.app.network.dto.AuthRequestDto
 import com.reelshort.app.network.dto.AuthSessionDto
 import com.reelshort.app.network.dto.ApiHealthStatusDto
+import com.reelshort.app.network.dto.BankCardBindRequestDto
 import com.reelshort.app.network.dto.BackendApiResponse
 import com.reelshort.app.network.dto.CommentDto
 import com.reelshort.app.network.dto.CommentRequestDto
@@ -25,13 +33,27 @@ import com.reelshort.app.network.dto.ContentEpisodeDto
 import com.reelshort.app.network.dto.ContentVideoDto
 import com.reelshort.app.network.dto.FavoriteBookDto
 import com.reelshort.app.network.dto.FavoriteRequestDto
+import com.reelshort.app.network.dto.PasswordChangeRequestDto
 import com.reelshort.app.network.dto.PointAccountDto
 import com.reelshort.app.network.dto.PointRecordDto
+import com.reelshort.app.network.dto.PointTransferDto
+import com.reelshort.app.network.dto.PointTransferRequestDto
 import com.reelshort.app.network.dto.RechargeOrderDto
+import com.reelshort.app.network.dto.RegisterRequestDto
+import com.reelshort.app.network.dto.RegisterSimulationResponseDto
 import com.reelshort.app.network.dto.SocialToggleDto
+import com.reelshort.app.network.dto.SmsSendRequestDto
+import com.reelshort.app.network.dto.SmsSendResponseDto
+import com.reelshort.app.network.dto.WalletBindRequestDto
+import com.reelshort.app.network.dto.WalletResponseDto
+import com.reelshort.app.network.dto.WalletUnbindRequestDto
+import com.reelshort.app.network.dto.WalletVerificationRequestDto
 import com.reelshort.app.network.dto.WatchProgressRequestDto
 import com.reelshort.app.network.dto.WatchEpisodeSnapshotDto
 import com.reelshort.app.network.dto.WatchRecordDto
+import com.reelshort.app.network.dto.WithdrawalCreateRequestDto
+import com.reelshort.app.network.dto.WithdrawalDto
+import com.reelshort.app.network.dto.WithdrawalSummaryDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -60,11 +82,38 @@ class OkHttpReelShortApiClient(
                 .build(),
         ).toDomain()
 
-    override suspend fun login(username: String, password: String): AuthSession =
-        post<AuthRequestDto, AuthSessionDto>("/auth/login", AuthRequestDto(username, password)).toDomain()
+    override suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession =
+        post<AuthRequestDto, AuthSessionDto>("/auth/login", AuthRequestDto(countryCode, phoneNumber, password))
+            .toDomain()
 
-    override suspend fun register(username: String, password: String): AuthSession =
-        post<AuthRequestDto, AuthSessionDto>("/auth/register", AuthRequestDto(username, password)).toDomain()
+    override suspend fun register(
+        countryCode: String,
+        phoneNumber: String,
+        password: String,
+        verificationCode: String,
+    ): RegisterSimulationResult =
+        post<RegisterRequestDto, RegisterSimulationResponseDto>(
+            "/auth/register",
+            RegisterRequestDto(countryCode, phoneNumber, password, verificationCode),
+        ).toDomain()
+
+    override suspend fun sendAuthSms(
+        purpose: SmsVerificationPurpose,
+        countryCode: String,
+        phoneNumber: String,
+    ): SmsSendResult =
+        post<SmsSendRequestDto, SmsSendResponseDto>(
+            "/auth/sms/send",
+            SmsSendRequestDto(purpose.name, countryCode, phoneNumber),
+        ).toDomain()
+
+    override suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) {
+        post<PasswordChangeRequestDto, String>(
+            "/auth/password/change",
+            PasswordChangeRequestDto(oldPassword, newPassword, verificationCode),
+            authenticated = true,
+        )
+    }
 
     override suspend fun getHomeShelf(locale: String): List<BookSummary> =
         get<List<ContentBookDto>>("/home/recommend", mapOf("locale" to locale), authenticated = false)
@@ -140,11 +189,67 @@ class OkHttpReelShortApiClient(
     override suspend fun getPointAccount(): PointAccount {
         val account = get<PointAccountDto>("/points/account", authenticated = true)
         val records = get<List<PointRecordDto>>("/points/records", authenticated = true)
-        return PointAccount(account.balance, records.map { it.toDomain() })
+        return PointAccount(account.balance, account.frozenPoints, account.availablePoints, records.map { it.toDomain() })
     }
 
     override suspend fun getOrders(): List<RechargeOrderSummary> =
         get<List<RechargeOrderDto>>("/orders", authenticated = true).map { it.toDomain() }
+
+    override suspend fun getWallet(): WalletInfo =
+        get<WalletResponseDto>("/wallet", authenticated = true).toDomain()
+
+    override suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult =
+        post<WalletVerificationRequestDto, SmsSendResponseDto>(
+            "/wallet/verification/send",
+            WalletVerificationRequestDto(purpose.name),
+            authenticated = true,
+        ).toDomain()
+
+    override suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo =
+        postWithMethod<WalletBindRequestDto, WalletResponseDto>(
+            path = "/wallet",
+            requestDto = WalletBindRequestDto(walletAddress, verificationCode),
+            method = "PUT",
+            authenticated = true,
+        ).toDomain()
+
+    override suspend fun unbindWallet(verificationCode: String): WalletInfo =
+        post<WalletUnbindRequestDto, WalletResponseDto>(
+            "/wallet/unbind",
+            WalletUnbindRequestDto(verificationCode),
+            authenticated = true,
+        ).toDomain()
+
+    override suspend fun submitBankCard(holderName: String, cardNumber: String) {
+        post<BankCardBindRequestDto, String>(
+            "/wallet/bank-card",
+            BankCardBindRequestDto(holderName, cardNumber),
+            authenticated = true,
+        )
+    }
+
+    override suspend fun getWithdrawalSummary(): WithdrawalSummary =
+        get<WithdrawalSummaryDto>("/withdrawals/summary", authenticated = true).toDomain()
+
+    override suspend fun getWithdrawals(): List<WithdrawalRecord> =
+        get<List<WithdrawalDto>>("/withdrawals", authenticated = true).map { it.toDomain() }
+
+    override suspend fun submitWithdrawal(pointAmount: Int): WithdrawalRecord =
+        post<WithdrawalCreateRequestDto, WithdrawalDto>(
+            "/withdrawals",
+            WithdrawalCreateRequestDto(pointAmount),
+            authenticated = true,
+        ).toDomain()
+
+    override suspend fun getPointTransfers(): List<PointTransferRecord> =
+        get<List<PointTransferDto>>("/points/transfers", authenticated = true).map { it.toDomain() }
+
+    override suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord =
+        post<PointTransferRequestDto, PointTransferDto>(
+            "/points/transfers",
+            PointTransferRequestDto(recipientAccount, pointAmount),
+            authenticated = true,
+        ).toDomain()
 
     override suspend fun toggleLike(bookId: String): SocialToggleResult =
         post<Unit, SocialToggleDto>(socialPath(bookId, "like"), Unit, authenticated = true).toDomain()
@@ -199,6 +304,19 @@ class OkHttpReelShortApiClient(
             .build(),
     )
 
+    private suspend inline fun <reified RequestDto, reified ResponseDto> postWithMethod(
+        path: String,
+        requestDto: RequestDto,
+        method: String,
+        authenticated: Boolean = false,
+    ): ResponseDto = execute(
+        Request.Builder()
+            .url("${config.baseUrl}$path")
+            .method(method, json.encodeToString(requestDto).toRequestBody(JSON_MEDIA_TYPE))
+            .applyAuthentication(authenticated)
+            .build(),
+    )
+
     private suspend inline fun <reified ResponseDto> get(
         path: String,
         queryParameters: Map<String, String> = emptyMap(),
@@ -236,7 +354,13 @@ class OkHttpReelShortApiClient(
         }
     }
 
-    private fun AuthSessionDto.toDomain(): AuthSession = AuthSession(username, token, tokenType)
+    private fun AuthSessionDto.toDomain(): AuthSession =
+        AuthSession(username = username, token = token, tokenType = tokenType, phoneE164 = phoneE164)
+
+    private fun RegisterSimulationResponseDto.toDomain(): RegisterSimulationResult =
+        RegisterSimulationResult(status)
+
+    private fun SmsSendResponseDto.toDomain(): SmsSendResult = SmsSendResult(expiresInSeconds)
 
     private fun ApiHealthStatusDto.toDomain(): ApiHealthStatus = ApiHealthStatus(status, service)
 
@@ -262,6 +386,29 @@ class OkHttpReelShortApiClient(
 
     private fun RechargeOrderDto.toDomain(): RechargeOrderSummary =
         RechargeOrderSummary(orderNo, amountCents, pointAmount, status)
+
+    private fun WalletResponseDto.toDomain(): WalletInfo = WalletInfo(network, walletAddress, updatedAt)
+
+    private fun WithdrawalSummaryDto.toDomain(): WithdrawalSummary =
+        WithdrawalSummary(balance, frozenPoints, availablePoints, minimumPoints, usdtPerPoint, walletAddress)
+
+    private fun WithdrawalDto.toDomain(): WithdrawalRecord =
+        WithdrawalRecord(
+            id = id,
+            pointAmount = pointAmount,
+            usdtAmount = usdtAmount,
+            usdtPerPoint = usdtPerPoint,
+            network = network,
+            walletAddress = walletAddress,
+            status = status,
+            txHash = txHash,
+            adminNote = adminNote,
+            createdAt = createdAt,
+            reviewedAt = reviewedAt,
+        )
+
+    private fun PointTransferDto.toDomain(): PointTransferRecord =
+        PointTransferRecord(id, direction, senderAccount, recipientAccount, pointAmount, createdAt)
 
     private fun SocialToggleDto.toDomain(): SocialToggleResult = SocialToggleResult(active, count)
 

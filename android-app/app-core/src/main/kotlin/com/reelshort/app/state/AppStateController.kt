@@ -9,6 +9,7 @@ import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.SavedCredentials
+import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.network.ApiClientException
 import kotlinx.coroutines.CancellationException
@@ -91,18 +92,80 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun login(username: String, password: String, rememberPassword: Boolean = false) = runWithLoading(ErrorContext.LOGIN) {
-        val session = dataSource.login(username, password)
-        updateSavedCredentials(username, password, rememberPassword)
+        val session = dataSource.login("+1", username, password)
+        updateLegacySavedCredentials(username, password, rememberPassword)
         openHomeAfterAuthentication(session)
     }
 
-    suspend fun register(username: String, password: String, rememberPassword: Boolean = false) = runWithLoading(ErrorContext.REGISTER) {
-        val session = dataSource.register(username, password)
-        updateSavedCredentials(username, password, rememberPassword)
+    suspend fun login(
+        countryCode: String,
+        phoneNumber: String,
+        password: String,
+        rememberPassword: Boolean = false,
+    ) = runWithLoading(ErrorContext.LOGIN) {
+        val session = dataSource.login(countryCode, phoneNumber, password)
+        updateSavedCredentials(countryCode, phoneNumber, password, rememberPassword)
         openHomeAfterAuthentication(session)
     }
 
-    private suspend fun updateSavedCredentials(username: String, password: String, rememberPassword: Boolean) {
+    suspend fun register(username: String, password: String, rememberPassword: Boolean = false) =
+        register("+1", username, password, "000000")
+
+    suspend fun register(
+        countryCode: String,
+        phoneNumber: String,
+        password: String,
+        verificationCode: String,
+    ) = runWithLoading(ErrorContext.REGISTER) {
+        dataSource.register(countryCode, phoneNumber, password, verificationCode)
+        mutableState.update {
+            it.copy(
+                isLoading = false,
+                authPromptVisible = false,
+                errorMessage = registrationSimulationMessage(),
+            )
+        }
+    }
+
+    suspend fun sendAuthSms(countryCode: String, phoneNumber: String) = runWithLoading(ErrorContext.REGISTER) {
+        dataSource.sendAuthSms(SmsVerificationPurpose.PUBLIC_REGISTER, countryCode, phoneNumber)
+        mutableState.update {
+            it.copy(isLoading = false, errorMessage = smsSentMessage())
+        }
+    }
+
+    suspend fun sendPasswordChangeVerification() = runWithLoading(ErrorContext.ACCOUNT) {
+        requireAuthenticatedAccount()
+        val phone = currentSessionPhone()
+        dataSource.sendAuthSms(SmsVerificationPurpose.PASSWORD_CHANGE, phone.countryCode, phone.phoneNumber)
+        mutableState.update {
+            it.copy(isLoading = false, errorMessage = smsSentMessage())
+        }
+    }
+
+    private suspend fun updateSavedCredentials(
+        countryCode: String,
+        phoneNumber: String,
+        password: String,
+        rememberPassword: Boolean,
+    ) {
+        if (rememberPassword) {
+            val credentials = SavedCredentials(
+                username = "$countryCode$phoneNumber",
+                countryCode = countryCode,
+                phoneNumber = phoneNumber,
+                password = password,
+                rememberPassword = true,
+            )
+            dataSource.saveCredentials(credentials)
+            mutableState.update { it.copy(savedCredentials = credentials) }
+        } else {
+            dataSource.clearSavedCredentials()
+            mutableState.update { it.copy(savedCredentials = null) }
+        }
+    }
+
+    private suspend fun updateLegacySavedCredentials(username: String, password: String, rememberPassword: Boolean) {
         if (rememberPassword) {
             val credentials = SavedCredentials(username = username, password = password, rememberPassword = true)
             dataSource.saveCredentials(credentials)
@@ -727,6 +790,10 @@ class AppStateController(private val dataSource: AppDataSource) {
         val history = dataSource.loadWatchHistory()
         val points = dataSource.loadPointAccount()
         val orders = dataSource.loadOrders()
+        val wallet = loadOptionalAccountData(null) { dataSource.loadWallet() }
+        val withdrawalSummary = loadOptionalAccountData(null) { dataSource.loadWithdrawalSummary() }
+        val withdrawals = loadOptionalAccountData(emptyList()) { dataSource.loadWithdrawals() }
+        val pointTransfers = loadOptionalAccountData(emptyList()) { dataSource.loadPointTransfers() }
         if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
             return
         }
@@ -741,6 +808,10 @@ class AppStateController(private val dataSource: AppDataSource) {
                 continueWatchingBooks = continueWatchingBooks,
                 pointAccount = points,
                 orders = orders,
+                wallet = wallet,
+                withdrawalSummary = withdrawalSummary,
+                withdrawals = withdrawals,
+                pointTransfers = pointTransfers,
                 isLoading = false,
             )
         }
@@ -760,6 +831,22 @@ class AppStateController(private val dataSource: AppDataSource) {
             if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
                 return
             }
+            val wallet = loadOptionalAccountData(null) { dataSource.loadWallet() }
+            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                return
+            }
+            val withdrawalSummary = loadOptionalAccountData(null) { dataSource.loadWithdrawalSummary() }
+            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                return
+            }
+            val withdrawals = loadOptionalAccountData(emptyList()) { dataSource.loadWithdrawals() }
+            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                return
+            }
+            val pointTransfers = loadOptionalAccountData(emptyList()) { dataSource.loadPointTransfers() }
+            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                return
+            }
             val continueWatchingBooks = loadContinueWatchingBooks(history, requestVersion)
             if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
                 return
@@ -771,6 +858,10 @@ class AppStateController(private val dataSource: AppDataSource) {
                     continueWatchingBooks = continueWatchingBooks,
                     pointAccount = points,
                     orders = orders,
+                    wallet = wallet,
+                    withdrawalSummary = withdrawalSummary,
+                    withdrawals = withdrawals,
+                    pointTransfers = pointTransfers,
                 )
             }
         } catch (error: CancellationException) {
@@ -778,6 +869,51 @@ class AppStateController(private val dataSource: AppDataSource) {
         } catch (_: Throwable) {
         }
     }
+
+    suspend fun sendWalletVerification(purpose: SmsVerificationPurpose) = runWithLoading(ErrorContext.ACCOUNT) {
+        requireAuthenticatedAccount()
+        dataSource.sendWalletVerification(purpose)
+        mutableState.update {
+            it.copy(isLoading = false, errorMessage = smsSentMessage())
+        }
+    }
+
+    suspend fun bindWallet(walletAddress: String, verificationCode: String) = runWithLoading(ErrorContext.ACCOUNT) {
+        requireAuthenticatedAccount()
+        dataSource.bindWallet(walletAddress, verificationCode)
+        reloadAccountSnapshotAfterAction()
+    }
+
+    suspend fun unbindWallet(verificationCode: String) = runWithLoading(ErrorContext.ACCOUNT) {
+        requireAuthenticatedAccount()
+        dataSource.unbindWallet(verificationCode)
+        reloadAccountSnapshotAfterAction()
+    }
+
+    suspend fun submitBankCard(holderName: String, cardNumber: String) = runWithLoading(ErrorContext.ACCOUNT) {
+        requireAuthenticatedAccount()
+        dataSource.submitBankCard(holderName, cardNumber)
+        mutableState.update { it.copy(isLoading = false) }
+    }
+
+    suspend fun submitWithdrawal(pointAmount: Int) = runWithLoading(ErrorContext.ACCOUNT) {
+        requireAuthenticatedAccount()
+        dataSource.submitWithdrawal(pointAmount)
+        reloadAccountSnapshotAfterAction()
+    }
+
+    suspend fun transferPoints(recipientAccount: String, pointAmount: Int) = runWithLoading(ErrorContext.ACCOUNT) {
+        requireAuthenticatedAccount()
+        dataSource.transferPoints(recipientAccount, pointAmount)
+        reloadAccountSnapshotAfterAction()
+    }
+
+    suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) =
+        runWithLoading(ErrorContext.ACCOUNT) {
+            requireAuthenticatedAccount()
+            dataSource.changePassword(oldPassword, newPassword, verificationCode)
+            mutableState.update { it.copy(isLoading = false, errorMessage = passwordChangedMessage()) }
+        }
 
     fun clearError() {
         mutableState.update { it.copy(errorMessage = null) }
@@ -833,11 +969,23 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update { it.copy(isLoading = false) }
             throw error
         } catch (error: Throwable) {
+            val blockedAccount = isBlockedAccountError(error)
+            if (blockedAccount) {
+                dataSource.clearSession()
+            }
             mutableState.update {
                 it.copy(
+                    session = if (blockedAccount) null else it.session,
                     isLoading = false,
                     errorMessage = userFacingErrorMessage(error, errorContext),
-                    authPromptVisible = if (shouldPromptForLogin(error, errorContext)) true else it.authPromptVisible,
+                    authPromptVisible = if (blockedAccount) {
+                        false
+                    } else if (shouldPromptForLogin(error, errorContext)) {
+                        true
+                    } else {
+                        it.authPromptVisible
+                    },
+                    pendingPlaybackEpisode = if (blockedAccount) null else it.pendingPlaybackEpisode,
                 )
             }
         }
@@ -850,7 +998,41 @@ class AppStateController(private val dataSource: AppDataSource) {
         requestVersion == playbackRequestVersion
 
     private fun hasAccountSnapshot(state: AppUiState): Boolean =
-        state.pointAccount != null || state.watchHistory.isNotEmpty() || state.orders.isNotEmpty()
+        state.pointAccount != null || state.watchHistory.isNotEmpty() || state.orders.isNotEmpty() || state.wallet != null
+
+    private fun requireAuthenticatedAccount() {
+        if (state.value.session == null) {
+            mutableState.update { it.copy(authPromptVisible = true, isLoading = false) }
+            throw IllegalStateException("登录状态已失效，请重新登录。")
+        }
+    }
+
+    private suspend fun reloadAccountSnapshotAfterAction() {
+        val requestVersion = ++accountRequestVersion
+        mutableState.update { it.copy(screen = AppScreen.ACCOUNT) }
+        loadAccountSnapshotForAuthenticatedUser(requestVersion)
+    }
+
+    private suspend fun <T> loadOptionalAccountData(fallback: T, loader: suspend () -> T): T =
+        try {
+            loader()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            fallback
+        }
+
+    private fun currentSessionPhone(): SessionPhone {
+        val session = state.value.session ?: throw IllegalStateException("登录状态已失效，请重新登录。")
+        val account = (session.phoneE164 ?: session.username).trim()
+        val countryCode = supportedPhoneCountryCodes.firstOrNull { account.startsWith(it) }
+            ?: throw IllegalStateException("phone account required")
+        val phoneNumber = account.removePrefix(countryCode).filter(Char::isDigit)
+        if (phoneNumber.isBlank()) {
+            throw IllegalStateException("phone account required")
+        }
+        return SessionPhone(countryCode, phoneNumber)
+    }
 
     private suspend fun loadContinueWatchingBooks(history: List<WatchRecord>, requestVersion: Long): Map<String, BookSummary> {
         val books = linkedMapOf<String, BookSummary>()
@@ -911,14 +1093,24 @@ class AppStateController(private val dataSource: AppDataSource) {
             error.statusCode == 401 &&
             (context == ErrorContext.ACCOUNT || context == ErrorContext.PLAYBACK || context == ErrorContext.SOCIAL)
 
+    private fun isBlockedAccountError(error: Throwable): Boolean {
+        val message = error.message?.lowercase().orEmpty()
+        return error is ApiClientException &&
+            error.statusCode == 403 &&
+            ("disabled" in message || "blacklisted" in message || "user status" in message)
+    }
+
     private fun userFacingErrorMessage(error: Throwable, context: ErrorContext): String {
         val rawMessage = error.message?.trim().orEmpty()
         val normalizedMessage = rawMessage.lowercase()
+        if (isBlockedAccountError(error)) {
+            return "账号不可操作，请联系支持。"
+        }
         if (context == ErrorContext.CONTENT) {
             return "内容暂时加载失败，可以稍后刷新。"
         }
         if (error is ApiClientException && error.statusCode == 401 && (context == ErrorContext.LOGIN || context == ErrorContext.REGISTER)) {
-            return "用户名或密码错误"
+            return "手机号或密码错误"
         }
         if (error is ApiClientException && error.statusCode == 401) {
             return "登录状态已失效，请重新登录。"
@@ -926,10 +1118,30 @@ class AppStateController(private val dataSource: AppDataSource) {
         if ((context == ErrorContext.LOGIN || context == ErrorContext.REGISTER) &&
             ("invalid username or password" in normalizedMessage || "invalid credentials" in normalizedMessage)
         ) {
-            return "用户名或密码错误"
+            return "手机号或密码错误"
         }
         return rawMessage.ifBlank { error::class.simpleName ?: "请求失败" }
     }
+
+    private fun smsSentMessage(): String =
+        when (state.value.language) {
+            AppLanguage.ENGLISH -> "Verification code sent. Use 000000 within 120 seconds."
+            AppLanguage.TRADITIONAL_CHINESE -> "驗證碼已發送，請在 120 秒內使用 000000。"
+        }
+
+    private fun registrationSimulationMessage(): String =
+        when (state.value.language) {
+            AppLanguage.ENGLISH -> "Registration completed. Account access must be opened internally."
+            AppLanguage.TRADITIONAL_CHINESE -> "註冊流程已完成，帳號需要內部開通後才能登入。"
+        }
+
+    private fun passwordChangedMessage(): String =
+        when (state.value.language) {
+            AppLanguage.ENGLISH -> "Password changed."
+            AppLanguage.TRADITIONAL_CHINESE -> "密碼已修改。"
+        }
+
+    private data class SessionPhone(val countryCode: String, val phoneNumber: String)
 
     private enum class ErrorContext {
         LOGIN,
@@ -939,5 +1151,20 @@ class AppStateController(private val dataSource: AppDataSource) {
         PLAYBACK,
         SOCIAL,
         DIAGNOSTIC,
+    }
+
+    private companion object {
+        val supportedPhoneCountryCodes = listOf(
+            "+852",
+            "+853",
+            "+886",
+            "+44",
+            "+61",
+            "+65",
+            "+81",
+            "+82",
+            "+60",
+            "+1",
+        )
     }
 }

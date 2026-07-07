@@ -58,6 +58,10 @@ async function logout() {
           <el-icon><Money /></el-icon>
           <span>支付事件</span>
         </el-menu-item>
+        <el-menu-item index="/withdrawals">
+          <el-icon><Coin /></el-icon>
+          <span>提现申请</span>
+        </el-menu-item>
         <el-menu-item index="/content-cache">
           <el-icon><FolderOpened /></el-icon>
           <span>内容缓存</span>

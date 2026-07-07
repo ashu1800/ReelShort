@@ -62,7 +62,7 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
 			return;
 		}
 		UserAccount user = accessToken.user();
-		if (user.status() == UserStatus.DISABLED) {
+		if (user.status() != UserStatus.ACTIVE) {
 			request.setAttribute(AUTH_FAILURE_ATTRIBUTE, "user disabled");
 			return;
 		}

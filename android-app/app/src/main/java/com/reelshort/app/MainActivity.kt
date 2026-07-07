@@ -73,6 +73,14 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onShowAuthPrompt = remember(viewModel) { viewModel::showAuthPrompt }
     val onRefreshHome = remember(viewModel) { viewModel::refreshHome }
     val onSetLanguage = remember(viewModel) { viewModel::setLanguage }
+    val onSendWalletVerification = remember(viewModel) { viewModel::sendWalletVerification }
+    val onSendPasswordChangeVerification = remember(viewModel) { viewModel::sendPasswordChangeVerification }
+    val onBindWallet = remember(viewModel) { viewModel::bindWallet }
+    val onUnbindWallet = remember(viewModel) { viewModel::unbindWallet }
+    val onSubmitBankCard = remember(viewModel) { viewModel::submitBankCard }
+    val onSubmitWithdrawal = remember(viewModel) { viewModel::submitWithdrawal }
+    val onTransferPoints = remember(viewModel) { viewModel::transferPoints }
+    val onChangePassword = remember(viewModel) { viewModel::changePassword }
 
     // 播放器与收藏页为全屏沉浸式，系统返回键回到上一级而非退出 App
     BackHandler(enabled = state.screen == AppScreen.PLAYER) {
@@ -81,8 +89,9 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     BackHandler(enabled = state.screen == AppScreen.FAVORITES) {
         viewModel.backFromFavorites()
     }
-    val onLogin = remember(viewModel) { { u: String, p: String, r: Boolean -> viewModel.login(u, p, r) } }
-    val onRegister = remember(viewModel) { { u: String, p: String, r: Boolean -> viewModel.register(u, p, r) } }
+    val onLogin = remember(viewModel) { { c: String, phone: String, p: String, r: Boolean -> viewModel.login(c, phone, p, r) } }
+    val onRegister = remember(viewModel) { { c: String, phone: String, p: String, code: String -> viewModel.register(c, phone, p, code) } }
+    val onSendAuthSms = remember(viewModel) { { c: String, phone: String -> viewModel.sendAuthSms(c, phone) } }
     val onDismissAuthPrompt = remember(viewModel) { viewModel::dismissAuthPrompt }
     val onErrorDismiss = remember(viewModel) { viewModel::clearError }
 
@@ -108,12 +117,21 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onShowAuthPrompt = onShowAuthPrompt,
                 onRefreshHome = onRefreshHome,
                 onSetLanguage = onSetLanguage,
+                onSendWalletVerification = onSendWalletVerification,
+                onSendPasswordChangeVerification = onSendPasswordChangeVerification,
+                onBindWallet = onBindWallet,
+                onUnbindWallet = onUnbindWallet,
+                onSubmitBankCard = onSubmitBankCard,
+                onSubmitWithdrawal = onSubmitWithdrawal,
+                onTransferPoints = onTransferPoints,
+                onChangePassword = onChangePassword,
             )
             AuthBottomSheet(
                 visible = state.authPromptVisible,
                 state = state,
                 onLogin = onLogin,
                 onRegister = onRegister,
+                onSendVerification = onSendAuthSms,
                 onDismiss = onDismissAuthPrompt,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)

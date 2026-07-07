@@ -9,13 +9,20 @@ import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
+import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.RegisterSimulationResult
 import com.reelshort.app.data.SavedCredentials
+import com.reelshort.app.data.SmsSendResult
+import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.data.WalletInfo
+import com.reelshort.app.data.WithdrawalRecord
+import com.reelshort.app.data.WithdrawalSummary
 import com.reelshort.app.network.ApiClientException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -79,7 +86,7 @@ class AppStateControllerTest {
     }
 
     @Test
-    fun registerSuccessKeepsSessionWhenHomeShelfFails() = runTest {
+    fun publicRegisterDoesNotCreateSessionOrLoadHomeShelf() = runTest {
         val dataSource = FakeAppDataSource(homeError = IllegalStateException("content provider returned 502"))
         val controller = AppStateController(dataSource)
 
@@ -87,11 +94,11 @@ class AppStateControllerTest {
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
-        assertEquals("new-user", state.session?.username)
+        assertNull(state.session)
         assertEquals(emptyList(), state.homeShelf)
-        assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
+        assertEquals("Registration completed. Account access must be opened internally.", state.errorMessage)
         assertFalse(state.isLoading)
-        assertEquals(listOf("register:new-user", "home"), dataSource.calls)
+        assertEquals(listOf("register:+1:new-user"), dataSource.calls)
     }
 
     @Test
@@ -117,7 +124,7 @@ class AppStateControllerTest {
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
-        assertEquals("用户名或密码错误", state.errorMessage)
+        assertEquals("手机号或密码错误", state.errorMessage)
     }
 
     @Test
@@ -152,6 +159,27 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun blockedAccountErrorClearsSessionAndStopsProtectedActions() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(username = "+14155550101", token = "blocked-token", tokenType = "Bearer"),
+        )
+        dataSource.accountError = ApiClientException(403, null, "user disabled")
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+
+        controller.openAccount()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertNull(state.session)
+        assertEquals("账号不可操作，请联系支持。", state.errorMessage)
+        assertFalse(state.authPromptVisible)
+        assertFalse(state.isLoading)
+        assertEquals(listOf("history", "clear"), dataSource.calls)
+    }
+
+    @Test
     fun loadSavedCredentialsStoresCredentialsInState() = runTest {
         val credentials = SavedCredentials(username = "demo", password = "Password123", rememberPassword = true)
         val dataSource = FakeAppDataSource(savedCredentials = credentials)
@@ -175,6 +203,42 @@ class AppStateControllerTest {
             dataSource.savedCredentials,
         )
         assertEquals(dataSource.savedCredentials, controller.state.value.savedCredentials)
+    }
+
+    @Test
+    fun phoneLoginSavesCountryCodePhoneAndPasswordWhenRemembered() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.login("+44", "2075550101", "Password123", rememberPassword = true)
+
+        assertEquals(
+            SavedCredentials(
+                username = "+442075550101",
+                countryCode = "+44",
+                phoneNumber = "2075550101",
+                password = "Password123",
+                rememberPassword = true,
+            ),
+            dataSource.savedCredentials,
+        )
+        assertEquals("+442075550101", controller.state.value.session?.username)
+        assertEquals(listOf("login:+44:2075550101", "home", "home:cache:save"), dataSource.calls)
+    }
+
+    @Test
+    fun publicRegisterSimulatesSmsFlowAndDoesNotCreateLoggedInSession() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.sendAuthSms("+1", "4155550102")
+        controller.register("+1", "4155550102", "Password123", "000000")
+
+        val state = controller.state.value
+        assertNull(state.session)
+        assertFalse(state.authPromptVisible)
+        assertEquals("Registration completed. Account access must be opened internally.", state.errorMessage)
+        assertEquals(listOf("sms:PUBLIC_REGISTER:+1:4155550102", "register:+1:4155550102"), dataSource.calls)
     }
 
     @Test
@@ -1056,8 +1120,33 @@ class AppStateControllerTest {
         val state = controller.state.value
         assertEquals(AppScreen.ACCOUNT, state.screen)
         assertEquals(25, state.pointAccount?.balance)
+        assertEquals("TRC20", state.wallet?.network)
+        assertEquals(100, state.withdrawalSummary?.minimumPoints)
         assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
-        assertEquals(listOf("history", "points", "orders"), dataSource.calls)
+        assertEquals(listOf("history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"), dataSource.calls)
+    }
+
+    @Test
+    fun loadAccountSnapshotKeepsCoreAccountDataWhenCommercialEndpointsFail() = runTest {
+        val dataSource = FakeAppDataSource()
+        dataSource.walletError = ApiClientException(404, null, "resource not found")
+        dataSource.withdrawalSummaryError = ApiClientException(404, null, "resource not found")
+        dataSource.withdrawalsError = ApiClientException(404, null, "resource not found")
+        dataSource.transfersError = ApiClientException(404, null, "resource not found")
+        val controller = AppStateController(dataSource)
+
+        controller.loadAccountSnapshot()
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertEquals(25, state.pointAccount?.balance)
+        assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
+        assertNull(state.wallet)
+        assertNull(state.withdrawalSummary)
+        assertTrue(state.withdrawals.isEmpty())
+        assertTrue(state.pointTransfers.isEmpty())
+        assertNull(state.errorMessage)
+        assertFalse(state.isLoading)
     }
 
     @Test
@@ -1079,7 +1168,10 @@ class AppStateControllerTest {
 
         val state = controller.state.value
         assertEquals(listOf("book-1", "book-2"), state.continueWatchingBooks.keys.toList())
-        assertEquals(listOf("history", "points", "orders", "book:book-1", "book:book-2"), dataSource.calls)
+        assertEquals(
+            listOf("history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers", "book:book-1", "book:book-2"),
+            dataSource.calls,
+        )
     }
 
     @Test
@@ -1186,7 +1278,10 @@ class AppStateControllerTest {
         assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
-        assertEquals(listOf("history", "points", "orders", "history"), dataSource.calls)
+        assertEquals(
+            listOf("history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers", "history"),
+            dataSource.calls,
+        )
     }
 
     @Test
@@ -1404,7 +1499,27 @@ class AppStateControllerTest {
         assertFalse(state.authPromptVisible)
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
-        assertEquals(listOf("login:demo", "history", "points", "orders"), dataSource.calls)
+        assertEquals(listOf("login:demo", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"), dataSource.calls)
+    }
+
+    @Test
+    fun passwordChangeVerificationUsesAuthenticatedPhoneSmsEndpoint() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(
+                username = "+442075550101",
+                token = "token-demo",
+                tokenType = "Bearer",
+                phoneE164 = "+442075550101",
+            ),
+        )
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+
+        controller.sendPasswordChangeVerification()
+
+        assertEquals(listOf("sms:PASSWORD_CHANGE:+44:2075550101"), dataSource.calls)
+        assertEquals("Verification code sent. Use 000000 within 120 seconds.", controller.state.value.errorMessage)
     }
 
     @Test
@@ -1608,6 +1723,10 @@ class AppStateControllerTest {
         var videoDurationSeconds: Int? = null
         var healthError: Throwable? = null
         var socialError: Throwable? = null
+        var walletError: Throwable? = null
+        var withdrawalSummaryError: Throwable? = null
+        var withdrawalsError: Throwable? = null
+        var transfersError: Throwable? = null
         var socialGate: CompletableDeferred<Unit>? = null
         var favoritesGate: CompletableDeferred<Unit>? = null
         private val liked = mutableSetOf<String>()
@@ -1624,15 +1743,35 @@ class AppStateControllerTest {
             return ApiHealthStatus(status = "UP", service = "fake-backend")
         }
 
-        override suspend fun login(username: String, password: String): AuthSession {
-            calls += "login:$username"
+        override suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession {
+            val legacy = countryCode == "+1" && phoneNumber.any { !it.isDigit() }
+            calls += if (legacy) "login:$phoneNumber" else "login:$countryCode:$phoneNumber"
             loginError?.let { throw it }
+            val username = if (legacy) phoneNumber else "$countryCode$phoneNumber"
             return AuthSession(username = username, token = "token-$username", tokenType = "Bearer")
         }
 
-        override suspend fun register(username: String, password: String): AuthSession {
-            calls += "register:$username"
-            return AuthSession(username = username, token = "token-$username", tokenType = "Bearer")
+        override suspend fun register(
+            countryCode: String,
+            phoneNumber: String,
+            password: String,
+            verificationCode: String,
+        ): RegisterSimulationResult {
+            calls += "register:$countryCode:$phoneNumber"
+            return RegisterSimulationResult("SIMULATED")
+        }
+
+        override suspend fun sendAuthSms(
+            purpose: SmsVerificationPurpose,
+            countryCode: String,
+            phoneNumber: String,
+        ): SmsSendResult {
+            calls += "sms:${purpose.name}:$countryCode:$phoneNumber"
+            return SmsSendResult(120)
+        }
+
+        override suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) {
+            calls += "password:change"
         }
 
         override suspend fun loadHomeShelf(): List<BookSummary> {
@@ -1745,6 +1884,76 @@ class AppStateControllerTest {
                     status = "CREATED",
                 ),
             )
+        }
+
+        override suspend fun loadWallet(): WalletInfo {
+            calls += "wallet"
+            walletError?.let { throw it }
+            accountError?.let { throw it }
+            return WalletInfo("TRC20", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "2026-07-07T00:00:00Z")
+        }
+
+        override suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult {
+            calls += "wallet-sms:${purpose.name}"
+            return SmsSendResult(120)
+        }
+
+        override suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo {
+            calls += "wallet:bind:$walletAddress"
+            return WalletInfo("TRC20", walletAddress, "2026-07-07T00:00:00Z")
+        }
+
+        override suspend fun unbindWallet(verificationCode: String): WalletInfo {
+            calls += "wallet:unbind"
+            return WalletInfo("TRC20", null, null)
+        }
+
+        override suspend fun submitBankCard(holderName: String, cardNumber: String) {
+            calls += "bank-card"
+            throw IllegalStateException("Bank card withdrawal is not supported")
+        }
+
+        override suspend fun loadWithdrawalSummary(): WithdrawalSummary {
+            calls += "withdrawal-summary"
+            withdrawalSummaryError?.let { throw it }
+            accountError?.let { throw it }
+            return WithdrawalSummary(pointBalance, 0, pointBalance, 100, "0.001", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc")
+        }
+
+        override suspend fun loadWithdrawals(): List<WithdrawalRecord> {
+            calls += "withdrawals"
+            withdrawalsError?.let { throw it }
+            accountError?.let { throw it }
+            return emptyList()
+        }
+
+        override suspend fun submitWithdrawal(pointAmount: Int): WithdrawalRecord {
+            calls += "withdraw:$pointAmount"
+            return WithdrawalRecord(
+                id = "withdrawal-1",
+                pointAmount = pointAmount,
+                usdtAmount = "0.1",
+                usdtPerPoint = "0.001",
+                network = "TRC20",
+                walletAddress = "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc",
+                status = "PENDING",
+                txHash = null,
+                adminNote = null,
+                createdAt = "2026-07-07T00:00:00Z",
+                reviewedAt = null,
+            )
+        }
+
+        override suspend fun loadPointTransfers(): List<PointTransferRecord> {
+            calls += "transfers"
+            transfersError?.let { throw it }
+            accountError?.let { throw it }
+            return emptyList()
+        }
+
+        override suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord {
+            calls += "transfer:$recipientAccount:$pointAmount"
+            return PointTransferRecord("transfer-1", "OUT", "+14155550101", recipientAccount, pointAmount, "2026-07-07T00:00:00Z")
         }
 
         override suspend fun restoreSession(): AuthSession? {

@@ -7,7 +7,10 @@ import com.reelshort.backend.user.UserStatus;
 public record AdminUserSummaryResponse(
 		UUID id,
 		String username,
+		String phoneE164,
 		UserStatus status,
 		int pointBalance,
+		int frozenPoints,
+		int availablePoints,
 		String createdAt) {
 }

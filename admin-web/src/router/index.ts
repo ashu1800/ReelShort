@@ -11,6 +11,7 @@ import SystemConfigsView from '../views/SystemConfigsView.vue'
 import SystemLogsView from '../views/SystemLogsView.vue'
 import SystemRuntimeView from '../views/SystemRuntimeView.vue'
 import UsersView from '../views/UsersView.vue'
+import WithdrawalsView from '../views/WithdrawalsView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -40,6 +41,11 @@ export const router = createRouter({
       path: '/payments/events',
       name: 'payment-events',
       component: PaymentEventsView,
+    },
+    {
+      path: '/withdrawals',
+      name: 'withdrawals',
+      component: WithdrawalsView,
     },
     {
       path: '/content-cache',

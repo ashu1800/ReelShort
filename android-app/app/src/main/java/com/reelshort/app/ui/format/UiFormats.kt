@@ -177,6 +177,38 @@ internal fun authPromptTitle(
 internal fun rememberPasswordLabel(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): String =
     strings(language).rememberPassword
 
+internal data class PhoneCountryCode(
+    val code: String,
+    val label: String,
+)
+
+internal fun supportedPhoneCountryCodes(): List<PhoneCountryCode> =
+    listOf(
+        PhoneCountryCode("+1", "United States / Canada"),
+        PhoneCountryCode("+44", "United Kingdom"),
+        PhoneCountryCode("+61", "Australia"),
+        PhoneCountryCode("+65", "Singapore"),
+        PhoneCountryCode("+852", "Hong Kong"),
+        PhoneCountryCode("+853", "Macau"),
+        PhoneCountryCode("+886", "Taiwan"),
+        PhoneCountryCode("+81", "Japan"),
+        PhoneCountryCode("+82", "South Korea"),
+        PhoneCountryCode("+60", "Malaysia"),
+    )
+
+internal fun smsVerificationSeconds(): Int = 120
+
+internal fun authRegisterEnabled(
+    isLoading: Boolean,
+    phoneNumber: String,
+    password: String,
+    verificationCode: String,
+): Boolean =
+    !isLoading &&
+        phoneNumber.isNotBlank() &&
+        password.isNotBlank() &&
+        verificationCode.length == 6
+
 internal fun String.posterInitials(): String =
     trim()
         .split(Regex("\\s+"))

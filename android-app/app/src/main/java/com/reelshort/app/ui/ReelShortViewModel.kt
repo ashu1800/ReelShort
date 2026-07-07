@@ -9,6 +9,7 @@ import com.reelshort.app.data.AppRepository
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.network.OkHttpReelShortApiClient
 import com.reelshort.app.session.FileHomeShelfStore
@@ -51,8 +52,48 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.login(username, password, rememberPassword) }
     }
 
-    fun register(username: String, password: String, rememberPassword: Boolean) {
-        viewModelScope.launch { controller.register(username, password, rememberPassword) }
+    fun login(countryCode: String, phoneNumber: String, password: String, rememberPassword: Boolean) {
+        viewModelScope.launch { controller.login(countryCode, phoneNumber, password, rememberPassword) }
+    }
+
+    fun register(countryCode: String, phoneNumber: String, password: String, verificationCode: String) {
+        viewModelScope.launch { controller.register(countryCode, phoneNumber, password, verificationCode) }
+    }
+
+    fun sendAuthSms(countryCode: String, phoneNumber: String) {
+        viewModelScope.launch { controller.sendAuthSms(countryCode, phoneNumber) }
+    }
+
+    fun sendWalletVerification(purpose: SmsVerificationPurpose) {
+        viewModelScope.launch { controller.sendWalletVerification(purpose) }
+    }
+
+    fun sendPasswordChangeVerification() {
+        viewModelScope.launch { controller.sendPasswordChangeVerification() }
+    }
+
+    fun bindWallet(walletAddress: String, verificationCode: String) {
+        viewModelScope.launch { controller.bindWallet(walletAddress, verificationCode) }
+    }
+
+    fun unbindWallet(verificationCode: String) {
+        viewModelScope.launch { controller.unbindWallet(verificationCode) }
+    }
+
+    fun submitBankCard(holderName: String, cardNumber: String) {
+        viewModelScope.launch { controller.submitBankCard(holderName, cardNumber) }
+    }
+
+    fun submitWithdrawal(pointAmount: Int) {
+        viewModelScope.launch { controller.submitWithdrawal(pointAmount) }
+    }
+
+    fun transferPoints(recipientAccount: String, pointAmount: Int) {
+        viewModelScope.launch { controller.transferPoints(recipientAccount, pointAmount) }
+    }
+
+    fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) {
+        viewModelScope.launch { controller.changePassword(oldPassword, newPassword, verificationCode) }
     }
 
     fun search(query: String) {

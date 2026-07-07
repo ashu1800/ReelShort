@@ -4,12 +4,31 @@ data class AuthSession(
     val username: String,
     val token: String,
     val tokenType: String,
+    val phoneE164: String? = null,
 )
 
 data class SavedCredentials(
     val username: String,
     val password: String,
     val rememberPassword: Boolean,
+    val countryCode: String = "+1",
+    val phoneNumber: String = username.removePrefix(countryCode).ifBlank { username },
+)
+
+enum class SmsVerificationPurpose {
+    PUBLIC_REGISTER,
+    WALLET_BIND,
+    WALLET_REPLACE,
+    WALLET_UNBIND,
+    PASSWORD_CHANGE,
+}
+
+data class SmsSendResult(
+    val expiresInSeconds: Int,
+)
+
+data class RegisterSimulationResult(
+    val status: String,
 )
 
 data class ApiHealthStatus(
@@ -82,6 +101,8 @@ data class WatchEpisodeSnapshot(
 
 data class PointAccount(
     val balance: Int,
+    val frozenPoints: Int = 0,
+    val availablePoints: Int = balance - frozenPoints,
     val records: List<PointRecord>,
 )
 
@@ -95,6 +116,44 @@ data class RechargeOrderSummary(
     val amountCents: Int,
     val pointAmount: Int,
     val status: String,
+)
+
+data class WalletInfo(
+    val network: String,
+    val walletAddress: String?,
+    val updatedAt: String?,
+)
+
+data class WithdrawalSummary(
+    val balance: Int,
+    val frozenPoints: Int,
+    val availablePoints: Int,
+    val minimumPoints: Int,
+    val usdtPerPoint: String,
+    val walletAddress: String?,
+)
+
+data class WithdrawalRecord(
+    val id: String,
+    val pointAmount: Int,
+    val usdtAmount: String,
+    val usdtPerPoint: String,
+    val network: String,
+    val walletAddress: String,
+    val status: String,
+    val txHash: String?,
+    val adminNote: String?,
+    val createdAt: String,
+    val reviewedAt: String?,
+)
+
+data class PointTransferRecord(
+    val id: String,
+    val direction: String,
+    val senderAccount: String,
+    val recipientAccount: String,
+    val pointAmount: Int,
+    val createdAt: String,
 )
 
 /** 单级文字评论。 */
