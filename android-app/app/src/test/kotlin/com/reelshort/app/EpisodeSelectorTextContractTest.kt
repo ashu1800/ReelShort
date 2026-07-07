@@ -1,13 +1,18 @@
 package com.reelshort.app
 
 import com.reelshort.app.ui.format.episodeSelectorLabel
+import com.reelshort.app.ui.format.episodeWatchStatus
+import com.reelshort.app.ui.format.episodeWatchStatusLabel
 import com.reelshort.app.ui.format.playerErrorNextEpisode
 import com.reelshort.app.ui.format.playerLoadingLabel
 import com.reelshort.app.ui.format.playerLoadingOverlayVisible
 import com.reelshort.app.ui.format.playerOverlayMode
 import com.reelshort.app.ui.format.PlayerOverlayMode
+import com.reelshort.app.ui.format.EpisodeWatchStatusType
 import androidx.media3.common.Player
+import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.WatchRecord
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -141,5 +146,54 @@ class EpisodeSelectorTextContractTest {
         assertEquals(episodes[1], playerErrorNextEpisode(episodes[0], episodes))
         assertNull(playerErrorNextEpisode(episodes[1], episodes))
         assertNull(playerErrorNextEpisode(null, episodes))
+    }
+
+    @Test
+    fun episodeWatchStatusPrioritizesCurrentEpisodeOverHistory() {
+        val status = episodeWatchStatus(
+            bookId = "book-1",
+            episode = EpisodeSummary(number = 2, chapterId = "chapter-2"),
+            selectedEpisode = EpisodeSummary(number = 2, chapterId = "chapter-2"),
+            watchHistory = listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 100)),
+        )
+
+        assertEquals(EpisodeWatchStatusType.CURRENT, status.type)
+        assertEquals(100, status.progressPercent)
+        assertEquals("Current", episodeWatchStatusLabel(status, AppLanguage.ENGLISH))
+    }
+
+    @Test
+    fun episodeWatchStatusShowsWatchedAndInProgressLabels() {
+        val watched = episodeWatchStatus(
+            bookId = "book-1",
+            episode = EpisodeSummary(number = 1, chapterId = "chapter-1"),
+            selectedEpisode = EpisodeSummary(number = 3, chapterId = "chapter-3"),
+            watchHistory = listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 1, progressPercent = 100)),
+        )
+        val inProgress = episodeWatchStatus(
+            bookId = "book-1",
+            episode = EpisodeSummary(number = 2, chapterId = "chapter-2"),
+            selectedEpisode = EpisodeSummary(number = 3, chapterId = "chapter-3"),
+            watchHistory = listOf(WatchRecord(bookId = "book-1", bookTitle = "Alpha", episode = 2, progressPercent = 58)),
+        )
+
+        assertEquals(EpisodeWatchStatusType.WATCHED, watched.type)
+        assertEquals("Watched", episodeWatchStatusLabel(watched, AppLanguage.ENGLISH))
+        assertEquals("已看", episodeWatchStatusLabel(watched, AppLanguage.TRADITIONAL_CHINESE))
+        assertEquals(EpisodeWatchStatusType.IN_PROGRESS, inProgress.type)
+        assertEquals("58%", episodeWatchStatusLabel(inProgress, AppLanguage.ENGLISH))
+    }
+
+    @Test
+    fun episodeWatchStatusIgnoresOtherBooksAndMissingRecords() {
+        val status = episodeWatchStatus(
+            bookId = "book-1",
+            episode = EpisodeSummary(number = 4, chapterId = "chapter-4"),
+            selectedEpisode = EpisodeSummary(number = 3, chapterId = "chapter-3"),
+            watchHistory = listOf(WatchRecord(bookId = "book-2", bookTitle = "Beta", episode = 4, progressPercent = 90)),
+        )
+
+        assertEquals(EpisodeWatchStatusType.NONE, status.type)
+        assertEquals("", episodeWatchStatusLabel(status, AppLanguage.ENGLISH))
     }
 }

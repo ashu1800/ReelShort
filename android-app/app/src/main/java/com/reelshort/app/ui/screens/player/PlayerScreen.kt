@@ -87,13 +87,18 @@ import coil.compose.AsyncImage
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.state.AppUiState
+import com.reelshort.app.ui.format.EpisodeWatchStatus
+import com.reelshort.app.ui.format.EpisodeWatchStatusType
 import com.reelshort.app.ui.format.PlayerOverlayMode
 import com.reelshort.app.ui.format.RewardBadgeState
 import com.reelshort.app.ui.format.RewardBadgeVisualState
 import com.reelshort.app.ui.format.coverUrlOrNull
 import com.reelshort.app.ui.format.episodeNumberLabel
 import com.reelshort.app.ui.format.episodeSelectorLabel
+import com.reelshort.app.ui.format.episodeWatchStatus
+import com.reelshort.app.ui.format.episodeWatchStatusLabel
 import com.reelshort.app.ui.format.playerErrorNextEpisode
 import com.reelshort.app.ui.format.playerLoadingLabel
 import com.reelshort.app.ui.format.playerOverlayMode
@@ -274,8 +279,10 @@ internal fun PlayerScreen(
 
     if (episodeSheetVisible) {
         EpisodeSelectorBottomSheet(
+            bookId = book?.id,
             episodes = state.episodes,
             selectedEpisode = state.selectedEpisode,
+            watchHistory = state.watchHistory,
             language = state.language,
             onDismiss = { episodeSheetVisible = false },
             onSelectEpisode = { selected ->
@@ -923,8 +930,10 @@ private fun EpisodeSelectorBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EpisodeSelectorBottomSheet(
+    bookId: String?,
     episodes: List<EpisodeSummary>,
     selectedEpisode: EpisodeSummary?,
+    watchHistory: List<WatchRecord>,
     language: AppLanguage,
     onDismiss: () -> Unit,
     onSelectEpisode: (EpisodeSummary) -> Unit,
@@ -959,14 +968,26 @@ private fun EpisodeSelectorBottomSheet(
             }
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 72.dp),
-                modifier = Modifier.fillMaxWidth().height(320.dp),
+                modifier = Modifier.fillMaxWidth().height(340.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 16.dp),
             ) {
                 items(episodes, key = { "${it.chapterId}:${it.number}" }) { episode ->
                     val selected = episode.chapterId == selectedEpisode?.chapterId && episode.number == selectedEpisode.number
-                    EpisodeSelectorItem(episode = episode, selected = selected, onClick = { onSelectEpisode(episode) })
+                    val status = episodeWatchStatus(
+                        bookId = bookId,
+                        episode = episode,
+                        selectedEpisode = selectedEpisode,
+                        watchHistory = watchHistory,
+                    )
+                    EpisodeSelectorItem(
+                        episode = episode,
+                        selected = selected,
+                        status = status,
+                        language = language,
+                        onClick = { onSelectEpisode(episode) },
+                    )
                 }
             }
         }
@@ -977,25 +998,61 @@ private fun EpisodeSelectorBottomSheet(
 private fun EpisodeSelectorItem(
     episode: EpisodeSummary,
     selected: Boolean,
+    status: EpisodeWatchStatus,
+    language: AppLanguage,
     onClick: () -> Unit,
 ) {
-    val background = if (selected) PrimaryGold else Color(0xFF1B202B)
+    val statusLabel = episodeWatchStatusLabel(status, language)
+    val background = when {
+        selected -> PrimaryGold
+        status.type == EpisodeWatchStatusType.WATCHED -> Color(0xFF20202A)
+        else -> Color(0xFF1B202B)
+    }
     val foreground = if (selected) OnPrimaryDark else TextPrimary
-    Box(
+    val secondary = if (selected) OnPrimaryDark.copy(alpha = 0.72f) else TextSecondary
+    val progress = status.progressPercent.coerceIn(0, 100)
+    val border = if (status.type == EpisodeWatchStatusType.WATCHED && !selected) {
+        androidx.compose.foundation.BorderStroke(1.dp, PrimaryGold.copy(alpha = 0.58f))
+    } else {
+        androidx.compose.foundation.BorderStroke(1.dp, Color(0x22FFFFFF))
+    }
+    Surface(
         modifier = Modifier
-            .height(46.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(background)
+            .height(64.dp)
             .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+        color = background,
+        shape = RoundedCornerShape(10.dp),
+        border = border,
     ) {
-        Text(
-            episode.number.coerceAtLeast(0).toString(),
-            color = foreground,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-        )
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    episode.number.coerceAtLeast(0).toString(),
+                    color = foreground,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                if (statusLabel.isNotBlank()) {
+                    Text(
+                        statusLabel,
+                        color = secondary,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (progress > 0 && !selected) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(progress / 100f)
+                        .height(3.dp)
+                        .background(PrimaryGold.copy(alpha = if (status.type == EpisodeWatchStatusType.WATCHED) 0.9f else 0.68f)),
+                )
+            }
+        }
     }
 }
 
