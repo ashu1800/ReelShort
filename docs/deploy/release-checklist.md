@@ -34,6 +34,14 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1
 powershell -ExecutionPolicy Bypass -File scripts/tests/verify-release-baseline-tests.ps1
 ```
 
+Android UI 或播放器体验改动完成后，建议在完成 debug APK 编译后执行模拟器截图验收：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/android-ui-smoke.ps1
+```
+
+该脚本会安装 debug APK、启动 App、以默认 English UI 文案做 smoke 断言，采集首页、Me 页、继续观看区域以及播放器或登录面板的截图和 UI dump，产物默认输出到 `artifacts/android-ui-smoke/<timestamp>`。
+
 脚本默认执行：
 
 - `python -m pytest content-provider`
