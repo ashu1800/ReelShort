@@ -3,6 +3,7 @@ package com.reelshort.app.ui.format
 import androidx.media3.common.C
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.WatchRecord
 
 internal fun String?.coverUrlOrNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
@@ -111,6 +112,53 @@ internal fun episodeSelectorLabel(
     val copy = strings(language)
     return "${copy.playerEpisodeSelectorPrefix} · ${copy.playerEpisodeSelectorCompleted} · ${copy.playerEpisodeSelectorTotalPrefix}${totalEpisodes.coerceAtLeast(0)}${copy.playerEpisodeSelectorTotalSuffix}"
 }
+
+internal enum class EpisodeWatchStatusType {
+    NONE,
+    CURRENT,
+    IN_PROGRESS,
+    WATCHED,
+}
+
+internal data class EpisodeWatchStatus(
+    val type: EpisodeWatchStatusType,
+    val progressPercent: Int = 0,
+)
+
+internal fun episodeWatchStatus(
+    bookId: String?,
+    episode: EpisodeSummary,
+    selectedEpisode: EpisodeSummary?,
+    watchHistory: List<WatchRecord>,
+): EpisodeWatchStatus {
+    val recordProgress = watchHistory
+        .firstOrNull { it.bookId == bookId && it.episode == episode.number }
+        ?.progressPercent
+        ?.coerceIn(0, 100)
+        ?: 0
+    val isSelected = selectedEpisode != null &&
+        selectedEpisode.number == episode.number &&
+        selectedEpisode.chapterId == episode.chapterId
+    if (isSelected) {
+        return EpisodeWatchStatus(EpisodeWatchStatusType.CURRENT, recordProgress)
+    }
+    return when {
+        recordProgress >= 100 -> EpisodeWatchStatus(EpisodeWatchStatusType.WATCHED, 100)
+        recordProgress > 0 -> EpisodeWatchStatus(EpisodeWatchStatusType.IN_PROGRESS, recordProgress)
+        else -> EpisodeWatchStatus(EpisodeWatchStatusType.NONE)
+    }
+}
+
+internal fun episodeWatchStatusLabel(
+    status: EpisodeWatchStatus,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+): String =
+    when (status.type) {
+        EpisodeWatchStatusType.CURRENT -> strings(language).playerEpisodeStatusCurrent
+        EpisodeWatchStatusType.WATCHED -> strings(language).playerEpisodeStatusWatched
+        EpisodeWatchStatusType.IN_PROGRESS -> "${status.progressPercent.coerceIn(0, 100)}%"
+        EpisodeWatchStatusType.NONE -> ""
+    }
 
 internal fun playerSecondaryActionLabels(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): List<String> =
     listOf(strings(language).playerRefreshAction)
