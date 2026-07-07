@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -46,11 +47,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AppLanguage
+import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.WatchRecord
@@ -58,6 +62,7 @@ import com.reelshort.app.ui.components.AvatarGradient
 import com.reelshort.app.ui.components.GoldOutlinedButton
 import com.reelshort.app.ui.components.MetaPill
 import com.reelshort.app.ui.components.OrderRow
+import com.reelshort.app.ui.components.PosterBlock
 import com.reelshort.app.ui.components.PointRecordRow
 import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.components.verticalGradient
@@ -87,6 +92,7 @@ import com.reelshort.app.ui.theme.WhiteEdge
 @Composable
 internal fun AccountScreen(
     records: List<WatchRecord>,
+    continueWatchingBooks: Map<String, BookSummary>,
     isLoggedIn: Boolean,
     username: String,
     balance: Int,
@@ -140,6 +146,7 @@ internal fun AccountScreen(
             item {
                 ContinueWatchingPanel(
                     records = records.take(accountContinueWatchingLimit()),
+                    books = continueWatchingBooks,
                     language = language,
                     onOpenWatchRecord = onOpenWatchRecord,
                 )
@@ -469,6 +476,7 @@ private fun AccountActionTile(
 @Composable
 private fun ContinueWatchingPanel(
     records: List<WatchRecord>,
+    books: Map<String, BookSummary>,
     language: AppLanguage,
     onOpenWatchRecord: (WatchRecord) -> Unit,
 ) {
@@ -482,11 +490,112 @@ private fun ContinueWatchingPanel(
                 }
                 MetaPill("${records.size}/${accountContinueWatchingLimit()}")
             }
-            records.forEachIndexed { index, record ->
-                ContinueWatchingRow(record = record, language = language, onClick = { onOpenWatchRecord(record) })
-                if (index < records.lastIndex) {
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(Divider))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                records.forEach { record ->
+                    ContinueWatchingPosterCard(
+                        record = record,
+                        book = books[record.bookId],
+                        language = language,
+                        onClick = { onOpenWatchRecord(record) },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
+                if (records.size == 1) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContinueWatchingPosterCard(
+    record: WatchRecord,
+    book: BookSummary?,
+    language: AppLanguage,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val copy = strings(language)
+    val title = book?.title?.takeIf { it.isNotBlank() } ?: record.bookTitle
+    val progress = record.progressPercent.coerceIn(0, 100)
+    Surface(
+        modifier = modifier
+            .height(224.dp)
+            .semantics {
+                contentDescription =
+                    "$title, ${copy.listEpisodePrefix}${record.episode}${if (language == AppLanguage.ENGLISH) "" else copy.playerEpisodeUnit}, ${progress}%"
+            }
+            .clickable(onClick = onClick),
+        color = Panel.copy(alpha = 0.92f),
+        border = BorderStroke(1.dp, Divider),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(start = 8.dp, top = 8.dp, end = 8.dp)
+                    .clip(RoundedCornerShape(14.dp)),
+            ) {
+                PosterBlock(title, book?.coverUrl, Modifier.matchParentSize())
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .background(GoldSurfaceStrong, RoundedCornerShape(999.dp))
+                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                ) {
+                    Text(
+                        "${copy.listEpisodePrefix}${record.episode}${if (language == AppLanguage.ENGLISH) "" else copy.playerEpisodeUnit}",
+                        color = PrimaryGold,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                    )
+                }
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                    color = GoldSurfaceStrong,
+                    shape = RoundedCornerShape(999.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.padding(8.dp).size(18.dp),
+                        tint = PrimaryGold,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    title,
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(999.dp)),
+                    color = PrimaryGold,
+                    trackColor = TranslucentWhiteSurface,
+                )
+                Text(
+                    "${progress}%",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

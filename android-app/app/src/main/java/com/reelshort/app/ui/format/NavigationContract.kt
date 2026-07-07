@@ -74,6 +74,8 @@ internal fun accountContinueWatchingLimit(): Int = 2
 
 internal fun accountContinueWatchingRowsAreClickable(): Boolean = true
 
+internal fun accountContinueWatchingUsesPosterCards(): Boolean = true
+
 internal fun accountPrimaryActionSheet(label: String, language: AppLanguage = AppLanguage.ENGLISH): AccountDetailSheet? {
     val copy = strings(language)
     return when (label) {

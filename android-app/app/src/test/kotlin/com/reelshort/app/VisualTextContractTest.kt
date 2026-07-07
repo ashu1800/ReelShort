@@ -9,6 +9,7 @@ import com.reelshort.app.ui.format.accountDashboardSections
 import com.reelshort.app.ui.format.accountPrimaryActionLabels
 import com.reelshort.app.ui.format.accountContinueWatchingLimit
 import com.reelshort.app.ui.format.accountContinueWatchingRowsAreClickable
+import com.reelshort.app.ui.format.accountContinueWatchingUsesPosterCards
 import com.reelshort.app.ui.format.accountDetailSheetTitle
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.guestAccountEntryLabels
@@ -113,6 +114,11 @@ class VisualTextContractTest {
     @Test
     fun accountDashboardContinueWatchingRowsAreClickable() {
         assertEquals(true, accountContinueWatchingRowsAreClickable())
+    }
+
+    @Test
+    fun accountDashboardContinueWatchingUsesPosterCards() {
+        assertEquals(true, accountContinueWatchingUsesPosterCards())
     }
 
     @Test
