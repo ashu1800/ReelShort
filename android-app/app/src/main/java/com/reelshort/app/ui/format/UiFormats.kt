@@ -169,6 +169,9 @@ internal fun guestAccountEntryLabels(language: AppLanguage = AppLanguage.TRADITI
     return listOf(copy.accountGuestSignIn, copy.accountGuestRegister)
 }
 
+internal fun guestAccountEntryAuthModes(): List<AuthMode> =
+    listOf(AuthMode.LOGIN, AuthMode.REGISTER)
+
 internal fun authPromptTitle(
     hasPendingPlayback: Boolean,
     language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,

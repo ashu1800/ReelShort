@@ -23,6 +23,7 @@ import com.reelshort.app.ui.format.authSheetCopy
 import com.reelshort.app.ui.format.authSinglePrimaryAction
 import com.reelshort.app.ui.format.authVerificationCodeLabel
 import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
+import com.reelshort.app.ui.format.guestAccountEntryAuthModes
 import com.reelshort.app.ui.format.rememberPasswordLabel
 import com.reelshort.app.ui.format.supportedPhoneCountryCodes
 import com.reelshort.app.ui.format.smsVerificationSeconds
@@ -164,6 +165,11 @@ class VisualTextContractTest {
     @Test
     fun guestAccountPageShowsLocalizedAuthEntryLabelsInEnglish() {
         assertEquals(listOf("Sign in", "Create account"), guestAccountEntryLabels(AppLanguage.ENGLISH))
+    }
+
+    @Test
+    fun guestAccountEntriesOpenMatchingAuthModes() {
+        assertEquals(listOf(AuthMode.LOGIN, AuthMode.REGISTER), guestAccountEntryAuthModes())
     }
 
     @Test

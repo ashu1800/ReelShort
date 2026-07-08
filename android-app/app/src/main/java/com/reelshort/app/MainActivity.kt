@@ -71,6 +71,12 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onBackFromFavorites = remember(viewModel) { viewModel::backFromFavorites }
     val onCheckApiHealth = remember(viewModel) { viewModel::checkApiHealth }
     val onShowAuthPrompt = remember(viewModel) { viewModel::showAuthPrompt }
+    val onShowRegisterAuthPrompt = remember(viewModel) {
+        {
+            viewModel.showRegisterAuthMode()
+            viewModel.showAuthPrompt()
+        }
+    }
     val onRefreshHome = remember(viewModel) { viewModel::refreshHome }
     val onSetLanguage = remember(viewModel) { viewModel::setLanguage }
     val onSendWalletVerification = remember(viewModel) { viewModel::sendWalletVerification }
@@ -117,6 +123,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onBackFromFavorites = onBackFromFavorites,
                 onCheckApiHealth = onCheckApiHealth,
                 onShowAuthPrompt = onShowAuthPrompt,
+                onShowRegisterAuthPrompt = onShowRegisterAuthPrompt,
                 onRefreshHome = onRefreshHome,
                 onSetLanguage = onSetLanguage,
                 onSendWalletVerification = onSendWalletVerification,

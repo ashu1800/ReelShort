@@ -64,6 +64,7 @@ import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WalletInfo
 import com.reelshort.app.data.WithdrawalRecord
 import com.reelshort.app.data.WithdrawalSummary
+import com.reelshort.app.state.AuthMode
 import com.reelshort.app.ui.components.AvatarGradient
 import com.reelshort.app.ui.components.GoldOutlinedButton
 import com.reelshort.app.ui.components.LoginTextField
@@ -81,6 +82,7 @@ import com.reelshort.app.ui.format.accountContinueWatchingLimit
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.apiDiagnosticsText
 import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
+import com.reelshort.app.ui.format.guestAccountEntryAuthModes
 import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.smsVerificationSeconds
 import com.reelshort.app.ui.format.strings
@@ -120,6 +122,7 @@ internal fun AccountScreen(
     apiHealthStatus: ApiHealthStatus?,
     onCheckApiHealth: () -> Unit,
     onShowAuthPrompt: () -> Unit,
+    onShowRegisterAuthPrompt: () -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenWatchRecord: (WatchRecord) -> Unit,
     onSendWalletVerification: (SmsVerificationPurpose) -> Unit,
@@ -187,7 +190,11 @@ internal fun AccountScreen(
             }
         } else if (!isLoggedIn) {
             item {
-                GuestActionPanel(language = language, onShowAuthPrompt = onShowAuthPrompt)
+                GuestActionPanel(
+                    language = language,
+                    onShowAuthPrompt = onShowAuthPrompt,
+                    onShowRegisterAuthPrompt = onShowRegisterAuthPrompt,
+                )
             }
         }
 
@@ -1129,17 +1136,22 @@ private fun PrimaryWalletActionRow(
 }
 
 @Composable
-private fun GuestActionPanel(language: AppLanguage, onShowAuthPrompt: () -> Unit) {
+private fun GuestActionPanel(
+    language: AppLanguage,
+    onShowAuthPrompt: () -> Unit,
+    onShowRegisterAuthPrompt: () -> Unit,
+) {
     val copy = strings(language)
+    val actions = guestAccountEntryLabels(language).zip(guestAccountEntryAuthModes())
     AccountMenuGroup {
-        guestAccountEntryLabels(language).forEachIndexed { index, label ->
+        actions.forEachIndexed { index, (label, mode) ->
             AccountMenuRow(
                 icon = if (index == 0) Icons.Rounded.AccountCircle else Icons.Rounded.PlayArrow,
                 title = label,
                 subtitle = if (index == 0) copy.accountGuestSignInSubtitle else copy.accountGuestRegisterSubtitle,
-                onClick = onShowAuthPrompt,
+                onClick = if (mode == AuthMode.REGISTER) onShowRegisterAuthPrompt else onShowAuthPrompt,
             )
-            if (index < guestAccountEntryLabels(language).lastIndex) {
+            if (index < actions.lastIndex) {
                 AccountMenuDivider()
             }
         }
