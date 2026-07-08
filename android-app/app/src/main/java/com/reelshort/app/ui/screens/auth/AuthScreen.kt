@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.AppLanguage
+import com.reelshort.app.state.AuthMode
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.components.AccentLine
 import com.reelshort.app.ui.components.GoldOutlinedButton
@@ -70,10 +71,11 @@ internal fun LoginScreen(
                         state = state,
                         title = copy.authLoginTitle,
                         subtitle = copy.authLoginSubtitle,
-                        registerAsPrimary = false,
                         onLogin = onLogin,
                         onRegister = onRegister,
                         onSendVerification = onSendVerification,
+                        onShowRegister = {},
+                        onShowLogin = {},
                     )
                 }
             }
@@ -88,6 +90,8 @@ internal fun AuthBottomSheet(
     onLogin: (String, String, String, Boolean) -> Unit,
     onRegister: (String, String, String, String) -> Unit,
     onSendVerification: (String, String) -> Unit,
+    onShowRegister: () -> Unit,
+    onShowLogin: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -113,10 +117,11 @@ internal fun AuthBottomSheet(
                 } else {
                     copy.authBottomSheetAccountSubtitle
                 },
-                registerAsPrimary = true,
                 onLogin = onLogin,
                 onRegister = onRegister,
                 onSendVerification = onSendVerification,
+                onShowRegister = onShowRegister,
+                onShowLogin = onShowLogin,
                 onDismiss = onDismiss,
                 modifier = Modifier
                     .padding(horizontal = 22.dp, vertical = 20.dp)
@@ -140,17 +145,17 @@ private fun BrandLockup(language: AppLanguage) {
 
 /**
  * 统一的认证表单，复用全屏登录与底部弹窗两处此前重复的实现。
- * [registerAsPrimary] 控制注册按钮样式：全屏登录用 TextButton，底部弹窗用 OutlinedButton。
  */
 @Composable
 internal fun AuthForm(
     state: AppUiState,
     title: String,
     subtitle: String,
-    registerAsPrimary: Boolean,
     onLogin: (String, String, String, Boolean) -> Unit,
     onRegister: (String, String, String, String) -> Unit,
     onSendVerification: (String, String) -> Unit,
+    onShowRegister: () -> Unit,
+    onShowLogin: () -> Unit,
     onDismiss: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -175,6 +180,7 @@ internal fun AuthForm(
         }
     }
 
+    val isLoginMode = state.authMode == AuthMode.LOGIN
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -205,7 +211,7 @@ internal fun AuthForm(
             enabled = !state.isLoading,
             isPassword = true,
         )
-        if (!registerAsPrimary) {
+        if (isLoginMode) {
             RememberPasswordRow(
                 checked = rememberPassword,
                 onCheckedChange = { rememberPassword = it },
@@ -213,59 +219,71 @@ internal fun AuthForm(
                 language = state.language,
             )
         }
-        if (!registerAsPrimary) {
+        if (isLoginMode) {
             PrimaryActionButton(
                 text = if (state.isLoading) copy.authLoginLoading else copy.authLoginAction,
                 enabled = !state.isLoading && phoneNumber.isNotBlank() && password.isNotBlank(),
                 onClick = { onLogin(countryCode, phoneNumber, password, rememberPassword) },
             )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            LoginTextField(
-                value = verificationCode,
-                onValueChange = { verificationCode = it.filter(Char::isDigit).take(6) },
-                label = copy.authVerificationCodeLabel,
+            TextButton(
+                onClick = onShowRegister,
                 enabled = !state.isLoading,
-                modifier = Modifier.weight(1f),
-            )
-            GoldOutlinedButton(
-                text = if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
-                enabled = authSmsSendEnabled(state.isLoading, smsCountdown, phoneNumber, password),
-                onClick = {
-                    onSendVerification(countryCode, phoneNumber)
-                },
-                contentColor = PrimaryGold,
-            )
-        }
-        if (registerAsPrimary) {
-            GoldOutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(copy.authRegisterAction, color = PrimaryGold)
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                LoginTextField(
+                    value = verificationCode,
+                    onValueChange = { verificationCode = it.filter(Char::isDigit).take(6) },
+                    label = copy.authVerificationCodeLabel,
+                    enabled = !state.isLoading,
+                    modifier = Modifier.weight(1f),
+                )
+                GoldOutlinedButton(
+                    text = if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
+                    enabled = authSmsSendEnabled(state.isLoading, smsCountdown, phoneNumber, password),
+                    onClick = {
+                        onSendVerification(countryCode, phoneNumber)
+                    },
+                    contentColor = PrimaryGold,
+                )
+            }
+            PrimaryActionButton(
                 text = copy.authRegisterAction,
                 enabled = authRegisterEnabled(state.isLoading, phoneNumber, password, verificationCode),
                 onClick = { onRegister(countryCode, phoneNumber, password, verificationCode) },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                contentColor = PrimaryGold,
             )
-            PrimaryActionButton(
-                text = if (state.isLoading) copy.authLoginLoading else copy.authLoginAction,
-                enabled = !state.isLoading && phoneNumber.isNotBlank() && password.isNotBlank(),
-                onClick = { onLogin(countryCode, phoneNumber, password, rememberPassword) },
-            )
-            RememberPasswordRow(
-                checked = rememberPassword,
-                onCheckedChange = { rememberPassword = it },
-                enabled = !state.isLoading,
-                language = state.language,
-            )
-            Spacer(Modifier.height(72.dp))
-        } else {
             TextButton(
-                onClick = { onRegister(countryCode, phoneNumber, password, verificationCode) },
-                enabled = authRegisterEnabled(state.isLoading, phoneNumber, password, verificationCode),
+                onClick = onShowLogin,
+                enabled = !state.isLoading,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(copy.authRegisterSecondary, color = PrimaryGold)
+                Text(copy.authLoginAction, color = PrimaryGold)
             }
         }
+    }
+}
+
+internal fun authFormControls(mode: AuthMode, language: AppLanguage): List<String> {
+    val copy = strings(language)
+    return when (mode) {
+        AuthMode.LOGIN -> listOf(
+            "phone",
+            "password",
+            "rememberPassword",
+            "primary:${copy.authLoginAction}",
+            "secondary:${copy.authRegisterAction}",
+        )
+        AuthMode.REGISTER -> listOf(
+            "phone",
+            "password",
+            "verificationCode",
+            "sendCode",
+            "primary:${copy.authRegisterAction}",
+            "secondary:${copy.authLoginAction}",
+        )
     }
 }
 

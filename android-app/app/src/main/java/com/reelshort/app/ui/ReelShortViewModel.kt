@@ -154,6 +154,10 @@ class ReelShortViewModel(
 
     fun showAuthPrompt() = controller.showAuthPrompt()
 
+    fun showRegisterAuthMode() = controller.showRegisterAuthMode()
+
+    fun showLoginAuthMode() = controller.showLoginAuthMode()
+
     fun dismissAuthPrompt() = controller.dismissAuthPrompt()
 
     fun clearError() = controller.clearError()

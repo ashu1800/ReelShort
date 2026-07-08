@@ -36,6 +36,8 @@ import com.reelshort.app.ui.format.playerStartsAutomatically
 import com.reelshort.app.ui.format.playerSecondaryActionLabels
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.data.AppLanguage
+import com.reelshort.app.state.AuthMode
+import com.reelshort.app.ui.screens.auth.authFormControls
 
 import com.reelshort.app.state.AppScreen
 import kotlin.test.Test
@@ -192,6 +194,18 @@ class VisualTextContractTest {
     @Test
     fun authFormProvidesLocalizedRememberPasswordEntryInEnglish() {
         assertEquals("Remember password", rememberPasswordLabel(AppLanguage.ENGLISH))
+    }
+
+    @Test
+    fun authFormControlsAreModeSpecific() {
+        assertEquals(
+            listOf("phone", "password", "rememberPassword", "primary:Sign in", "secondary:Create account"),
+            authFormControls(AuthMode.LOGIN, AppLanguage.ENGLISH),
+        )
+        assertEquals(
+            listOf("phone", "password", "verificationCode", "sendCode", "primary:Create account", "secondary:Sign in"),
+            authFormControls(AuthMode.REGISTER, AppLanguage.ENGLISH),
+        )
     }
 
     @Test
