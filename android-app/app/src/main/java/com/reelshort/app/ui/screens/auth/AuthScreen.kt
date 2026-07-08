@@ -8,8 +8,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,7 +43,6 @@ import com.reelshort.app.ui.format.authRegisterEnabled
 import com.reelshort.app.ui.format.authSmsSendEnabled
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.supportedPhoneCountryCodes
-import com.reelshort.app.ui.format.smsVerificationSeconds
 import com.reelshort.app.ui.theme.AppBackground
 import com.reelshort.app.ui.theme.PrimaryGold
 import com.reelshort.app.ui.theme.TextSecondary
@@ -115,7 +118,11 @@ internal fun AuthBottomSheet(
                 onRegister = onRegister,
                 onSendVerification = onSendVerification,
                 onDismiss = onDismiss,
-                modifier = Modifier.padding(horizontal = 22.dp, vertical = 20.dp),
+                modifier = Modifier
+                    .padding(horizontal = 22.dp, vertical = 20.dp)
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .verticalScroll(rememberScrollState()),
             )
         }
     }
@@ -155,6 +162,12 @@ internal fun AuthForm(
     var rememberPassword by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.rememberPassword == true) }
     var smsCountdown by remember { mutableStateOf(0) }
 
+    LaunchedEffect(state.authSmsCountdownTrigger) {
+        if (state.authSmsCountdownTrigger > 0) {
+            smsCountdown = state.authSmsCountdownSeconds
+        }
+    }
+
     LaunchedEffect(smsCountdown) {
         if (smsCountdown > 0) {
             delay(1_000)
@@ -192,22 +205,26 @@ internal fun AuthForm(
             enabled = !state.isLoading,
             isPassword = true,
         )
-        RememberPasswordRow(
-            checked = rememberPassword,
-            onCheckedChange = { rememberPassword = it },
-            enabled = !state.isLoading,
-            language = state.language,
-        )
-        PrimaryActionButton(
-            text = if (state.isLoading) copy.authLoginLoading else copy.authLoginAction,
-            enabled = !state.isLoading && phoneNumber.isNotBlank() && password.isNotBlank(),
-            onClick = { onLogin(countryCode, phoneNumber, password, rememberPassword) },
-        )
+        if (!registerAsPrimary) {
+            RememberPasswordRow(
+                checked = rememberPassword,
+                onCheckedChange = { rememberPassword = it },
+                enabled = !state.isLoading,
+                language = state.language,
+            )
+        }
+        if (!registerAsPrimary) {
+            PrimaryActionButton(
+                text = if (state.isLoading) copy.authLoginLoading else copy.authLoginAction,
+                enabled = !state.isLoading && phoneNumber.isNotBlank() && password.isNotBlank(),
+                onClick = { onLogin(countryCode, phoneNumber, password, rememberPassword) },
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             LoginTextField(
                 value = verificationCode,
                 onValueChange = { verificationCode = it.filter(Char::isDigit).take(6) },
-                label = "000000",
+                label = copy.authVerificationCodeLabel,
                 enabled = !state.isLoading,
                 modifier = Modifier.weight(1f),
             )
@@ -215,20 +232,31 @@ internal fun AuthForm(
                 text = if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
                 enabled = authSmsSendEnabled(state.isLoading, smsCountdown, phoneNumber, password),
                 onClick = {
-                    smsCountdown = smsVerificationSeconds()
                     onSendVerification(countryCode, phoneNumber)
                 },
                 contentColor = PrimaryGold,
             )
         }
         if (registerAsPrimary) {
-            com.reelshort.app.ui.components.GoldOutlinedButton(
+            GoldOutlinedButton(
                 text = copy.authRegisterAction,
                 enabled = authRegisterEnabled(state.isLoading, phoneNumber, password, verificationCode),
                 onClick = { onRegister(countryCode, phoneNumber, password, verificationCode) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
                 contentColor = PrimaryGold,
             )
+            PrimaryActionButton(
+                text = if (state.isLoading) copy.authLoginLoading else copy.authLoginAction,
+                enabled = !state.isLoading && phoneNumber.isNotBlank() && password.isNotBlank(),
+                onClick = { onLogin(countryCode, phoneNumber, password, rememberPassword) },
+            )
+            RememberPasswordRow(
+                checked = rememberPassword,
+                onCheckedChange = { rememberPassword = it },
+                enabled = !state.isLoading,
+                language = state.language,
+            )
+            Spacer(Modifier.height(72.dp))
         } else {
             TextButton(
                 onClick = { onRegister(countryCode, phoneNumber, password, verificationCode) },

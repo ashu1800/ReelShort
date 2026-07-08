@@ -99,6 +99,33 @@ class PhoneAuthCommercializationControllerTests {
 	}
 
 	@Test
+	void publicRegisterWithWrongVerificationCodeReturnsSpecificMessage() throws Exception {
+		mockMvc.perform(post("/api/app/auth/sms/send")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "purpose": "PUBLIC_REGISTER",
+						  "countryCode": "+1",
+						  "phoneNumber": "4155550112"
+						}
+						"""))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(post("/api/app/auth/register")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "countryCode": "+1",
+						  "phoneNumber": "4155550112",
+						  "password": "Password123",
+						  "verificationCode": "123456"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("invalid verification code"));
+	}
+
+	@Test
 	void phoneAuthRejectsMainlandChinaNumbersAndOldUsernameLoginShape() throws Exception {
 		mockMvc.perform(post("/api/app/auth/sms/send")
 				.contentType(MediaType.APPLICATION_JSON)

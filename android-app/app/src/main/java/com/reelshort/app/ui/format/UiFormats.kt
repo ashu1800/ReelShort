@@ -198,6 +198,15 @@ internal fun supportedPhoneCountryCodes(): List<PhoneCountryCode> =
 
 internal fun smsVerificationSeconds(): Int = 120
 
+internal fun authVerificationCodeLabel(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): String =
+    strings(language).authVerificationCodeLabel
+
+internal fun authSmsCountdownStartsAfterSuccessfulSend(): Boolean = true
+
+internal fun authBottomSheetAvoidsNavigationBar(): Boolean = true
+
+internal fun authBottomSheetPrioritizesRegisterAction(): Boolean = true
+
 internal fun authSmsSendEnabled(
     isLoading: Boolean,
     smsCountdown: Int,

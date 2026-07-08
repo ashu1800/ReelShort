@@ -19,12 +19,15 @@ import com.reelshort.app.ui.theme.TextPrimary
 import androidx.compose.ui.graphics.Color
 
 @Composable
-internal fun PrimaryActionButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+internal fun PrimaryActionButton(
+    text: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+) {
     Button(
         onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(52.dp),
+        modifier = modifier.height(52.dp),
         enabled = enabled,
         shape = MaterialTheme.shapes.medium,
         colors = ButtonDefaults.buttonColors(
