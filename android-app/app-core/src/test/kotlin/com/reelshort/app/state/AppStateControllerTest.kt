@@ -47,10 +47,47 @@ class AppStateControllerTest {
         val state = controller.state.value
 
         assertEquals(AppScreen.HOME, state.screen)
+        assertEquals(AuthMode.LOGIN, state.authMode)
         assertFalse(state.isLoading)
         assertNull(state.session)
         assertNull(state.errorMessage)
         assertFalse(state.authPromptVisible)
+    }
+
+    @Test
+    fun showAuthPromptKeepsLoginModeByDefault() = runTest {
+        val controller = AppStateController(FakeAppDataSource())
+
+        controller.showAuthPrompt()
+
+        val state = controller.state.value
+        assertTrue(state.authPromptVisible)
+        assertEquals(AuthMode.LOGIN, state.authMode)
+    }
+
+    @Test
+    fun authModeCanSwitchToRegisterAndBackToLogin() = runTest {
+        val controller = AppStateController(FakeAppDataSource())
+
+        controller.showRegisterAuthMode()
+        assertEquals(AuthMode.REGISTER, controller.state.value.authMode)
+
+        controller.showLoginAuthMode()
+        assertEquals(AuthMode.LOGIN, controller.state.value.authMode)
+    }
+
+    @Test
+    fun dismissAuthPromptResetsAuthModeToLoginBeforeNextOpen() = runTest {
+        val controller = AppStateController(FakeAppDataSource())
+
+        controller.showRegisterAuthMode()
+        controller.showAuthPrompt()
+        controller.dismissAuthPrompt()
+        controller.showAuthPrompt()
+
+        val state = controller.state.value
+        assertTrue(state.authPromptVisible)
+        assertEquals(AuthMode.LOGIN, state.authMode)
     }
 
     @Test

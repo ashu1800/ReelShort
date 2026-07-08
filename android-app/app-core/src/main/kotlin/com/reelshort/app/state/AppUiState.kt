@@ -27,9 +27,15 @@ enum class AppScreen {
     FAVORITES,
 }
 
+enum class AuthMode {
+    LOGIN,
+    REGISTER,
+}
+
 data class AppUiState(
     val screen: AppScreen = AppScreen.HOME,
     val language: AppLanguage = AppLanguage.DEFAULT,
+    val authMode: AuthMode = AuthMode.LOGIN,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val apiBaseUrl: String = "",
