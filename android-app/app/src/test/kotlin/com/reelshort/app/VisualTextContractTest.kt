@@ -12,6 +12,7 @@ import com.reelshort.app.ui.format.accountContinueWatchingRowsAreClickable
 import com.reelshort.app.ui.format.accountContinueWatchingUsesPosterCards
 import com.reelshort.app.ui.format.accountDetailSheetTitle
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
+import com.reelshort.app.ui.format.appBrandName
 import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.authPromptTitle
 import com.reelshort.app.ui.format.authBottomSheetAvoidsNavigationBar
@@ -48,6 +49,15 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class VisualTextContractTest {
+
+    @Test
+    fun appUsesShortLinkAsVisibleBrandName() {
+        assertEquals("ShortLink", appBrandName())
+        assertEquals("ShortLink user", strings(AppLanguage.ENGLISH).accountUserFallback)
+        assertEquals("Signed in · ShortLink", strings(AppLanguage.ENGLISH).accountLoggedInStatus)
+        assertEquals("ShortLink 用戶", strings(AppLanguage.TRADITIONAL_CHINESE).accountUserFallback)
+        assertEquals("已登入 · ShortLink", strings(AppLanguage.TRADITIONAL_CHINESE).accountLoggedInStatus)
+    }
 
     @Test
     fun bottomNavigationUsesReadableLabels() {

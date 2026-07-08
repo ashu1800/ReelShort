@@ -43,6 +43,7 @@ import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.format.authRegisterEnabled
 import com.reelshort.app.ui.format.authSmsSendEnabled
 import com.reelshort.app.ui.format.authSheetCopy
+import com.reelshort.app.ui.format.appBrandName
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.supportedPhoneCountryCodes
 import com.reelshort.app.ui.theme.AppBackground
@@ -138,7 +139,7 @@ internal fun AuthBottomSheet(
 private fun BrandLockup(language: AppLanguage) {
     val copy = strings(language)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("ReelShort", style = MaterialTheme.typography.displaySmall)
+        Text(appBrandName(), style = MaterialTheme.typography.displaySmall)
         Text(copy.authBrandSubtitle, style = MaterialTheme.typography.titleMedium, color = TextSecondary)
         AccentLine()
     }
