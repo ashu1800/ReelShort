@@ -4,6 +4,7 @@ import androidx.media3.common.C
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.state.AuthMode
 
 internal fun String?.coverUrlOrNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
@@ -168,6 +169,9 @@ internal fun guestAccountEntryLabels(language: AppLanguage = AppLanguage.TRADITI
     return listOf(copy.accountGuestSignIn, copy.accountGuestRegister)
 }
 
+internal fun guestAccountEntryAuthModes(): List<AuthMode> =
+    listOf(AuthMode.LOGIN, AuthMode.REGISTER)
+
 internal fun authPromptTitle(
     hasPendingPlayback: Boolean,
     language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
@@ -205,7 +209,36 @@ internal fun authSmsCountdownStartsAfterSuccessfulSend(): Boolean = true
 
 internal fun authBottomSheetAvoidsNavigationBar(): Boolean = true
 
-internal fun authBottomSheetPrioritizesRegisterAction(): Boolean = true
+internal fun authSinglePrimaryAction(): Boolean = true
+
+internal data class AuthSheetCopy(
+    val title: String,
+    val subtitle: String,
+    val primaryAction: String,
+    val secondaryAction: String,
+)
+
+internal fun authSheetCopy(
+    mode: AuthMode,
+    hasPendingPlayback: Boolean,
+    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+): AuthSheetCopy {
+    val copy = strings(language)
+    return when (mode) {
+        AuthMode.LOGIN -> AuthSheetCopy(
+            title = authPromptTitle(hasPendingPlayback, language),
+            subtitle = if (hasPendingPlayback) copy.authBottomSheetPlaybackSubtitle else copy.authBottomSheetAccountSubtitle,
+            primaryAction = copy.authLoginAction,
+            secondaryAction = copy.authRegisterSecondary,
+        )
+        AuthMode.REGISTER -> AuthSheetCopy(
+            title = copy.authRegisterTitle,
+            subtitle = copy.authRegisterSubtitle,
+            primaryAction = copy.authRegisterAction,
+            secondaryAction = copy.authLoginSecondary,
+        )
+    }
+}
 
 internal fun authSmsSendEnabled(
     isLoading: Boolean,

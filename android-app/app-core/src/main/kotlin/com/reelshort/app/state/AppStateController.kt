@@ -922,11 +922,19 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     fun showAuthPrompt() {
-        mutableState.update { it.copy(authPromptVisible = true, errorMessage = null) }
+        mutableState.update { it.copy(authPromptVisible = true) }
+    }
+
+    fun showRegisterAuthMode() {
+        mutableState.update { it.copy(authMode = AuthMode.REGISTER) }
+    }
+
+    fun showLoginAuthMode() {
+        mutableState.update { it.copy(authMode = AuthMode.LOGIN) }
     }
 
     fun dismissAuthPrompt() {
-        mutableState.update { it.copy(authPromptVisible = false, pendingPlaybackEpisode = null) }
+        mutableState.update { it.copy(authPromptVisible = false, pendingPlaybackEpisode = null, authMode = AuthMode.LOGIN) }
     }
 
     suspend fun checkApiHealth() {

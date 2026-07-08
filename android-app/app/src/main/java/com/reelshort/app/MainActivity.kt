@@ -71,6 +71,12 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onBackFromFavorites = remember(viewModel) { viewModel::backFromFavorites }
     val onCheckApiHealth = remember(viewModel) { viewModel::checkApiHealth }
     val onShowAuthPrompt = remember(viewModel) { viewModel::showAuthPrompt }
+    val onShowRegisterAuthPrompt = remember(viewModel) {
+        {
+            viewModel.showRegisterAuthMode()
+            viewModel.showAuthPrompt()
+        }
+    }
     val onRefreshHome = remember(viewModel) { viewModel::refreshHome }
     val onSetLanguage = remember(viewModel) { viewModel::setLanguage }
     val onSendWalletVerification = remember(viewModel) { viewModel::sendWalletVerification }
@@ -93,6 +99,8 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onRegister = remember(viewModel) { { c: String, phone: String, p: String, code: String -> viewModel.register(c, phone, p, code) } }
     val onSendAuthSms = remember(viewModel) { { c: String, phone: String -> viewModel.sendAuthSms(c, phone) } }
     val onDismissAuthPrompt = remember(viewModel) { viewModel::dismissAuthPrompt }
+    val onShowRegisterAuthMode = remember(viewModel) { viewModel::showRegisterAuthMode }
+    val onShowLoginAuthMode = remember(viewModel) { viewModel::showLoginAuthMode }
     val onErrorDismiss = remember(viewModel) { viewModel::clearError }
 
     ReelShortTheme {
@@ -115,6 +123,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onBackFromFavorites = onBackFromFavorites,
                 onCheckApiHealth = onCheckApiHealth,
                 onShowAuthPrompt = onShowAuthPrompt,
+                onShowRegisterAuthPrompt = onShowRegisterAuthPrompt,
                 onRefreshHome = onRefreshHome,
                 onSetLanguage = onSetLanguage,
                 onSendWalletVerification = onSendWalletVerification,
@@ -132,6 +141,8 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onLogin = onLogin,
                 onRegister = onRegister,
                 onSendVerification = onSendAuthSms,
+                onShowRegister = onShowRegisterAuthMode,
+                onShowLogin = onShowLoginAuthMode,
                 onDismiss = onDismissAuthPrompt,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
