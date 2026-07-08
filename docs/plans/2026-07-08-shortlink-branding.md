@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 将 Android App 用户可见品牌改为 `ShortLink`，并接入一套专属 adaptive launcher icon。
+**Goal:** 将 Android App 用户可见品牌改为 `ShortLink`，并接入一套短视频辨识优先的专属 adaptive launcher icon。
 
-**Architecture:** 用户可见品牌集中通过 Android resource 和 Compose 文案 helper 输出；代码包名和 API 命名保持稳定。Launcher icon 使用 Android vector/adaptive icon 资源，避免外部图片依赖并保持构建可重复。
+**Architecture:** 用户可见品牌集中通过 Android resource 和 Compose 文案 helper 输出；代码包名和 API 命名保持稳定。Launcher icon 使用 Android vector/adaptive icon 资源，以竖屏视频卡和播放三角作为主识别，以小型链环作为 `ShortLink` 记忆点，避免外部图片依赖并保持构建可重复。
 
 **Tech Stack:** Android XML resources, Kotlin, Jetpack Compose, Gradle, Android adaptive icons
 
@@ -51,12 +51,12 @@
 - Modify: `AGENTS.md`
 
 **Step 1: Write the failing test**
-- No JVM unit test is useful for Android resource merge here; use Android resource compilation as the failing/passing contract.
+- Add a resource contract test that launcher foreground contains `vertical_video_card`、`play_triangle` 和 `link_badge` semantic path names.
 
 **Step 2: Implement resource wiring**
 - Set `android:icon="@mipmap/ic_launcher"` and `android:roundIcon="@mipmap/ic_launcher_round"`.
 - Add adaptive icon XML files.
-- Add vector foreground/background resources.
+- Add vector foreground/background resources with a short-video-first visual metaphor.
 
 **Step 3: Run verification**
 - Run: `.\gradlew.bat :app:assembleDebug --no-daemon`

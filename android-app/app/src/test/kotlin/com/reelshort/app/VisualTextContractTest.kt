@@ -44,6 +44,8 @@ import com.reelshort.app.state.AuthMode
 import com.reelshort.app.ui.screens.auth.authFormControls
 
 import com.reelshort.app.state.AppScreen
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -57,6 +59,19 @@ class VisualTextContractTest {
         assertEquals("Signed in · ShortLink", strings(AppLanguage.ENGLISH).accountLoggedInStatus)
         assertEquals("ShortLink 用戶", strings(AppLanguage.TRADITIONAL_CHINESE).accountUserFallback)
         assertEquals("已登入 · ShortLink", strings(AppLanguage.TRADITIONAL_CHINESE).accountLoggedInStatus)
+    }
+
+    @Test
+    fun launcherIconUsesShortVideoFirstMetaphor() {
+        val foreground = readSourceFile(
+            "src/main/res/drawable/ic_launcher_foreground.xml",
+            "app/src/main/res/drawable/ic_launcher_foreground.xml",
+            "android-app/app/src/main/res/drawable/ic_launcher_foreground.xml",
+        )
+
+        assertTrue(foreground.contains("vertical_video_card"))
+        assertTrue(foreground.contains("play_triangle"))
+        assertTrue(foreground.contains("link_badge"))
     }
 
     @Test
@@ -346,5 +361,18 @@ class VisualTextContractTest {
     fun playerSecondaryActionsAndSharedLoadingCopyAreLocalizedForEnglish() {
         assertEquals(listOf("Refresh stream"), playerSecondaryActionLabels(AppLanguage.ENGLISH))
         assertEquals("Loading", strings(AppLanguage.ENGLISH).loadingDialogTitle)
+    }
+
+    private fun readSourceFile(vararg candidates: String): String {
+        val roots = generateSequence(Path.of(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
+        roots.forEach { root ->
+            candidates.forEach { candidate ->
+                val path = root.resolve(candidate)
+                if (Files.exists(path)) {
+                    return String(Files.readAllBytes(path))
+                }
+            }
+        }
+        error("Could not find source file: ${candidates.joinToString()}")
     }
 }
