@@ -43,7 +43,14 @@ public class PointAccount {
 	}
 
 	public void add(int amount) {
-		this.balance += amount;
+		long adjustedBalance = (long) this.balance + amount;
+		if (adjustedBalance > Integer.MAX_VALUE) {
+			throw new IllegalStateException("point balance overflow");
+		}
+		if (adjustedBalance < this.frozenPoints) {
+			throw new IllegalStateException("point balance below frozen points");
+		}
+		this.balance = (int) adjustedBalance;
 		this.updatedAt = OffsetDateTime.now();
 	}
 
@@ -60,7 +67,11 @@ public class PointAccount {
 		if (!canUseAvailable(amount)) {
 			throw new IllegalStateException("insufficient available point balance");
 		}
-		this.frozenPoints += amount;
+		long adjustedFrozenPoints = (long) this.frozenPoints + amount;
+		if (adjustedFrozenPoints > this.balance) {
+			throw new IllegalStateException("invalid frozen point amount");
+		}
+		this.frozenPoints = (int) adjustedFrozenPoints;
 		this.updatedAt = OffsetDateTime.now();
 	}
 

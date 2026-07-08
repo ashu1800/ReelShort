@@ -79,11 +79,16 @@ public class WithdrawalService {
 			}
 			UserWallet wallet = userWalletRepository.findByUserId(userId)
 					.orElseThrow(() -> new AdminException(400, "wallet required"));
-			PointAccount account = accountEntity(userId);
+			PointAccount account = accountEntityForUpdate(userId);
 			if (!account.canUseAvailable(pointAmount)) {
 				throw new AdminException(400, "insufficient available point balance");
 			}
-			account.freeze(pointAmount);
+			try {
+				account.freeze(pointAmount);
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(400, exception.getMessage());
+			}
 			pointAccountRepository.save(account);
 			BigDecimal usdtPerPoint = systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT);
 			WithdrawalRequest request = WithdrawalRequest.create(userId, pointAmount, usdtPerPoint,
@@ -94,32 +99,52 @@ public class WithdrawalService {
 
 	@Transactional
 	public WithdrawalResponse approve(UUID withdrawalId, String txHash, String note, String adminUsername) {
-		WithdrawalRequest request = withdrawal(withdrawalId);
+		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
 		return userActionLocks.withUserLock(request.userId(), () -> {
 			if (request.status() != WithdrawalStatus.PENDING) {
 				throw new AdminException(400, "withdrawal is not pending");
 			}
-			PointAccount account = accountEntity(request.userId());
-			account.deductFrozen(request.pointAmount());
+			PointAccount account = accountEntityForUpdate(request.userId());
+			try {
+				account.deductFrozen(request.pointAmount());
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(400, exception.getMessage());
+			}
 			pointAccountRepository.save(account);
 			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(), request.pointAmount(),
 					account.balance(), request.id().toString()));
-			request.approve(txHash.trim(), note == null ? "" : note.trim(), adminUsername);
+			try {
+				request.approve(txHash.trim(), note == null ? "" : note.trim(), adminUsername);
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(400, exception.getMessage());
+			}
 			return adminResponse(withdrawalRequestRepository.save(request));
 		});
 	}
 
 	@Transactional
 	public WithdrawalResponse reject(UUID withdrawalId, String reason, String adminUsername) {
-		WithdrawalRequest request = withdrawal(withdrawalId);
+		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
 		return userActionLocks.withUserLock(request.userId(), () -> {
 			if (request.status() != WithdrawalStatus.PENDING) {
 				throw new AdminException(400, "withdrawal is not pending");
 			}
-			PointAccount account = accountEntity(request.userId());
-			account.releaseFrozen(request.pointAmount());
+			PointAccount account = accountEntityForUpdate(request.userId());
+			try {
+				account.releaseFrozen(request.pointAmount());
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(400, exception.getMessage());
+			}
 			pointAccountRepository.save(account);
-			request.reject(reason.trim(), adminUsername);
+			try {
+				request.reject(reason.trim(), adminUsername);
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(400, exception.getMessage());
+			}
 			return adminResponse(withdrawalRequestRepository.save(request));
 		});
 	}
@@ -141,6 +166,16 @@ public class WithdrawalService {
 
 	private PointAccount accountEntity(UUID userId) {
 		return pointAccountRepository.findByUserId(userId)
+				.orElseGet(() -> pointAccountRepository.saveAndFlush(PointAccount.create(userId)));
+	}
+
+	private WithdrawalRequest withdrawalForUpdate(UUID withdrawalId) {
+		return withdrawalRequestRepository.findByIdForUpdate(withdrawalId)
+				.orElseThrow(() -> new AdminException(404, "withdrawal not found"));
+	}
+
+	private PointAccount accountEntityForUpdate(UUID userId) {
+		return pointAccountRepository.findByUserIdForUpdate(userId)
 				.orElseGet(() -> pointAccountRepository.saveAndFlush(PointAccount.create(userId)));
 	}
 }

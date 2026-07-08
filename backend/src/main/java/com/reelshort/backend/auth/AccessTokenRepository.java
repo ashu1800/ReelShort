@@ -16,6 +16,15 @@ public interface AccessTokenRepository extends JpaRepository<AccessToken, UUID> 
 
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query("""
+			update AccessToken token
+			   set token.revokedAt = :revokedAt
+			 where token.user.id = :userId
+			   and token.revokedAt is null
+			""")
+	int revokeAllActiveByUserId(UUID userId, OffsetDateTime revokedAt);
+
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("""
 			delete from AccessToken token
 			where token.expiresAt < :cutoff
 			   or token.revokedAt < :cutoff

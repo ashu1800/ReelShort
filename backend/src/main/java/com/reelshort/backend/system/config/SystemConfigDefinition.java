@@ -38,6 +38,11 @@ public record SystemConfigDefinition(
 				if (parsed.compareTo(BigDecimal.ZERO) < 0) {
 					throw new AdminException(400, "bad request");
 				}
+				if ("withdraw.usdt-per-point".equals(key)) {
+					if (parsed.scale() > 8 || parsed.compareTo(BigDecimal.valueOf(100)) > 0) {
+						throw new AdminException(400, "bad request");
+					}
+				}
 				return parsed.stripTrailingZeros().toPlainString();
 			}
 			catch (NumberFormatException exception) {

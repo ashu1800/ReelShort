@@ -15,6 +15,8 @@ import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.authPromptTitle
 import com.reelshort.app.ui.format.authRegisterEnabled
+import com.reelshort.app.ui.format.authSmsSendEnabled
+import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
 import com.reelshort.app.ui.format.rememberPasswordLabel
 import com.reelshort.app.ui.format.supportedPhoneCountryCodes
 import com.reelshort.app.ui.format.smsVerificationSeconds
@@ -194,6 +196,19 @@ class VisualTextContractTest {
         assertEquals(false, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = "12345"))
         assertEquals(true, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = "000000"))
         assertEquals(false, authRegisterEnabled(isLoading = true, phoneNumber = "4155550101", password = "Password123", verificationCode = "000000"))
+    }
+
+    @Test
+    fun phoneRegisterSmsRequiresPhoneAndValidPassword() {
+        assertEquals(false, authSmsSendEnabled(isLoading = false, smsCountdown = 0, phoneNumber = "", password = "Password123"))
+        assertEquals(false, authSmsSendEnabled(isLoading = false, smsCountdown = 0, phoneNumber = "4155550101", password = "short"))
+        assertEquals(false, authSmsSendEnabled(isLoading = false, smsCountdown = 120, phoneNumber = "4155550101", password = "Password123"))
+        assertEquals(true, authSmsSendEnabled(isLoading = false, smsCountdown = 0, phoneNumber = "4155550101", password = "Password123"))
+    }
+
+    @Test
+    fun commercialAccountSheetsKeepFormOpenAfterSubmit() {
+        assertEquals(false, commercialSheetAutoDismissesAfterSubmit())
     }
 
     @Test

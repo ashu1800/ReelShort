@@ -95,8 +95,16 @@ public class PointsService {
 			if (!senderAccount.canUseAvailable(pointAmount)) {
 				throw new AdminException(400, "insufficient available point balance");
 			}
+			if (!recipientPointAccount.canAdjust(pointAmount)) {
+				throw new AdminException(400, "point balance overflow");
+			}
 			senderAccount.deductAvailable(pointAmount);
-			recipientPointAccount.add(pointAmount);
+			try {
+				recipientPointAccount.add(pointAmount);
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(400, exception.getMessage());
+			}
 			pointAccountRepository.save(senderAccount);
 			pointAccountRepository.save(recipientPointAccount);
 			PointTransfer transfer = pointTransferRepository.save(PointTransfer.create(sender.id(), recipient.id(),

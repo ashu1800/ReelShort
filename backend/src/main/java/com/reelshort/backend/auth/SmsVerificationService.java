@@ -18,6 +18,9 @@ public class SmsVerificationService {
 
 	@Transactional
 	public SmsSendResponse send(SmsVerificationPurpose purpose, PhoneIdentity phone) {
+		OffsetDateTime now = OffsetDateTime.now();
+		smsVerificationCodeRepository.deleteStaleCodes(phone.e164(), purpose, now);
+		smsVerificationCodeRepository.invalidateActiveCodes(phone.e164(), purpose, now);
 		smsVerificationCodeRepository.save(SmsVerificationCode.create(purpose, phone));
 		return new SmsSendResponse(EXPIRES_IN_SECONDS);
 	}
@@ -25,7 +28,9 @@ public class SmsVerificationService {
 	@Transactional
 	public void verifyAndConsume(SmsVerificationPurpose purpose, PhoneIdentity phone, String code) {
 		SmsVerificationCode verificationCode = smsVerificationCodeRepository
-				.findFirstByPhoneE164AndPurposeOrderByCreatedAtDesc(phone.e164(), purpose)
+				.findByPhoneE164AndPurposeAndUsedAtIsNullOrderByCreatedAtDesc(phone.e164(), purpose)
+				.stream()
+				.findFirst()
 				.orElseThrow(() -> new AuthException(400, "invalid verification code"));
 		OffsetDateTime now = OffsetDateTime.now();
 		if (!verificationCode.isUsable(code, now)) {

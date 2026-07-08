@@ -58,15 +58,15 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
 
-        controller.login("demo", "Password123")
+        controller.login("+1", "4155550101", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
-        assertEquals("demo", state.session?.username)
+        assertEquals("+14155550101", state.session?.username)
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
-        assertEquals(listOf("login:demo", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf("login:+1:4155550101", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -74,15 +74,15 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource(homeError = IllegalStateException("content provider returned 502"))
         val controller = AppStateController(dataSource)
 
-        controller.login("demo", "Password123")
+        controller.login("+1", "4155550101", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
-        assertEquals("demo", state.session?.username)
+        assertEquals("+14155550101", state.session?.username)
         assertEquals(emptyList(), state.homeShelf)
         assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
         assertFalse(state.isLoading)
-        assertEquals(listOf("login:demo", "home"), dataSource.calls)
+        assertEquals(listOf("login:+1:4155550101", "home"), dataSource.calls)
     }
 
     @Test
@@ -90,7 +90,7 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource(homeError = IllegalStateException("content provider returned 502"))
         val controller = AppStateController(dataSource)
 
-        controller.register("new-user", "Password123")
+        controller.register("+1", "4155550100", "Password123", "000000")
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
@@ -98,7 +98,7 @@ class AppStateControllerTest {
         assertEquals(emptyList(), state.homeShelf)
         assertEquals("Registration completed. Account access must be opened internally.", state.errorMessage)
         assertFalse(state.isLoading)
-        assertEquals(listOf("register:+1:new-user"), dataSource.calls)
+        assertEquals(listOf("register:+1:4155550100"), dataSource.calls)
     }
 
     @Test
@@ -106,7 +106,7 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource(loginError = IllegalStateException("bad credentials"))
         val controller = AppStateController(dataSource)
 
-        controller.login("demo", "wrong")
+        controller.login("+1", "4155550101", "wrong")
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
@@ -120,7 +120,7 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource(loginError = ApiClientException(401, null, "invalid username or password"))
         val controller = AppStateController(dataSource)
 
-        controller.login("demo", "wrong", rememberPassword = false)
+        controller.login("+1", "4155550101", "wrong", rememberPassword = false)
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
@@ -196,10 +196,16 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
 
-        controller.login("demo", "Password123", rememberPassword = true)
+        controller.login("+1", "4155550101", "Password123", rememberPassword = true)
 
         assertEquals(
-            SavedCredentials(username = "demo", password = "Password123", rememberPassword = true),
+            SavedCredentials(
+                username = "+14155550101",
+                countryCode = "+1",
+                phoneNumber = "4155550101",
+                password = "Password123",
+                rememberPassword = true,
+            ),
             dataSource.savedCredentials,
         )
         assertEquals(dataSource.savedCredentials, controller.state.value.savedCredentials)
@@ -248,7 +254,7 @@ class AppStateControllerTest {
         )
         val controller = AppStateController(dataSource)
 
-        controller.login("demo", "Password123", rememberPassword = false)
+        controller.login("+1", "4155550101", "Password123", rememberPassword = false)
 
         assertNull(dataSource.savedCredentials)
         assertNull(controller.state.value.savedCredentials)
@@ -720,15 +726,15 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.login("demo", "Password123")
+        controller.login("+1", "4155550101", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
-        assertEquals("demo", state.session?.username)
+        assertEquals("+14155550101", state.session?.username)
         assertFalse(state.authPromptVisible)
         assertNull(state.pendingPlaybackEpisode)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:+1:4155550101", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -746,15 +752,15 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.login("demo", "Password123")
+        controller.login("+1", "4155550101", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
-        assertEquals("demo", state.session?.username)
+        assertEquals("+14155550101", state.session?.username)
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals(90, state.playback.positionSeconds)
         assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:+1:4155550101", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -764,13 +770,13 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.login("demo", "Password123")
+        controller.login("+1", "4155550101", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:+1:4155550101", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -780,13 +786,13 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.login("demo", "Password123")
+        controller.login("+1", "4155550101", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(1, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:+1:4155550101", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -1339,7 +1345,7 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         assertFailsWith<CancellationException> {
-            controller.login("demo", "Password123")
+            controller.login("+1", "4155550101", "Password123")
         }
 
         val state = controller.state.value
@@ -1491,15 +1497,15 @@ class AppStateControllerTest {
 
         controller.openAccount()
         controller.showAuthPrompt()
-        controller.login("demo", "Password123")
+        controller.login("+1", "4155550101", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.ACCOUNT, state.screen)
-        assertEquals("demo", state.session?.username)
+        assertEquals("+14155550101", state.session?.username)
         assertFalse(state.authPromptVisible)
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
-        assertEquals(listOf("login:demo", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"), dataSource.calls)
+        assertEquals(listOf("login:+1:4155550101", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"), dataSource.calls)
     }
 
     @Test
@@ -1518,8 +1524,68 @@ class AppStateControllerTest {
 
         controller.sendPasswordChangeVerification()
 
-        assertEquals(listOf("sms:PASSWORD_CHANGE:+44:2075550101"), dataSource.calls)
+        assertEquals(listOf("password:sms"), dataSource.calls)
         assertEquals("Verification code sent. Use 000000 within 120 seconds.", controller.state.value.errorMessage)
+    }
+
+    @Test
+    fun changePasswordClearsSessionSavedCredentialsAndProtectedAccountSnapshot() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(
+                username = "+14155550101",
+                token = "token-demo",
+                tokenType = "Bearer",
+                phoneE164 = "+14155550101",
+            ),
+            savedCredentials = SavedCredentials(
+                username = "+14155550101",
+                countryCode = "+1",
+                phoneNumber = "4155550101",
+                password = "OldPassword123",
+                rememberPassword = true,
+            ),
+        )
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.loadAccountSnapshot()
+        dataSource.calls.clear()
+
+        controller.changePassword("OldPassword123", "NewPassword123", "000000")
+
+        val state = controller.state.value
+        assertNull(state.session)
+        assertNull(state.savedCredentials)
+        assertNull(dataSource.savedCredentials)
+        assertNull(state.pointAccount)
+        assertNull(state.wallet)
+        assertTrue(state.watchHistory.isEmpty())
+        assertEquals("Password changed. Sign in again with the new password.", state.errorMessage)
+        assertEquals(listOf("password:change", "clear"), dataSource.calls)
+    }
+
+    @Test
+    fun commercialAccountActionsRefreshSnapshotAndShowSuccessMessage() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(
+                username = "+14155550101",
+                token = "token-demo",
+                tokenType = "Bearer",
+                phoneE164 = "+14155550101",
+            ),
+        )
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+
+        controller.transferPoints("+442075550101", 5)
+
+        val state = controller.state.value
+        assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertEquals("Transfer submitted.", state.errorMessage)
+        assertEquals(
+            listOf("transfer:+442075550101:5", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"),
+            dataSource.calls,
+        )
     }
 
     @Test
@@ -1744,10 +1810,9 @@ class AppStateControllerTest {
         }
 
         override suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession {
-            val legacy = countryCode == "+1" && phoneNumber.any { !it.isDigit() }
-            calls += if (legacy) "login:$phoneNumber" else "login:$countryCode:$phoneNumber"
+            calls += "login:$countryCode:$phoneNumber"
             loginError?.let { throw it }
-            val username = if (legacy) phoneNumber else "$countryCode$phoneNumber"
+            val username = "$countryCode$phoneNumber"
             return AuthSession(username = username, token = "token-$username", tokenType = "Bearer")
         }
 
@@ -1767,6 +1832,11 @@ class AppStateControllerTest {
             phoneNumber: String,
         ): SmsSendResult {
             calls += "sms:${purpose.name}:$countryCode:$phoneNumber"
+            return SmsSendResult(120)
+        }
+
+        override suspend fun sendPasswordChangeVerification(): SmsSendResult {
+            calls += "password:sms"
             return SmsSendResult(120)
         }
 

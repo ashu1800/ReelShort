@@ -32,7 +32,7 @@ class PointAwardTransaction {
 		for (int stage : rewardStages) {
 			if (progressPercent >= stage && claimReward(userId, bookId, episodeNum, stage)) {
 				if (stagePoints > 0) {
-					account.add(stagePoints);
+					addPoints(account, stagePoints);
 					pointTransactionRepository.save(PointTransaction.watchReward(userId, stagePoints,
 							account.balance(), bookId, episodeNum, stage));
 				}
@@ -53,9 +53,9 @@ class PointAwardTransaction {
 	public PointAccount adjustByAdmin(UUID userId, int amount, String reason) {
 		PointAccount account = accountEntity(userId);
 		if (!account.canAdjust(amount)) {
-			throw new AdminException(400, "insufficient point balance");
+			throw new AdminException(400, amount > 0 ? "point balance overflow" : "insufficient point balance");
 		}
-		account.add(amount);
+		addPoints(account, amount);
 		pointTransactionRepository.save(PointTransaction.adminAdjustment(userId, amount, account.balance(), reason));
 		return pointAccountRepository.save(account);
 	}
@@ -63,9 +63,18 @@ class PointAwardTransaction {
 	@Transactional
 	public PointAccount creditRechargeOrder(UUID userId, String orderNo, int amount) {
 		PointAccount account = accountEntity(userId);
-		account.add(amount);
+		addPoints(account, amount);
 		pointTransactionRepository.save(PointTransaction.rechargeOrder(userId, amount, account.balance(), orderNo));
 		return pointAccountRepository.save(account);
+	}
+
+	private void addPoints(PointAccount account, int amount) {
+		try {
+			account.add(amount);
+		}
+		catch (IllegalStateException exception) {
+			throw new AdminException(400, exception.getMessage());
+		}
 	}
 
 	private boolean claimReward(UUID userId, String bookId, int episodeNum, int stage) {

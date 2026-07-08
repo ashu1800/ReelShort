@@ -25,3 +25,13 @@ http.interceptors.response.use(
     return Promise.reject(error)
   },
 )
+
+export function backendErrorMessage(error: unknown, fallback: string) {
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.message
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message.trim()
+    }
+  }
+  return fallback
+}

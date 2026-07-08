@@ -50,6 +50,12 @@ public class AuthController {
 		return ApiResponse.success("password changed", requestId(httpRequest));
 	}
 
+	@PostMapping("/password/verification/send")
+	public ApiResponse<SmsSendResponse> sendPasswordChangeVerification(CurrentUser currentUser,
+			HttpServletRequest httpRequest) {
+		return ApiResponse.success(authService.sendPasswordChangeVerification(currentUser), requestId(httpRequest));
+	}
+
 	@PostMapping("/logout")
 	public ApiResponse<String> logout(HttpServletRequest httpRequest) {
 		authService.logout(extractBearerToken(httpRequest));

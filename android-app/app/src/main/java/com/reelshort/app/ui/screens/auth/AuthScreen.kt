@@ -36,6 +36,7 @@ import com.reelshort.app.ui.components.RememberPasswordRow
 import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.format.authPromptTitle
 import com.reelshort.app.ui.format.authRegisterEnabled
+import com.reelshort.app.ui.format.authSmsSendEnabled
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.supportedPhoneCountryCodes
 import com.reelshort.app.ui.format.smsVerificationSeconds
@@ -212,7 +213,7 @@ internal fun AuthForm(
             )
             GoldOutlinedButton(
                 text = if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
-                enabled = !state.isLoading && smsCountdown == 0 && phoneNumber.isNotBlank(),
+                enabled = authSmsSendEnabled(state.isLoading, smsCountdown, phoneNumber, password),
                 onClick = {
                     smsCountdown = smsVerificationSeconds()
                     onSendVerification(countryCode, phoneNumber)

@@ -54,6 +54,8 @@ class FakeReelShortApiClient : ReelShortApiClient {
         phoneNumber: String,
     ): SmsSendResult = SmsSendResult(120)
 
+    override suspend fun sendPasswordChangeVerification(): SmsSendResult = SmsSendResult(120)
+
     override suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) = Unit
 
     override suspend fun getHomeShelf(locale: String): List<BookSummary> = books

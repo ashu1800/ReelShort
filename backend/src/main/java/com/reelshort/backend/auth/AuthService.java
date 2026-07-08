@@ -67,32 +67,48 @@ public class AuthService {
 
 	@Transactional
 	public SmsSendResponse sendSms(SmsVerificationPurpose purpose, String countryCode, String phoneNumber) {
+		if (purpose != SmsVerificationPurpose.PUBLIC_REGISTER) {
+			throw new AuthException(400, "sms purpose not allowed");
+		}
 		PhoneIdentity phone = phoneNumberNormalizer.normalize(countryCode, phoneNumber);
 		return smsVerificationService.send(purpose, phone);
 	}
 
 	@Transactional
+	public SmsSendResponse sendPasswordChangeVerification(CurrentUser currentUser) {
+		UserAccount user = activePhoneUser(currentUser);
+		PhoneIdentity phone = phoneNumberNormalizer.normalize(user.phoneCountryCode(), user.phoneNumber());
+		return smsVerificationService.send(SmsVerificationPurpose.PASSWORD_CHANGE, phone);
+	}
+
+	@Transactional
 	public void changePassword(CurrentUser currentUser, String oldPassword, String newPassword, String verificationCode) {
-		UserAccount user = userAccountRepository.findById(currentUser.userId())
-				.orElseThrow(() -> new AuthException(401, "unauthorized"));
-		if (user.status() != UserStatus.ACTIVE) {
-			throw new AuthException(403, "user disabled");
-		}
+		UserAccount user = activePhoneUser(currentUser);
 		if (!passwordHasher.matches(oldPassword, user.passwordHash())) {
 			throw new AuthException(401, "invalid phone or password");
-		}
-		if (user.phoneCountryCode() == null || user.phoneNumber() == null) {
-			throw new AuthException(400, "phone account required");
 		}
 		PhoneIdentity phone = phoneNumberNormalizer.normalize(user.phoneCountryCode(), user.phoneNumber());
 		smsVerificationService.verifyAndConsume(SmsVerificationPurpose.PASSWORD_CHANGE, phone, verificationCode);
 		user.changePasswordHash(passwordHasher.hash(newPassword));
 		userAccountRepository.save(user);
+		tokenService.revokeAllForUser(user.id());
 	}
 
 	@Transactional
 	public void logout(String token) {
 		tokenService.revoke(token);
+	}
+
+	private UserAccount activePhoneUser(CurrentUser currentUser) {
+		UserAccount user = userAccountRepository.findById(currentUser.userId())
+				.orElseThrow(() -> new AuthException(401, "unauthorized"));
+		if (user.status() != UserStatus.ACTIVE) {
+			throw new AuthException(403, "user disabled");
+		}
+		if (user.phoneCountryCode() == null || user.phoneNumber() == null) {
+			throw new AuthException(400, "phone account required");
+		}
+		return user;
 	}
 
 }

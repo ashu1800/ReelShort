@@ -2,6 +2,7 @@ package com.reelshort.backend.auth;
 
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
+import java.util.UUID;
 import java.util.Base64;
 
 import org.springframework.stereotype.Component;
@@ -46,5 +47,11 @@ public class OpaqueTokenService implements TokenService {
 						accessTokenRepository.save(accessToken);
 					}
 				});
+	}
+
+	@Override
+	@Transactional
+	public void revokeAllForUser(UUID userId) {
+		accessTokenRepository.revokeAllActiveByUserId(userId, OffsetDateTime.now());
 	}
 }

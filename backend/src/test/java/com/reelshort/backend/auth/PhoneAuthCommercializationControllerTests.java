@@ -124,12 +124,8 @@ class PhoneAuthCommercializationControllerTests {
 	}
 
 	@Test
-	void passwordChangeUsesSmsVerification() throws Exception {
-		registerPhoneUser("+1", "4155550103", "Password123");
-		String token = loginToken("+1", "4155550103", "Password123");
-
+	void publicSmsOnlyAllowsRegisterPurpose() throws Exception {
 		mockMvc.perform(post("/api/app/auth/sms/send")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
@@ -138,6 +134,29 @@ class PhoneAuthCommercializationControllerTests {
 						  "phoneNumber": "4155550103"
 						}
 						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("sms purpose not allowed"));
+
+		mockMvc.perform(post("/api/app/auth/sms/send")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "purpose": "WALLET_BIND",
+						  "countryCode": "+1",
+						  "phoneNumber": "4155550103"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("sms purpose not allowed"));
+	}
+
+	@Test
+	void passwordChangeUsesProtectedSmsVerificationAndRevokesOldToken() throws Exception {
+		registerPhoneUser("+1", "4155550103", "Password123");
+		String token = loginToken("+1", "4155550103", "Password123");
+
+		mockMvc.perform(post("/api/app/auth/password/verification/send")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.expiresInSeconds").value(120));
 
@@ -152,6 +171,17 @@ class PhoneAuthCommercializationControllerTests {
 						}
 						"""))
 				.andExpect(status().isOk());
+
+		mockMvc.perform(post("/api/app/wallet/verification/send")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "purpose": "WALLET_BIND"
+						}
+						"""))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("token revoked"));
 
 		mockMvc.perform(post("/api/app/auth/login")
 				.contentType(MediaType.APPLICATION_JSON)

@@ -107,6 +107,12 @@ class OkHttpReelShortApiClient(
             SmsSendRequestDto(purpose.name, countryCode, phoneNumber),
         ).toDomain()
 
+    override suspend fun sendPasswordChangeVerification(): SmsSendResult =
+        postEmpty<SmsSendResponseDto>(
+            "/auth/password/verification/send",
+            authenticated = true,
+        ).toDomain()
+
     override suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) {
         post<PasswordChangeRequestDto, String>(
             "/auth/password/change",
@@ -300,6 +306,17 @@ class OkHttpReelShortApiClient(
         Request.Builder()
             .url("${config.baseUrl}$path")
             .post(json.encodeToString(requestDto).toRequestBody(JSON_MEDIA_TYPE))
+            .applyAuthentication(authenticated)
+            .build(),
+    )
+
+    private suspend inline fun <reified ResponseDto> postEmpty(
+        path: String,
+        authenticated: Boolean = false,
+    ): ResponseDto = execute(
+        Request.Builder()
+            .url("${config.baseUrl}$path")
+            .post("".toRequestBody(JSON_MEDIA_TYPE))
             .applyAuthentication(authenticated)
             .build(),
     )

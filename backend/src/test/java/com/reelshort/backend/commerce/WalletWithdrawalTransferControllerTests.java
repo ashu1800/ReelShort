@@ -19,13 +19,21 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.jayway.jsonpath.JsonPath;
+import com.reelshort.backend.system.config.SystemConfigRegistry;
+import com.reelshort.backend.system.config.SystemConfigService;
 
 @SpringBootTest(properties = "reelshort.internal.super-token=test-super-token")
 @AutoConfigureMockMvc
 class WalletWithdrawalTransferControllerTests {
 
+	private static final String VALID_TRC_ADDRESS = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
+	private static final String INVALID_CHECKSUM_TRC_ADDRESS = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwc";
+
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private SystemConfigService systemConfigService;
 
 	@Test
 	void withdrawalSummaryReturnsZeroBalanceBeforePointAccountExists() throws Exception {
@@ -60,13 +68,13 @@ class WalletWithdrawalTransferControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "walletAddress": "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc",
+						  "walletAddress": "%s",
 						  "verificationCode": "000000"
 						}
-						"""))
+						""".formatted(VALID_TRC_ADDRESS)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.network").value("TRC20"))
-				.andExpect(jsonPath("$.data.walletAddress").value("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc"));
+				.andExpect(jsonPath("$.data.walletAddress").value(VALID_TRC_ADDRESS));
 
 		mockMvc.perform(post("/api/app/wallet/bank-card")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
@@ -82,11 +90,38 @@ class WalletWithdrawalTransferControllerTests {
 	}
 
 	@Test
+	void walletBindRejectsInvalidTrcChecksum() throws Exception {
+		RegisteredUser user = createUser("+1", "4155550209", "Password123");
+
+		mockMvc.perform(post("/api/app/wallet/verification/send")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "purpose": "WALLET_BIND"
+						}
+						"""))
+				.andExpect(status().isOk());
+
+		mockMvc.perform(put("/api/app/wallet")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "walletAddress": "%s",
+						  "verificationCode": "000000"
+						}
+						""".formatted(INVALID_CHECKSUM_TRC_ADDRESS)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("invalid wallet address"));
+	}
+
+	@Test
 	void withdrawalSubmissionFreezesPointsAndAdminApprovalDeductsFrozenPoints() throws Exception {
 		String adminToken = adminLogin();
 		RegisteredUser user = createUser("+1", "4155550202", "Password123");
 		adjustPoints(adminToken, user.userId(), 200, "seed withdrawal balance");
-		bindWallet(user.token(), "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v2abc");
+		bindWallet(user.token(), VALID_TRC_ADDRESS);
 
 		String withdrawalId = JsonPath.read(mockMvc.perform(post("/api/app/withdrawals")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
@@ -99,7 +134,7 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("PENDING"))
 				.andExpect(jsonPath("$.data.pointAmount").value(120))
-				.andExpect(jsonPath("$.data.walletAddress").value("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v2abc"))
+				.andExpect(jsonPath("$.data.walletAddress").value(VALID_TRC_ADDRESS))
 				.andReturn()
 				.getResponse()
 				.getContentAsString(), "$.data.id");
@@ -129,6 +164,18 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(jsonPath("$.data.status").value("APPROVED"))
 				.andExpect(jsonPath("$.data.txHash").value("trc-tx-123"));
 
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", UUID.fromString(withdrawalId))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "txHash": "trc-tx-duplicate",
+						  "note": "duplicate"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("withdrawal is not pending"));
+
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
@@ -147,7 +194,7 @@ class WalletWithdrawalTransferControllerTests {
 		String adminToken = adminLogin();
 		RegisteredUser user = createUser("+1", "4155550203", "Password123");
 		adjustPoints(adminToken, user.userId(), 150, "seed withdrawal balance");
-		bindWallet(user.token(), "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v3abc");
+		bindWallet(user.token(), VALID_TRC_ADDRESS);
 		String withdrawalId = JsonPath.read(mockMvc.perform(post("/api/app/withdrawals")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
 				.contentType(MediaType.APPLICATION_JSON)
@@ -172,12 +219,51 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("REJECTED"));
 
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/reject", UUID.fromString(withdrawalId))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "reason": "duplicate reject"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("withdrawal is not pending"));
+
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.balance").value(150))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
 				.andExpect(jsonPath("$.data.availablePoints").value(150));
+	}
+
+	@Test
+	void withdrawalUsdtAmountIsRoundedToStorageScale() throws Exception {
+		String adminToken = adminLogin();
+		try {
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_POINTS, "1");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT, "0.12345678");
+			RegisteredUser user = createUser("+1", "4155550210", "Password123");
+			adjustPoints(adminToken, user.userId(), 200, "seed withdrawal balance");
+			bindWallet(user.token(), VALID_TRC_ADDRESS);
+
+			mockMvc.perform(post("/api/app/withdrawals")
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("""
+							{
+							  "pointAmount": 101
+							}
+							"""))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.data.usdtAmount").value("12.469135"))
+					.andExpect(jsonPath("$.data.usdtPerPoint").value("0.12345678"));
+		}
+		finally {
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_POINTS, "100");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT, "0.001");
+		}
 	}
 
 	@Test

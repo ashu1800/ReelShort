@@ -198,6 +198,17 @@ internal fun supportedPhoneCountryCodes(): List<PhoneCountryCode> =
 
 internal fun smsVerificationSeconds(): Int = 120
 
+internal fun authSmsSendEnabled(
+    isLoading: Boolean,
+    smsCountdown: Int,
+    phoneNumber: String,
+    password: String,
+): Boolean =
+    !isLoading &&
+        smsCountdown == 0 &&
+        phoneNumber.isNotBlank() &&
+        password.length >= 6
+
 internal fun authRegisterEnabled(
     isLoading: Boolean,
     phoneNumber: String,
@@ -206,8 +217,10 @@ internal fun authRegisterEnabled(
 ): Boolean =
     !isLoading &&
         phoneNumber.isNotBlank() &&
-        password.isNotBlank() &&
+        password.length >= 6 &&
         verificationCode.length == 6
+
+internal fun commercialSheetAutoDismissesAfterSubmit(): Boolean = false
 
 internal fun String.posterInitials(): String =
     trim()

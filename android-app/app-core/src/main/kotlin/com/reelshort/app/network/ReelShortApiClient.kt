@@ -38,6 +38,8 @@ interface ReelShortApiClient {
         phoneNumber: String,
     ): SmsSendResult
 
+    suspend fun sendPasswordChangeVerification(): SmsSendResult
+
     suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String)
 
     suspend fun getHomeShelf(locale: String = "en"): List<BookSummary>

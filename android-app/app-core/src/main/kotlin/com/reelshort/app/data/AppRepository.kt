@@ -43,6 +43,9 @@ class AppRepository(
         phoneNumber: String,
     ): SmsSendResult = apiClient.sendAuthSms(purpose, countryCode, phoneNumber)
 
+    override suspend fun sendPasswordChangeVerification(): SmsSendResult =
+        apiClient.sendPasswordChangeVerification()
+
     override suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) {
         apiClient.changePassword(oldPassword, newPassword, verificationCode)
     }

@@ -167,6 +167,23 @@ class OkHttpReelShortApiClientTest {
     }
 
     @Test
+    fun passwordChangeVerificationUsesProtectedEndpointWithoutSmsPurposeBody() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""{ "expiresInSeconds": 120 }"""))
+            val client = client(server, token = "token-123")
+
+            val result = client.sendPasswordChangeVerification()
+            val request = server.takeRequest()
+
+            assertEquals("/api/app/auth/password/verification/send", request.path)
+            assertEquals("POST", request.method)
+            assertEquals("Bearer token-123", request.getHeader("Authorization"))
+            assertEquals("", request.body.readUtf8())
+            assertEquals(120, result.expiresInSeconds)
+        }
+    }
+
+    @Test
     fun searchEncodesKeywordQueryParameter() = runTest {
         MockWebServer().use { server ->
             server.enqueue(successBody("[]"))

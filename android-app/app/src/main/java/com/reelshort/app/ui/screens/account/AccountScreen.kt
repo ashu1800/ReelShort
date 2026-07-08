@@ -80,6 +80,7 @@ import com.reelshort.app.ui.format.accountDetailSheetTitle
 import com.reelshort.app.ui.format.accountContinueWatchingLimit
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.apiDiagnosticsText
+import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
 import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.smsVerificationSeconds
 import com.reelshort.app.ui.format.strings
@@ -935,13 +936,17 @@ private fun WalletBottomSheet(
                 primaryEnabled = walletAddress.isNotBlank() && code.length == 6,
                 onPrimary = {
                     onBindWallet(walletAddress, code)
-                    onDismiss()
+                    if (commercialSheetAutoDismissesAfterSubmit()) {
+                        onDismiss()
+                    }
                 },
                 secondary = copy.accountWalletUnbindAction,
                 secondaryEnabled = !wallet?.walletAddress.isNullOrBlank() && code.length == 6,
                 onSecondary = {
                     onUnbindWallet(code)
-                    onDismiss()
+                    if (commercialSheetAutoDismissesAfterSubmit()) {
+                        onDismiss()
+                    }
                 },
             )
         }
@@ -980,7 +985,9 @@ private fun WithdrawalBottomSheet(
                 enabled = summary?.walletAddress != null && amount >= minimumPoints && amount <= availablePoints,
                 onClick = {
                     onSubmitWithdrawal(amount)
-                    onDismiss()
+                    if (commercialSheetAutoDismissesAfterSubmit()) {
+                        onDismiss()
+                    }
                 },
             )
             withdrawals.take(3).forEach { WithdrawalRow(it, language) }
@@ -1009,7 +1016,9 @@ private fun TransferBottomSheet(
                 enabled = recipient.startsWith("+") && amount > 0,
                 onClick = {
                     onTransferPoints(recipient, amount)
-                    onDismiss()
+                    if (commercialSheetAutoDismissesAfterSubmit()) {
+                        onDismiss()
+                    }
                 },
             )
         }
@@ -1055,7 +1064,9 @@ private fun PasswordBottomSheet(
                 enabled = oldPassword.isNotBlank() && newPassword.length >= 8 && code.length == 6,
                 onClick = {
                     onChangePassword(oldPassword, newPassword, code)
-                    onDismiss()
+                    if (commercialSheetAutoDismissesAfterSubmit()) {
+                        onDismiss()
+                    }
                 },
             )
         }
@@ -1082,7 +1093,9 @@ private fun BankCardBottomSheet(
                 enabled = holderName.isNotBlank() && cardNumber.length >= 8,
                 onClick = {
                     onSubmitBankCard(holderName, cardNumber)
-                    onDismiss()
+                    if (commercialSheetAutoDismissesAfterSubmit()) {
+                        onDismiss()
+                    }
                 },
             )
         }

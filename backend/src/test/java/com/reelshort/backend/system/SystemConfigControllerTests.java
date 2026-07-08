@@ -158,6 +158,23 @@ class SystemConfigControllerTests {
 	}
 
 	@Test
+	void withdrawalUsdtPerPointRejectsExcessScaleAndOutOfRangeValues() throws Exception {
+		String adminToken = adminLogin();
+
+		updateConfig(adminToken, "withdraw.usdt-per-point", "0.123456789")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+
+		updateConfig(adminToken, "withdraw.usdt-per-point", "1001")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+
+		updateConfig(adminToken, "withdraw.usdt-per-point", "0.12345678")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.value").value("0.12345678"));
+	}
+
+	@Test
 	void appTokenCannotAccessAdminSystemConfigs() throws Exception {
 		String appToken = registerAndExtractAppToken("config-boundary-user");
 

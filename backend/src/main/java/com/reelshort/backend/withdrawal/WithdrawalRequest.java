@@ -1,6 +1,7 @@
 package com.reelshort.backend.withdrawal;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -73,8 +74,10 @@ public class WithdrawalRequest {
 
 	public static WithdrawalRequest create(UUID userId, int pointAmount, BigDecimal usdtPerPoint,
 			String network, String walletAddress) {
-		BigDecimal usdtAmount = usdtPerPoint.multiply(BigDecimal.valueOf(pointAmount));
-		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, usdtAmount, usdtPerPoint,
+		BigDecimal normalizedRate = usdtPerPoint.setScale(8, RoundingMode.UNNECESSARY);
+		BigDecimal usdtAmount = normalizedRate.multiply(BigDecimal.valueOf(pointAmount))
+				.setScale(6, RoundingMode.HALF_UP);
+		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, usdtAmount, normalizedRate,
 				network, walletAddress, OffsetDateTime.now());
 	}
 

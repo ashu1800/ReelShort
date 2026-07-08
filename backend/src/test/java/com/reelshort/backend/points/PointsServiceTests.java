@@ -1,6 +1,7 @@
 package com.reelshort.backend.points;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.UUID;
@@ -15,6 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import com.reelshort.backend.admin.AdminException;
+import com.reelshort.backend.user.UserAccount;
+import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.watch.WatchProgressRequest;
 import com.reelshort.backend.watch.WatchRecordResponse;
 import com.reelshort.backend.watch.WatchService;
@@ -27,6 +31,15 @@ class PointsServiceTests {
 
 	@Autowired
 	private WatchService watchService;
+
+	@Autowired
+	private PointAccountRepository pointAccountRepository;
+
+	@Autowired
+	private PointTransferRepository pointTransferRepository;
+
+	@Autowired
+	private UserAccountRepository userAccountRepository;
 
 	@Test
 	void accountIsCreatedWithZeroBalance() {
@@ -138,6 +151,61 @@ class PointsServiceTests {
 		assertThat(duplicate.awardedPoints()).isEqualTo(1);
 		assertThat(pointsService.account(userId).balance()).isEqualTo(2);
 		assertThat(pointsService.records(userId)).hasSize(2);
+	}
+
+	@Test
+	void pointAccountRejectsOverflowAndFrozenUnderflowAdjustments() {
+		PointAccount account = PointAccount.create(UUID.randomUUID());
+		account.add(Integer.MAX_VALUE);
+
+		assertThatThrownBy(() -> account.add(1))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("point balance overflow");
+
+		PointAccount frozenAccount = PointAccount.create(UUID.randomUUID());
+		frozenAccount.add(10);
+		frozenAccount.freeze(8);
+		assertThatThrownBy(() -> frozenAccount.add(-3))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("point balance below frozen points");
+	}
+
+	@Test
+	void rechargeCreditRejectsOverflowBeforeWritingTransaction() {
+		UUID userId = UUID.randomUUID();
+		PointAccount account = PointAccount.create(userId);
+		account.add(Integer.MAX_VALUE);
+		pointAccountRepository.saveAndFlush(account);
+
+		assertThatThrownBy(() -> pointsService.creditRechargeOrder(userId, "RO-overflow", 1))
+				.isInstanceOf(AdminException.class)
+				.hasMessage("point balance overflow");
+
+		assertThat(pointsService.account(userId).balance()).isEqualTo(Integer.MAX_VALUE);
+		assertThat(pointsService.records(userId)).isEmpty();
+	}
+
+	@Test
+	void transferRollsBackWhenRecipientWouldOverflow() {
+		UserAccount sender = userAccountRepository.save(
+				UserAccount.createPhoneAccount("+1", "4155550601", "+14155550601", "hash"));
+		UserAccount recipient = userAccountRepository.save(
+				UserAccount.createPhoneAccount("+1", "4155550602", "+14155550602", "hash"));
+		PointAccount senderAccount = PointAccount.create(sender.id());
+		senderAccount.add(10);
+		pointAccountRepository.save(senderAccount);
+		PointAccount recipientAccount = PointAccount.create(recipient.id());
+		recipientAccount.add(Integer.MAX_VALUE);
+		pointAccountRepository.saveAndFlush(recipientAccount);
+
+		assertThatThrownBy(() -> pointsService.transfer(sender.id(), "+14155550602", 5))
+				.isInstanceOf(AdminException.class)
+				.hasMessage("point balance overflow");
+
+		assertThat(pointsService.account(sender.id()).balance()).isEqualTo(10);
+		assertThat(pointsService.account(recipient.id()).balance()).isEqualTo(Integer.MAX_VALUE);
+		assertThat(pointTransferRepository.findBySenderUserIdOrRecipientUserIdOrderByCreatedAtDesc(
+				sender.id(), sender.id())).isEmpty();
 	}
 
 	@Test

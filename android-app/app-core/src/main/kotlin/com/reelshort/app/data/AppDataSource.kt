@@ -20,6 +20,8 @@ interface AppDataSource {
         phoneNumber: String,
     ): SmsSendResult
 
+    suspend fun sendPasswordChangeVerification(): SmsSendResult
+
     suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String)
 
     suspend fun loadHomeShelf(): List<BookSummary>

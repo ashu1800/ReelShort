@@ -3,6 +3,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
 import { approveWithdrawal, fetchWithdrawals, rejectWithdrawal } from '../services/adminApi'
 import type { WithdrawalRequest, WithdrawalStatus } from '../services/adminApi'
+import { backendErrorMessage } from '../services/http'
 
 const loading = ref(false)
 const operationLoading = ref(false)
@@ -58,8 +59,8 @@ async function approve(row: WithdrawalRequest) {
     await approveWithdrawal(row.id, txHash, 'manual TRC transfer confirmed')
     ElMessage.success('提现申请已通过')
     await loadWithdrawals()
-  } catch {
-    ElMessage.error('提现审批失败')
+  } catch (error) {
+    ElMessage.error(backendErrorMessage(error, '提现审批失败'))
   } finally {
     operationLoading.value = false
   }
@@ -84,8 +85,8 @@ async function reject(row: WithdrawalRequest) {
     await rejectWithdrawal(row.id, reason)
     ElMessage.success('提现申请已拒绝，冻结积分已释放')
     await loadWithdrawals()
-  } catch {
-    ElMessage.error('提现拒绝失败')
+  } catch (error) {
+    ElMessage.error(backendErrorMessage(error, '提现拒绝失败'))
   } finally {
     operationLoading.value = false
   }

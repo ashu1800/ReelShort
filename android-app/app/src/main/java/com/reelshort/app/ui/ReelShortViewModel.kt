@@ -48,10 +48,6 @@ class ReelShortViewModel(
         }
     }
 
-    fun login(username: String, password: String, rememberPassword: Boolean) {
-        viewModelScope.launch { controller.login(username, password, rememberPassword) }
-    }
-
     fun login(countryCode: String, phoneNumber: String, password: String, rememberPassword: Boolean) {
         viewModelScope.launch { controller.login(countryCode, phoneNumber, password, rememberPassword) }
     }
