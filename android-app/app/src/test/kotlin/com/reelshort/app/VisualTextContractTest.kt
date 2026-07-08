@@ -15,10 +15,12 @@ import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.authPromptTitle
 import com.reelshort.app.ui.format.authBottomSheetAvoidsNavigationBar
-import com.reelshort.app.ui.format.authBottomSheetPrioritizesRegisterAction
+import com.reelshort.app.ui.format.AuthSheetCopy
 import com.reelshort.app.ui.format.authRegisterEnabled
 import com.reelshort.app.ui.format.authSmsSendEnabled
 import com.reelshort.app.ui.format.authSmsCountdownStartsAfterSuccessfulSend
+import com.reelshort.app.ui.format.authSheetCopy
+import com.reelshort.app.ui.format.authSinglePrimaryAction
 import com.reelshort.app.ui.format.authVerificationCodeLabel
 import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
 import com.reelshort.app.ui.format.rememberPasswordLabel
@@ -182,8 +184,8 @@ class VisualTextContractTest {
     }
 
     @Test
-    fun authBottomSheetPrioritizesRegisterActionAboveNavigation() {
-        assertEquals(true, authBottomSheetPrioritizesRegisterAction())
+    fun authBottomSheetUsesOnePrimaryActionAtATime() {
+        assertEquals(true, authSinglePrimaryAction())
     }
 
     @Test
@@ -199,12 +201,34 @@ class VisualTextContractTest {
     @Test
     fun authFormControlsAreModeSpecific() {
         assertEquals(
-            listOf("phone", "password", "rememberPassword", "primary:Sign in", "secondary:Create account"),
+            listOf("phone", "password", "rememberPassword", "primary:Sign in", "secondary:New here? Create account"),
             authFormControls(AuthMode.LOGIN, AppLanguage.ENGLISH),
         )
         assertEquals(
-            listOf("phone", "password", "verificationCode", "sendCode", "primary:Create account", "secondary:Sign in"),
+            listOf("phone", "password", "verificationCode", "sendCode", "primary:Create account", "secondary:Already have access? Sign in"),
             authFormControls(AuthMode.REGISTER, AppLanguage.ENGLISH),
+        )
+    }
+
+    @Test
+    fun authBottomSheetCopyFollowsCurrentMode() {
+        assertEquals(
+            AuthSheetCopy(
+                title = "Sign in to view your account",
+                subtitle = "Sign in to view points, watch history, and orders.",
+                primaryAction = "Sign in",
+                secondaryAction = "New here? Create account",
+            ),
+            authSheetCopy(AuthMode.LOGIN, hasPendingPlayback = false, language = AppLanguage.ENGLISH),
+        )
+        assertEquals(
+            AuthSheetCopy(
+                title = "Create your account",
+                subtitle = "Use a non-mainland phone number. Verification is simulated for this build.",
+                primaryAction = "Create account",
+                secondaryAction = "Already have access? Sign in",
+            ),
+            authSheetCopy(AuthMode.REGISTER, hasPendingPlayback = false, language = AppLanguage.ENGLISH),
         )
     }
 

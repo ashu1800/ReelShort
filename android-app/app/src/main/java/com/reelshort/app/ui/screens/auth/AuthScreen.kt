@@ -38,10 +38,11 @@ import com.reelshort.app.ui.components.GoldOutlinedButton
 import com.reelshort.app.ui.components.LoginTextField
 import com.reelshort.app.ui.components.PrimaryActionButton
 import com.reelshort.app.ui.components.RememberPasswordRow
+import com.reelshort.app.ui.components.SecondaryActionTextButton
 import com.reelshort.app.ui.components.SurfacePanel
-import com.reelshort.app.ui.format.authPromptTitle
 import com.reelshort.app.ui.format.authRegisterEnabled
 import com.reelshort.app.ui.format.authSmsSendEnabled
+import com.reelshort.app.ui.format.authSheetCopy
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.supportedPhoneCountryCodes
 import com.reelshort.app.ui.theme.AppBackground
@@ -95,13 +96,17 @@ internal fun AuthBottomSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val copy = strings(state.language)
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
         enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
         exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
         modifier = modifier,
     ) {
+        val panelCopy = authSheetCopy(
+            mode = state.authMode,
+            hasPendingPlayback = state.pendingPlaybackEpisode != null,
+            language = state.language,
+        )
         androidx.compose.material3.Surface(
             modifier = Modifier.fillMaxWidth(),
             color = com.reelshort.app.ui.theme.Panel,
@@ -111,12 +116,8 @@ internal fun AuthBottomSheet(
         ) {
             AuthForm(
                 state = state,
-                title = authPromptTitle(state.pendingPlaybackEpisode != null, state.language),
-                subtitle = if (state.pendingPlaybackEpisode != null) {
-                    copy.authBottomSheetPlaybackSubtitle
-                } else {
-                    copy.authBottomSheetAccountSubtitle
-                },
+                title = panelCopy.title,
+                subtitle = panelCopy.subtitle,
                 onLogin = onLogin,
                 onRegister = onRegister,
                 onSendVerification = onSendVerification,
@@ -225,13 +226,11 @@ internal fun AuthForm(
                 enabled = !state.isLoading && phoneNumber.isNotBlank() && password.isNotBlank(),
                 onClick = { onLogin(countryCode, phoneNumber, password, rememberPassword) },
             )
-            TextButton(
+            SecondaryActionTextButton(
+                text = copy.authRegisterSecondary,
                 onClick = onShowRegister,
                 enabled = !state.isLoading,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(copy.authRegisterAction, color = PrimaryGold)
-            }
+            )
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 LoginTextField(
@@ -255,13 +254,11 @@ internal fun AuthForm(
                 enabled = authRegisterEnabled(state.isLoading, phoneNumber, password, verificationCode),
                 onClick = { onRegister(countryCode, phoneNumber, password, verificationCode) },
             )
-            TextButton(
+            SecondaryActionTextButton(
+                text = copy.authLoginSecondary,
                 onClick = onShowLogin,
                 enabled = !state.isLoading,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(copy.authLoginAction, color = PrimaryGold)
-            }
+            )
         }
     }
 }
@@ -274,7 +271,7 @@ internal fun authFormControls(mode: AuthMode, language: AppLanguage): List<Strin
             "password",
             "rememberPassword",
             "primary:${copy.authLoginAction}",
-            "secondary:${copy.authRegisterAction}",
+            "secondary:${copy.authRegisterSecondary}",
         )
         AuthMode.REGISTER -> listOf(
             "phone",
@@ -282,7 +279,7 @@ internal fun authFormControls(mode: AuthMode, language: AppLanguage): List<Strin
             "verificationCode",
             "sendCode",
             "primary:${copy.authRegisterAction}",
-            "secondary:${copy.authLoginAction}",
+            "secondary:${copy.authLoginSecondary}",
         )
     }
 }
