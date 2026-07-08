@@ -6,6 +6,8 @@ import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.state.AuthMode
 
+internal fun appBrandName(): String = "ShortLink"
+
 internal fun String?.coverUrlOrNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
 internal fun String?.playableMediaUrlOrNull(): String? =
