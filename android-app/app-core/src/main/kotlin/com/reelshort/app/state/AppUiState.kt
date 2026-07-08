@@ -37,6 +37,8 @@ data class AppUiState(
     val session: AuthSession? = null,
     val savedCredentials: SavedCredentials? = null,
     val authPromptVisible: Boolean = false,
+    val authSmsCountdownSeconds: Int = 0,
+    val authSmsCountdownTrigger: Long = 0,
     val pendingPlaybackEpisode: EpisodeSummary? = null,
     val homeShelf: List<BookSummary> = emptyList(),
     val isHomeRefreshing: Boolean = false,

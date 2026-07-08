@@ -113,15 +113,21 @@ class AppStateController(private val dataSource: AppDataSource) {
             it.copy(
                 isLoading = false,
                 authPromptVisible = false,
+                authSmsCountdownSeconds = 0,
                 errorMessage = registrationSimulationMessage(),
             )
         }
     }
 
     suspend fun sendAuthSms(countryCode: String, phoneNumber: String) = runWithLoading(ErrorContext.REGISTER) {
-        dataSource.sendAuthSms(SmsVerificationPurpose.PUBLIC_REGISTER, countryCode, phoneNumber)
+        val result = dataSource.sendAuthSms(SmsVerificationPurpose.PUBLIC_REGISTER, countryCode, phoneNumber)
         mutableState.update {
-            it.copy(isLoading = false, errorMessage = smsSentMessage())
+            it.copy(
+                isLoading = false,
+                errorMessage = smsSentMessage(),
+                authSmsCountdownSeconds = result.expiresInSeconds,
+                authSmsCountdownTrigger = it.authSmsCountdownTrigger + 1,
+            )
         }
     }
 
@@ -1096,6 +1102,16 @@ class AppStateController(private val dataSource: AppDataSource) {
         if (context == ErrorContext.CONTENT) {
             return "内容暂时加载失败，可以稍后刷新。"
         }
+        if (context == ErrorContext.REGISTER && "invalid verification code" in normalizedMessage) {
+            return invalidVerificationCodeMessage()
+        }
+        if (context == ErrorContext.REGISTER &&
+            error is ApiClientException &&
+            error.statusCode == 400 &&
+            "bad request" in normalizedMessage
+        ) {
+            return registerBadRequestMessage()
+        }
         if (error is ApiClientException && error.statusCode == 401 && (context == ErrorContext.LOGIN || context == ErrorContext.REGISTER)) {
             return "手机号或密码错误"
         }
@@ -1120,6 +1136,18 @@ class AppStateController(private val dataSource: AppDataSource) {
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Registration completed. Account access must be opened internally."
             AppLanguage.TRADITIONAL_CHINESE -> "註冊流程已完成，帳號需要內部開通後才能登入。"
+        }
+
+    private fun invalidVerificationCodeMessage(): String =
+        when (state.value.language) {
+            AppLanguage.ENGLISH -> "Verification code is incorrect."
+            AppLanguage.TRADITIONAL_CHINESE -> "驗證碼錯誤。"
+        }
+
+    private fun registerBadRequestMessage(): String =
+        when (state.value.language) {
+            AppLanguage.ENGLISH -> "Check phone number, password, and verification code."
+            AppLanguage.TRADITIONAL_CHINESE -> "請檢查手機號、密碼和驗證碼。"
         }
 
     private fun passwordChangedMessage(): String =

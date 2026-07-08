@@ -248,6 +248,64 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun sendAuthSmsStartsCountdownOnlyAfterSuccessfulRequest() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+
+        controller.sendAuthSms("+1", "4155550102")
+
+        val state = controller.state.value
+        assertEquals(120, state.authSmsCountdownSeconds)
+        assertEquals(1, state.authSmsCountdownTrigger)
+        assertEquals("Verification code sent. Use 000000 within 120 seconds.", state.errorMessage)
+    }
+
+    @Test
+    fun sendAuthSmsFailureDoesNotStartCountdown() = runTest {
+        val dataSource = FakeAppDataSource(smsError = ApiClientException(400, null, "bad request"))
+        val controller = AppStateController(dataSource)
+
+        controller.sendAuthSms("+1", "4155550102")
+
+        val state = controller.state.value
+        assertEquals(0, state.authSmsCountdownSeconds)
+        assertEquals(0, state.authSmsCountdownTrigger)
+        assertEquals("Check phone number, password, and verification code.", state.errorMessage)
+    }
+
+    @Test
+    fun publicRegisterInvalidVerificationCodeUsesFriendlyEnglishMessage() = runTest {
+        val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "invalid verification code"))
+        val controller = AppStateController(dataSource)
+
+        controller.register("+1", "4155550102", "Password123", "123456")
+
+        assertEquals("Verification code is incorrect.", controller.state.value.errorMessage)
+    }
+
+    @Test
+    fun publicRegisterInvalidVerificationCodeUsesFriendlyTraditionalChineseMessage() = runTest {
+        val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "invalid verification code"))
+        val controller = AppStateController(dataSource)
+        controller.setLanguage(AppLanguage.TRADITIONAL_CHINESE)
+        dataSource.calls.clear()
+
+        controller.register("+1", "4155550102", "Password123", "123456")
+
+        assertEquals("驗證碼錯誤。", controller.state.value.errorMessage)
+    }
+
+    @Test
+    fun publicRegisterBadRequestUsesRegisterFormMessage() = runTest {
+        val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "bad request"))
+        val controller = AppStateController(dataSource)
+
+        controller.register("+1", "4155550102", "Password123", "123456")
+
+        assertEquals("Check phone number, password, and verification code.", controller.state.value.errorMessage)
+    }
+
+    @Test
     fun loginSuccessClearsRememberedPasswordWhenDisabled() = runTest {
         val dataSource = FakeAppDataSource(
             savedCredentials = SavedCredentials(username = "demo", password = "old-password", rememberPassword = true),
@@ -1727,6 +1785,8 @@ class AppStateControllerTest {
 
     private class FakeAppDataSource(
         private val loginError: Throwable? = null,
+        private val registerError: Throwable? = null,
+        private val smsError: Throwable? = null,
         private var restoredSession: AuthSession? = null,
         var savedCredentials: SavedCredentials? = null,
         homeError: Throwable? = null,
@@ -1823,6 +1883,7 @@ class AppStateControllerTest {
             verificationCode: String,
         ): RegisterSimulationResult {
             calls += "register:$countryCode:$phoneNumber"
+            registerError?.let { throw it }
             return RegisterSimulationResult("SIMULATED")
         }
 
@@ -1832,6 +1893,7 @@ class AppStateControllerTest {
             phoneNumber: String,
         ): SmsSendResult {
             calls += "sms:${purpose.name}:$countryCode:$phoneNumber"
+            smsError?.let { throw it }
             return SmsSendResult(120)
         }
 

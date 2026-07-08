@@ -14,8 +14,12 @@ import com.reelshort.app.ui.format.accountDetailSheetTitle
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.authPromptTitle
+import com.reelshort.app.ui.format.authBottomSheetAvoidsNavigationBar
+import com.reelshort.app.ui.format.authBottomSheetPrioritizesRegisterAction
 import com.reelshort.app.ui.format.authRegisterEnabled
 import com.reelshort.app.ui.format.authSmsSendEnabled
+import com.reelshort.app.ui.format.authSmsCountdownStartsAfterSuccessfulSend
+import com.reelshort.app.ui.format.authVerificationCodeLabel
 import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
 import com.reelshort.app.ui.format.rememberPasswordLabel
 import com.reelshort.app.ui.format.supportedPhoneCountryCodes
@@ -171,6 +175,16 @@ class VisualTextContractTest {
     }
 
     @Test
+    fun authBottomSheetKeepsActionsAboveSystemNavigation() {
+        assertEquals(true, authBottomSheetAvoidsNavigationBar())
+    }
+
+    @Test
+    fun authBottomSheetPrioritizesRegisterActionAboveNavigation() {
+        assertEquals(true, authBottomSheetPrioritizesRegisterAction())
+    }
+
+    @Test
     fun authFormProvidesRememberPasswordEntry() {
         assertEquals("記住密碼", rememberPasswordLabel())
     }
@@ -204,6 +218,17 @@ class VisualTextContractTest {
         assertEquals(false, authSmsSendEnabled(isLoading = false, smsCountdown = 0, phoneNumber = "4155550101", password = "short"))
         assertEquals(false, authSmsSendEnabled(isLoading = false, smsCountdown = 120, phoneNumber = "4155550101", password = "Password123"))
         assertEquals(true, authSmsSendEnabled(isLoading = false, smsCountdown = 0, phoneNumber = "4155550101", password = "Password123"))
+    }
+
+    @Test
+    fun authVerificationCodeLabelDoesNotExposeMockCodeAsLabel() {
+        assertEquals("Verification code", authVerificationCodeLabel(AppLanguage.ENGLISH))
+        assertEquals("驗證碼", authVerificationCodeLabel(AppLanguage.TRADITIONAL_CHINESE))
+    }
+
+    @Test
+    fun authSmsCountdownStartsOnlyAfterSuccessfulSendContract() {
+        assertEquals(true, authSmsCountdownStartsAfterSuccessfulSend())
     }
 
     @Test
