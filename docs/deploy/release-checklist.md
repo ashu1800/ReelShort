@@ -100,14 +100,14 @@ Android 代码变更必须在模拟器完成手动验收，不能只依赖单元
 服务器发布 backend、content-provider 或 infra 后执行：
 
 ```powershell
-curl https://reelshort.hjj888.cc/actuator/health
-curl "https://reelshort.hjj888.cc/api/app/home/recommend?locale=en"
-curl "https://reelshort.hjj888.cc/api/app/home/recommend?locale=zh-TW"
+curl https://shortlink.hjj888.cc/actuator/health
+curl "https://shortlink.hjj888.cc/api/app/home/recommend?locale=en"
+curl "https://shortlink.hjj888.cc/api/app/home/recommend?locale=zh-TW"
 ```
 
 后台或服务器侧需要确认：
 
-- Nginx HTTPS 证书有效，`reelshort.hjj888.cc` 可访问。
+- Nginx HTTPS 证书有效，`shortlink.hjj888.cc` 可访问。
 - backend、content-provider、PostgreSQL、Redis 容器或进程均处于健康状态。
 - 首页推荐优先从自有 PostgreSQL 缓存返回，不因上游短暂失败直接空白。
 - 播放地址只在播放时按需拉取，不在片库刷新时预抓视频流。

@@ -8,8 +8,8 @@ class ApiConfigTest {
     fun defaultConfigDerivesSystemHealthUrl() {
         val config = ApiConfig.default()
 
-        assertEquals("https://reelshort.hjj888.cc/api/app", config.baseUrl)
-        assertEquals("https://reelshort.hjj888.cc/api/system/health", config.systemHealthUrl)
+        assertEquals("https://shortlink.hjj888.cc/api/app", config.baseUrl)
+        assertEquals("https://shortlink.hjj888.cc/api/system/health", config.systemHealthUrl)
     }
 
     @Test

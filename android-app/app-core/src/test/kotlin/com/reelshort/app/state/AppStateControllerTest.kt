@@ -1412,7 +1412,7 @@ class AppStateControllerTest {
         controller.checkApiHealth()
 
         val state = controller.state.value
-        assertEquals("https://reelshort.hjj888.cc/api/app", state.apiBaseUrl)
+        assertEquals("https://shortlink.hjj888.cc/api/app", state.apiBaseUrl)
         assertEquals("UP", state.apiHealthStatus?.status)
         assertEquals("fake-backend", state.apiHealthStatus?.service)
         assertEquals(listOf("health"), dataSource.calls)
@@ -1898,7 +1898,7 @@ class AppStateControllerTest {
         var favoritesList: List<BookSummary> = emptyList()
         var language: AppLanguage = AppLanguage.ENGLISH
 
-        override val apiBaseUrl: String = "https://reelshort.hjj888.cc/api/app"
+        override val apiBaseUrl: String = "https://shortlink.hjj888.cc/api/app"
 
         override suspend fun checkSystemHealth(): ApiHealthStatus {
             calls += "health"

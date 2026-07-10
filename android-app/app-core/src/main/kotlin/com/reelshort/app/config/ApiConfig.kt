@@ -16,6 +16,6 @@ class ApiConfig(rawBaseUrl: String) {
     override fun toString(): String = "ApiConfig(baseUrl=$baseUrl)"
 
     companion object {
-        fun default(): ApiConfig = ApiConfig("https://reelshort.hjj888.cc/api/app")
+        fun default(): ApiConfig = ApiConfig("https://shortlink.hjj888.cc/api/app")
     }
 }

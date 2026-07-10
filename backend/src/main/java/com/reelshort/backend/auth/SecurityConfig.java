@@ -52,6 +52,7 @@ public class SecurityConfig {
 								"/api/app/auth/sms/send",
 								"/api/admin/auth/login",
 								"/api/internal/users/register-phone",
+								"/api/internal/users/register-phone/batch",
 								"/api/internal/payments/recharge/callback",
 								"/api/system/health", "/actuator/health")
 						.permitAll()

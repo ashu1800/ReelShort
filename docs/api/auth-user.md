@@ -59,7 +59,7 @@
 
 ## `POST /api/internal/users/register-phone`
 
-内部开户注册接口。必须携带 `X-Internal-Super-Token`。
+内部开户注册接口。必须携带 `X-Internal-Super-Token`。该接口兼容单账号和批量账号两种请求体。
 
 请求：
 
@@ -72,6 +72,107 @@
 ```
 
 成功后创建 `ACTIVE` 用户并返回可登录 Token。
+
+批量请求：
+
+```json
+{
+  "accounts": [
+    { "countryCode": "+1", "phoneNumber": "4155550101", "password": "Password123" },
+    { "countryCode": "+44", "phoneNumber": "7400123456", "password": "Password123" }
+  ]
+}
+```
+
+批量响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "total": 2,
+    "successCount": 1,
+    "failureCount": 1,
+    "results": [
+      {
+        "index": 0,
+        "success": true,
+        "countryCode": "+1",
+        "phoneNumber": "4155550101",
+        "userId": "00000000-0000-0000-0000-000000000000",
+        "username": "+14155550101",
+        "phoneE164": "+14155550101",
+        "token": "opaque-token",
+        "tokenType": "Bearer",
+        "errorCode": null,
+        "message": null
+      },
+      {
+        "index": 1,
+        "success": false,
+        "countryCode": "+44",
+        "phoneNumber": "7400123456",
+        "userId": null,
+        "username": null,
+        "phoneE164": null,
+        "token": null,
+        "tokenType": null,
+        "errorCode": "PHONE_ALREADY_EXISTS",
+        "message": "phone already exists"
+      }
+    ]
+  }
+}
+```
+
+批量接口逐条处理账号。某个手机号重复或国家区号不支持时只标记该条失败，不影响同批其他账号创建。请求 JSON 结构错误、账号列表为空或超过 100 个时返回 `400 bad request`。
+
+## `POST /api/internal/users/register-phone/batch`
+
+内部批量开户注册别名接口。请求体和响应体与 `/api/internal/users/register-phone` 的批量形态一致。
+
+示例响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "total": 2,
+    "successCount": 1,
+    "failureCount": 1,
+    "results": [
+      {
+        "index": 0,
+        "success": true,
+        "countryCode": "+1",
+        "phoneNumber": "4155550101",
+        "userId": "00000000-0000-0000-0000-000000000000",
+        "username": "+14155550101",
+        "phoneE164": "+14155550101",
+        "token": "opaque-token",
+        "tokenType": "Bearer",
+        "errorCode": null,
+        "message": null
+      },
+      {
+        "index": 1,
+        "success": false,
+        "countryCode": "+44",
+        "phoneNumber": "7400123456",
+        "userId": null,
+        "username": null,
+        "phoneE164": null,
+        "token": null,
+        "tokenType": null,
+        "errorCode": "PHONE_ALREADY_EXISTS",
+        "message": "phone already exists"
+      }
+    ]
+  }
+}
+```
 
 ## `POST /api/app/auth/login`
 

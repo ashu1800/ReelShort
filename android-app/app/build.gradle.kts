@@ -14,7 +14,7 @@ android {
     compileSdk = 35
 
     val reelshortApiBaseUrl = providers.gradleProperty("reelshortApiBaseUrl")
-        .orElse("https://reelshort.hjj888.cc/api/app")
+        .orElse("https://shortlink.hjj888.cc/api/app")
 
     defaultConfig {
         applicationId = "com.reelshort.app"

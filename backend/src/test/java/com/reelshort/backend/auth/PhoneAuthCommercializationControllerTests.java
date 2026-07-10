@@ -72,6 +72,124 @@ class PhoneAuthCommercializationControllerTests {
 	}
 
 	@Test
+	void internalBatchPhoneRegistrationCreatesMultipleLoginAccounts() throws Exception {
+		mockMvc.perform(post("/api/internal/users/register-phone")
+				.header("X-Internal-Super-Token", "test-super-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "accounts": [
+						    { "countryCode": "+1", "phoneNumber": "4155550201", "password": "Password123" },
+						    { "countryCode": "+44", "phoneNumber": "7400123456", "password": "Password123" }
+						  ]
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.total").value(2))
+				.andExpect(jsonPath("$.data.successCount").value(2))
+				.andExpect(jsonPath("$.data.failureCount").value(0))
+				.andExpect(jsonPath("$.data.results[0].success").value(true))
+				.andExpect(jsonPath("$.data.results[0].phoneE164").value("+14155550201"))
+				.andExpect(jsonPath("$.data.results[0].token").isNotEmpty())
+				.andExpect(jsonPath("$.data.results[1].success").value(true))
+				.andExpect(jsonPath("$.data.results[1].phoneE164").value("+447400123456"))
+				.andExpect(jsonPath("$.data.results[1].token").isNotEmpty());
+
+		mockMvc.perform(post("/api/app/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(phoneRegistrationJson("+44", "7400123456", "Password123")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.phoneE164").value("+447400123456"));
+	}
+
+	@Test
+	void internalBatchPhoneRegistrationAlsoSupportsBatchAliasPath() throws Exception {
+		mockMvc.perform(post("/api/internal/users/register-phone/batch")
+				.header("X-Internal-Super-Token", "test-super-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "accounts": [
+						    { "countryCode": "+1", "phoneNumber": "4155550205", "password": "Password123" }
+						  ]
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.total").value(1))
+				.andExpect(jsonPath("$.data.successCount").value(1))
+				.andExpect(jsonPath("$.data.results[0].phoneE164").value("+14155550205"));
+	}
+
+	@Test
+	void internalBatchPhoneRegistrationReturnsPerAccountFailures() throws Exception {
+		registerPhoneUser("+1", "4155550202", "Password123");
+
+		mockMvc.perform(post("/api/internal/users/register-phone/batch")
+				.header("X-Internal-Super-Token", "test-super-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "accounts": [
+						    { "countryCode": "+1", "phoneNumber": "4155550202", "password": "Password123" },
+						    { "countryCode": "+1", "phoneNumber": "4155550203", "password": "Password123" }
+						  ]
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.total").value(2))
+				.andExpect(jsonPath("$.data.successCount").value(1))
+				.andExpect(jsonPath("$.data.failureCount").value(1))
+				.andExpect(jsonPath("$.data.results[0].success").value(false))
+				.andExpect(jsonPath("$.data.results[0].phoneNumber").value("4155550202"))
+				.andExpect(jsonPath("$.data.results[0].errorCode").value("PHONE_ALREADY_EXISTS"))
+				.andExpect(jsonPath("$.data.results[0].message").value("phone already exists"))
+				.andExpect(jsonPath("$.data.results[1].success").value(true))
+				.andExpect(jsonPath("$.data.results[1].phoneE164").value("+14155550203"));
+	}
+
+	@Test
+	void internalBatchPhoneRegistrationRequiresSuperToken() throws Exception {
+		mockMvc.perform(post("/api/internal/users/register-phone/batch")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "accounts": [
+						    { "countryCode": "+1", "phoneNumber": "4155550204", "password": "Password123" }
+						  ]
+						}
+						"""))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("unauthorized"));
+
+		mockMvc.perform(post("/api/internal/users/register-phone/batch")
+				.header("X-Internal-Super-Token", "wrong-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "accounts": [
+						    { "countryCode": "+1", "phoneNumber": "4155550204", "password": "Password123" }
+						  ]
+						}
+						"""))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value("forbidden"));
+	}
+
+	@Test
+	void internalBatchPhoneRegistrationRejectsNullAccountItems() throws Exception {
+		mockMvc.perform(post("/api/internal/users/register-phone")
+				.header("X-Internal-Super-Token", "test-super-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "accounts": [null]
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("bad request"));
+	}
+
+	@Test
 	void publicRegisterSimulatesSmsButDoesNotCreateLoginAccount() throws Exception {
 		mockMvc.perform(post("/api/app/auth/sms/send")
 				.contentType(MediaType.APPLICATION_JSON)
