@@ -134,6 +134,31 @@ class SmsVerificationServiceTests {
 				.isEqualTo(400);
 	}
 
+	@Test
+	void accountNotFoundCallbackReturnsSuccessButInvalidatesGeneratedCode() {
+		PhoneIdentity phone = phoneNumberNormalizer.normalize("+1", "4155550405");
+		doThrow(new SmsAccountNotFoundException("account not found"))
+				.when(smsCallbackClient)
+				.send(any(SmsCallbackMessage.class));
+
+		SmsSendResponse response = smsVerificationService.send(SmsVerificationPurpose.PUBLIC_REGISTER, phone);
+
+		assertThat(response.expiresInSeconds()).isEqualTo(120);
+		SmsVerificationCode storedCode = smsVerificationCodeRepository
+				.findFirstByPhoneE164AndPurposeOrderByCreatedAtDesc(phone.e164(), SmsVerificationPurpose.PUBLIC_REGISTER)
+				.orElseThrow();
+		ArgumentCaptor<SmsCallbackMessage> messageCaptor = ArgumentCaptor.forClass(SmsCallbackMessage.class);
+		verify(smsCallbackClient).send(messageCaptor.capture());
+		String generatedCode = extractCode(messageCaptor.getValue().content());
+		assertThat(storedCode.isUsable(generatedCode, OffsetDateTime.now(), tokenHasher)).isFalse();
+		assertThat(storedCode.isUsable("000000", OffsetDateTime.now(), tokenHasher)).isFalse();
+		assertThatThrownBy(() -> smsVerificationService
+				.verifyAndConsume(SmsVerificationPurpose.PUBLIC_REGISTER, phone, generatedCode))
+				.isInstanceOf(AuthException.class)
+				.extracting("statusCode")
+				.isEqualTo(400);
+	}
+
 	private static String extractCode(String content) {
 		Matcher matcher = CODE_PATTERN.matcher(content);
 		assertThat(matcher.find()).isTrue();

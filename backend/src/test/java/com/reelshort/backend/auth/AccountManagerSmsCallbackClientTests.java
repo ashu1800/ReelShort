@@ -110,13 +110,32 @@ class AccountManagerSmsCallbackClientTests {
 				new ObjectMapper(),
 				new SmsCallbackProperties(true, CALLBACK_URL, API_KEY, API_SECRET, Duration.ofSeconds(5)));
 		errorServer.expect(once(), requestTo(CALLBACK_URL))
-				.andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
-						.body("{\"detail\":\"account_not_found\"}"));
+				.andRespond(withStatus(HttpStatus.UNAUTHORIZED).contentType(MediaType.APPLICATION_JSON)
+						.body("{\"detail\":\"invalid_signature\"}"));
 
 		assertThatThrownBy(() -> errorClient.send(new SmsCallbackMessage("shortlink-sms-2", "+12025550102",
 				"Your ShortLink verification code is 654321.", OffsetDateTime.parse("2026-07-09T13:50:22Z"))))
 				.isInstanceOf(SmsCallbackException.class);
 		errorServer.verify();
+	}
+
+	@Test
+	void treatsAccountNotFoundAsSpecificCallbackResult() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		AccountManagerSmsCallbackClient client = new AccountManagerSmsCallbackClient(
+				builder.build(),
+				new ObjectMapper(),
+				new SmsCallbackProperties(true, CALLBACK_URL, API_KEY, API_SECRET, Duration.ofSeconds(5)));
+
+		server.expect(once(), requestTo(CALLBACK_URL))
+				.andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+						.body("{\"detail\":\"account_not_found\"}"));
+
+		assertThatThrownBy(() -> client.send(new SmsCallbackMessage("shortlink-sms-missing", "+12025550103",
+				"Your ShortLink verification code is 123456.", OffsetDateTime.parse("2026-07-09T13:50:22Z"))))
+				.isInstanceOf(SmsAccountNotFoundException.class);
+		server.verify();
 	}
 
 	private static String hmacHex(String secret, String payload) {

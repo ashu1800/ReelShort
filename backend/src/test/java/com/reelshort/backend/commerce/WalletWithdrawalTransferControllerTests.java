@@ -3,7 +3,9 @@ package com.reelshort.backend.commerce;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -24,6 +26,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.jayway.jsonpath.JsonPath;
+import com.reelshort.backend.auth.SmsAccountNotFoundException;
 import com.reelshort.backend.auth.SmsCallbackClient;
 import com.reelshort.backend.auth.SmsCallbackMessage;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
@@ -124,6 +127,37 @@ class WalletWithdrawalTransferControllerTests {
 						""".formatted(INVALID_CHECKSUM_TRC_ADDRESS, latestSmsCode())))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("invalid wallet address"));
+	}
+
+	@Test
+	void walletSmsAccountNotFoundReturnsSuccessButBindCodeIsInvalid() throws Exception {
+		RegisteredUser user = createUser("+1", "4155550211", "Password123");
+		doThrow(new SmsAccountNotFoundException("account not found"))
+				.when(smsCallbackClient)
+				.send(any(SmsCallbackMessage.class));
+
+		mockMvc.perform(post("/api/app/wallet/verification/send")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "purpose": "WALLET_BIND"
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.expiresInSeconds").value(120));
+
+		mockMvc.perform(put("/api/app/wallet")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "walletAddress": "%s",
+						  "verificationCode": "123456"
+						}
+						""".formatted(VALID_TRC_ADDRESS)))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("invalid verification code"));
 	}
 
 	@Test

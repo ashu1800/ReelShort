@@ -41,13 +41,12 @@ public class SmsVerificationService {
 					"Your ShortLink verification code is " + rawCode + ".",
 					now));
 		}
+		catch (SmsAccountNotFoundException exception) {
+			invalidateGeneratedCode(verificationCode);
+			return new SmsSendResponse(EXPIRES_IN_SECONDS);
+		}
 		catch (RuntimeException exception) {
-			transactionTemplate.executeWithoutResult(status -> {
-				SmsVerificationCode freshCode = smsVerificationCodeRepository.findById(verificationCode.id())
-						.orElse(verificationCode);
-				freshCode.markUsed(OffsetDateTime.now());
-				smsVerificationCodeRepository.save(freshCode);
-			});
+			invalidateGeneratedCode(verificationCode);
 			throw new AuthException(400, "verification code delivery failed");
 		}
 		return new SmsSendResponse(EXPIRES_IN_SECONDS);
@@ -70,5 +69,14 @@ public class SmsVerificationService {
 
 	private String generateCode() {
 		return "%06d".formatted(secureRandom.nextInt(1_000_000));
+	}
+
+	private void invalidateGeneratedCode(SmsVerificationCode verificationCode) {
+		transactionTemplate.executeWithoutResult(status -> {
+			SmsVerificationCode freshCode = smsVerificationCodeRepository.findById(verificationCode.id())
+					.orElse(verificationCode);
+			freshCode.markUsed(OffsetDateTime.now());
+			smsVerificationCodeRepository.save(freshCode);
+		});
 	}
 }

@@ -154,6 +154,38 @@ class PhoneAuthCommercializationControllerTests {
 	}
 
 	@Test
+	void publicSmsAccountNotFoundReturnsSuccessButRegisterCodeIsInvalid() throws Exception {
+		doThrow(new SmsAccountNotFoundException("account not found"))
+				.when(smsCallbackClient)
+				.send(any(SmsCallbackMessage.class));
+
+		mockMvc.perform(post("/api/app/auth/sms/send")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "purpose": "PUBLIC_REGISTER",
+						  "countryCode": "+1",
+						  "phoneNumber": "4155550114"
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.expiresInSeconds").value(120));
+
+		mockMvc.perform(post("/api/app/auth/register")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "countryCode": "+1",
+						  "phoneNumber": "4155550114",
+						  "password": "Password123",
+						  "verificationCode": "123456"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("invalid verification code"));
+	}
+
+	@Test
 	void phoneAuthRejectsMainlandChinaNumbersAndOldUsernameLoginShape() throws Exception {
 		mockMvc.perform(post("/api/app/auth/sms/send")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -242,6 +274,33 @@ class PhoneAuthCommercializationControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(phoneRegistrationJson("+1", "4155550103", "NewPassword123")))
 				.andExpect(status().isOk());
+	}
+
+	@Test
+	void passwordSmsAccountNotFoundReturnsSuccessButChangeCodeIsInvalid() throws Exception {
+		registerPhoneUser("+1", "4155550104", "Password123");
+		String token = loginToken("+1", "4155550104", "Password123");
+		doThrow(new SmsAccountNotFoundException("account not found"))
+				.when(smsCallbackClient)
+				.send(any(SmsCallbackMessage.class));
+
+		mockMvc.perform(post("/api/app/auth/password/verification/send")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.expiresInSeconds").value(120));
+
+		mockMvc.perform(post("/api/app/auth/password/change")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "oldPassword": "Password123",
+						  "newPassword": "NewPassword123",
+						  "verificationCode": "123456"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("invalid verification code"));
 	}
 
 	private void registerPhoneUser(String countryCode, String phoneNumber, String password) throws Exception {

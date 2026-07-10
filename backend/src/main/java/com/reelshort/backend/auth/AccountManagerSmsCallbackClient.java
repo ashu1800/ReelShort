@@ -100,6 +100,9 @@ public class AccountManagerSmsCallbackClient implements SmsCallbackClient {
 		if (statusCode.value() == 201) {
 			return true;
 		}
+		if (statusCode.value() == 404 && isAccountNotFound(body)) {
+			throw new SmsAccountNotFoundException("sms callback account not found");
+		}
 		if (statusCode.value() == 200 && StringUtils.hasText(body)) {
 			try {
 				JsonNode node = objectMapper.readTree(body);
@@ -110,6 +113,21 @@ public class AccountManagerSmsCallbackClient implements SmsCallbackClient {
 			}
 		}
 		return false;
+	}
+
+	private boolean isAccountNotFound(String body) {
+		if (!StringUtils.hasText(body)) {
+			return false;
+		}
+		try {
+			JsonNode node = objectMapper.readTree(body);
+			return "account_not_found".equals(node.path("detail").asText())
+					|| "account_not_found".equals(node.path("code").asText())
+					|| "account_not_found".equals(node.path("error").asText());
+		}
+		catch (Exception exception) {
+			return body.contains("account_not_found");
+		}
 	}
 
 	private static String hmacHex(String secret, String payload)

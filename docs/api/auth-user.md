@@ -4,7 +4,9 @@
 
 ## `POST /api/app/auth/sms/send`
 
-公开短信发送接口。仅允许 `PUBLIC_REGISTER` 用途。发送成功的前提是 AccountManager 回调成功；若手机号未在 AccountManager 中售出或回调失败，接口返回业务错误。
+公开短信发送接口。仅允许 `PUBLIC_REGISTER` 用途。发送成功的前提是 AccountManager 回调成功。
+如果 AccountManager 返回 `404 account_not_found`，ShortLink 会对 App 返回成功并让客户端进入 120 秒倒计时，但本次本地验证码会立即作废，后续注册提交任意验证码都会返回 `invalid verification code`。
+除 `account_not_found` 外的回调失败仍返回业务错误。
 
 请求：
 
@@ -116,7 +118,8 @@
 ## 当前约束
 
 - 只支持非中国大陆手机号，拒绝 `+86`。
-- 验证码为随机 6 位数字，有效期 120 秒；发送依赖 AccountManager 供应商短信回调成功，不做本地兜底。
+- 验证码为随机 6 位数字，有效期 120 秒；发送依赖 AccountManager 供应商短信回调成功，不做本地可用验证码兜底。
+- AccountManager `404 account_not_found` 是未售出手机号兼容策略：发送接口对 App 假成功，但验证码不可用，验证阶段仍失败。
 - AccountManager 回调超时由 `REELSHORT_SMS_CALLBACK_TIMEOUT` 控制，默认 `5s`。
 - 同手机号同用途重复发送会失效旧验证码；验证码只能消费一次。
 - 密码使用 BCrypt 哈希保存，不保存明文密码。
