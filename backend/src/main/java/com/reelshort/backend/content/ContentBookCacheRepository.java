@@ -8,6 +8,12 @@ public interface ContentBookCacheRepository extends JpaRepository<ContentBookCac
 
 	Optional<ContentBookCache> findByBookIdAndLocale(String bookId, ContentLocale locale);
 
+	Optional<ContentBookCache> findFirstByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale locale,
+			int chapterCount);
+
+	java.util.List<ContentBookCache> findByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale locale,
+			int chapterCount);
+
 	java.util.List<ContentBookCache> findTop50ByLocaleAndTitleContainingIgnoreCaseOrLocaleAndDescriptionContainingIgnoreCase(
 			ContentLocale titleLocale,
 			String titleKeyword,

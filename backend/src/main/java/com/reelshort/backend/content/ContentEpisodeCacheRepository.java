@@ -11,4 +11,7 @@ public interface ContentEpisodeCacheRepository extends JpaRepository<ContentEpis
 
 	Optional<ContentEpisodeCache> findByBookIdAndFilteredTitleAndLocale(String bookId, String filteredTitle,
 			ContentLocale locale);
+
+	Optional<ContentEpisodeCache> findFirstByBookIdAndLocaleAndEpisodeCountGreaterThanOrderByRefreshedAtDesc(
+			String bookId, ContentLocale locale, int episodeCount);
 }
