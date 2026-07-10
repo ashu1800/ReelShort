@@ -1,10 +1,10 @@
 # Auth/User API
 
-当前 App 普通账号使用 `countryCode + phoneNumber + password`。公开注册只模拟短信流程，不创建可登录账号；真正可登录账号由内部接口创建。
+当前 App 普通账号使用 `countryCode + phoneNumber + password`。公开注册只完成验证码流程，不创建可登录账号；真正可登录账号由内部接口创建。验证码由 ShortLink 生成随机 6 位数字，并通过 AccountManager 供应商短信回调写入验证码查询系统。
 
 ## `POST /api/app/auth/sms/send`
 
-公开模拟短信发送接口。仅允许 `PUBLIC_REGISTER` 用途。
+公开短信发送接口。仅允许 `PUBLIC_REGISTER` 用途。发送成功的前提是 AccountManager 回调成功；若手机号未在 AccountManager 中售出或回调失败，接口返回业务错误。
 
 请求：
 
@@ -32,7 +32,7 @@
 
 ## `POST /api/app/auth/register`
 
-公开假注册完成接口。验证码固定为 `000000`，通过后只返回模拟完成状态，不创建用户、不返回 Token。
+公开假注册完成接口。验证码为最近一次发送成功的 6 位数字，通过后只返回模拟完成状态，不创建用户、不返回 Token。
 
 请求：
 
@@ -41,7 +41,7 @@
   "countryCode": "+1",
   "phoneNumber": "4155550101",
   "password": "Password123",
-  "verificationCode": "000000"
+  "verificationCode": "123456"
 }
 ```
 
@@ -93,7 +93,7 @@
 
 ## `POST /api/app/auth/password/verification/send`
 
-登录用户发送改密验证码。必须携带 `Authorization: Bearer <token>`，请求体为空。后端只会给当前登录用户手机号发送 `PASSWORD_CHANGE` 模拟验证码。
+登录用户发送改密验证码。必须携带 `Authorization: Bearer <token>`，请求体为空。后端只会给当前登录用户手机号发送 `PASSWORD_CHANGE` 验证码。
 
 ## `POST /api/app/auth/password/change`
 
@@ -105,7 +105,7 @@
 {
   "oldPassword": "Password123",
   "newPassword": "NewPassword123",
-  "verificationCode": "000000"
+  "verificationCode": "123456"
 }
 ```
 
@@ -116,7 +116,8 @@
 ## 当前约束
 
 - 只支持非中国大陆手机号，拒绝 `+86`。
-- 模拟短信验证码固定为 `000000`，有效期 120 秒。
+- 验证码为随机 6 位数字，有效期 120 秒；发送依赖 AccountManager 供应商短信回调成功，不做本地兜底。
+- AccountManager 回调超时由 `REELSHORT_SMS_CALLBACK_TIMEOUT` 控制，默认 `5s`。
 - 同手机号同用途重复发送会失效旧验证码；验证码只能消费一次。
 - 密码使用 BCrypt 哈希保存，不保存明文密码。
 - 用户状态包含 `ACTIVE`、`DISABLED`、`BLACKLISTED`。

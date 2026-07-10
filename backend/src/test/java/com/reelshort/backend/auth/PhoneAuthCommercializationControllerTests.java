@@ -3,16 +3,22 @@ package com.reelshort.backend.auth;
 import static org.hamcrest.Matchers.blankOrNullString;
 import static org.hamcrest.Matchers.not;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.reelshort.backend.user.UserAccountRepository;
@@ -26,6 +32,9 @@ class PhoneAuthCommercializationControllerTests {
 
 	@Autowired
 	private UserAccountRepository userAccountRepository;
+
+	@MockitoBean
+	private SmsCallbackClient smsCallbackClient;
 
 	@Test
 	void internalPhoneRegistrationRequiresSuperToken() throws Exception {
@@ -83,9 +92,9 @@ class PhoneAuthCommercializationControllerTests {
 						  "countryCode": "+1",
 						  "phoneNumber": "4155550102",
 						  "password": "Password123",
-						  "verificationCode": "000000"
+						  "verificationCode": "%s"
 						}
-						"""))
+						""".formatted(latestSmsCode())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("SIMULATED"));
 
@@ -123,6 +132,25 @@ class PhoneAuthCommercializationControllerTests {
 						"""))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("invalid verification code"));
+	}
+
+	@Test
+	void publicSmsCallbackFailureReturnsBusinessError() throws Exception {
+		doThrow(new SmsCallbackException("account manager rejected sms"))
+				.when(smsCallbackClient)
+				.send(any(SmsCallbackMessage.class));
+
+		mockMvc.perform(post("/api/app/auth/sms/send")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "purpose": "PUBLIC_REGISTER",
+						  "countryCode": "+1",
+						  "phoneNumber": "4155550113"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("verification code delivery failed"));
 	}
 
 	@Test
@@ -194,9 +222,9 @@ class PhoneAuthCommercializationControllerTests {
 						{
 						  "oldPassword": "Password123",
 						  "newPassword": "NewPassword123",
-						  "verificationCode": "000000"
+						  "verificationCode": "%s"
 						}
-						"""))
+						""".formatted(latestSmsCode())))
 				.andExpect(status().isOk());
 
 		mockMvc.perform(post("/api/app/wallet/verification/send")
@@ -243,5 +271,14 @@ class PhoneAuthCommercializationControllerTests {
 				  "password": "%s"
 				}
 				""".formatted(countryCode, phoneNumber, password);
+	}
+
+	private String latestSmsCode() {
+		ArgumentCaptor<SmsCallbackMessage> captor = ArgumentCaptor.forClass(SmsCallbackMessage.class);
+		verify(smsCallbackClient, atLeastOnce()).send(captor.capture());
+		String content = captor.getAllValues().get(captor.getAllValues().size() - 1).content();
+		java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("code is (\\d{6})\\.").matcher(content);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
 	}
 }

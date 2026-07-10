@@ -1136,8 +1136,8 @@ class AppStateController(private val dataSource: AppDataSource) {
 
     private fun smsSentMessage(): String =
         when (state.value.language) {
-            AppLanguage.ENGLISH -> "Verification code sent. Use 000000 within 120 seconds."
-            AppLanguage.TRADITIONAL_CHINESE -> "驗證碼已發送，請在 120 秒內使用 000000。"
+            AppLanguage.ENGLISH -> "Verification code sent. Enter the latest 6-digit code within 120 seconds."
+            AppLanguage.TRADITIONAL_CHINESE -> "驗證碼已發送，請在 120 秒內輸入最新 6 位數驗證碼。"
         }
 
     private fun registrationSimulationMessage(): String =

@@ -1,6 +1,9 @@
 package com.reelshort.backend.auth;
 
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -11,6 +14,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -58,6 +62,9 @@ class AppSecurityContractTests {
 	@MockitoBean
 	private ContentProvider contentProvider;
 
+	@MockitoBean
+	private SmsCallbackClient smsCallbackClient;
+
 	@Test
 	void authEndpointsRemainPublic() throws Exception {
 		mockMvc.perform(post("/api/app/auth/sms/send")
@@ -79,11 +86,20 @@ class AppSecurityContractTests {
 						  "countryCode": "+1",
 						  "phoneNumber": "4155550401",
 						  "password": "Password123",
-						  "verificationCode": "000000"
+						  "verificationCode": "%s"
 						}
-						"""))
+						""".formatted(latestSmsCode())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("SIMULATED"));
+	}
+
+	@Test
+	void malformedJsonReturnsBadRequestInsteadOfInternalServerError() throws Exception {
+		mockMvc.perform(post("/api/app/auth/sms/send")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\\\"purpose\\\":\\\"PUBLIC_REGISTER\\\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("bad request"));
 	}
 
 	@Test
@@ -195,5 +211,14 @@ class AppSecurityContractTests {
 
 	private String registerAndExtractToken(String username) throws Exception {
 		return TestAppUsers.token(mockMvc, objectMapper, username);
+	}
+
+	private String latestSmsCode() {
+		ArgumentCaptor<SmsCallbackMessage> captor = ArgumentCaptor.forClass(SmsCallbackMessage.class);
+		verify(smsCallbackClient, atLeastOnce()).send(captor.capture());
+		String content = captor.getAllValues().get(captor.getAllValues().size() - 1).content();
+		java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("code is (\\d{6})\\.").matcher(content);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
 	}
 }

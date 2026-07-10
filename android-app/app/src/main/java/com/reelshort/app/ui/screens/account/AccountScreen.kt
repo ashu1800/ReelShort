@@ -225,7 +225,7 @@ internal fun AccountScreen(
                     AccountMenuRow(
                         icon = Icons.Rounded.Settings,
                         title = copy.accountChangePasswordTitle,
-                        subtitle = "000000",
+                        subtitle = copy.authVerificationCodeLabel,
                         onClick = { passwordSheetVisible = true },
                     )
                     AccountMenuDivider()
@@ -909,7 +909,7 @@ private fun WalletBottomSheet(
         SheetForm(title = copy.accountWalletTitle) {
             Text(wallet?.walletAddress ?: copy.accountWalletNoBound, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
             LoginTextField(walletAddress, { walletAddress = it.trim() }, copy.accountWalletAddressLabel, enabled = true)
-            LoginTextField(code, { code = it.filter(Char::isDigit).take(6) }, "000000", enabled = true)
+            LoginTextField(code, { code = it.filter(Char::isDigit).take(6) }, copy.authVerificationCodeLabel, enabled = true)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 GoldOutlinedButton(
                     text = if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
@@ -1055,7 +1055,7 @@ private fun PasswordBottomSheet(
         SheetForm(title = copy.accountChangePasswordTitle) {
             LoginTextField(oldPassword, { oldPassword = it }, copy.authPasswordLabel, enabled = true, isPassword = true)
             LoginTextField(newPassword, { newPassword = it }, copy.accountPasswordNewLabel, enabled = true, isPassword = true)
-            LoginTextField(code, { code = it.filter(Char::isDigit).take(6) }, "000000", enabled = true)
+            LoginTextField(code, { code = it.filter(Char::isDigit).take(6) }, copy.authVerificationCodeLabel, enabled = true)
             GoldOutlinedButton(
                 if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
                 smsCountdown == 0,

@@ -14,8 +14,6 @@ import jakarta.persistence.Table;
 @Table(name = "sms_verification_codes")
 public class SmsVerificationCode {
 
-	static final String SIMULATED_CODE = "000000";
-
 	@Id
 	private UUID id;
 
@@ -32,6 +30,9 @@ public class SmsVerificationCode {
 	@Column(name = "phone_e164", nullable = false, length = 32)
 	private String phoneE164;
 
+	@Column(name = "code_hash", nullable = false, length = 128)
+	private String codeHash;
+
 	@Column(name = "expires_at", nullable = false)
 	private OffsetDateTime expiresAt;
 
@@ -45,23 +46,28 @@ public class SmsVerificationCode {
 	}
 
 	private SmsVerificationCode(UUID id, SmsVerificationPurpose purpose, PhoneIdentity phone,
-			OffsetDateTime expiresAt, OffsetDateTime createdAt) {
+			String codeHash, OffsetDateTime expiresAt, OffsetDateTime createdAt) {
 		this.id = id;
 		this.purpose = purpose;
 		this.phoneCountryCode = phone.countryCode();
 		this.phoneNumber = phone.phoneNumber();
 		this.phoneE164 = phone.e164();
+		this.codeHash = codeHash;
 		this.expiresAt = expiresAt;
 		this.createdAt = createdAt;
 	}
 
-	public static SmsVerificationCode create(SmsVerificationPurpose purpose, PhoneIdentity phone) {
+	public static SmsVerificationCode create(SmsVerificationPurpose purpose, PhoneIdentity phone,
+			String rawCode, TokenHasher tokenHasher) {
 		OffsetDateTime now = OffsetDateTime.now();
-		return new SmsVerificationCode(UUID.randomUUID(), purpose, phone, now.plusSeconds(120), now);
+		UUID id = UUID.randomUUID();
+		return new SmsVerificationCode(id, purpose, phone, hashCode(id, rawCode, tokenHasher),
+				now.plusSeconds(120), now);
 	}
 
-	public boolean isUsable(String code, OffsetDateTime now) {
-		return usedAt == null && !expiresAt.isBefore(now) && SIMULATED_CODE.equals(code);
+	public boolean isUsable(String code, OffsetDateTime now, TokenHasher tokenHasher) {
+		return usedAt == null && !expiresAt.isBefore(now)
+				&& codeHash.equals(hashCode(id, code, tokenHasher));
 	}
 
 	public void markUsed(OffsetDateTime usedAt) {
@@ -78,5 +84,13 @@ public class SmsVerificationCode {
 
 	public String phoneE164() {
 		return phoneE164;
+	}
+
+	public String codeHash() {
+		return codeHash;
+	}
+
+	private static String hashCode(UUID id, String rawCode, TokenHasher tokenHasher) {
+		return tokenHasher.hash(id + ":" + rawCode);
 	}
 }

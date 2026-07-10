@@ -294,7 +294,7 @@ class AppStateControllerTest {
         val state = controller.state.value
         assertEquals(120, state.authSmsCountdownSeconds)
         assertEquals(1, state.authSmsCountdownTrigger)
-        assertEquals("Verification code sent. Use 000000 within 120 seconds.", state.errorMessage)
+        assertEquals("Verification code sent. Enter the latest 6-digit code within 120 seconds.", state.errorMessage)
     }
 
     @Test
@@ -1620,7 +1620,7 @@ class AppStateControllerTest {
         controller.sendPasswordChangeVerification()
 
         assertEquals(listOf("password:sms"), dataSource.calls)
-        assertEquals("Verification code sent. Use 000000 within 120 seconds.", controller.state.value.errorMessage)
+        assertEquals("Verification code sent. Enter the latest 6-digit code within 120 seconds.", controller.state.value.errorMessage)
     }
 
     @Test

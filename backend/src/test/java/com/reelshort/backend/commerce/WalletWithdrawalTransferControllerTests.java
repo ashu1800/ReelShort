@@ -2,6 +2,9 @@ package com.reelshort.backend.commerce;
 
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -11,14 +14,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.jayway.jsonpath.JsonPath;
+import com.reelshort.backend.auth.SmsCallbackClient;
+import com.reelshort.backend.auth.SmsCallbackMessage;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
 
@@ -34,6 +41,9 @@ class WalletWithdrawalTransferControllerTests {
 
 	@Autowired
 	private SystemConfigService systemConfigService;
+
+	@MockitoBean
+	private SmsCallbackClient smsCallbackClient;
 
 	@Test
 	void withdrawalSummaryReturnsZeroBalanceBeforePointAccountExists() throws Exception {
@@ -69,9 +79,9 @@ class WalletWithdrawalTransferControllerTests {
 				.content("""
 						{
 						  "walletAddress": "%s",
-						  "verificationCode": "000000"
+						  "verificationCode": "%s"
 						}
-						""".formatted(VALID_TRC_ADDRESS)))
+						""".formatted(VALID_TRC_ADDRESS, latestSmsCode())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.network").value("TRC20"))
 				.andExpect(jsonPath("$.data.walletAddress").value(VALID_TRC_ADDRESS));
@@ -109,9 +119,9 @@ class WalletWithdrawalTransferControllerTests {
 				.content("""
 						{
 						  "walletAddress": "%s",
-						  "verificationCode": "000000"
+						  "verificationCode": "%s"
 						}
-						""".formatted(INVALID_CHECKSUM_TRC_ADDRESS)))
+						""".formatted(INVALID_CHECKSUM_TRC_ADDRESS, latestSmsCode())))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("invalid wallet address"));
 	}
@@ -387,10 +397,19 @@ class WalletWithdrawalTransferControllerTests {
 				.content("""
 						{
 						  "walletAddress": "%s",
-						  "verificationCode": "000000"
+						  "verificationCode": "%s"
 						}
-						""".formatted(walletAddress)))
+						""".formatted(walletAddress, latestSmsCode())))
 				.andExpect(status().isOk());
+	}
+
+	private String latestSmsCode() {
+		ArgumentCaptor<SmsCallbackMessage> captor = ArgumentCaptor.forClass(SmsCallbackMessage.class);
+		verify(smsCallbackClient, atLeastOnce()).send(captor.capture());
+		String content = captor.getAllValues().get(captor.getAllValues().size() - 1).content();
+		java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("code is (\\d{6})\\.").matcher(content);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
 	}
 
 	private record RegisteredUser(UUID userId, String token, String account) {

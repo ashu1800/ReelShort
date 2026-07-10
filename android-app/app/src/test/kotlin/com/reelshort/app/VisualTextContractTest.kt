@@ -255,7 +255,7 @@ class VisualTextContractTest {
         assertEquals(
             AuthSheetCopy(
                 title = "Create your account",
-                subtitle = "Use a non-mainland phone number. Verification is simulated for this build.",
+                subtitle = "Use a non-mainland phone number and enter the 6-digit code.",
                 primaryAction = "Create account",
                 secondaryAction = "Already have access? Sign in",
             ),
@@ -277,8 +277,8 @@ class VisualTextContractTest {
     fun phoneRegisterRequiresEnteredVerificationCode() {
         assertEquals(false, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = ""))
         assertEquals(false, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = "12345"))
-        assertEquals(true, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = "000000"))
-        assertEquals(false, authRegisterEnabled(isLoading = true, phoneNumber = "4155550101", password = "Password123", verificationCode = "000000"))
+        assertEquals(true, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = "654321"))
+        assertEquals(false, authRegisterEnabled(isLoading = true, phoneNumber = "4155550101", password = "Password123", verificationCode = "654321"))
     }
 
     @Test
