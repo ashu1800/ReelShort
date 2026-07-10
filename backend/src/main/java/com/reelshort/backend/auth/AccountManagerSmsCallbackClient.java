@@ -29,6 +29,7 @@ public class AccountManagerSmsCallbackClient implements SmsCallbackClient {
 
 	private static final DateTimeFormatter RECEIVED_AT_FORMAT =
 			DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+	private static final String USER_AGENT = "ShortLinkBackend/1.0";
 
 	private final RestClient restClient;
 	private final ObjectMapper objectMapper;
@@ -63,6 +64,8 @@ public class AccountManagerSmsCallbackClient implements SmsCallbackClient {
 			Boolean accepted = restClient.post()
 					.uri(properties.url())
 					.contentType(MediaType.APPLICATION_JSON)
+					.accept(MediaType.APPLICATION_JSON)
+					.header("User-Agent", USER_AGENT)
 					.header("X-API-Key", properties.apiKey())
 					.header("X-Timestamp", timestamp)
 					.header("X-Nonce", nonce)

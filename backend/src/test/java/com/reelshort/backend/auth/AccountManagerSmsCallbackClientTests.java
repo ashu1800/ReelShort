@@ -48,6 +48,8 @@ class AccountManagerSmsCallbackClientTests {
 
 		server.expect(once(), requestTo(CALLBACK_URL))
 				.andExpect(method(HttpMethod.POST))
+				.andExpect(header("User-Agent", "ShortLinkBackend/1.0"))
+				.andExpect(header("Accept", MediaType.APPLICATION_JSON_VALUE))
 				.andExpect(header("X-API-Key", API_KEY))
 				.andExpect(request -> {
 					String timestamp = request.getHeaders().getFirst("X-Timestamp");
