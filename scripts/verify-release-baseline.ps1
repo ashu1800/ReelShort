@@ -4,6 +4,7 @@ param(
     [switch]$SkipAdminWeb,
     [switch]$SkipAndroid,
     [switch]$SkipDiffCheck,
+    [switch]$AllowUntrackedFiles,
     [switch]$InstallApk,
     [string]$Adb = "adb"
 )
@@ -114,12 +115,38 @@ if (-not $SkipAndroid) {
 }
 
 if (-not $SkipDiffCheck) {
-    Invoke-Step "git diff --check" {
+    Invoke-Step "git working tree diff --check" {
         Push-Location $repoRoot
         try {
             Invoke-Native "git" @("diff", "--check")
         } finally {
             Pop-Location
+        }
+    }
+
+    Invoke-Step "git staged diff --check" {
+        Push-Location $repoRoot
+        try {
+            Invoke-Native "git" @("diff", "--cached", "--check")
+        } finally {
+            Pop-Location
+        }
+    }
+
+    if (-not $AllowUntrackedFiles) {
+        Invoke-Step "git untracked files" {
+            Push-Location $repoRoot
+            try {
+                $untrackedFiles = @(& git ls-files --others --exclude-standard)
+                if ($LASTEXITCODE -ne 0) {
+                    throw "git exited with code $LASTEXITCODE"
+                }
+                if ($untrackedFiles.Count -gt 0) {
+                    throw "Untracked files found: $($untrackedFiles -join ', '). Use -AllowUntrackedFiles only for intentional generated output."
+                }
+            } finally {
+                Pop-Location
+            }
         }
     }
 }
