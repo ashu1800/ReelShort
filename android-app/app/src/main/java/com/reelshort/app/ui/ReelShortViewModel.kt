@@ -13,7 +13,6 @@ import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.network.OkHttpReelShortApiClient
 import com.reelshort.app.session.FileHomeShelfStore
-import com.reelshort.app.session.FileSessionStore
 import com.reelshort.app.state.AppStateController
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.BuildConfig
@@ -175,7 +174,7 @@ class ReelShortViewModel(
                     val filesDir = context.filesDir
                     val sessionStore = AndroidSessionStore.create(
                         context = context,
-                        fallback = FileSessionStore(File(filesDir, "reelshort-session.json")),
+                        legacyPlaintextFile = File(filesDir, "reelshort-session.json"),
                     )
                     val homeShelfStore = FileHomeShelfStore(File(filesDir, "home-shelf-cache.json"))
                     val credentialStore = com.reelshort.app.AndroidCredentialStore.create(context)
