@@ -30,7 +30,7 @@ infra/backups/YYYYMMDD-HHMMSS-fff-<random>/
 
 默认不会备份 `infra/.env`，避免数据库口令、超级 Token、短信供应商密钥和支付回调密钥以明文进入备份。仅在确实需要配置灾备时，才显式传入 `-IncludeEncryptedConfig`。脚本在 Windows 上使用 DPAPI `CurrentUser` 将配置直接加密为 `config/environment.dpapi`，不会创建明文临时文件；密文只能由同一台 Windows 主机上同一用户上下文解密。
 
-备份目录会在 Windows 上移除继承 ACL，仅授予当前用户完全控制。ACL 设置或 DPAPI 加密失败时脚本会失败，不会回退为明文配置备份。非 Windows 主机仍可执行默认数据库备份，但传入 `-IncludeEncryptedConfig` 会被明确拒绝；需要跨平台配置灾备时，应使用部署平台提供的密钥管理或加密备份系统。
+备份目录会在 Windows 上移除继承 ACL，仅授予当前用户完全控制；非 Windows 上输出根和单次备份目录设置为 `0700`，`database.dump` 和 `manifest.json` 设置为 `0600`。ACL、`chmod` 或 DPAPI 加密失败时脚本会失败，不会继续生成权限过宽的备份，也不会回退为明文配置备份。非 Windows 主机仍可执行默认数据库备份，但传入 `-IncludeEncryptedConfig` 会被明确拒绝；需要跨平台配置灾备时，应使用部署平台提供的密钥管理或加密备份系统。
 
 ## 执行备份
 

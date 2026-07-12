@@ -22,6 +22,9 @@ function Set-OwnerOnlyAcl {
     param([string] $Path)
 
     if (-not $isWindowsHost) {
+        $mode = if (Test-Path -LiteralPath $Path -PathType Container) { "700" } else { "600" }
+        & chmod $mode -- $Path
+        if ($LASTEXITCODE -ne 0) { throw "chmod $mode failed for backup path with exit code $LASTEXITCODE" }
         return
     }
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -77,6 +80,8 @@ function Read-EnvValue {
 $postgresDb = Read-EnvValue -Path $envPath -Name "POSTGRES_DB" -DefaultValue "reelshort"
 $postgresUser = Read-EnvValue -Path $envPath -Name "POSTGRES_USER" -DefaultValue "reelshort"
 
+New-Item -ItemType Directory -Force -Path $outputRootPath | Out-Null
+Set-OwnerOnlyAcl -Path $outputRootPath
 New-Item -ItemType Directory -Force -Path $backupDir, $configDir | Out-Null
 Set-OwnerOnlyAcl -Path $backupDir
 
@@ -84,7 +89,10 @@ Push-Location $repoRoot
 try {
     Write-Host "Creating PostgreSQL backup at $databaseDumpPath"
     docker compose --env-file $envPath -f $composePath exec -T postgres pg_dump -U $postgresUser -d $postgresDb -Fc -f $containerDumpPath
+    if ($LASTEXITCODE -ne 0) { throw "pg_dump failed with exit code $LASTEXITCODE" }
     docker compose --env-file $envPath -f $composePath cp "postgres:$containerDumpPath" $databaseDumpPath
+    if ($LASTEXITCODE -ne 0) { throw "docker compose cp failed with exit code $LASTEXITCODE" }
+    Set-OwnerOnlyAcl -Path $databaseDumpPath
 
     if ($IncludeEncryptedConfig) {
         $plainBytes = [IO.File]::ReadAllBytes($envPath)
@@ -121,11 +129,13 @@ try {
         restoreHint = "Stop backend/nginx writes, then run infra/scripts/restore.ps1 -BackupDir $backupDir -ConfirmRestore"
     }
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $backupDir "manifest.json") -Encoding UTF8
+    Set-OwnerOnlyAcl -Path (Join-Path $backupDir "manifest.json")
 
     $files = Get-ChildItem -LiteralPath $backupDir -Recurse -File |
         ForEach-Object { $_.FullName.Substring($backupDir.Length + 1).Replace("\", "/") }
     $manifest.files = $files
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $backupDir "manifest.json") -Encoding UTF8
+    Set-OwnerOnlyAcl -Path (Join-Path $backupDir "manifest.json")
 
     if ($RetentionDays -gt 0 -and (Test-Path -LiteralPath $outputRootPath)) {
         $cutoff = (Get-Date).AddDays(-$RetentionDays)

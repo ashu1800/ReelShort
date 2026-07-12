@@ -64,6 +64,13 @@ for %%A in (%*) do (
 exit /b 0
 '@
     Set-Content -LiteralPath (Join-Path $fakeBin "docker.cmd") -Value $fakeDocker -Encoding ASCII
+    $fakeChmod = @'
+@echo off
+if not "%REELSHORT_TEST_CHMOD_LOG%"=="" echo %*>>"%REELSHORT_TEST_CHMOD_LOG%"
+if "%REELSHORT_TEST_FAIL_CHMOD%"=="1" exit /b 23
+exit /b 0
+'@
+    Set-Content -LiteralPath (Join-Path $fakeBin "chmod.cmd") -Value $fakeChmod -Encoding ASCII
     $originalPath = $env:PATH
     $env:PATH = "$fakeBin;$originalPath"
     $dockerLog = Join-Path $testRoot "docker.log"
@@ -116,13 +123,25 @@ exit /b 0
     $windowsOs = $env:OS
     try {
         $env:OS = "NonWindows"
+        $chmodLog = Join-Path $testRoot "chmod.log"
+        $env:REELSHORT_TEST_CHMOD_LOG = $chmodLog
         Assert-Throws { & (Join-Path $repoRoot "infra\scripts\backup.ps1") -EnvFile $relativeEnvFile -OutputRoot $relativeBackupOutputRoot -RetentionDays 0 -IncludeEncryptedConfig } "Non-Windows encrypted configuration backup must fail explicitly"
         & (Join-Path $repoRoot "infra\scripts\backup.ps1") -EnvFile $relativeEnvFile -OutputRoot $relativeBackupOutputRoot -RetentionDays 0
         $nonWindowsBackup = Get-ChildItem -LiteralPath $backupOutputRoot -Directory | Where-Object Name -Match '^\d{8}-\d{6}-\d{3}-[0-9a-f]{8}$' | Sort-Object Name -Descending | Select-Object -First 1
         Assert-Condition (-not (Test-Path (Join-Path $nonWindowsBackup.FullName "config\environment.dpapi"))) "Non-Windows default backup must not create encrypted configuration"
+        $chmodCalls = Get-Content -LiteralPath $chmodLog -Raw
+        Assert-Condition (($chmodCalls -split "`n" | Where-Object { $_ -match '^700 ' }).Count -ge 2) "Non-Windows backup must chmod output root and backup directory to 700"
+        Assert-Condition ($chmodCalls -match '600 .*database\.dump') "Non-Windows backup must chmod database.dump to 600"
+        Assert-Condition ($chmodCalls -match '600 .*manifest\.json') "Non-Windows backup must chmod manifest.json to 600"
+
+        $env:REELSHORT_TEST_FAIL_CHMOD = "1"
+        Assert-Throws { & (Join-Path $repoRoot "infra\scripts\backup.ps1") -EnvFile $relativeEnvFile -OutputRoot $relativeBackupOutputRoot -RetentionDays 0 } "Non-Windows chmod failure must fail the backup"
+        $env:REELSHORT_TEST_FAIL_CHMOD = $null
     }
     finally {
         $env:OS = $windowsOs
+        $env:REELSHORT_TEST_FAIL_CHMOD = $null
+        $env:REELSHORT_TEST_CHMOD_LOG = $null
     }
 
     Set-Content -LiteralPath $safeRestorePath -Value "existing-content"
@@ -170,6 +189,8 @@ finally {
     Get-ChildItem -LiteralPath (Join-Path $repoRoot "infra\scripts") -Filter "restore-create-race-test.ps1" -ErrorAction SilentlyContinue | Remove-Item -Force
     $env:REELSHORT_TEST_FAIL_PG_RESTORE = $null
     $env:REELSHORT_TEST_DOCKER_LOG = $null
+    $env:REELSHORT_TEST_FAIL_CHMOD = $null
+    $env:REELSHORT_TEST_CHMOD_LOG = $null
     if (Test-Path -LiteralPath $safeRestorePath) { Remove-Item -LiteralPath $safeRestorePath -Force }
     if (Test-Path -LiteralPath $testRoot) { Remove-Item -LiteralPath $testRoot -Recurse -Force }
 }
