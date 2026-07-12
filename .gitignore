@@ -13,6 +13,7 @@ Thumbs.db
 /artifacts/
 backend/logs/
 infra/backups/
+infra/restored-config/
 
 # Java / Gradle
 .gradle/

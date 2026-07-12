@@ -28,6 +28,8 @@ Push-Location $repoRoot
 try {
     git check-ignore -q "infra/backups/"
     Assert-Condition ($LASTEXITCODE -eq 0) "infra/backups/ must be ignored by Git"
+    git check-ignore -q "infra/restored-config/example.env"
+    Assert-Condition ($LASTEXITCODE -eq 0) "infra/restored-config/ must be ignored by Git"
 }
 finally {
     Pop-Location
@@ -47,6 +49,16 @@ foreach ($required in @("pg_restore", "--clean", "--if-exists", "-f `$composePat
     Assert-Condition ($restoreContent.Contains($required)) "restore.ps1 must contain '$required'"
 }
 
+foreach ($required in @("IncludeEncryptedConfig", "environment.dpapi", "ProtectedData", "CurrentUser")) {
+    Assert-Condition ($backupContent.Contains($required)) "backup.ps1 must contain '$required'"
+}
+
+Assert-Condition (-not ($backupContent -match 'Copy-Item[^\r\n]+\$envPath')) "backup.ps1 must never copy the environment file as plaintext"
+
+foreach ($required in @("RestoreEncryptedConfig", "ConfigRestorePath", "environment.dpapi", "ProtectedData", "CurrentUser", "infra/restored-config", "IsPathRooted", "ReparsePoint", "CreateNew")) {
+    Assert-Condition ($restoreContent.Contains($required)) "restore.ps1 must contain '$required'"
+}
+
 foreach ($service in @("postgres", "redis")) {
     $servicePattern = "(?ms)^  ${service}:\r?\n(?<body>.*?)(?=^  [a-zA-Z0-9-]+:\r?\n|^volumes:\r?\n)"
     $serviceMatch = [regex]::Match($productionComposeContent, $servicePattern)
@@ -61,5 +73,7 @@ Assert-Condition ($productionComposeContent -match 'REELSHORT_DB_PASSWORD:\s*\$\
 Assert-Condition (-not $productionComposeContent.Contains('reelshort_dev')) "Production Compose must not contain the development database password"
 Assert-Condition ($nginxContent -match '(?ms)location\s+=\s+/api/internal\s*\{\s*return\s+404;\s*\}') "Nginx must reject the exact /api/internal path"
 Assert-Condition ($nginxContent -match '(?ms)location\s+\^~\s+/api/internal/\s*\{\s*return\s+404;\s*\}') "Nginx must reject /api/internal/ before the general /api/ proxy"
+
+& (Join-Path $repoRoot "infra\scripts\tests\backup-security-tests.ps1")
 
 Write-Host "Infrastructure static verification passed."
