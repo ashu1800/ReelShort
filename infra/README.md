@@ -20,6 +20,12 @@ docker compose --env-file .env up -d --build
 - 后台 Web：`http://localhost`
 - 后端健康检查：`http://localhost/actuator/health`
 
+需要从宿主机直接连接 PostgreSQL 或 Redis 调试时，显式叠加仅绑定 loopback 的 override：
+
+```powershell
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.local-debug.yml up -d --build
+```
+
 ## 备份与恢复
 
 备份 PostgreSQL 和部署配置：
@@ -44,8 +50,9 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/verify-backup-scripts.ps1
 
 ## 生产部署注意
 
-- 生产必须替换 `POSTGRES_PASSWORD`、`REELSHORT_ADMIN_PASSWORD_HASH` 和 `REELSHORT_PAYMENT_CALLBACK_SECRET`。
+- Compose 强制要求 `POSTGRES_PASSWORD`，且生产必须替换 `.env.example` 中的占位值；同时必须配置 `REELSHORT_ADMIN_PASSWORD_HASH` 和 `REELSHORT_PAYMENT_CALLBACK_SECRET`。
 - 本地开发可以暂时留空 `REELSHORT_ADMIN_PASSWORD_HASH`，后端会使用默认管理员密码哈希。
-- 默认 Compose 只把 Nginx 暴露到外部；PostgreSQL 和 Redis 的端口映射仅用于单机开发和维护，可按生产网络策略移除。
+- 默认 Compose 只把 Nginx 暴露到外部；PostgreSQL 和 Redis 仅在 Compose 内部网络可达。宿主机调试必须显式叠加 `docker-compose.local-debug.yml`，且端口只绑定 `127.0.0.1`。
+- Nginx 对 `/api/internal` 和 `/api/internal/` 下的所有路径返回 404，内部运营和支付回调接口只能通过可信内网路径访问，不能经公网入口调用。
 - Flask 内容源通过 Compose 内部网络访问，不应直接暴露给公网。
 - Compose 默认设置 `REELSHORT_RATE_LIMIT_STORE=redis`，后端通过内部服务名 `redis` 访问 Redis；本地直接运行后端时默认仍使用内存限流。

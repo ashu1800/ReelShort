@@ -35,6 +35,12 @@ docker compose --env-file .env logs -f backend
 - `http://localhost/actuator/health`
 - `http://localhost`
 
+默认 Compose 不向宿主机发布 PostgreSQL 和 Redis。仅在本机维护或调试需要直接连接数据层时，使用 loopback-only override：
+
+```powershell
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.local-debug.yml up -d --build
+```
+
 ## 环境变量
 
 生产必须替换：
@@ -43,13 +49,13 @@ docker compose --env-file .env logs -f backend
 - `REELSHORT_ADMIN_PASSWORD_HASH`
 - `REELSHORT_PAYMENT_CALLBACK_SECRET`
 
+Compose 对 `POSTGRES_PASSWORD` 使用 required 插值，未设置时拒绝解析部署配置；不得在生产配置中恢复开发默认密码。
+
 本地开发可以暂时留空 `REELSHORT_ADMIN_PASSWORD_HASH`，后端会使用默认管理员密码哈希。
 
 可按部署环境调整：
 
 - `NGINX_PORT`
-- `POSTGRES_PORT`
-- `REDIS_PORT`
 - `REELSHORT_RATE_LIMIT_STORE`
 - `REELSHORT_SITE_URL`
 - `REELSHORT_SITE_ID`
@@ -65,6 +71,8 @@ docker compose --env-file .env logs -f backend
 - `REELSHORT_CONTENT_REFRESH_LOCALES`
 - `REELSHORT_CONTENT_VIDEO_FALLBACK_TTL`
 - `REELSHORT_JPA_DDL_AUTO`
+
+`POSTGRES_PORT` 和 `REDIS_PORT` 只供 `docker-compose.local-debug.yml` 使用；调试端口固定绑定 `127.0.0.1`，不得改为公网地址。
 
 `REELSHORT_CONTENT_VIDEO_FALLBACK_TTL` 控制播放地址缓存兜底窗口，默认 `10m`。播放地址正常路径始终按需向上游获取，缓存只在内容源 5xx 且未超过该 TTL 时兜底；设置为 `0` 可禁用兜底。
 
@@ -90,7 +98,8 @@ docker compose --env-file .env logs -f backend
 - Nginx 是唯一公网入口。
 - `backend` 只在 Compose 内部暴露 `8080`。
 - `content-provider` 只在 Compose 内部暴露 `5000`。
-- PostgreSQL 和 Redis 的宿主机端口映射主要用于单机维护，生产可移除。
+- PostgreSQL 和 Redis 不发布宿主机端口，只通过 Compose 内部网络访问。
+- `/api/internal` 及 `/api/internal/` 下的所有路径在公网 Nginx 层直接返回 404；内部运营、开户注册和支付回调必须通过可信内网路径访问 backend。
 - Compose 默认使用 Redis 存储后端限流计数；本地直接运行 Spring Boot 时默认使用内存计数。
 
 ## 当前限制
