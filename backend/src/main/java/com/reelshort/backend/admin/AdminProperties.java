@@ -15,7 +15,7 @@ public record AdminProperties(
 			username = "admin";
 		}
 		if (passwordHash == null || passwordHash.isBlank()) {
-			passwordHash = "$2b$12$Z6hLISkw3ha14uQQ8PKANun8vjeUlMA4U8S841Sz5vfrhmQRhr6wm";
+			passwordHash = "";
 		}
 		if (tokenTtl == null) {
 			tokenTtl = Duration.ofHours(8);

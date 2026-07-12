@@ -8,7 +8,7 @@ public record PaymentProperties(
 
 	public PaymentProperties {
 		if (callbackSecret == null || callbackSecret.isBlank()) {
-			callbackSecret = "dev-payment-callback-secret";
+			callbackSecret = "";
 		}
 	}
 }
