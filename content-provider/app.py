@@ -1,12 +1,16 @@
 import os
 import re
 import json
+import ipaddress
+import math
+import socket
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter, deque
 from datetime import datetime, timezone
 from html import unescape
-from urllib.parse import quote
+from urllib.parse import quote, urljoin, urlparse
 
 import requests
 from flask import Flask, jsonify, request
@@ -61,6 +65,10 @@ MAX_CATALOG_KEYWORDS = 50
 MAX_CATALOG_PAGES_PER_KEYWORD = 5
 MAX_CATALOG_REQUESTS = 200
 MAX_CATALOG_REQUEST_WORKERS = 16
+DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+DEFAULT_MAX_REDIRECTS = 3
+RESPONSE_CHUNK_SIZE = 64 * 1024
+REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
 
 class UpstreamError(Exception):
@@ -104,6 +112,10 @@ class ReelShortClient:
         timeout_seconds: float,
         build_id: str | None = None,
         diagnostics: ProviderDiagnostics | None = None,
+        max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
+        max_redirects: int = DEFAULT_MAX_REDIRECTS,
+        resolver=None,
+        monotonic=None,
     ):
         self.site_url = site_url.rstrip("/")
         self.site_id = site_id
@@ -111,14 +123,38 @@ class ReelShortClient:
         self.build_id = build_id
         self.fixed_build_id = build_id is not None
         self.diagnostics = diagnostics or ProviderDiagnostics()
+        self.max_response_bytes = max_response_bytes
+        self.max_redirects = max_redirects
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be finite and greater than zero")
+        if max_response_bytes <= 0:
+            raise ValueError("max_response_bytes must be greater than zero")
+        if max_redirects < 0:
+            raise ValueError("max_redirects must be zero or greater")
+        self.resolver = resolver or self._resolve_addresses
+        self.monotonic = monotonic or time.monotonic
 
     @classmethod
     def from_env(cls):
+        try:
+            timeout_seconds = float(os.getenv("REELSHORT_REQUEST_TIMEOUT_SECONDS", "10"))
+        except (TypeError, ValueError) as exception:
+            raise ValueError("REELSHORT_REQUEST_TIMEOUT_SECONDS must be numeric") from exception
+        try:
+            max_response_bytes = int(os.getenv("REELSHORT_MAX_RESPONSE_BYTES", str(DEFAULT_MAX_RESPONSE_BYTES)))
+        except (TypeError, ValueError) as exception:
+            raise ValueError("REELSHORT_MAX_RESPONSE_BYTES must be an integer") from exception
+        try:
+            max_redirects = int(os.getenv("REELSHORT_MAX_REDIRECTS", str(DEFAULT_MAX_REDIRECTS)))
+        except (TypeError, ValueError) as exception:
+            raise ValueError("REELSHORT_MAX_REDIRECTS must be an integer") from exception
         return cls(
             os.getenv("REELSHORT_SITE_URL", "https://www.reelshort.com"),
             os.getenv("REELSHORT_SITE_ID", "37"),
-            float(os.getenv("REELSHORT_REQUEST_TIMEOUT_SECONDS", "10")),
+            timeout_seconds,
             os.getenv("REELSHORT_NEXT_BUILD_ID"),
+            max_response_bytes=max_response_bytes,
+            max_redirects=max_redirects,
         )
 
     def search(self, keywords: str, locale: str = DEFAULT_LOCALE):
@@ -268,14 +304,7 @@ class ReelShortClient:
             )
 
     def _get(self, path: str, params=None):
-        try:
-            response = requests.get(
-                f"{self.site_url}{path}",
-                params=params,
-                timeout=self.timeout_seconds,
-            )
-        except requests.RequestException as exception:
-            raise UpstreamError(502, "upstream request failed") from exception
+        response = self._request(f"{self.site_url}{path}", params=params)
 
         if response.status_code == 404:
             raise UpstreamError(404, "upstream not found")
@@ -287,14 +316,7 @@ class ReelShortClient:
             raise UpstreamError(502, "upstream returned invalid json") from exception
 
     def _get_text(self, path: str, params=None):
-        try:
-            response = requests.get(
-                f"{self.site_url}{path}",
-                params=params,
-                timeout=self.timeout_seconds,
-            )
-        except requests.RequestException as exception:
-            raise UpstreamError(502, "upstream request failed") from exception
+        response = self._request(f"{self.site_url}{path}", params=params)
 
         if response.status_code == 404:
             raise UpstreamError(404, "upstream not found")
@@ -303,18 +325,12 @@ class ReelShortClient:
         return response.text
 
     def _discover_build_id(self):
-        try:
-            response = requests.get(f"{self.site_url}/{quote(self.site_id, safe='')}", timeout=self.timeout_seconds)
-        except requests.RequestException as exception:
-            raise UpstreamError(502, "upstream request failed") from exception
+        response = self._request(f"{self.site_url}/{quote(self.site_id, safe='')}")
         match = re.search(r'"buildId":"([^"]+)"', response.text)
         if not match:
             match = re.search(rf'/{re.escape(self.site_id)}/_next/data/([^/]+)/', response.text)
         if not match:
-            try:
-                response = requests.get(f"{self.site_url}/", timeout=self.timeout_seconds)
-            except requests.RequestException as exception:
-                raise UpstreamError(502, "upstream request failed") from exception
+            response = self._request(f"{self.site_url}/")
             if not response.ok:
                 raise UpstreamError(502, "upstream request failed")
             match = re.search(r'"buildId":"([^"]+)"', response.text)
@@ -322,6 +338,127 @@ class ReelShortClient:
             raise UpstreamError(502, "upstream build id not found")
         self.build_id = match.group(1)
         return self.build_id
+
+    def _request(self, url: str, params=None):
+        self._validate_url(url, "upstream_url_blocked", "upstream returned unsafe upstream URL")
+        deadline = self.monotonic() + self.timeout_seconds
+        current_url = url
+        current_params = params
+        visited = {current_url}
+
+        for redirect_count in range(self.max_redirects + 1):
+            remaining = self.timeout_seconds if redirect_count == 0 else deadline - self.monotonic()
+            if remaining <= 0:
+                self.diagnostics.record("upstream_deadline_exceeded", url=current_url)
+                raise UpstreamError(502, "upstream request deadline exceeded")
+            try:
+                response = requests.get(
+                    current_url,
+                    params=current_params,
+                    timeout=remaining,
+                    allow_redirects=False,
+                    stream=True,
+                )
+            except requests.RequestException as exception:
+                raise UpstreamError(502, "upstream request failed") from exception
+
+            if response.status_code not in REDIRECT_STATUS_CODES:
+                self._read_limited_response(response, deadline, current_url)
+                return response
+
+            location = getattr(response, "headers", {}).get("Location")
+            self._close_response(response)
+            if not location:
+                raise UpstreamError(502, "upstream redirect missing location")
+            if redirect_count >= self.max_redirects:
+                self.diagnostics.record("upstream_redirect_limit", url=current_url)
+                raise UpstreamError(502, "upstream returned too many redirects")
+
+            redirect_url = urljoin(current_url, location)
+            self._validate_redirect_url(redirect_url)
+            if redirect_url in visited:
+                self.diagnostics.record("upstream_redirect_loop", url=redirect_url)
+                raise UpstreamError(502, "upstream redirect loop")
+            visited.add(redirect_url)
+            current_url = redirect_url
+            current_params = None
+
+        raise UpstreamError(502, "upstream returned too many redirects")
+
+    def _read_limited_response(self, response, deadline: float, url: str):
+        if not hasattr(response, "iter_content"):
+            return
+        content = bytearray()
+        deadline_expired = threading.Event()
+        remaining = deadline - self.monotonic()
+        if remaining <= 0:
+            self._close_response(response)
+            self.diagnostics.record("upstream_deadline_exceeded", url=url)
+            raise UpstreamError(502, "upstream request deadline exceeded")
+
+        def expire_response():
+            deadline_expired.set()
+            self._close_response(response)
+
+        watchdog = threading.Timer(remaining, expire_response)
+        watchdog.daemon = True
+        watchdog.start()
+        try:
+            for chunk in response.iter_content(chunk_size=RESPONSE_CHUNK_SIZE):
+                if deadline_expired.is_set() or self.monotonic() >= deadline:
+                    deadline_expired.set()
+                    break
+                if not chunk:
+                    continue
+                content.extend(chunk)
+                if len(content) > self.max_response_bytes:
+                    self.diagnostics.record(
+                        "upstream_response_too_large", url=url, max_bytes=self.max_response_bytes
+                    )
+                    raise UpstreamError(502, "upstream response too large")
+            watchdog.cancel()
+            if deadline_expired.is_set():
+                self.diagnostics.record("upstream_deadline_exceeded", url=url)
+                raise UpstreamError(502, "upstream request deadline exceeded")
+            response._content = bytes(content)
+            response._content_consumed = True
+        except requests.RequestException as exception:
+            if deadline_expired.is_set():
+                self.diagnostics.record("upstream_deadline_exceeded", url=url)
+                raise UpstreamError(502, "upstream request deadline exceeded") from exception
+            raise UpstreamError(502, "upstream request failed") from exception
+        finally:
+            watchdog.cancel()
+            self._close_response(response)
+
+    def _validate_redirect_url(self, url: str):
+        self._validate_url(url, "upstream_redirect_blocked", "upstream returned unsafe redirect")
+
+    def _validate_url(self, url: str, event_type: str, message: str):
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            self.diagnostics.record(event_type, url=url)
+            raise UpstreamError(502, message)
+        try:
+            # This blocks configured and redirect URLs resolving to non-public networks.
+            # Requests performs its own connection lookup; DNS pinning is outside this boundary.
+            addresses = self.resolver(parsed.hostname)
+            safe = addresses and all(ipaddress.ip_address(address).is_global for address in addresses)
+        except (OSError, ValueError):
+            safe = False
+        if not safe:
+            self.diagnostics.record(event_type, url=url)
+            raise UpstreamError(502, message)
+
+    @staticmethod
+    def _resolve_addresses(hostname: str):
+        return {item[4][0] for item in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)}
+
+    @staticmethod
+    def _close_response(response):
+        close = getattr(response, "close", None)
+        if close:
+            close()
 
     def _home_shelf_books(self, shelf_name: str, locale: str = DEFAULT_LOCALE):
         payload = self._get_locale_data(".json", locale=locale)

@@ -1,8 +1,17 @@
+import json
+import math
+import threading
+
 import pytest
 import time
 
 import app as app_module
 from app import ReelShortClient, UpstreamError, create_app
+
+
+@pytest.fixture(autouse=True)
+def resolve_test_hosts_to_public_address(monkeypatch):
+    monkeypatch.setattr(ReelShortClient, "_resolve_addresses", staticmethod(lambda host: ["93.184.216.34"]))
 
 
 BOOK = {
@@ -295,7 +304,7 @@ def test_reelshort_client_builds_search_data_url(monkeypatch):
         def json(self):
             return {"pageProps": {"books": []}}
 
-    def fake_get(url, params, timeout):
+    def fake_get(url, params, timeout, **kwargs):
         captured["url"] = url
         captured["params"] = params
         captured["timeout"] = timeout
@@ -346,7 +355,7 @@ def test_reelshort_client_builds_localized_search_data_url(monkeypatch):
         def json(self):
             return {"pageProps": {"books": []}}
 
-    def fake_get(url, params, timeout):
+    def fake_get(url, params, timeout, **kwargs):
         captured["url"] = url
         captured["params"] = params
         return FakeResponse()
@@ -1138,7 +1147,7 @@ def test_reelshort_client_maps_episode_page_props(monkeypatch):
                 }
             }
 
-    def fake_get(url, params, timeout):
+    def fake_get(url, params, timeout, **kwargs):
         captured["url"] = url
         captured["params"] = params
         return FakeResponse()
@@ -1317,7 +1326,7 @@ def test_reelshort_client_fetches_video_episode_page(monkeypatch):
         def json(self):
             return self.payload
 
-    def fake_get(url, params, timeout):
+    def fake_get(url, params, timeout, **kwargs):
         calls.append({"url": url, "params": params})
         if "/episodes/" in url:
             return FakeResponse(
@@ -1605,3 +1614,208 @@ def test_content_provider_runtime_host_and_port_are_environment_driven(monkeypat
         "host": "0.0.0.0",
         "port": 5050,
     }
+
+
+class StreamingResponse:
+    def __init__(self, status_code=200, body=b"{}", headers=None):
+        self.status_code = status_code
+        self.ok = 200 <= status_code < 300
+        self.headers = headers or {}
+        self._body = body
+        self._content = False
+
+    def iter_content(self, chunk_size):
+        yield from (self._body[index : index + chunk_size] for index in range(0, len(self._body), chunk_size))
+
+    @property
+    def text(self):
+        content = self._content if isinstance(self._content, bytes) else self._body
+        return content.decode()
+
+    def json(self):
+        return json.loads(self.text)
+
+    def close(self):
+        pass
+
+
+def test_reelshort_client_follows_public_redirect_without_requests_auto_redirect(monkeypatch):
+    calls = []
+    responses = [
+        StreamingResponse(302, headers={"Location": "https://cdn.example/data.json"}),
+        StreamingResponse(body=b'{"ok": true}'),
+    ]
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return responses.pop(0)
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    client = ReelShortClient(
+        "https://site.example", "id", 3, build_id="build", resolver=lambda host: ["93.184.216.34"]
+    )
+
+    assert client._get("/data.json") == {"ok": True}
+    assert [call[0] for call in calls] == ["https://site.example/data.json", "https://cdn.example/data.json"]
+    assert all(call[1]["allow_redirects"] is False and call[1]["stream"] is True for call in calls)
+
+
+def test_reelshort_client_rejects_redirect_to_private_network(monkeypatch):
+    monkeypatch.setattr(
+        "app.requests.get",
+        lambda *args, **kwargs: StreamingResponse(302, headers={"Location": "http://127.0.0.1/admin"}),
+    )
+    client = ReelShortClient(
+        "https://site.example",
+        "id",
+        3,
+        build_id="build",
+        resolver=lambda host: ["127.0.0.1"] if host == "127.0.0.1" else ["93.184.216.34"],
+    )
+
+    with pytest.raises(UpstreamError, match="unsafe redirect"):
+        client._get("/data.json")
+
+    assert client.diagnostics.snapshot()["counters"] == {"upstream_redirect_blocked": 1}
+
+
+def test_reelshort_client_rejects_private_initial_site_url(monkeypatch):
+    requested = False
+
+    def fake_get(*args, **kwargs):
+        nonlocal requested
+        requested = True
+        return StreamingResponse()
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    client = ReelShortClient(
+        "http://internal.example", "id", 3, build_id="build", resolver=lambda host: ["10.0.0.8"]
+    )
+
+    with pytest.raises(UpstreamError, match="unsafe upstream URL"):
+        client._get("/data.json")
+
+    assert requested is False
+    assert client.diagnostics.snapshot()["counters"] == {"upstream_url_blocked": 1}
+
+
+def test_reelshort_client_rejects_response_larger_than_limit(monkeypatch):
+    monkeypatch.setattr("app.requests.get", lambda *args, **kwargs: StreamingResponse(body=b"123456789"))
+    client = ReelShortClient("https://site.example", "id", 3, build_id="build", max_response_bytes=8)
+
+    with pytest.raises(UpstreamError, match="response too large"):
+        client._get_text("/large")
+
+    assert client.diagnostics.snapshot()["counters"] == {"upstream_response_too_large": 1}
+
+
+def test_reelshort_client_rejects_redirect_loop(monkeypatch):
+    monkeypatch.setattr(
+        "app.requests.get",
+        lambda *args, **kwargs: StreamingResponse(302, headers={"Location": "/loop"}),
+    )
+    client = ReelShortClient(
+        "https://site.example", "id", 3, build_id="build", resolver=lambda host: ["93.184.216.34"]
+    )
+
+    with pytest.raises(UpstreamError, match="redirect loop"):
+        client._get_text("/loop")
+
+
+def test_reelshort_client_enforces_redirect_limit(monkeypatch):
+    count = 0
+
+    def fake_get(url, **kwargs):
+        nonlocal count
+        count += 1
+        return StreamingResponse(302, headers={"Location": f"/hop-{count}"})
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    client = ReelShortClient(
+        "https://site.example",
+        "id",
+        3,
+        build_id="build",
+        resolver=lambda host: ["93.184.216.34"],
+        max_redirects=2,
+    )
+
+    with pytest.raises(UpstreamError, match="too many redirects"):
+        client._get_text("/start")
+
+    assert count == 3
+
+
+def test_reelshort_client_uses_remaining_total_deadline_for_redirects(monkeypatch):
+    times = iter([10.0, 11.25, 13.1])
+    timeouts = []
+
+    def fake_get(url, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        return StreamingResponse(302, headers={"Location": f"/next-{len(timeouts)}"})
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    client = ReelShortClient(
+        "https://site.example",
+        "id",
+        3,
+        build_id="build",
+        resolver=lambda host: ["93.184.216.34"],
+        monotonic=lambda: next(times),
+    )
+
+    with pytest.raises(UpstreamError, match="deadline exceeded"):
+        client._get_text("/start")
+
+    assert timeouts == [3.0, 1.75]
+
+
+def test_reelshort_client_deadline_closes_blocked_stream(monkeypatch):
+    released = threading.Event()
+
+    class BlockingResponse(StreamingResponse):
+        def iter_content(self, chunk_size):
+            released.wait(1)
+            if False:
+                yield b""
+
+        def close(self):
+            released.set()
+
+    monkeypatch.setattr("app.requests.get", lambda *args, **kwargs: BlockingResponse())
+    client = ReelShortClient("https://site.example", "id", 0.05, build_id="build")
+
+    started = time.monotonic()
+    with pytest.raises(UpstreamError, match="deadline exceeded"):
+        client._get_text("/blocked")
+
+    assert time.monotonic() - started < 0.5
+    assert released.is_set()
+    assert client.diagnostics.snapshot()["counters"] == {"upstream_deadline_exceeded": 1}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "field"),
+    [
+        ({"timeout_seconds": 0}, "timeout_seconds"),
+        ({"timeout_seconds": -1}, "timeout_seconds"),
+        ({"max_response_bytes": 0}, "max_response_bytes"),
+        ({"max_response_bytes": -1}, "max_response_bytes"),
+        ({"max_redirects": -1}, "max_redirects"),
+    ],
+)
+def test_reelshort_client_rejects_invalid_security_limits(kwargs, field):
+    with pytest.raises(ValueError, match=field):
+        ReelShortClient("https://site.example", "id", **({"timeout_seconds": 3, **kwargs}), build_id="build")
+
+
+@pytest.mark.parametrize("timeout_seconds", [math.nan, math.inf, -math.inf])
+def test_reelshort_client_rejects_non_finite_timeout(timeout_seconds):
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        ReelShortClient("https://site.example", "id", timeout_seconds, build_id="build")
+
+
+def test_reelshort_client_from_env_rejects_invalid_numeric_limits(monkeypatch):
+    monkeypatch.setenv("REELSHORT_REQUEST_TIMEOUT_SECONDS", "not-a-number")
+    with pytest.raises(ValueError, match="REELSHORT_REQUEST_TIMEOUT_SECONDS"):
+        ReelShortClient.from_env()
