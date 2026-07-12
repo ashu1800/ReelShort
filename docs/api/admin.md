@@ -7,7 +7,7 @@
 后台管理员账号、角色和权限持久化在 PostgreSQL 中。启动时后端会根据配置引导默认管理员：
 
 - `reelshort.admin.username`：默认 `admin`。
-- `reelshort.admin.password-hash`：默认对应测试密码 `Admin123`，生产部署必须通过环境变量覆盖。
+- `reelshort.admin.password-hash`：生产必填的 BCrypt 密码哈希；缺失、无法解析或对应已知开发密码时，后端拒绝启动。固定开发账号仅存在于显式 `app-dev` 和测试 profile。
 - `reelshort.admin.token-ttl`：默认 `8h`。
 - `reelshort.admin.session.cleanup-retention`：后台过期/撤销 Token 清理保留期，默认 `1d`。
 - `reelshort.admin.session.cleanup-initial-delay`：后台 Token 清理任务首次延迟，默认 `1h`。
@@ -42,7 +42,7 @@
 ```json
 {
   "username": "admin",
-  "password": "Admin123"
+  "password": "<configured-admin-password>"
 }
 ```
 

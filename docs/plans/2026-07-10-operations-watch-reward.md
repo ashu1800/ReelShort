@@ -314,32 +314,32 @@ docker compose --env-file .env up -d --build backend
 **Step 2: Verify health**
 
 ```bash
-curl -fsS https://reelshort.hjj888.cc/actuator/health
+curl -fsS https://shortlink.hjj888.cc/actuator/health
 ```
 
 Expected: `{"status":"UP"}`.
 
 **Step 3: Smoke test internal API**
 
+内部运营接口不得经公网 Nginx 携带 `X-Internal-Super-Token` 调用。公网地址
+`https://shortlink.hjj888.cc/api/internal/...` 应返回 `404`；部署主机上请通过
+Compose backend 容器内的 loopback 执行以下 smoke，或从可信内网直连 backend 服务。
+
 ```bash
-curl -i https://reelshort.hjj888.cc/api/internal/operations/users/<userId>/points/account \
-  -H "X-Internal-Super-Token: <server token>"
+USER_ID="<userId>"
+docker compose --env-file .env exec -e USER_ID="$USER_ID" -T backend sh -lc 'curl -i "http://127.0.0.1:8080/api/internal/operations/users/${USER_ID}/points/account" -H "X-Internal-Super-Token: <server token>"'
 ```
 
 Expected: `200` with account snapshot for a valid user.
 
 ```bash
-curl -i https://reelshort.hjj888.cc/api/internal/operations/users/<userId>/watch-reward-task \
-  -H "X-Internal-Super-Token: <server token>"
+docker compose --env-file .env exec -e USER_ID="$USER_ID" -T backend sh -lc 'curl -i "http://127.0.0.1:8080/api/internal/operations/users/${USER_ID}/watch-reward-task" -H "X-Internal-Super-Token: <server token>"'
 ```
 
 Expected: `200` with a task or a clear no-task response.
 
 ```bash
-curl -i -X POST https://reelshort.hjj888.cc/api/internal/operations/users/<userId>/watch-progress \
-  -H "X-Internal-Super-Token: <server token>" \
-  -H "Content-Type: application/json" \
-  --data-binary '{"bookId":"<bookId>","episodeNum":1,"positionSeconds":75,"durationSeconds":300,"progressPercent":25,"reason":"ops smoke test"}'
+docker compose --env-file .env exec -e USER_ID="$USER_ID" -T backend sh -lc 'curl -i -X POST "http://127.0.0.1:8080/api/internal/operations/users/${USER_ID}/watch-progress" -H "X-Internal-Super-Token: <server token>" -H "Content-Type: application/json" --data-binary '\''{"bookId":"<bookId>","episodeNum":1,"positionSeconds":75,"durationSeconds":300,"progressPercent":25,"reason":"ops smoke test"}'\'''
 ```
 
 Expected: `200`, awarded points if the stage was not already claimed.

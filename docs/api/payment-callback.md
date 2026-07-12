@@ -17,7 +17,7 @@ X-Payment-Callback-Secret: <secret>
 配置：
 
 - `reelshort.payment.callback-secret`：回调共享密钥。
-- 默认值仅用于本地开发和测试，生产部署必须通过环境变量覆盖。
+- 固定开发值仅允许显式 `app-dev` 和测试 profile 使用；生产部署必须通过环境变量提供至少 32 字符且具有足够熵的独立密钥，缺失或使用已知开发值时后端拒绝启动。
 
 请求：
 

@@ -27,7 +27,7 @@
 - 默认密码哈希：`reelshort.admin.password-hash`
 - Token 有效期：`reelshort.admin.token-ttl`
 
-测试环境提供固定管理员密码 `Admin123`。生产环境应通过环境变量覆盖密码哈希。
+本设计实施当时由测试环境提供固定管理员密码 `Admin123`；当前该固定值仅允许显式 `app-dev` 和测试 profile 使用。生产环境必须通过环境变量提供独立 BCrypt 密码哈希，缺失或使用已知开发值时后端拒绝启动。
 
 ## 权限与错误语义
 
