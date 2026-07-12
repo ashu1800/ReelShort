@@ -1319,6 +1319,22 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun homeSilentRefreshDoesNotReturnToHomeAfterOpeningAccount() = runTest {
+        val dataSource = FakeAppDataSource()
+        val controller = AppStateController(dataSource)
+        controller.refreshHome()
+        dataSource.homeGate = CompletableDeferred()
+
+        val homeOpen = launch { controller.openHome() }
+        runCurrent()
+        controller.openAccount()
+        dataSource.homeGate?.complete(Unit)
+        homeOpen.join()
+
+        assertEquals(AppScreen.ACCOUNT, controller.state.value.screen)
+    }
+
+    @Test
     fun openHomeWithoutCachedShelfUsesInitialLoadingPath() = runTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
@@ -1331,6 +1347,21 @@ class AppStateControllerTest {
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
         assertEquals(listOf("home", "home:cache:save"), dataSource.calls)
+    }
+
+    @Test
+    fun homeInitialLoadDoesNotReturnToHomeAfterOpeningAccount() = runTest {
+        val dataSource = FakeAppDataSource()
+        dataSource.homeGate = CompletableDeferred()
+        val controller = AppStateController(dataSource)
+
+        val homeOpen = launch { controller.openHome() }
+        runCurrent()
+        controller.openAccount()
+        dataSource.homeGate?.complete(Unit)
+        homeOpen.join()
+
+        assertEquals(AppScreen.ACCOUNT, controller.state.value.screen)
     }
 
     @Test
@@ -1478,6 +1509,21 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun sessionRestoreNetworkLoadDoesNotReturnToHomeAfterOpeningAccount() = runTest {
+        val dataSource = FakeAppDataSource()
+        dataSource.homeGate = CompletableDeferred()
+        val controller = AppStateController(dataSource)
+
+        val restore = launch { controller.restoreSession() }
+        runCurrent()
+        controller.openAccount()
+        dataSource.homeGate?.complete(Unit)
+        restore.join()
+
+        assertEquals(AppScreen.ACCOUNT, controller.state.value.screen)
+    }
+
+    @Test
     fun restoreSessionFailureKeepsStoredSessionAndRecordsContentError() = runTest {
         val session = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer")
         val dataSource = FakeAppDataSource(restoredSession = session, homeError = IllegalStateException("content unavailable"))
@@ -1517,6 +1563,22 @@ class AppStateControllerTest {
         // 读缓存（命中秒开）+ 后台网络拉取 + 写回新缓存。
         assertEquals(listOf("language:load", "restore", "credentials:load", "home:cache:load", "home", "home:cache:save"), dataSource.calls)
         assertEquals(listOf(dataSource.books), dataSource.savedHomeShelves)
+    }
+
+    @Test
+    fun sessionRestoreSilentRefreshDoesNotReturnToHomeAfterOpeningAccount() = runTest {
+        val cached = listOf(FakeAppDataSource().book("cached-1", "Cached"))
+        val dataSource = FakeAppDataSource(cachedHomeShelf = cached)
+        dataSource.homeGate = CompletableDeferred()
+        val controller = AppStateController(dataSource)
+
+        val restore = launch { controller.restoreSession() }
+        runCurrent()
+        controller.openAccount()
+        dataSource.homeGate?.complete(Unit)
+        restore.join()
+
+        assertEquals(AppScreen.ACCOUNT, controller.state.value.screen)
     }
 
     @Test

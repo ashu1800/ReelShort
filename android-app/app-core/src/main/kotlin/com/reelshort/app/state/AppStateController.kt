@@ -43,7 +43,6 @@ class AppStateController(private val dataSource: AppDataSource) {
             // 冷启动秒开：先用磁盘缓存立即渲染首页，随后在后台静默拉取最新数据替换并更新缓存。
             mutableState.update {
                 it.copy(
-                    screen = AppScreen.HOME,
                     language = language,
                     session = session,
                     savedCredentials = savedCredentials,
@@ -58,7 +57,6 @@ class AppStateController(private val dataSource: AppDataSource) {
             val homeShelf = dataSource.loadHomeShelf()
             mutableState.update {
                 it.copy(
-                    screen = AppScreen.HOME,
                     language = language,
                     session = session,
                     savedCredentials = savedCredentials,
@@ -72,7 +70,6 @@ class AppStateController(private val dataSource: AppDataSource) {
         } catch (error: Throwable) {
             mutableState.update {
                 it.copy(
-                    screen = AppScreen.HOME,
                     language = language,
                     session = session,
                     savedCredentials = savedCredentials,
@@ -233,7 +230,6 @@ class AppStateController(private val dataSource: AppDataSource) {
         val homeShelf = dataSource.loadHomeShelf()
         mutableState.update {
             it.copy(
-                screen = AppScreen.HOME,
                 homeShelf = homeShelf,
                 isLoading = false,
             )
@@ -267,12 +263,12 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun openHome() {
+        mutableState.update { it.copy(screen = AppScreen.HOME, errorMessage = null) }
         if (state.value.homeShelf.isEmpty()) {
             refreshHome()
             return
         }
 
-        mutableState.update { it.copy(screen = AppScreen.HOME, errorMessage = null) }
         refreshHomeSilently()
     }
 
@@ -281,7 +277,6 @@ class AppStateController(private val dataSource: AppDataSource) {
             val homeShelf = dataSource.loadHomeShelf()
             mutableState.update {
                 it.copy(
-                    screen = AppScreen.HOME,
                     homeShelf = homeShelf,
                 )
             }
