@@ -1,6 +1,7 @@
 package com.reelshort.app.state
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -24,5 +25,13 @@ class PlaybackStateTest {
     fun invalidDurationCannotTriggerProgressSave() {
         assertFalse(shouldPersistPlaybackProgress(15, 0, 0, rewardClaimed = false))
         assertFalse(shouldPersistPlaybackProgress(-1, 200, 0, rewardClaimed = false))
+    }
+
+    @Test
+    fun completedPlaybackRoundsDurationUpToAvoidMissingTheCompletionReport() {
+        assertEquals(
+            PlaybackProgressSample(positionSeconds = 60, durationSeconds = 60),
+            playbackProgressSample(positionMilliseconds = 59_940, durationMilliseconds = 60_000, completed = true),
+        )
     }
 }

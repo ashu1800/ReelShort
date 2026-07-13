@@ -1,7 +1,6 @@
 package com.reelshort.backend.operations;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -10,14 +9,16 @@ import com.reelshort.backend.admin.AdminAuditService;
 import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.content.ContentBookCache;
 import com.reelshort.backend.content.ContentBookCacheRepository;
+import com.reelshort.backend.content.ContentCacheService;
 import com.reelshort.backend.content.ContentEpisode;
 import com.reelshort.backend.content.ContentEpisodeCache;
 import com.reelshort.backend.content.ContentEpisodeCacheRepository;
+import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
 import com.reelshort.backend.content.ContentLocale;
+import com.reelshort.backend.points.DailyEarningQuotaResponse;
 import com.reelshort.backend.points.PointAccountResponse;
-import com.reelshort.backend.points.PointTransaction;
-import com.reelshort.backend.points.PointTransactionRepository;
 import com.reelshort.backend.points.PointsService;
+import com.reelshort.backend.points.WatchEpisodeRewardClaimRepository;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
@@ -32,33 +33,34 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class InternalOperationsService {
 
-	private static final List<Integer> REWARD_STAGES = List.of(25, 50, 75, 100);
-	private static final Set<Integer> VALID_PROGRESS_STAGES = Set.of(25, 50, 75, 100);
-	private static final int DEFAULT_DURATION_SECONDS = 300;
-
 	private final UserAccountRepository userAccountRepository;
 	private final PointsService pointsService;
 	private final WatchService watchService;
 	private final WatchRecordRepository watchRecordRepository;
-	private final PointTransactionRepository pointTransactionRepository;
 	private final ContentBookCacheRepository contentBookCacheRepository;
 	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
+	private final ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
+	private final WatchEpisodeRewardClaimRepository rewardClaimRepository;
+	private final ContentCacheService contentCacheService;
 	private final AdminAuditService adminAuditService;
 	private final ObjectMapper objectMapper;
 
 	public InternalOperationsService(UserAccountRepository userAccountRepository, PointsService pointsService,
 			WatchService watchService, WatchRecordRepository watchRecordRepository,
-			PointTransactionRepository pointTransactionRepository,
 			ContentBookCacheRepository contentBookCacheRepository,
 			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
-			AdminAuditService adminAuditService, ObjectMapper objectMapper) {
+			ContentEpisodeRuntimeCacheRepository runtimeCacheRepository,
+			WatchEpisodeRewardClaimRepository rewardClaimRepository,
+			ContentCacheService contentCacheService, AdminAuditService adminAuditService, ObjectMapper objectMapper) {
 		this.userAccountRepository = userAccountRepository;
 		this.pointsService = pointsService;
 		this.watchService = watchService;
 		this.watchRecordRepository = watchRecordRepository;
-		this.pointTransactionRepository = pointTransactionRepository;
 		this.contentBookCacheRepository = contentBookCacheRepository;
 		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
+		this.runtimeCacheRepository = runtimeCacheRepository;
+		this.rewardClaimRepository = rewardClaimRepository;
+		this.contentCacheService = contentCacheService;
 		this.adminAuditService = adminAuditService;
 		this.objectMapper = objectMapper;
 	}
@@ -68,137 +70,111 @@ public class InternalOperationsService {
 		return InternalPointsAccountResponse.from(user, pointsService.account(user.id()));
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional
 	public InternalWatchRewardTaskResponse watchRewardTask(UUID userId) {
 		UserAccount user = activeUser(userId);
-		return watchRecordRepository.findByUserIdOrderByUpdatedAtDesc(user.id()).stream()
-				.map(record -> taskFromRecord(record, claimedStages(user.id(), record.bookId(), record.episodeNum())))
-				.filter(InternalWatchRewardTaskResponse::canReport)
-				.findFirst()
-				.orElseGet(() -> taskFromContentCache(user.id()));
+		for (WatchRecord record : watchRecordRepository.findByUserIdOrderByUpdatedAtDesc(user.id())) {
+			InternalWatchRewardTaskResponse task = taskFromRecord(user.id(), record);
+			if (task != null && task.canReport()) {
+				return task;
+			}
+		}
+		InternalWatchRewardTaskResponse task = taskFromContentCache(user.id());
+		if (task == null) {
+			throw new AuthException(404, "watch reward task not found");
+		}
+		return task;
 	}
 
 	@Transactional
 	public InternalWatchProgressResponse reportWatchProgress(UUID userId, InternalWatchProgressRequest request) {
 		UserAccount user = activeUser(userId);
-		if (!VALID_PROGRESS_STAGES.contains(request.progressPercent())) {
-			throw new AuthException(400, "invalid progress stage");
+		if (request.progressPercent() != 100) {
+			throw new AuthException(400, "completed progress required");
 		}
-		int targetPosition = targetPosition(user.id(), request);
+		int duration = runtimeCacheRepository
+				.findByBookIdAndEpisodeNumAndChapterId(request.bookId(), request.episodeNum(), request.chapterId())
+				.map(cache -> cache.durationSeconds())
+				.orElseThrow(() -> new AuthException(409, "video duration unavailable"));
 		WatchRecordResponse watchRecord = watchService.reportProgress(user.id(), new WatchProgressRequest(
-				request.bookId(),
-				request.bookTitle(),
-				request.filteredTitle(),
-				request.episodeNum(),
-				request.chapterId(),
-				targetPosition,
-				request.durationSeconds()));
+				request.bookId(), request.bookTitle(), request.filteredTitle(), request.episodeNum(), request.chapterId(),
+				duration, duration));
 		PointAccountResponse account = pointsService.account(user.id());
 		adminAuditService.record("internal-operations", "SIMULATE_WATCH_REWARD", "USER", user.id(),
-				"Simulated watch reward userId=%s bookId=%s episode=%d progress=%d awardedStages=%s awardedPoints=%d reason=%s"
-						.formatted(user.id(), watchRecord.bookId(), watchRecord.episodeNum(),
-								watchRecord.progressPercent(), watchRecord.awardedStages(), watchRecord.awardedPoints(),
-								request.reason().trim()));
+				"Simulated completed watch reward userId=%s bookId=%s episode=%d duration=%d awardedPoints=%d status=%s reason=%s"
+						.formatted(user.id(), watchRecord.bookId(), watchRecord.episodeNum(), duration,
+								watchRecord.awardedPoints(), watchRecord.rewardStatus(), request.reason().trim()));
 		return InternalWatchProgressResponse.from(watchRecord, account);
 	}
 
-	private InternalWatchRewardTaskResponse taskFromRecord(WatchRecord record, List<Integer> claimedStages) {
-		Integer nextStage = nextStage(claimedStages);
-		boolean canReport = nextStage != null;
-		return new InternalWatchRewardTaskResponse(
-				record.bookId(),
-				record.bookTitle(),
-				"",
-				record.filteredTitle(),
-				record.episodeNum(),
-				record.chapterId(),
-				"Episode " + record.episodeNum(),
-				record.durationSeconds() > 0 ? record.durationSeconds() : DEFAULT_DURATION_SECONDS,
-				record.progressPercent(),
-				nextStage,
-				nextStage,
-				claimedStages,
-				canReport);
+	private InternalWatchRewardTaskResponse taskFromRecord(UUID userId, WatchRecord record) {
+		if (rewardClaimRepository.existsByUserIdAndBookIdAndEpisodeNum(userId, record.bookId(), record.episodeNum())) {
+			return null;
+		}
+		int duration = resolveDuration(record.bookId(), record.episodeNum(), record.filteredTitle(), record.chapterId());
+		if (duration <= 0) {
+			return null;
+		}
+		return task(userId, record.bookId(), record.bookTitle(), "", record.filteredTitle(), record.episodeNum(),
+				record.chapterId(), "Episode " + record.episodeNum(), duration, record.progressPercent());
 	}
 
 	private InternalWatchRewardTaskResponse taskFromContentCache(UUID userId) {
-		return contentBookCacheRepository
-				.findByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale.ENGLISH, 0)
-				.stream()
-				.map(book -> taskFromCachedBook(userId, book))
-				.filter(task -> task != null)
-				.findFirst()
-				.orElseThrow(() -> new AuthException(404, "watch reward task not found"));
-	}
-
-	private InternalWatchRewardTaskResponse taskFromCachedBook(UUID userId, ContentBookCache book) {
-		return contentEpisodeCacheRepository
-				.findFirstByBookIdAndLocaleAndEpisodeCountGreaterThanOrderByRefreshedAtDesc(
-						book.bookId(), ContentLocale.ENGLISH, 0)
-				.map(episodeCache -> taskFromCachedEpisodes(userId, book, episodeCache))
-				.orElse(null);
-	}
-
-	private InternalWatchRewardTaskResponse taskFromCachedEpisodes(UUID userId, ContentBookCache book,
-			ContentEpisodeCache episodeCache) {
-		for (ContentEpisode episode : episodes(episodeCache)) {
-			List<Integer> claimedStages = claimedStages(userId, book.bookId(), episode.episode());
-			Integer nextStage = nextStage(claimedStages);
-			if (nextStage != null) {
-				return new InternalWatchRewardTaskResponse(
-						book.bookId(),
-						book.title(),
-						book.description(),
-						book.filteredTitle(),
-						episode.episode(),
-						episode.chapterId(),
-						episode.title(),
-						DEFAULT_DURATION_SECONDS,
-						0,
-						nextStage,
-						nextStage,
-						claimedStages,
-						true);
+		for (ContentBookCache book : contentBookCacheRepository
+				.findByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale.ENGLISH, 0)) {
+			ContentEpisodeCache episodeCache = contentEpisodeCacheRepository
+					.findFirstByBookIdAndLocaleAndEpisodeCountGreaterThanOrderByRefreshedAtDesc(
+							book.bookId(), ContentLocale.ENGLISH, 0)
+					.orElse(null);
+			if (episodeCache == null) {
+				continue;
+			}
+			for (ContentEpisode episode : episodes(episodeCache)) {
+				if (rewardClaimRepository.existsByUserIdAndBookIdAndEpisodeNum(userId, book.bookId(), episode.episode())) {
+					continue;
+				}
+				int duration = resolveDuration(book.bookId(), episode.episode(), book.filteredTitle(), episode.chapterId());
+				if (duration > 0) {
+					return task(userId, book.bookId(), book.title(), book.description(), book.filteredTitle(),
+							episode.episode(), episode.chapterId(), episode.title(), duration, 0);
+				}
 			}
 		}
 		return null;
 	}
 
-	private List<Integer> claimedStages(UUID userId, String bookId, int episodeNum) {
-		return pointTransactionRepository
-				.findByUserIdAndBookIdAndEpisodeNumAndSourceOrderByStageAsc(userId, bookId, episodeNum,
-						"WATCH_REWARD")
-				.stream()
-				.map(PointTransaction::stage)
-				.filter(stage -> stage != null)
-				.distinct()
-				.toList();
+	private InternalWatchRewardTaskResponse task(UUID userId, String bookId, String bookTitle, String bookDescription,
+			String filteredTitle, int episodeNum, String chapterId, String episodeTitle, int durationSeconds,
+			int currentProgressPercent) {
+		DailyEarningQuotaResponse quota = pointsService.dailyEarningQuota(userId);
+		return new InternalWatchRewardTaskResponse(bookId, bookTitle, bookDescription, filteredTitle, episodeNum,
+				chapterId, episodeTitle, durationSeconds, currentProgressPercent, null, null, List.of(), true,
+				pointsService.estimatedWatchRewardPoints(durationSeconds), quota.effectiveMaximum(), quota.earnedPoints(),
+				quota.remainingPoints(), false);
 	}
 
-	private Integer nextStage(List<Integer> claimedStages) {
-		return REWARD_STAGES.stream()
-				.filter(stage -> !claimedStages.contains(stage))
-				.findFirst()
-				.orElse(null);
+	private int resolveDuration(String bookId, int episodeNum, String filteredTitle, String chapterId) {
+		return runtimeCacheRepository.findByBookIdAndEpisodeNumAndChapterId(bookId, episodeNum, chapterId)
+				.map(cache -> cache.durationSeconds())
+				.orElseGet(() -> {
+					try {
+						return contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId,
+								ContentLocale.ENGLISH).duration();
+					}
+					catch (RuntimeException exception) {
+						return 0;
+					}
+				});
 	}
 
 	private List<ContentEpisode> episodes(ContentEpisodeCache episodeCache) {
 		try {
-			List<ContentEpisode> episodes = objectMapper.readValue(episodeCache.episodesJson(),
-					new TypeReference<List<ContentEpisode>>() {
-					});
-			return episodes;
+			return objectMapper.readValue(episodeCache.episodesJson(), new TypeReference<List<ContentEpisode>>() {
+			});
 		}
 		catch (Exception exception) {
 			return List.of();
 		}
-	}
-
-	private int targetPosition(UUID userId, InternalWatchProgressRequest request) {
-		int requestedStagePosition = (int) Math.ceil(request.durationSeconds() * request.progressPercent() / 100.0);
-		return watchRecordRepository.findByUserIdAndBookIdAndEpisodeNum(userId, request.bookId(), request.episodeNum())
-				.map(record -> Math.max(record.positionSeconds(), requestedStagePosition))
-				.orElse(requestedStagePosition);
 	}
 
 	private UserAccount activeUser(UUID userId) {

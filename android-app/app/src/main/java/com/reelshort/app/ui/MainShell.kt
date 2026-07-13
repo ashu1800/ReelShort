@@ -149,6 +149,7 @@ internal fun MainShell(
                             orders = state.orders,
                             wallet = state.wallet,
                             walletMutationVersion = state.walletMutationVersion,
+                            withdrawalSubmissionVersion = state.withdrawalSubmissionVersion,
                             walletSmsCountdownSeconds = state.walletSmsCountdownSeconds,
                             walletSmsCountdownTrigger = state.walletSmsCountdownTrigger,
                             passwordSmsCountdownSeconds = state.passwordSmsCountdownSeconds,

@@ -19,6 +19,9 @@ import com.reelshort.backend.content.ContentBookCacheRepository;
 import com.reelshort.backend.content.ContentEpisode;
 import com.reelshort.backend.content.ContentEpisodeCache;
 import com.reelshort.backend.content.ContentEpisodeCacheRepository;
+import com.reelshort.backend.content.ContentEpisodeRuntimeCache;
+import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
+import com.reelshort.backend.points.DailyEarningRuleRepository;
 import com.reelshort.backend.points.PointsService;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
@@ -28,6 +31,7 @@ import com.reelshort.backend.user.UserStatus;
 import com.reelshort.backend.watch.WatchProgressRequest;
 import com.reelshort.backend.watch.WatchService;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -60,6 +64,9 @@ class InternalOperationsControllerTests {
 	private ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 
 	@Autowired
+	private ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
+
+	@Autowired
 	private UserAccountRepository userAccountRepository;
 
 	@Autowired
@@ -68,10 +75,30 @@ class InternalOperationsControllerTests {
 	@Autowired
 	private SystemConfigService systemConfigService;
 
+	@Autowired
+	private DailyEarningRuleRepository dailyEarningRuleRepository;
+
 	@AfterEach
 	void resetConfigs() {
-		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_STAGE_POINTS, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "35");
+		dailyEarningRuleRepository.deleteAll();
+	}
+
+	@BeforeEach
+	void seedAuthoritativeDurations() {
+		runtimeCacheRepository.deleteAll();
+		for (String bookId : List.of("book-sim", "book-sim-cap", "book-stage", "book-complete",
+				"book-long-reason", "book-invalid")) {
+			runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create(bookId, 1, "chapter-1", 300));
+		}
+		runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create("book-existing", 2, "chapter-2", 100));
+		runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create("book-audit", 3, "chapter-3", 300));
+		runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create("book-cache", 1, "chapter-1", 300));
+		runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create("book-cache", 2, "chapter-2", 300));
+		runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create("book-claimed-cache", 1, "chapter-1", 300));
+		runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create("book-claimed-cache", 2, "chapter-2", 300));
 	}
 
 	@Test
@@ -105,7 +132,7 @@ class InternalOperationsControllerTests {
 	}
 
 	@Test
-	void watchRewardTaskUsesExistingProgressAndClaimedStages() throws Exception {
+	void watchRewardTaskUsesExistingProgressAndDurationReward() throws Exception {
 		RegisteredUser user = createUser("+1", "4155550702", "Password123");
 		watchService.reportProgress(user.userId(), new WatchProgressRequest(
 				"book-existing",
@@ -122,17 +149,17 @@ class InternalOperationsControllerTests {
 				.andExpect(jsonPath("$.data.bookId").value("book-existing"))
 				.andExpect(jsonPath("$.data.episodeNum").value(2))
 				.andExpect(jsonPath("$.data.currentProgressPercent").value(24))
-				.andExpect(jsonPath("$.data.nextRewardStage").value(25))
-				.andExpect(jsonPath("$.data.targetProgressPercent").value(25))
+				.andExpect(jsonPath("$.data.nextRewardStage").doesNotExist())
+				.andExpect(jsonPath("$.data.targetProgressPercent").doesNotExist())
+				.andExpect(jsonPath("$.data.estimatedRewardPoints").value(1))
 				.andExpect(jsonPath("$.data.canReport").value(true));
 
-		pointsService.awardWatchProgress(user.userId(), "book-existing", 2, 25);
+		pointsService.awardWatchProgress(user.userId(), "book-existing", 2, 100, 100);
 
 		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
 				.header("X-Internal-Super-Token", TOKEN))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.nextRewardStage").value(50))
-				.andExpect(jsonPath("$.data.alreadyClaimedStages[0]").value(25));
+				.andExpect(jsonPath("$.data.rewardClaimed").value(false));
 	}
 
 	@Test
@@ -150,7 +177,7 @@ class InternalOperationsControllerTests {
 				.andExpect(jsonPath("$.data.episodeNum").value(1))
 				.andExpect(jsonPath("$.data.episodeTitle").value("Episode 1"))
 				.andExpect(jsonPath("$.data.durationSeconds").value(300))
-				.andExpect(jsonPath("$.data.nextRewardStage").value(25))
+				.andExpect(jsonPath("$.data.estimatedRewardPoints").value(5))
 				.andExpect(jsonPath("$.data.canReport").value(true));
 	}
 
@@ -159,8 +186,8 @@ class InternalOperationsControllerTests {
 		RegisteredUser user = createUser("+1", "4155550708", "Password123");
 		clearContentCaches();
 		seedCachedContent("book-claimed-cache", "Claimed Drama", "claimed-drama");
-		pointsService.awardWatchProgress(user.userId(), "book-claimed-cache", 1, 100);
-		pointsService.awardWatchProgress(user.userId(), "book-claimed-cache", 2, 100);
+		pointsService.awardWatchProgress(user.userId(), "book-claimed-cache", 1, 100, 300);
+		pointsService.awardWatchProgress(user.userId(), "book-claimed-cache", 2, 100, 300);
 
 		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
 				.header("X-Internal-Super-Token", TOKEN))
@@ -169,7 +196,7 @@ class InternalOperationsControllerTests {
 	}
 
 	@Test
-	void simulatedWatchProgressAwardsStagesIdempotently() throws Exception {
+	void simulatedWatchProgressAwardsDurationRewardIdempotently() throws Exception {
 		RegisteredUser user = createUser("+1", "4155550704", "Password123");
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
@@ -191,9 +218,10 @@ class InternalOperationsControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.bookId").value("book-sim"))
 				.andExpect(jsonPath("$.data.progressPercent").value(100))
-				.andExpect(jsonPath("$.data.awardedStages", containsInAnyOrder(25, 50, 75, 100)))
-				.andExpect(jsonPath("$.data.awardedPoints").value(4))
-				.andExpect(jsonPath("$.data.balance").value(4));
+				.andExpect(jsonPath("$.data.awardedStages").isEmpty())
+				.andExpect(jsonPath("$.data.awardedPoints").value(5))
+				.andExpect(jsonPath("$.data.rewardStatus").value("AWARDED"))
+				.andExpect(jsonPath("$.data.balance").value(5));
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
 				.header("X-Internal-Super-Token", TOKEN)
@@ -214,12 +242,15 @@ class InternalOperationsControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.awardedStages").isEmpty())
 				.andExpect(jsonPath("$.data.awardedPoints").value(0))
-				.andExpect(jsonPath("$.data.balance").value(4));
+				.andExpect(jsonPath("$.data.rewardStatus").value("ALREADY_CLAIMED"))
+				.andExpect(jsonPath("$.data.balance").value(5));
 	}
 
 	@Test
 	void simulatedWatchProgressUsesDailyEarnedMaximum() throws Exception {
+		dailyEarningRuleRepository.deleteAll();
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
 		RegisteredUser user = createUser("+1", "4155550711", "Password123");
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
@@ -239,8 +270,9 @@ class InternalOperationsControllerTests {
 						}
 						"""))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.awardedStages", containsInAnyOrder(25, 50, 75, 100)))
+				.andExpect(jsonPath("$.data.awardedStages").isEmpty())
 				.andExpect(jsonPath("$.data.awardedPoints").value(1))
+				.andExpect(jsonPath("$.data.rewardStatus").value("AWARDED_PARTIAL"))
 				.andExpect(jsonPath("$.data.balance").value(1));
 	}
 
@@ -253,14 +285,14 @@ class InternalOperationsControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(progressJson(30)))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("invalid progress stage"));
+				.andExpect(jsonPath("$.message").value("completed progress required"));
 
 		changeStatus(user.userId(), UserStatus.BLACKLISTED);
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
 				.header("X-Internal-Super-Token", TOKEN)
 				.contentType(MediaType.APPLICATION_JSON)
-				.content(progressJson(25)))
+				.content(progressJson(100)))
 				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value("user is not active"));
 
@@ -271,7 +303,7 @@ class InternalOperationsControllerTests {
 	}
 
 	@Test
-	void simulatedWatchProgressUsesDeclaredStageInsteadOfOversizedPosition() throws Exception {
+	void simulatedWatchProgressRejectsIncompleteProgress() throws Exception {
 		RegisteredUser user = createUser("+1", "4155550707", "Password123");
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
@@ -290,11 +322,8 @@ class InternalOperationsControllerTests {
 						  "reason": "ops stage simulation"
 						}
 						"""))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.progressPercent").value(25))
-				.andExpect(jsonPath("$.data.awardedStages[0]").value(25))
-				.andExpect(jsonPath("$.data.awardedPoints").value(1))
-				.andExpect(jsonPath("$.data.balance").value(1));
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("completed progress required"));
 	}
 
 	@Test
@@ -321,7 +350,7 @@ class InternalOperationsControllerTests {
 						  "chapterId": "chapter-1",
 						  "positionSeconds": 75,
 						  "durationSeconds": 300,
-						  "progressPercent": 25,
+						  "progressPercent": 100,
 						  "reason": "ops no regression"
 						}
 						"""))
@@ -344,9 +373,9 @@ class InternalOperationsControllerTests {
 						  "filteredTitle": "long-reason-drama",
 						  "episodeNum": 1,
 						  "chapterId": "chapter-1",
-						  "positionSeconds": 75,
+						  "positionSeconds": 300,
 						  "durationSeconds": 300,
-						  "progressPercent": 25,
+						  "progressPercent": 100,
 						  "reason": "%s"
 						}
 						""".formatted(longReason)))
@@ -372,9 +401,9 @@ class InternalOperationsControllerTests {
 						  "filteredTitle": "audit-drama",
 						  "episodeNum": 3,
 						  "chapterId": "chapter-3",
-						  "positionSeconds": 75,
+						  "positionSeconds": 300,
 						  "durationSeconds": 300,
-						  "progressPercent": 25,
+						  "progressPercent": 100,
 						  "reason": "ops audit simulation"
 						}
 						"""))
@@ -387,8 +416,8 @@ class InternalOperationsControllerTests {
 				.contains(user.userId().toString())
 				.contains("book-audit")
 				.contains("episode=3")
-				.contains("progress=25")
-				.contains("awardedPoints=1")
+				.contains("duration=300")
+				.contains("awardedPoints=5")
 				.contains("ops audit simulation");
 	}
 

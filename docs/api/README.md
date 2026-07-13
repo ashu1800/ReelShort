@@ -12,6 +12,7 @@
 - `payment-callback.md`：内部模拟支付回调和订单结算入口。
 - `payment-events-admin.md`：后台支付事件查询。
 - `points.md`：积分账户、流水和观看奖励。
+- `withdrawals.md`：TRC20 USDT 提现、人民币兑美元换算和汇率快照。
 - `rate-limit.md`：后端限流规则。
 - `system-config.md`：后台系统配置。
 - `watch.md`：观看进度和观看记录。

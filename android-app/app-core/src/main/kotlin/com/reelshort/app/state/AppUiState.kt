@@ -82,6 +82,7 @@ data class AppUiState(
     val orders: List<RechargeOrderSummary> = emptyList(),
     val wallet: WalletInfo? = null,
     val walletMutationVersion: Long = 0,
+    val withdrawalSubmissionVersion: Long = 0,
     val accountOperation: AccountOperation? = null,
     val withdrawalSummary: WithdrawalSummary? = null,
     val withdrawals: List<WithdrawalRecord> = emptyList(),

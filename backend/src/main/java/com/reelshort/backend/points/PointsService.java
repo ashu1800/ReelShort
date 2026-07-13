@@ -20,8 +20,6 @@ import com.reelshort.backend.user.UserStatus;
 @Service
 public class PointsService {
 
-	private static final List<Integer> REWARD_STAGES = List.of(25, 50, 75, 100);
-
 	private final PointTransactionRepository pointTransactionRepository;
 	private final PointTransferRepository pointTransferRepository;
 	private final PointAccountRepository pointAccountRepository;
@@ -58,10 +56,37 @@ public class PointsService {
 	}
 
 	public WatchRewardResult awardWatchProgress(UUID userId, String bookId, int episodeNum, int progressPercent) {
-		int stagePoints = systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_STAGE_POINTS);
+		return awardWatchProgress(userId, bookId, episodeNum, progressPercent, 0);
+	}
+
+	public WatchRewardResult awardWatchProgress(UUID userId, String bookId, int episodeNum, int progressPercent,
+			int authoritativeDurationSeconds) {
+		int secondsPerPoint = systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT);
 		int dailyEarnedMaximum = systemConfigService.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM);
+		int fluctuationMaximum = systemConfigService
+				.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT);
 		return userActionLocks.withUserLock(userId, () -> pointAwardTransaction.awardWatchProgress(userId, bookId,
-				episodeNum, progressPercent, REWARD_STAGES, stagePoints, dailyEarnedMaximum));
+				episodeNum, progressPercent, authoritativeDurationSeconds, secondsPerPoint, dailyEarnedMaximum,
+				fluctuationMaximum));
+	}
+
+	public DailyEarningQuotaResponse dailyEarningQuota(UUID userId) {
+		int dailyEarnedMaximum = systemConfigService.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM);
+		int fluctuationMaximum = systemConfigService
+				.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT);
+		return userActionLocks.withUserLock(userId,
+				() -> pointAwardTransaction.dailyEarningQuota(userId, dailyEarnedMaximum, fluctuationMaximum));
+	}
+
+	public void snapshotDailyEarningRule() {
+		pointAwardTransaction.snapshotDailyEarningRule(
+				systemConfigService.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM),
+				systemConfigService.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT));
+	}
+
+	public int estimatedWatchRewardPoints(int authoritativeDurationSeconds) {
+		return WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds,
+				systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT));
 	}
 
 	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason) {

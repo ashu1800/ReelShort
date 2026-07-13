@@ -7,6 +7,7 @@ import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRewardStatus
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 enum class PlaybackStatus {
@@ -110,6 +111,25 @@ data class PlaybackState(
 }
 
 const val PlaybackProgressSaveIntervalSeconds = 15
+
+data class PlaybackProgressSample(
+    val positionSeconds: Int,
+    val durationSeconds: Int,
+)
+
+fun playbackProgressSample(
+    positionMilliseconds: Long,
+    durationMilliseconds: Long,
+    completed: Boolean,
+): PlaybackProgressSample {
+    val durationSeconds = ceil(durationMilliseconds.coerceAtLeast(0L) / 1000.0).toInt()
+    val positionSeconds = if (completed) {
+        durationSeconds
+    } else {
+        (positionMilliseconds.coerceAtLeast(0L) / 1000L).toInt().coerceAtMost(durationSeconds)
+    }
+    return PlaybackProgressSample(positionSeconds, durationSeconds)
+}
 
 fun shouldPersistPlaybackProgress(
     positionSeconds: Int,

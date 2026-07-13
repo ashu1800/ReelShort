@@ -293,7 +293,6 @@ internal fun withdrawalConversionLines(
         )
     }
 
-    val calculatedUsdtPerPoint = cnyPerPoint.divide(cnyPerUsd, 12, RoundingMode.HALF_UP)
     val lines = mutableListOf(
         "${copy.accountWithdrawAvailableLabel} ${summary.availablePoints} ${copy.listPointsLabel} · " +
             "${copy.accountWithdrawMinimumLabel} ${summary.minimumPoints} ${copy.listPointsLabel} / " +
@@ -304,11 +303,31 @@ internal fun withdrawalConversionLines(
     if (pointAmount > 0) {
         val points = pointAmount.toBigDecimal()
         val cnyAmount = points.multiply(cnyPerPoint)
-        val usdtAmount = points.multiply(calculatedUsdtPerPoint)
+        val usdtAmount = points.multiply(cnyPerPoint).divide(cnyPerUsd, 6, RoundingMode.HALF_UP)
         val estimateLabel = if (language == AppLanguage.TRADITIONAL_CHINESE) "預計" else "Estimated"
         lines += "$estimateLabel ${cnyAmount.toUiDecimal()} CNY ≈ ${usdtAmount.toUiDecimal()} USDT"
     }
     return lines
+}
+
+internal fun withdrawalStatusLabel(status: String, language: AppLanguage): String =
+    when (status.uppercase()) {
+        "PENDING" -> if (language == AppLanguage.TRADITIONAL_CHINESE) "審核中" else "Pending"
+        "APPROVED" -> if (language == AppLanguage.TRADITIONAL_CHINESE) "已完成" else "Completed"
+        "REJECTED" -> if (language == AppLanguage.TRADITIONAL_CHINESE) "已拒絕" else "Rejected"
+        else -> status
+    }
+
+internal fun withdrawalRecordDetail(
+    status: String,
+    adminNote: String?,
+    txHash: String?,
+    language: AppLanguage,
+): String? = when {
+    status.equals("REJECTED", ignoreCase = true) && !adminNote.isNullOrBlank() ->
+        (if (language == AppLanguage.TRADITIONAL_CHINESE) "原因：" else "Reason: ") + adminNote
+    status.equals("APPROVED", ignoreCase = true) && !txHash.isNullOrBlank() -> "TX: $txHash"
+    else -> null
 }
 
 private fun String?.toPositiveDecimalOrNull(): BigDecimal? =

@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 class AppStateController(private val dataSource: AppDataSource) {
     private val mutableState = MutableStateFlow(AppUiState(apiBaseUrl = dataSource.apiBaseUrl))
     private var rewardReportInFlight = false
+    private var pendingCompletionReport: PendingCompletionReport? = null
     private var sessionRestored = false
     private var searchRequestVersion = 0L
     private var playbackRequestVersion = 0L
@@ -500,6 +501,9 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
         val initialPosition = snapshot?.positionSeconds ?: 0
         val initialDuration = snapshot?.durationSeconds?.takeIf { it > 0 } ?: videoUrl.durationSeconds
+        val playbackSnapshot = snapshot?.let {
+            if (it.progressPercent >= 100) it.copy(positionSeconds = 0, progressPercent = 0) else it
+        }
         val interaction = loadInteractionSilently(book)
         if (!isActivePlaybackRequest(requestVersion)) {
             return
@@ -516,7 +520,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 playback = PlaybackState.ready(book, episode, videoUrl)
                     .withPosition(initialPosition, initialDuration)
                     .let { playback ->
-                        snapshot?.let(playback::withSnapshot)
+                        playbackSnapshot?.let(playback::withSnapshot)
                             ?: playback.withReportedProgress(initialPosition, 0)
                     },
                 interaction = interaction,
@@ -615,13 +619,20 @@ class AppStateController(private val dataSource: AppDataSource) {
         val current = state.value
         val playback = current.playback
         val requestVersion = playbackRequestVersion
-        if (playback.status != PlaybackStatus.READY || rewardReportInFlight) {
+        if (playback.status != PlaybackStatus.READY) {
             return
         }
         if (positionSeconds <= 0 || durationSeconds <= 0) {
             return
         }
         val localProgress = playback.withPosition(positionSeconds, durationSeconds)
+        if (rewardReportInFlight) {
+            mutableState.update { it.copy(playback = localProgress) }
+            if (localProgress.progressPercent >= 100 && !playback.rewardClaimed) {
+                pendingCompletionReport = PendingCompletionReport(requestVersion, positionSeconds, durationSeconds)
+            }
+            return
+        }
         if (!shouldPersistPlaybackProgress(
                 positionSeconds = localProgress.positionSeconds,
                 durationSeconds = localProgress.durationSeconds,
@@ -645,16 +656,22 @@ class AppStateController(private val dataSource: AppDataSource) {
             if (!isActivePlaybackRequest(requestVersion)) {
                 return
             }
-            val points = if (progress.awardedPoints > 0) dataSource.loadPointAccount() else null
-            if (!isActivePlaybackRequest(requestVersion)) {
-                return
-            }
             mutableState.update {
                 it.copy(
                     watchHistory = upsertWatchHistory(it.watchHistory, progress),
-                    pointAccount = points ?: it.pointAccount,
                     playback = it.playback.withProgressReport(progress).withRewardReporting(false),
                 )
+            }
+            if (progress.awardedPoints > 0) {
+                try {
+                    val points = dataSource.loadPointAccount()
+                    if (isActivePlaybackRequest(requestVersion)) {
+                        mutableState.update { it.copy(pointAccount = points) }
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Throwable) {
+                }
             }
         } catch (error: CancellationException) {
             if (isActivePlaybackRequest(requestVersion)) {
@@ -675,6 +692,11 @@ class AppStateController(private val dataSource: AppDataSource) {
             }
         } finally {
             rewardReportInFlight = false
+            val pending = pendingCompletionReport
+            pendingCompletionReport = null
+            if (pending != null && isActivePlaybackRequest(pending.requestVersion)) {
+                reportProgressSilently(pending.positionSeconds, pending.durationSeconds)
+            }
         }
     }
 
@@ -928,7 +950,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     suspend fun submitWithdrawal(pointAmount: Int) = runAccountOperation(AccountOperation.WITHDRAWAL) {
         requireAuthenticatedAccount()
         dataSource.submitWithdrawal(pointAmount)
-        reloadAccountSnapshotAfterAction(withdrawalSubmittedMessage())
+        reloadAccountSnapshotAfterAction(withdrawalSubmittedMessage(), withdrawalSubmitted = true)
     }
 
     suspend fun transferPoints(recipientAccount: String, pointAmount: Int) = runAccountOperation(AccountOperation.POINT_TRANSFER) {
@@ -1079,10 +1101,16 @@ class AppStateController(private val dataSource: AppDataSource) {
     private suspend fun reloadAccountSnapshotAfterAction(
         successMessage: String,
         walletMutationCompleted: Boolean = false,
+        withdrawalSubmitted: Boolean = false,
     ) {
         val requestVersion = ++accountRequestVersion
         mutableState.update { it.copy(screen = AppScreen.ACCOUNT) }
-        loadAccountSnapshotForAuthenticatedUser(requestVersion)
+        try {
+            loadAccountSnapshotForAuthenticatedUser(requestVersion)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+        }
         if (requestVersion == accountRequestVersion && state.value.screen == AppScreen.ACCOUNT) {
             mutableState.update {
                 it.copy(
@@ -1094,10 +1122,21 @@ class AppStateController(private val dataSource: AppDataSource) {
                     } else {
                         it.walletMutationVersion
                     },
+                    withdrawalSubmissionVersion = if (withdrawalSubmitted) {
+                        it.withdrawalSubmissionVersion + 1
+                    } else {
+                        it.withdrawalSubmissionVersion
+                    },
                 )
             }
         }
     }
+
+    private data class PendingCompletionReport(
+        val requestVersion: Long,
+        val positionSeconds: Int,
+        val durationSeconds: Int,
+    )
 
     private suspend fun <T> loadOptionalAccountData(fallback: T, loader: suspend () -> T): T =
         try {

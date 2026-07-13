@@ -38,6 +38,9 @@ class ContentCacheServiceTests {
 	private ContentVideoCacheRepository contentVideoCacheRepository;
 
 	@Autowired
+	private ContentEpisodeRuntimeCacheRepository contentEpisodeRuntimeCacheRepository;
+
+	@Autowired
 	private ContentRefreshRunRepository contentRefreshRunRepository;
 
 	@Autowired
@@ -53,6 +56,7 @@ class ContentCacheServiceTests {
 		contentBookCacheRepository.deleteAll();
 		contentEpisodeCacheRepository.deleteAll();
 		contentVideoCacheRepository.deleteAll();
+		contentEpisodeRuntimeCacheRepository.deleteAll();
 		contentCacheProperties.setVideoFallbackTtl(Duration.ofMinutes(10));
 	}
 
@@ -539,6 +543,12 @@ class ContentCacheServiceTests {
 					assertThat(cache.lastError()).isNull();
 					assertThat(cache.refreshedAt()).isNotNull();
 				});
+		assertThat(contentEpisodeRuntimeCacheRepository
+				.findByBookIdAndEpisodeNumAndChapterId("book-1", 1, "chapter-1"))
+				.isPresent()
+				.get()
+				.extracting(ContentEpisodeRuntimeCache::durationSeconds)
+				.isEqualTo(120);
 	}
 
 	@Test

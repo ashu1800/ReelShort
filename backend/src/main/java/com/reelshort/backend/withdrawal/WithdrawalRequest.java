@@ -31,6 +31,15 @@ public class WithdrawalRequest {
 	@Column(name = "usdt_per_point", nullable = false, precision = 18, scale = 8)
 	private BigDecimal usdtPerPoint;
 
+	@Column(name = "cny_per_point", precision = 18, scale = 8)
+	private BigDecimal cnyPerPoint;
+
+	@Column(name = "cny_per_usd", precision = 18, scale = 8)
+	private BigDecimal cnyPerUsd;
+
+	@Column(name = "minimum_usd", precision = 18, scale = 2)
+	private BigDecimal minimumUsd;
+
 	@Column(nullable = false, length = 16)
 	private String network;
 
@@ -60,25 +69,30 @@ public class WithdrawalRequest {
 	}
 
 	private WithdrawalRequest(UUID id, UUID userId, int pointAmount, BigDecimal usdtAmount,
-			BigDecimal usdtPerPoint, String network, String walletAddress, OffsetDateTime createdAt) {
+			BigDecimal usdtPerPoint, BigDecimal cnyPerPoint, BigDecimal cnyPerUsd, BigDecimal minimumUsd,
+			String network, String walletAddress, OffsetDateTime createdAt) {
 		this.id = id;
 		this.userId = userId;
 		this.pointAmount = pointAmount;
 		this.usdtAmount = usdtAmount;
 		this.usdtPerPoint = usdtPerPoint;
+		this.cnyPerPoint = cnyPerPoint;
+		this.cnyPerUsd = cnyPerUsd;
+		this.minimumUsd = minimumUsd;
 		this.network = network;
 		this.walletAddress = walletAddress;
 		this.status = WithdrawalStatus.PENDING;
 		this.createdAt = createdAt;
 	}
 
-	public static WithdrawalRequest create(UUID userId, int pointAmount, BigDecimal usdtPerPoint,
+	public static WithdrawalRequest create(UUID userId, int pointAmount, WithdrawalConversion conversion,
 			String network, String walletAddress) {
-		BigDecimal normalizedRate = usdtPerPoint.setScale(8, RoundingMode.UNNECESSARY);
-		BigDecimal usdtAmount = normalizedRate.multiply(BigDecimal.valueOf(pointAmount))
-				.setScale(6, RoundingMode.HALF_UP);
-		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, usdtAmount, normalizedRate,
-				network, walletAddress, OffsetDateTime.now());
+		BigDecimal normalizedRate = conversion.usdtPerPoint().setScale(8, RoundingMode.UNNECESSARY);
+		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, conversion.usdtAmount(pointAmount),
+				normalizedRate, conversion.cnyPerPoint().setScale(8, RoundingMode.UNNECESSARY),
+				conversion.cnyPerUsd().setScale(8, RoundingMode.UNNECESSARY),
+				conversion.minimumUsd().setScale(2, RoundingMode.UNNECESSARY), network, walletAddress,
+				OffsetDateTime.now());
 	}
 
 	public void approve(String txHash, String note, String reviewedBy) {
@@ -120,6 +134,18 @@ public class WithdrawalRequest {
 
 	public BigDecimal usdtPerPoint() {
 		return usdtPerPoint;
+	}
+
+	public BigDecimal cnyPerPoint() {
+		return cnyPerPoint;
+	}
+
+	public BigDecimal cnyPerUsd() {
+		return cnyPerUsd;
+	}
+
+	public BigDecimal minimumUsd() {
+		return minimumUsd;
 	}
 
 	public String network() {

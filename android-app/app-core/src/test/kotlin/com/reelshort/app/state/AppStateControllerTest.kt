@@ -470,6 +470,31 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun completedLastEpisodeReplaysFromStartWithoutReclaimingReward() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.watchHistory = listOf(WatchRecord("book-1", "Alpha", 2, 100))
+        dataSource.snapshot = WatchEpisodeSnapshot(
+            bookId = "book-1",
+            episode = 2,
+            positionSeconds = 180,
+            durationSeconds = 180,
+            progressPercent = 100,
+            awardedStages = emptyList(),
+            rewardClaimed = true,
+            rewardStatus = WatchRewardStatus.ALREADY_CLAIMED,
+            awardedPoints = 3,
+        )
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+
+        assertEquals(0, controller.state.value.playback.positionSeconds)
+        assertEquals(0, controller.state.value.playback.progressPercent)
+        assertTrue(controller.state.value.playback.rewardClaimed)
+    }
+
+    @Test
     fun openWatchRecordLoadsBookAndOpensRecordedEpisodeFromAccount() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         val controller = AppStateController(dataSource)
@@ -1233,6 +1258,24 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun awardedProgressIsKeptWhenPointAccountRefreshFails() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        dataSource.progressRewardClaimed = true
+        dataSource.progressRewardStatus = WatchRewardStatus.AWARDED
+        dataSource.progressAwardedPoints = 3
+        dataSource.accountError = IllegalStateException("point refresh failed")
+
+        controller.reportProgressSilently(positionSeconds = 200, durationSeconds = 200)
+
+        assertTrue(controller.state.value.playback.rewardClaimed)
+        assertEquals(3, controller.state.value.playback.awardedPoints)
+        assertEquals(1L, controller.state.value.playback.rewardAwardVersion)
+    }
+
+    @Test
     fun refreshPlaybackUrlReloadsCurrentEpisodeUrlAndKeepsPosition() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.watchHistory = listOf(dataSource.watchRecord())
@@ -1819,6 +1862,24 @@ class AppStateControllerTest {
             listOf("transfer:+442075550101:5", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"),
             dataSource.calls,
         )
+    }
+
+    @Test
+    fun successfulWithdrawalIsNotTurnedIntoFailureWhenSnapshotRefreshFails() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession("+14155550101", "token-demo", "Bearer", phoneE164 = "+14155550101"),
+        )
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        val initialVersion = controller.state.value.withdrawalSubmissionVersion
+        dataSource.accountError = IllegalStateException("snapshot refresh failed")
+
+        controller.submitWithdrawal(100)
+
+        assertEquals(initialVersion + 1, controller.state.value.withdrawalSubmissionVersion)
+        assertEquals(UiMessageType.SUCCESS, controller.state.value.messageType)
+        assertEquals("Withdrawal submitted.", controller.state.value.errorMessage)
+        assertEquals(1, dataSource.calls.count { it == "withdraw:100" })
     }
 
     @Test

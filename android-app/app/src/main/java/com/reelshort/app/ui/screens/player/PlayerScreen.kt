@@ -89,6 +89,7 @@ import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.state.AppUiState
+import com.reelshort.app.state.playbackProgressSample
 import com.reelshort.app.ui.format.EpisodeWatchStatus
 import com.reelshort.app.ui.format.EpisodeWatchStatusType
 import com.reelshort.app.ui.format.PlayerOverlayMode
@@ -352,6 +353,14 @@ private fun BoxScope.MediaPlayerSurface(
                         hasFirstReady = true
                         playerError = false
                     }
+                    if (newPlaybackState == Player.STATE_ENDED) {
+                        val durationMs = player.duration.takeIf { it > 0 } ?: fallbackDurationSeconds * 1000L
+                        if (durationMs > 0) {
+                            val sample = playbackProgressSample(durationMs, durationMs, completed = true)
+                            onProgress(sample.positionSeconds, sample.durationSeconds)
+                            onAutoReportProgress(sample.positionSeconds, sample.durationSeconds)
+                        }
+                    }
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
@@ -386,10 +395,13 @@ private fun BoxScope.MediaPlayerSurface(
                 val positionMs = player.currentPosition
                 val durationMs = player.duration.takeIf { it > 0 } ?: fallbackDurationSeconds * 1000L
                 if (durationMs <= 0) continue
-                val positionSeconds = (positionMs / 1000).toInt()
-                val durationSeconds = (durationMs / 1000).toInt()
-                onProgress(positionSeconds, durationSeconds)
-                onAutoReportProgress(positionSeconds, durationSeconds)
+                val sample = playbackProgressSample(
+                    positionMilliseconds = positionMs,
+                    durationMilliseconds = durationMs,
+                    completed = player.playbackState == Player.STATE_ENDED,
+                )
+                onProgress(sample.positionSeconds, sample.durationSeconds)
+                onAutoReportProgress(sample.positionSeconds, sample.durationSeconds)
             }
         }
         val overlayMode = playerOverlayMode(

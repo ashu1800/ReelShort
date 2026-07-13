@@ -15,6 +15,7 @@ import com.reelshort.backend.admin.AdminAuditService;
 import com.reelshort.backend.admin.AdminPermissions;
 import com.reelshort.backend.admin.CurrentAdmin;
 import com.reelshort.backend.admin.RequireAdminPermission;
+import com.reelshort.backend.points.PointsService;
 import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
@@ -27,10 +28,13 @@ public class AdminSystemConfigController {
 
 	private final SystemConfigService systemConfigService;
 	private final AdminAuditService adminAuditService;
+	private final PointsService pointsService;
 
-	public AdminSystemConfigController(SystemConfigService systemConfigService, AdminAuditService adminAuditService) {
+	public AdminSystemConfigController(SystemConfigService systemConfigService, AdminAuditService adminAuditService,
+			PointsService pointsService) {
 		this.systemConfigService = systemConfigService;
 		this.adminAuditService = adminAuditService;
+		this.pointsService = pointsService;
 	}
 
 	@GetMapping
@@ -44,6 +48,10 @@ public class AdminSystemConfigController {
 	public ApiResponse<SystemConfigResponse> update(CurrentAdmin currentAdmin, @PathVariable String configKey,
 			@Valid @RequestBody SystemConfigUpdateRequest updateRequest,
 			HttpServletRequest request) {
+		if (configKey.equals(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM)
+				|| configKey.equals(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT)) {
+			pointsService.snapshotDailyEarningRule();
+		}
 		SystemConfigResponse response = systemConfigService.update(configKey, updateRequest.value());
 		adminAuditService.record(currentAdmin.username(), "SYSTEM_CONFIG_UPDATED", "SYSTEM_CONFIG", targetId(configKey),
 				"Updated " + configKey + " to " + response.value());

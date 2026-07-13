@@ -18,6 +18,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
+import com.reelshort.backend.content.ContentEpisodeRuntimeCache;
+import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -28,6 +30,9 @@ class PointsControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
 
 	@Test
 	void accountStartsWithZeroBalance() throws Exception {
@@ -55,47 +60,51 @@ class PointsControllerTests {
 		String token = registerAndExtractToken("points-carol");
 
 		reportProgress(token, "book-1", 1, 30, 120)
-				.andExpect(jsonPath("$.data.awardedPoints").value(1))
-				.andExpect(jsonPath("$.data.awardedStages", hasSize(1)))
-				.andExpect(jsonPath("$.data.awardedStages[0]").value(25));
-
-		reportProgress(token, "book-1", 1, 35, 120)
 				.andExpect(jsonPath("$.data.awardedPoints").value(0))
-				.andExpect(jsonPath("$.data.awardedStages", hasSize(0)));
+				.andExpect(jsonPath("$.data.rewardStatus").value("NOT_COMPLETE"));
+
+		reportProgress(token, "book-1", 1, 120, 120)
+				.andExpect(jsonPath("$.data.awardedPoints").value(2))
+				.andExpect(jsonPath("$.data.awardedStages", hasSize(0)))
+				.andExpect(jsonPath("$.data.rewardStatus").value("AWARDED"));
 
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(1));
+				.andExpect(jsonPath("$.data.balance").value(2));
 
 		mockMvc.perform(get("/api/app/points/records")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data", hasSize(1)))
-				.andExpect(jsonPath("$.data[0].amount").value(1))
+				.andExpect(jsonPath("$.data[0].amount").value(2))
 				.andExpect(jsonPath("$.data[0].source").value("WATCH_REWARD"))
-				.andExpect(jsonPath("$.data[0].stage").value(25));
+				.andExpect(jsonPath("$.data[0].stage").doesNotExist());
 	}
 
 	@Test
 	void watchProgressJumpAwardsAllReachedStages() throws Exception {
 		String token = registerAndExtractToken("points-dan");
 
-		reportProgress(token, "book-2", 2, 80, 100)
-				.andExpect(jsonPath("$.data.awardedPoints").value(3))
-				.andExpect(jsonPath("$.data.awardedStages", hasSize(3)))
-				.andExpect(jsonPath("$.data.awardedStages[0]").value(25))
-				.andExpect(jsonPath("$.data.awardedStages[1]").value(50))
-				.andExpect(jsonPath("$.data.awardedStages[2]").value(75));
+		reportProgress(token, "book-2", 2, 100, 100)
+				.andExpect(jsonPath("$.data.awardedPoints").value(1))
+				.andExpect(jsonPath("$.data.awardedStages", hasSize(0)))
+				.andExpect(jsonPath("$.data.rewardStatus").value("AWARDED"));
 
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(3));
+				.andExpect(jsonPath("$.data.balance").value(1));
 	}
 
 	private ResultActionsFacade reportProgress(String token, String bookId, int episodeNum, int positionSeconds,
 			int durationSeconds) throws Exception {
+		ContentEpisodeRuntimeCache runtime = runtimeCacheRepository
+				.findByBookIdAndEpisodeNumAndChapterId(bookId, episodeNum, "chapter-" + episodeNum)
+				.orElseGet(() -> ContentEpisodeRuntimeCache.create(bookId, episodeNum, "chapter-" + episodeNum,
+						durationSeconds));
+		runtime.update(durationSeconds);
+		runtimeCacheRepository.save(runtime);
 		return new ResultActionsFacade(mockMvc.perform(post("/api/app/watch/progress")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)

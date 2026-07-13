@@ -100,6 +100,8 @@ import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.updateStrings
 import com.reelshort.app.ui.format.walletSheetShouldDismiss
 import com.reelshort.app.ui.format.withdrawalConversionLines
+import com.reelshort.app.ui.format.withdrawalRecordDetail
+import com.reelshort.app.ui.format.withdrawalStatusLabel
 import com.reelshort.app.ui.format.accountConfirmationBody
 import com.reelshort.app.ui.format.accountConfirmationCancel
 import com.reelshort.app.ui.format.accountConfirmationConfirm
@@ -134,6 +136,7 @@ internal fun AccountScreen(
     orders: List<RechargeOrderSummary>,
     wallet: WalletInfo?,
     walletMutationVersion: Long,
+    withdrawalSubmissionVersion: Long,
     walletSmsCountdownSeconds: Int,
     walletSmsCountdownTrigger: Long,
     passwordSmsCountdownSeconds: Int,
@@ -169,6 +172,7 @@ internal fun AccountScreen(
     var detailSheet by remember { mutableStateOf<AccountDetailSheet?>(null) }
     var walletSheetVisible by remember { mutableStateOf(false) }
     var lastHandledWalletMutationVersion by remember { mutableStateOf(walletMutationVersion) }
+    var lastHandledWithdrawalSubmissionVersion by remember { mutableStateOf(withdrawalSubmissionVersion) }
     var transferSheetVisible by remember { mutableStateOf(false) }
     var passwordSheetVisible by remember { mutableStateOf(false) }
     var bankCardSheetVisible by remember { mutableStateOf(false) }
@@ -187,6 +191,16 @@ internal fun AccountScreen(
             walletSheetVisible = false
         }
         lastHandledWalletMutationVersion = walletMutationVersion
+    }
+
+    LaunchedEffect(withdrawalSubmissionVersion) {
+        if (
+            detailSheet == AccountDetailSheet.WITHDRAWALS &&
+            withdrawalSubmissionVersion > lastHandledWithdrawalSubmissionVersion
+        ) {
+            detailSheet = null
+        }
+        lastHandledWithdrawalSubmissionVersion = withdrawalSubmissionVersion
     }
 
     LazyColumn(
@@ -928,10 +942,11 @@ private fun AccountDetailBottomSheet(
 @Composable
 private fun WithdrawalRow(record: WithdrawalRecord, language: AppLanguage) {
     val copy = strings(language)
+    val detail = withdrawalRecordDetail(record.status, record.adminNote, record.txHash, language)
     ListRow(
         title = "${record.pointAmount} ${copy.listPointsLabel} · ${record.usdtAmount} USDT",
-        subtitle = "${record.network} · ${record.walletAddress}",
-        trailing = record.status,
+        subtitle = listOfNotNull("${record.network} · ${record.walletAddress}", detail).joinToString("\n"),
+        trailing = withdrawalStatusLabel(record.status, language),
         highlight = record.status == "APPROVED",
     )
 }

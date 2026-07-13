@@ -35,14 +35,12 @@ public record SystemConfigDefinition(
 		if (valueType == ValueType.DECIMAL) {
 			try {
 				BigDecimal parsed = new BigDecimal(trimmed);
-				if (parsed.compareTo(BigDecimal.ZERO) < 0) {
+				if (parsed.compareTo(BigDecimal.ZERO) <= 0) {
 					throw new AdminException(400, "bad request");
 				}
-				if ("withdraw.usdt-per-point".equals(key)) {
-					if (parsed.scale() > 8 || parsed.compareTo(BigDecimal.valueOf(100)) > 0) {
+				if (parsed.scale() > decimalScale(key) || parsed.compareTo(decimalMaximum(key)) > 0) {
 						throw new AdminException(400, "bad request");
 					}
-				}
 				return parsed.stripTrailingZeros().toPlainString();
 			}
 			catch (NumberFormatException exception) {
@@ -54,6 +52,20 @@ public record SystemConfigDefinition(
 			throw new AdminException(400, "bad request");
 		}
 		return normalized;
+	}
+
+	private int decimalScale(String configKey) {
+		return "withdraw.minimum-usd".equals(configKey) ? 2 : 8;
+	}
+
+	private BigDecimal decimalMaximum(String configKey) {
+		if ("withdraw.cny-per-usd".equals(configKey)) {
+			return BigDecimal.valueOf(1000);
+		}
+		if ("withdraw.minimum-usd".equals(configKey)) {
+			return BigDecimal.valueOf(1_000_000);
+		}
+		return BigDecimal.valueOf(100);
 	}
 
 	public enum ValueType {

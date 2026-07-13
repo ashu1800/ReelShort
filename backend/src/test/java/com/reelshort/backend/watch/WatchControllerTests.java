@@ -18,6 +18,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
+import com.reelshort.backend.content.ContentEpisodeRuntimeCache;
+import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -28,6 +30,9 @@ class WatchControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
 
 	@Test
 	void progressRequiresAuthentication() throws Exception {
@@ -108,22 +113,29 @@ class WatchControllerTests {
 	}
 
 	@Test
-	void episodeSnapshotReturnsHistoryAndAwardedStages() throws Exception {
+	void episodeSnapshotReturnsHistoryAndRewardClaimState() throws Exception {
 		String token = registerAndExtractToken("watch-snapshot-progress");
-		reportProgress(token, "book-snapshot", 2, 90, 120);
+		reportProgress(token, "book-snapshot", 2, 120, 120);
 
 		mockMvc.perform(get("/api/app/watch/books/book-snapshot/episodes/2/snapshot")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.bookId").value("book-snapshot"))
 				.andExpect(jsonPath("$.data.episodeNum").value(2))
-				.andExpect(jsonPath("$.data.positionSeconds").value(90))
+				.andExpect(jsonPath("$.data.positionSeconds").value(120))
 				.andExpect(jsonPath("$.data.durationSeconds").value(120))
-				.andExpect(jsonPath("$.data.progressPercent").value(75))
-				.andExpect(jsonPath("$.data.awardedStages", hasSize(3)))
-				.andExpect(jsonPath("$.data.awardedStages[0]").value(25))
-				.andExpect(jsonPath("$.data.awardedStages[1]").value(50))
-				.andExpect(jsonPath("$.data.awardedStages[2]").value(75));
+				.andExpect(jsonPath("$.data.progressPercent").value(100))
+				.andExpect(jsonPath("$.data.awardedStages", hasSize(0)))
+				.andExpect(jsonPath("$.data.rewardClaimed").value(true))
+				.andExpect(jsonPath("$.data.rewardStatus").value("ALREADY_CLAIMED"))
+				.andExpect(jsonPath("$.data.awardedPoints").value(2));
+
+		mockMvc.perform(get("/api/app/watch/history")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[0].rewardClaimed").value(true))
+				.andExpect(jsonPath("$.data[0].rewardStatus").value("ALREADY_CLAIMED"))
+				.andExpect(jsonPath("$.data[0].awardedPoints").value(2));
 	}
 
 	@Test
@@ -138,8 +150,40 @@ class WatchControllerTests {
 				.andExpect(jsonPath("$.code").value(400));
 	}
 
+	@Test
+	void completedClientPlaybackUsesAuthoritativeDurationForRewardCalculation() throws Exception {
+		String token = registerAndExtractToken("watch-authoritative-duration");
+		ContentEpisodeRuntimeCache runtime = ContentEpisodeRuntimeCache.create("book-authoritative", 1,
+				"chapter-1", 120);
+		runtimeCacheRepository.save(runtime);
+
+		mockMvc.perform(post("/api/app/watch/progress")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(progressBody("book-authoritative", "Authoritative", "authoritative", 1, "chapter-1", 60, 60)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.progressPercent").value(50))
+				.andExpect(jsonPath("$.data.rewardClaimed").value(false))
+				.andExpect(jsonPath("$.data.awardedPoints").value(0));
+
+		mockMvc.perform(post("/api/app/watch/progress")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(progressBody("book-authoritative", "Authoritative", "authoritative", 1, "chapter-1", 120, 120)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.progressPercent").value(100))
+				.andExpect(jsonPath("$.data.rewardClaimed").value(true))
+				.andExpect(jsonPath("$.data.awardedPoints").value(2));
+	}
+
 	private void reportProgress(String token, String bookId, int episodeNum, int positionSeconds, int durationSeconds)
-			throws Exception {
+				throws Exception {
+		ContentEpisodeRuntimeCache runtime = runtimeCacheRepository
+				.findByBookIdAndEpisodeNumAndChapterId(bookId, episodeNum, "chapter-" + episodeNum)
+				.orElseGet(() -> ContentEpisodeRuntimeCache.create(bookId, episodeNum, "chapter-" + episodeNum,
+						durationSeconds));
+		runtime.update(durationSeconds);
+		runtimeCacheRepository.save(runtime);
 		mockMvc.perform(post("/api/app/watch/progress")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)

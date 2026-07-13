@@ -15,5 +15,10 @@ public record InternalWatchRewardTaskResponse(
 		Integer nextRewardStage,
 		Integer targetProgressPercent,
 		List<Integer> alreadyClaimedStages,
-		boolean canReport) {
+		boolean canReport,
+		int estimatedRewardPoints,
+		int dailyEffectiveLimit,
+		int dailyEarnedPoints,
+		int dailyRemainingPoints,
+		boolean rewardClaimed) {
 }

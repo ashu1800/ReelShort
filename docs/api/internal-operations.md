@@ -38,9 +38,9 @@ Token 缺失返回 `401 unauthorized`，Token 错误返回 `403 forbidden`。
 规则：
 
 - 只允许 `ACTIVE` 用户。
-- 优先返回该用户最近观看记录中仍有未领取奖励阶段的分集。
+- 优先返回该用户最近观看记录中尚未领取完整视频奖励的分集。
 - 没有观看记录时，从 English 内容缓存中选择一条有分集的短剧。
-- 内容缓存没有视频真实时长时，默认返回 `durationSeconds=300`。
+- 后端按需调用内容源获得真实视频时长；没有权威时长的候选不会返回。
 
 响应：
 
@@ -58,10 +58,15 @@ Token 缺失返回 `401 unauthorized`，Token 错误返回 `403 forbidden`。
     "episodeTitle": "Episode 1",
     "durationSeconds": 300,
     "currentProgressPercent": 0,
-    "nextRewardStage": 25,
-    "targetProgressPercent": 25,
+    "nextRewardStage": null,
+    "targetProgressPercent": null,
     "alreadyClaimedStages": [],
-    "canReport": true
+    "canReport": true,
+    "estimatedRewardPoints": 5,
+    "dailyEffectiveLimit": 850,
+    "dailyEarnedPoints": 120,
+    "dailyRemainingPoints": 730,
+    "rewardClaimed": false
   }
 }
 ```
@@ -79,19 +84,18 @@ Token 缺失返回 `401 unauthorized`，Token 错误返回 `403 forbidden`。
   "filteredTitle": "example-drama",
   "episodeNum": 1,
   "chapterId": "chapter-1",
-  "positionSeconds": 75,
+  "positionSeconds": 300,
   "durationSeconds": 300,
-  "progressPercent": 25,
+  "progressPercent": 100,
   "reason": "ops simulated playback"
 }
 ```
 
 约束：
 
-- 只允许 `progressPercent` 为 `25`、`50`、`75`、`100`。
+- 只允许 `progressPercent=100`，且视频必须存在服务端权威时长。
 - `DISABLED` 和 `BLACKLISTED` 用户返回 `403 user is not active`。
-- 重复上报同一用户、同一短剧、同一集、同一阶段不会重复发积分。
-- 模拟到高阶段时，现有奖励逻辑会补齐未领取的低阶段。
+- 同一用户、同一短剧、同一集只发一次，重复模拟不会重复发积分。
 - 模拟观看复用 `WATCH_REWARD` 自动奖励路径，会与 App 观看奖励共享 `points.daily-earned.maximum` 每账号每日上限。
 - 成功上报会写后台审计日志，操作者标记为 `internal-operations`。
 
@@ -104,12 +108,14 @@ Token 缺失返回 `401 unauthorized`，Token 错误返回 `403 forbidden`。
   "data": {
     "bookId": "book-1",
     "episodeNum": 1,
-    "progressPercent": 25,
-    "awardedStages": [25],
-    "awardedPoints": 1,
-    "balance": 121,
+    "progressPercent": 100,
+    "awardedStages": [],
+    "awardedPoints": 5,
+    "balance": 125,
     "frozenPoints": 20,
-    "availablePoints": 101
+    "availablePoints": 105,
+    "rewardClaimed": true,
+    "rewardStatus": "AWARDED"
   }
 }
 ```

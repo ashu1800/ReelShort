@@ -6,5 +6,8 @@ public record WithdrawalSummaryResponse(
 		int availablePoints,
 		int minimumPoints,
 		String usdtPerPoint,
+		String cnyPerPoint,
+		String cnyPerUsd,
+		String minimumUsd,
 		String walletAddress) {
 }
