@@ -321,9 +321,10 @@ Expected: `{"status":"UP"}`.
 
 **Step 3: Smoke test internal API**
 
-内部运营接口不得经公网 Nginx 携带 `X-Internal-Super-Token` 调用。公网地址
-`https://shortlink.hjj888.cc/api/internal/...` 应返回 `404`；部署主机上请通过
-Compose backend 容器内的 loopback 执行以下 smoke，或从可信内网直连 backend 服务。
+内部运营接口允许经公网 Nginx 透传到 backend，但必须携带正确的
+`X-Internal-Super-Token`。公网地址不带 Token 应返回后端 JSON `401`，错误 Token
+应返回后端 JSON `403`；部署主机上也可通过 Compose backend 容器内的 loopback
+执行以下 smoke。
 
 ```bash
 USER_ID="<userId>"

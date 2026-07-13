@@ -53,6 +53,6 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/verify-backup-scripts.ps1
 - Compose 强制要求 `POSTGRES_PASSWORD`，且生产必须替换 `.env.example` 中的占位值；同时必须配置 `REELSHORT_ADMIN_PASSWORD_HASH` 和 `REELSHORT_PAYMENT_CALLBACK_SECRET`。
 - 固定开发管理员和支付密钥只允许用于显式 `app-dev` 或测试 profile；通过生产 Compose 启动时，管理员哈希或支付密钥缺失、使用已知开发值或强度不足都会拒绝启动。
 - 默认 Compose 只把 Nginx 暴露到外部；PostgreSQL 和 Redis 仅在 Compose 内部网络可达。宿主机调试必须显式叠加 `docker-compose.local-debug.yml`，且端口只绑定 `127.0.0.1`。
-- Nginx 对 `/api/internal` 和 `/api/internal/` 下的所有路径返回 404，内部运营和支付回调接口只能通过可信内网路径访问，不能经公网入口调用。
+- Nginx 将 `/api/internal` 和 `/api/internal/` 下的路径透传到 backend；这些接口必须依赖 `X-Internal-Super-Token`、支付回调密钥等后端接口级鉴权，公网调用方不得记录或泄露内部密钥。
 - Flask 内容源通过 Compose 内部网络访问，不应直接暴露给公网。
 - Compose 默认设置 `REELSHORT_RATE_LIMIT_STORE=redis`，后端通过内部服务名 `redis` 访问 Redis；本地直接运行后端时默认仍使用内存限流。

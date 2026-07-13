@@ -37,9 +37,9 @@
 - Modify: `docs/deploy/README.md`
 
 **Steps:**
-1. 扩展部署静态验证，断言生产 Compose 不发布数据库端口、Nginx 拒绝 `/api/internal/`。
+1. 扩展部署静态验证，断言生产 Compose 不发布数据库端口、Nginx 将 `/api/internal/` 透传到 backend。
 2. 运行静态测试并确认失败。
-3. 删除生产端口映射，增加 loopback-only 调试 override，并增加 Nginx internal 拒绝规则。
+3. 删除生产端口映射，增加 loopback-only 调试 override，并保持 Nginx internal 透传由后端 Token 鉴权。
 4. 运行部署静态验证。
 
 ### Task 3: Android 会话存储 fail-closed

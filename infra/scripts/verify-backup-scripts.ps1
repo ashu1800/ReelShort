@@ -71,8 +71,9 @@ Assert-Condition ($localDebugComposeContent -match '(?m)^\s*-\s*"127\.0\.0\.1:\$
 Assert-Condition ($productionComposeContent -match 'POSTGRES_PASSWORD:\s*\$\{POSTGRES_PASSWORD:\?[^}]+\}') "Production Compose must require POSTGRES_PASSWORD"
 Assert-Condition ($productionComposeContent -match 'REELSHORT_DB_PASSWORD:\s*\$\{POSTGRES_PASSWORD:\?[^}]+\}') "Backend must require POSTGRES_PASSWORD"
 Assert-Condition (-not $productionComposeContent.Contains('reelshort_dev')) "Production Compose must not contain the development database password"
-Assert-Condition ($nginxContent -match '(?ms)location\s+=\s+/api/internal\s*\{\s*return\s+404;\s*\}') "Nginx must reject the exact /api/internal path"
-Assert-Condition ($nginxContent -match '(?ms)location\s+\^~\s+/api/internal/\s*\{\s*return\s+404;\s*\}') "Nginx must reject /api/internal/ before the general /api/ proxy"
+Assert-Condition (-not ($nginxContent -match '(?ms)location\s+=\s+/api/internal\s*\{\s*return\s+404;\s*\}')) "Nginx must not reject the exact /api/internal path"
+Assert-Condition (-not ($nginxContent -match '(?ms)location\s+\^~\s+/api/internal/\s*\{\s*return\s+404;\s*\}')) "Nginx must not reject /api/internal/ before the general /api/ proxy"
+Assert-Condition ($nginxContent -match '(?ms)location\s+/api/\s*\{.*proxy_pass\s+http://backend:8080/api/;') "Nginx must proxy /api/ paths, including /api/internal, to backend"
 
 & (Join-Path $repoRoot "infra\scripts\tests\backup-security-tests.ps1")
 
