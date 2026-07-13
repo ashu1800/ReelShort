@@ -266,6 +266,12 @@ internal fun authRegisterEnabled(
 
 internal fun commercialSheetAutoDismissesAfterSubmit(): Boolean = false
 
+internal fun walletSheetShouldDismiss(
+    visible: Boolean,
+    lastHandledVersion: Long,
+    currentVersion: Long,
+): Boolean = visible && currentVersion > lastHandledVersion
+
 internal fun String.posterInitials(): String =
     trim()
         .split(Regex("\\s+"))

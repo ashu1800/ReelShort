@@ -144,6 +144,7 @@ internal fun MainShell(
                             pointRecords = state.pointAccount?.records ?: emptyList(),
                             orders = state.orders,
                             wallet = state.wallet,
+                            walletMutationVersion = state.walletMutationVersion,
                             withdrawalSummary = state.withdrawalSummary,
                             withdrawals = state.withdrawals,
                             pointTransfers = state.pointTransfers,

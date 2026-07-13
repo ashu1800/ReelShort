@@ -861,13 +861,13 @@ class AppStateController(private val dataSource: AppDataSource) {
     suspend fun bindWallet(walletAddress: String, verificationCode: String) = runWithLoading(ErrorContext.ACCOUNT) {
         requireAuthenticatedAccount()
         dataSource.bindWallet(walletAddress, verificationCode)
-        reloadAccountSnapshotAfterAction(walletUpdatedMessage())
+        reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
     }
 
     suspend fun unbindWallet(verificationCode: String) = runWithLoading(ErrorContext.ACCOUNT) {
         requireAuthenticatedAccount()
         dataSource.unbindWallet(verificationCode)
-        reloadAccountSnapshotAfterAction(walletUpdatedMessage())
+        reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
     }
 
     suspend fun submitBankCard(holderName: String, cardNumber: String) = runWithLoading(ErrorContext.ACCOUNT) {
@@ -1012,12 +1012,25 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    private suspend fun reloadAccountSnapshotAfterAction(successMessage: String) {
+    private suspend fun reloadAccountSnapshotAfterAction(
+        successMessage: String,
+        walletMutationCompleted: Boolean = false,
+    ) {
         val requestVersion = ++accountRequestVersion
         mutableState.update { it.copy(screen = AppScreen.ACCOUNT) }
         loadAccountSnapshotForAuthenticatedUser(requestVersion)
         if (requestVersion == accountRequestVersion && state.value.screen == AppScreen.ACCOUNT) {
-            mutableState.update { it.copy(errorMessage = successMessage, isLoading = false) }
+            mutableState.update {
+                it.copy(
+                    errorMessage = successMessage,
+                    isLoading = false,
+                    walletMutationVersion = if (walletMutationCompleted) {
+                        it.walletMutationVersion + 1
+                    } else {
+                        it.walletMutationVersion
+                    },
+                )
+            }
         }
     }
 

@@ -86,6 +86,7 @@ import com.reelshort.app.ui.format.guestAccountEntryAuthModes
 import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.smsVerificationSeconds
 import com.reelshort.app.ui.format.strings
+import com.reelshort.app.ui.format.walletSheetShouldDismiss
 import com.reelshort.app.ui.theme.AccountHeroScrim
 import com.reelshort.app.ui.theme.DangerText
 import com.reelshort.app.ui.theme.Divider
@@ -115,6 +116,7 @@ internal fun AccountScreen(
     pointRecords: List<PointRecord>,
     orders: List<RechargeOrderSummary>,
     wallet: WalletInfo?,
+    walletMutationVersion: Long,
     withdrawalSummary: WithdrawalSummary?,
     withdrawals: List<WithdrawalRecord>,
     pointTransfers: List<PointTransferRecord>,
@@ -142,10 +144,24 @@ internal fun AccountScreen(
     var languageSheetVisible by remember { mutableStateOf(false) }
     var detailSheet by remember { mutableStateOf<AccountDetailSheet?>(null) }
     var walletSheetVisible by remember { mutableStateOf(false) }
+    var lastHandledWalletMutationVersion by remember { mutableStateOf(walletMutationVersion) }
     var transferSheetVisible by remember { mutableStateOf(false) }
     var passwordSheetVisible by remember { mutableStateOf(false) }
     var bankCardSheetVisible by remember { mutableStateOf(false) }
     val copy = strings(language)
+
+    LaunchedEffect(walletMutationVersion) {
+        if (
+            walletSheetShouldDismiss(
+                visible = walletSheetVisible,
+                lastHandledVersion = lastHandledWalletMutationVersion,
+                currentVersion = walletMutationVersion,
+            )
+        ) {
+            walletSheetVisible = false
+        }
+        lastHandledWalletMutationVersion = walletMutationVersion
+    }
 
     LazyColumn(
         contentPadding = PaddingValues(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 24.dp),
@@ -943,17 +959,11 @@ private fun WalletBottomSheet(
                 primaryEnabled = walletAddress.isNotBlank() && code.length == 6,
                 onPrimary = {
                     onBindWallet(walletAddress, code)
-                    if (commercialSheetAutoDismissesAfterSubmit()) {
-                        onDismiss()
-                    }
                 },
                 secondary = copy.accountWalletUnbindAction,
                 secondaryEnabled = !wallet?.walletAddress.isNullOrBlank() && code.length == 6,
                 onSecondary = {
                     onUnbindWallet(code)
-                    if (commercialSheetAutoDismissesAfterSubmit()) {
-                        onDismiss()
-                    }
                 },
             )
         }

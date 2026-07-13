@@ -1746,6 +1746,64 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun bindWalletSuccessAdvancesWalletMutationVersion() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(
+                username = "+14155550101",
+                token = "token-demo",
+                tokenType = "Bearer",
+                phoneE164 = "+14155550101",
+            ),
+        )
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        val initialVersion = controller.state.value.walletMutationVersion
+
+        controller.bindWallet("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "123456")
+
+        assertEquals(initialVersion + 1, controller.state.value.walletMutationVersion)
+    }
+
+    @Test
+    fun unbindWalletSuccessAdvancesWalletMutationVersion() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(
+                username = "+14155550101",
+                token = "token-demo",
+                tokenType = "Bearer",
+                phoneE164 = "+14155550101",
+            ),
+        )
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        val initialVersion = controller.state.value.walletMutationVersion
+
+        controller.unbindWallet("123456")
+
+        assertEquals(initialVersion + 1, controller.state.value.walletMutationVersion)
+    }
+
+    @Test
+    fun failedWalletMutationDoesNotAdvanceWalletMutationVersion() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(
+                username = "+14155550101",
+                token = "token-demo",
+                tokenType = "Bearer",
+                phoneE164 = "+14155550101",
+            ),
+        )
+        dataSource.walletMutationError = IllegalStateException("Wallet update failed")
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        val initialVersion = controller.state.value.walletMutationVersion
+
+        controller.bindWallet("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "123456")
+
+        assertEquals(initialVersion, controller.state.value.walletMutationVersion)
+    }
+
+    @Test
     fun logoutClearsSessionAndResetsState() = runTest {
         val session = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer")
         val dataSource = FakeAppDataSource(restoredSession = session)
@@ -1949,6 +2007,7 @@ class AppStateControllerTest {
         var healthError: Throwable? = null
         var socialError: Throwable? = null
         var walletError: Throwable? = null
+        var walletMutationError: Throwable? = null
         var withdrawalSummaryError: Throwable? = null
         var withdrawalsError: Throwable? = null
         var transfersError: Throwable? = null
@@ -2131,11 +2190,13 @@ class AppStateControllerTest {
 
         override suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo {
             calls += "wallet:bind:$walletAddress"
+            walletMutationError?.let { throw it }
             return WalletInfo("TRC20", walletAddress, "2026-07-07T00:00:00Z")
         }
 
         override suspend fun unbindWallet(verificationCode: String): WalletInfo {
             calls += "wallet:unbind"
+            walletMutationError?.let { throw it }
             return WalletInfo("TRC20", null, null)
         }
 
