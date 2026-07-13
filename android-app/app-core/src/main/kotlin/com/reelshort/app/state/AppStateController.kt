@@ -11,6 +11,7 @@ import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.SavedCredentials
 import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.network.ApiClientException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -499,7 +500,6 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
         val initialPosition = snapshot?.positionSeconds ?: 0
         val initialDuration = snapshot?.durationSeconds?.takeIf { it > 0 } ?: videoUrl.durationSeconds
-        val awardedProgress = snapshot?.awardedStages?.maxOrNull() ?: 0
         val interaction = loadInteractionSilently(book)
         if (!isActivePlaybackRequest(requestVersion)) {
             return
@@ -515,7 +515,10 @@ class AppStateController(private val dataSource: AppDataSource) {
                 currentVideoUrl = videoUrl,
                 playback = PlaybackState.ready(book, episode, videoUrl)
                     .withPosition(initialPosition, initialDuration)
-                    .withReportedProgress(initialPosition, awardedProgress),
+                    .let { playback ->
+                        snapshot?.let(playback::withSnapshot)
+                            ?: playback.withReportedProgress(initialPosition, 0)
+                    },
                 interaction = interaction,
                 comments = comments,
                 isLoading = false,
@@ -602,12 +605,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             it.copy(
                 watchHistory = history,
                 pointAccount = points,
-                playback = it.playback
-                    .withPosition(progress.positionSeconds, progress.durationSeconds)
-                    .withReportedProgress(
-                        positionSeconds = progress.positionSeconds,
-                        progressPercent = progress.progressPercent,
-                    ),
+                playback = it.playback.withProgressReport(progress),
                 isLoading = false,
             )
         }
@@ -616,14 +614,21 @@ class AppStateController(private val dataSource: AppDataSource) {
     suspend fun reportProgressSilently(positionSeconds: Int, durationSeconds: Int) {
         val current = state.value
         val playback = current.playback
-        if (playback.status != PlaybackStatus.READY || playback.isRewardReporting || rewardReportInFlight) {
+        val requestVersion = playbackRequestVersion
+        if (playback.status != PlaybackStatus.READY || rewardReportInFlight) {
             return
         }
         if (positionSeconds <= 0 || durationSeconds <= 0) {
             return
         }
         val localProgress = playback.withPosition(positionSeconds, durationSeconds)
-        if (nextUnreportedRewardStage(localProgress.progressPercent, playback.lastReportedProgressPercent) == null) {
+        if (!shouldPersistPlaybackProgress(
+                positionSeconds = localProgress.positionSeconds,
+                durationSeconds = localProgress.durationSeconds,
+                lastReportedPositionSeconds = playback.lastReportedPositionSeconds,
+                rewardClaimed = playback.rewardClaimed,
+            )
+        ) {
             mutableState.update { it.copy(playback = localProgress) }
             return
         }
@@ -631,36 +636,57 @@ class AppStateController(private val dataSource: AppDataSource) {
         val episode = current.selectedEpisode ?: return
 
         rewardReportInFlight = true
+        val isRewardAttempt = localProgress.progressPercent >= 100 && !playback.rewardClaimed
         mutableState.update {
-            it.copy(playback = localProgress.withRewardReporting(true))
+            it.copy(playback = localProgress.withRewardReporting(isRewardAttempt))
         }
         try {
             val progress = dataSource.reportWatchProgress(book, episode, positionSeconds, durationSeconds)
-            val history = dataSource.loadWatchHistory()
-            val points = dataSource.loadPointAccount()
+            if (!isActivePlaybackRequest(requestVersion)) {
+                return
+            }
+            val points = if (progress.awardedPoints > 0) dataSource.loadPointAccount() else null
+            if (!isActivePlaybackRequest(requestVersion)) {
+                return
+            }
             mutableState.update {
                 it.copy(
-                    watchHistory = history,
-                    pointAccount = points,
-                    playback = it.playback
-                        .withPosition(progress.positionSeconds, progress.durationSeconds)
-                        .withReportedProgress(
-                            positionSeconds = progress.positionSeconds,
-                            progressPercent = progress.progressPercent,
-                        )
-                        .withRewardReporting(false),
+                    watchHistory = upsertWatchHistory(it.watchHistory, progress),
+                    pointAccount = points ?: it.pointAccount,
+                    playback = it.playback.withProgressReport(progress).withRewardReporting(false),
                 )
             }
         } catch (error: CancellationException) {
-            mutableState.update { it.copy(playback = it.playback.withRewardReporting(false)) }
+            if (isActivePlaybackRequest(requestVersion)) {
+                mutableState.update { it.copy(playback = it.playback.withRewardReporting(false)) }
+            }
             throw error
         } catch (_: Throwable) {
-            mutableState.update {
-                it.copy(playback = it.playback.withPosition(positionSeconds, durationSeconds).withRewardReportError())
+            if (isActivePlaybackRequest(requestVersion)) {
+                mutableState.update {
+                    it.copy(
+                        playback = if (isRewardAttempt) {
+                            it.playback.withPosition(positionSeconds, durationSeconds).withRewardReportError()
+                        } else {
+                            it.playback.withPosition(positionSeconds, durationSeconds).withRewardReporting(false)
+                        },
+                    )
+                }
             }
         } finally {
             rewardReportInFlight = false
         }
+    }
+
+    private fun upsertWatchHistory(history: List<WatchRecord>, progress: WatchProgressReport): List<WatchRecord> {
+        val updated = WatchRecord(
+            bookId = progress.bookId,
+            bookTitle = progress.bookTitle,
+            episode = progress.episode,
+            progressPercent = progress.progressPercent,
+        )
+        val withoutCurrent = history.filterNot { it.bookId == progress.bookId && it.episode == progress.episode }
+        return listOf(updated) + withoutCurrent
     }
 
     suspend fun refreshPlaybackUrl() = runWithLoading(ErrorContext.PLAYBACK) {

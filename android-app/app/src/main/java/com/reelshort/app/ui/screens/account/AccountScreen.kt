@@ -99,6 +99,7 @@ import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.updateStrings
 import com.reelshort.app.ui.format.walletSheetShouldDismiss
+import com.reelshort.app.ui.format.withdrawalConversionLines
 import com.reelshort.app.ui.format.accountConfirmationBody
 import com.reelshort.app.ui.format.accountConfirmationCancel
 import com.reelshort.app.ui.format.accountConfirmationConfirm
@@ -1062,11 +1063,13 @@ private fun WithdrawalBottomSheet(
     val availablePoints = summary?.availablePoints ?: 0
     AccountFormBottomSheet(onDismiss = onDismiss) {
         SheetForm(title = copy.accountWithdrawTitle) {
-            Text(
-                "${copy.accountWithdrawAvailableLabel} ${summary?.availablePoints ?: 0} ${copy.listPointsLabel} · ${copy.accountWithdrawMinimumLabel} ${summary?.minimumPoints ?: 0} · ${copy.accountWithdrawRateLabel} = ${summary?.usdtPerPoint ?: "-"} USDT",
-                color = TextSecondary,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            withdrawalConversionLines(summary, amount, language).forEach { line ->
+                Text(
+                    line,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             Text(
                 summary?.walletAddress?.let { "TRC20 · $it" } ?: copy.accountWithdrawWalletRequired,
                 color = if (summary?.walletAddress == null) DangerText else TextSecondary,

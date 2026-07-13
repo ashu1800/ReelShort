@@ -69,7 +69,36 @@ data class WatchProgressReport(
     val positionSeconds: Int,
     val durationSeconds: Int,
     val progressPercent: Int,
+    val rewardClaimed: Boolean = false,
+    val rewardStatus: WatchRewardStatus = WatchRewardStatus.NOT_COMPLETE,
+    val awardedPoints: Int = 0,
 )
+
+enum class WatchRewardStatus {
+    NOT_COMPLETE,
+    AWARDED,
+    AWARDED_PARTIAL,
+    ALREADY_CLAIMED,
+    DAILY_LIMIT_REACHED,
+    DURATION_UNAVAILABLE,
+    UNKNOWN,
+
+    ;
+
+    companion object {
+        fun fromApi(value: String?): WatchRewardStatus {
+            val normalized = value?.trim()?.uppercase().orEmpty()
+            return if (normalized.isBlank()) {
+                NOT_COMPLETE
+            } else {
+                entries.firstOrNull { it.name == normalized } ?: UNKNOWN
+            }
+        }
+    }
+
+    fun isClaimed(): Boolean = this == AWARDED || this == AWARDED_PARTIAL ||
+        this == ALREADY_CLAIMED || this == DAILY_LIMIT_REACHED
+}
 
 data class WatchRecord(
     val bookId: String,
@@ -85,6 +114,9 @@ data class WatchEpisodeSnapshot(
     val durationSeconds: Int,
     val progressPercent: Int,
     val awardedStages: List<Int>,
+    val rewardClaimed: Boolean = false,
+    val rewardStatus: WatchRewardStatus = WatchRewardStatus.NOT_COMPLETE,
+    val awardedPoints: Int = 0,
 ) {
     companion object {
         fun empty(bookId: String, episode: Int): WatchEpisodeSnapshot =
@@ -95,6 +127,9 @@ data class WatchEpisodeSnapshot(
                 durationSeconds = 0,
                 progressPercent = 0,
                 awardedStages = emptyList(),
+                rewardClaimed = false,
+                rewardStatus = WatchRewardStatus.NOT_COMPLETE,
+                awardedPoints = 0,
             )
     }
 }
@@ -131,6 +166,9 @@ data class WithdrawalSummary(
     val minimumPoints: Int,
     val usdtPerPoint: String,
     val walletAddress: String?,
+    val cnyPerPoint: String? = null,
+    val cnyPerUsd: String? = null,
+    val minimumUsd: String? = null,
 )
 
 data class WithdrawalRecord(

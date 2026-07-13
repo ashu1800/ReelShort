@@ -18,6 +18,7 @@ import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.data.WatchRewardStatus
 import com.reelshort.app.data.WalletInfo
 import com.reelshort.app.data.WithdrawalRecord
 import com.reelshort.app.data.WithdrawalSummary
@@ -389,17 +390,49 @@ class OkHttpReelShortApiClient(
     private fun ContentVideoDto.toDomain(): VideoUrl =
         VideoUrl(videoUrl, "application/vnd.apple.mpegurl", episode, duration)
 
-    private fun WatchRecordDto.toProgressReport(): WatchProgressReport =
-        WatchProgressReport(bookId, bookTitle, filteredTitle, episodeNum, chapterId, positionSeconds, durationSeconds,
-            progressPercent)
+    private fun WatchRecordDto.toProgressReport(): WatchProgressReport {
+        val mappedStatus = rewardStatusFromApi(rewardStatus, progressPercent)
+        return WatchProgressReport(
+            bookId = bookId,
+            bookTitle = bookTitle,
+            filteredTitle = filteredTitle,
+            episode = episodeNum,
+            chapterId = chapterId,
+            positionSeconds = positionSeconds,
+            durationSeconds = durationSeconds,
+            progressPercent = progressPercent,
+            rewardClaimed = rewardClaimed || mappedStatus.isClaimed(),
+            rewardStatus = mappedStatus,
+            awardedPoints = awardedPoints,
+        )
+    }
 
     private fun WatchRecordDto.toWatchRecord(): WatchRecord =
         WatchRecord(bookId, bookTitle, episodeNum, progressPercent)
 
-    private fun WatchEpisodeSnapshotDto.toDomain(): WatchEpisodeSnapshot =
-        WatchEpisodeSnapshot(bookId, episodeNum, positionSeconds, durationSeconds, progressPercent, awardedStages)
+    private fun WatchEpisodeSnapshotDto.toDomain(): WatchEpisodeSnapshot {
+        val mappedStatus = rewardStatusFromApi(rewardStatus, progressPercent)
+        return WatchEpisodeSnapshot(
+            bookId = bookId,
+            episode = episodeNum,
+            positionSeconds = positionSeconds,
+            durationSeconds = durationSeconds,
+            progressPercent = progressPercent,
+            awardedStages = awardedStages,
+            rewardClaimed = rewardClaimed || mappedStatus.isClaimed(),
+            rewardStatus = mappedStatus,
+            awardedPoints = awardedPoints,
+        )
+    }
 
     private fun PointRecordDto.toDomain(): PointRecord = PointRecord(amount, reason)
+
+    private fun rewardStatusFromApi(value: String?, progressPercent: Int): WatchRewardStatus =
+        if (value.isNullOrBlank() && progressPercent >= 100) {
+            WatchRewardStatus.ALREADY_CLAIMED
+        } else {
+            WatchRewardStatus.fromApi(value)
+        }
 
     private fun RechargeOrderDto.toDomain(): RechargeOrderSummary =
         RechargeOrderSummary(orderNo, amountCents, pointAmount, status)
@@ -407,7 +440,17 @@ class OkHttpReelShortApiClient(
     private fun WalletResponseDto.toDomain(): WalletInfo = WalletInfo(network, walletAddress, updatedAt)
 
     private fun WithdrawalSummaryDto.toDomain(): WithdrawalSummary =
-        WithdrawalSummary(balance, frozenPoints, availablePoints, minimumPoints, usdtPerPoint, walletAddress)
+        WithdrawalSummary(
+            balance = balance,
+            frozenPoints = frozenPoints,
+            availablePoints = availablePoints,
+            minimumPoints = minimumPoints,
+            usdtPerPoint = usdtPerPoint,
+            walletAddress = walletAddress,
+            cnyPerPoint = cnyPerPoint,
+            cnyPerUsd = cnyPerUsd,
+            minimumUsd = minimumUsd,
+        )
 
     private fun WithdrawalDto.toDomain(): WithdrawalRecord =
         WithdrawalRecord(

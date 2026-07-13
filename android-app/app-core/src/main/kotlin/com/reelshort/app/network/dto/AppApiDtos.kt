@@ -109,6 +109,9 @@ data class WatchRecordDto(
     val positionSeconds: Int,
     val durationSeconds: Int,
     val progressPercent: Int,
+    val rewardClaimed: Boolean = false,
+    val rewardStatus: String? = null,
+    val awardedPoints: Int = 0,
 )
 
 @Serializable
@@ -119,6 +122,9 @@ data class WatchEpisodeSnapshotDto(
     val durationSeconds: Int,
     val progressPercent: Int,
     val awardedStages: List<Int> = emptyList(),
+    val rewardClaimed: Boolean = false,
+    val rewardStatus: String? = null,
+    val awardedPoints: Int = 0,
 )
 
 @Serializable
@@ -179,6 +185,9 @@ data class WithdrawalSummaryDto(
     val minimumPoints: Int,
     val usdtPerPoint: String,
     val walletAddress: String? = null,
+    val cnyPerPoint: String? = null,
+    val cnyPerUsd: String? = null,
+    val minimumUsd: String? = null,
 )
 
 @Serializable

@@ -106,7 +106,7 @@ import com.reelshort.app.ui.format.rewardBadgeContentDescription
 import com.reelshort.app.ui.format.rewardBadgeIncludesProgressRing
 import com.reelshort.app.ui.format.rewardBadgeInfoBody
 import com.reelshort.app.ui.format.rewardBadgeInfoTitle
-import com.reelshort.app.ui.format.rewardBadgeStageAwardLabel
+import com.reelshort.app.ui.format.rewardBadgeAwardLabel
 import com.reelshort.app.ui.format.rewardBadgeState
 import com.reelshort.app.ui.format.playerStartsAutomatically
 import com.reelshort.app.ui.format.strings
@@ -136,21 +136,20 @@ internal fun PlayerScreen(
     var commentSheetVisible by remember { mutableStateOf(false) }
     var episodeSheetVisible by remember { mutableStateOf(false) }
     var rewardInfoSheetVisible by remember { mutableStateOf(false) }
-    var visibleAwardStage by remember { mutableStateOf<Int?>(null) }
-    var lastAwardStage by remember(book?.id, episode?.number) {
-        mutableStateOf(playback.lastReportedProgressPercent.coerceIn(0, 100))
+    var visibleAwardPoints by remember { mutableStateOf<Int?>(null) }
+    var lastRewardAwardVersion by remember(book?.id, episode?.number) {
+        mutableStateOf(playback.rewardAwardVersion)
     }
 
-    LaunchedEffect(playback.lastReportedProgressPercent, state.language) {
-        val reported = playback.lastReportedProgressPercent.coerceIn(0, 100)
-        if (reported > lastAwardStage) {
-            visibleAwardStage = reported
+    LaunchedEffect(playback.rewardAwardVersion, state.language) {
+        if (playback.rewardAwardVersion > lastRewardAwardVersion && playback.awardedPoints > 0) {
+            visibleAwardPoints = playback.awardedPoints
             kotlinx.coroutines.delay(1100)
-            if (visibleAwardStage == reported) {
-                visibleAwardStage = null
+            if (visibleAwardPoints == playback.awardedPoints) {
+                visibleAwardPoints = null
             }
         }
-        lastAwardStage = reported
+        lastRewardAwardVersion = playback.rewardAwardVersion
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -188,10 +187,11 @@ internal fun PlayerScreen(
             CircleIconButton(icon = Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = copy.playerScreen, onClick = onBack)
             val badgeState = rewardBadgeState(
                 progressPercent = playback.progressPercent,
-                lastReportedProgressPercent = playback.lastReportedProgressPercent,
                 isReporting = playback.isRewardReporting,
                 hasError = playback.rewardReportError,
                 language = state.language,
+                rewardClaimed = playback.rewardClaimed,
+                rewardStatus = playback.rewardStatus,
             )
             if (badgeState.visualState != RewardBadgeVisualState.WAITING || playback.progressPercent > 0) {
                 Box(contentAlignment = Alignment.TopEnd) {
@@ -201,12 +201,12 @@ internal fun PlayerScreen(
                         onClick = { rewardInfoSheetVisible = true },
                     )
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = visibleAwardStage != null,
+                        visible = visibleAwardPoints != null,
                         enter = fadeIn() + slideInVertically { it / 2 },
                         exit = fadeOut() + slideOutVertically { -it / 2 },
                         modifier = Modifier.padding(top = 42.dp, end = 4.dp),
                     ) {
-                        RewardAwardToast(language = state.language)
+                        RewardAwardToast(points = visibleAwardPoints ?: 0, language = state.language)
                     }
                 }
             }
@@ -381,7 +381,6 @@ private fun BoxScope.MediaPlayerSurface(
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
         LaunchedEffect(player, fallbackDurationSeconds) {
-            var lastPercent = -1
             while (true) {
                 kotlinx.coroutines.delay(1000)
                 val positionMs = player.currentPosition
@@ -389,12 +388,8 @@ private fun BoxScope.MediaPlayerSurface(
                 if (durationMs <= 0) continue
                 val positionSeconds = (positionMs / 1000).toInt()
                 val durationSeconds = (durationMs / 1000).toInt()
-                val percent = (positionSeconds * 100 / durationSeconds).coerceIn(0, 100)
-                if (percent != lastPercent) {
-                    lastPercent = percent
-                    onProgress(positionSeconds, durationSeconds)
-                    onAutoReportProgress(positionSeconds, durationSeconds)
-                }
+                onProgress(positionSeconds, durationSeconds)
+                onAutoReportProgress(positionSeconds, durationSeconds)
             }
         }
         val overlayMode = playerOverlayMode(
@@ -670,7 +665,7 @@ private fun RewardBadgeChip(
 }
 
 @Composable
-private fun RewardAwardToast(language: AppLanguage) {
+private fun RewardAwardToast(points: Int, language: AppLanguage) {
     Surface(
         color = Color(0xF0212510),
         shape = RoundedCornerShape(14.dp),
@@ -683,7 +678,7 @@ private fun RewardAwardToast(language: AppLanguage) {
         ) {
             Icon(Icons.Rounded.MonetizationOn, contentDescription = null, tint = PrimaryGold, modifier = Modifier.size(16.dp))
             Text(
-                rewardBadgeStageAwardLabel(language),
+                rewardBadgeAwardLabel(points, language),
                 color = PrimaryGold,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,

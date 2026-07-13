@@ -20,6 +20,7 @@ import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.data.WatchRewardStatus
 import com.reelshort.app.data.WalletInfo
 import com.reelshort.app.data.WithdrawalRecord
 import com.reelshort.app.data.WithdrawalSummary
@@ -432,7 +433,6 @@ class AppStateControllerTest {
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals(90, state.playback.positionSeconds)
         assertEquals(50, state.playback.progressPercent)
-        assertEquals(25, state.playback.lastReportedProgressPercent)
         assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
@@ -940,7 +940,7 @@ class AppStateControllerTest {
     }
 
     @Test
-    fun openPlayerInitializesPlaybackFromSnapshotAndAwardedStages() = runTest {
+    fun openPlayerInitializesPlaybackFromSnapshotRewardState() = runTest {
         val session = AuthSession(username = "demo", token = "token-demo", tokenType = "Bearer")
         val dataSource = FakeAppDataSource(restoredSession = session)
         dataSource.snapshot = WatchEpisodeSnapshot(
@@ -949,7 +949,10 @@ class AppStateControllerTest {
             positionSeconds = 120,
             durationSeconds = 200,
             progressPercent = 60,
-            awardedStages = listOf(25, 50),
+            awardedStages = emptyList(),
+            rewardClaimed = true,
+            rewardStatus = WatchRewardStatus.AWARDED,
+            awardedPoints = 2,
         )
         val controller = AppStateController(dataSource)
 
@@ -959,8 +962,10 @@ class AppStateControllerTest {
         val state = controller.state.value
         assertEquals(120, state.playback.positionSeconds)
         assertEquals(60, state.playback.progressPercent)
-        assertEquals(50, state.playback.lastReportedProgressPercent)
         assertEquals(120, state.playback.lastReportedPositionSeconds)
+        assertEquals(true, state.playback.rewardClaimed)
+        assertEquals(WatchRewardStatus.AWARDED, state.playback.rewardStatus)
+        assertEquals(2, state.playback.awardedPoints)
     }
 
     @Test
@@ -976,7 +981,6 @@ class AppStateControllerTest {
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals("积分状态暂时加载失败，播放不受影响。", state.errorMessage)
-        assertEquals(0, state.playback.lastReportedProgressPercent)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
     }
 
@@ -1042,7 +1046,6 @@ class AppStateControllerTest {
         assertEquals(200, state.playback.durationSeconds)
         assertEquals(75, state.playback.progressPercent)
         assertEquals(150, state.playback.lastReportedPositionSeconds)
-        assertEquals(75, state.playback.lastReportedProgressPercent)
         assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(
@@ -1052,7 +1055,7 @@ class AppStateControllerTest {
     }
 
     @Test
-    fun reportProgressSilentlyAtRewardStageDoesNotUseGlobalLoading() = runTest {
+    fun reportProgressSilentlySavesAtFifteenSecondIntervalsWithoutGlobalLoading() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
@@ -1060,25 +1063,28 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.reportProgressSilently(positionSeconds = 50, durationSeconds = 200)
+        controller.reportProgressSilently(positionSeconds = 14, durationSeconds = 200)
+        controller.reportProgressSilently(positionSeconds = 15, durationSeconds = 200)
+        controller.reportProgressSilently(positionSeconds = 29, durationSeconds = 200)
+        controller.reportProgressSilently(positionSeconds = 30, durationSeconds = 200)
 
         val state = controller.state.value
         assertFalse(state.isLoading)
         assertFalse(state.playback.isRewardReporting)
         assertFalse(state.playback.rewardReportError)
-        assertEquals(25, dataSource.lastProgress?.progressPercent)
-        assertEquals(25, state.playback.lastReportedProgressPercent)
-        assertEquals(50, state.playback.lastReportedPositionSeconds)
+        assertEquals(2, dataSource.calls.count { it.startsWith("progress:") })
+        assertEquals(30, dataSource.lastProgress?.positionSeconds)
+        assertEquals(30, state.playback.lastReportedPositionSeconds)
         assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
-        assertEquals(25, state.pointAccount?.balance)
+        assertNull(state.pointAccount)
         assertEquals(
-            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50", "history", "points"),
+            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:15", "progress:book-1:1:30"),
             dataSource.calls,
         )
     }
 
     @Test
-    fun reportProgressSilentlyCanSettleMultipleCrossedStages() = runTest {
+    fun reportProgressSilentlyPersistsLargePositionJumpOnce() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
@@ -1093,13 +1099,12 @@ class AppStateControllerTest {
         assertFalse(state.isLoading)
         assertEquals(160, state.playback.positionSeconds)
         assertEquals(80, state.playback.progressPercent)
-        assertEquals(75, state.playback.lastReportedProgressPercent)
         assertEquals(160, state.playback.lastReportedPositionSeconds)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:160", "history", "points"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:160"), dataSource.calls)
     }
 
     @Test
-    fun reportProgressSilentlySkipsDuplicateCallsWhileReporting() = runTest {
+    fun reportProgressSilentlySkipsDuplicateCompletionCallsWhileReportingReward() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
@@ -1107,29 +1112,34 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
+        dataSource.progressRewardClaimed = true
+        dataSource.progressRewardStatus = WatchRewardStatus.AWARDED
+        dataSource.progressAwardedPoints = 3
         dataSource.progressGate = CompletableDeferred()
 
-        val job = launch { controller.reportProgressSilently(positionSeconds = 50, durationSeconds = 200) }
+        val job = launch { controller.reportProgressSilently(positionSeconds = 200, durationSeconds = 200) }
         runCurrent()
-        controller.reportProgressSilently(positionSeconds = 60, durationSeconds = 200)
+        controller.reportProgressSilently(positionSeconds = 200, durationSeconds = 200)
 
         val reportingState = controller.state.value
         assertFalse(reportingState.isLoading)
         assertEquals(true, reportingState.playback.isRewardReporting)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:200"), dataSource.calls)
 
         dataSource.progressGate?.complete(Unit)
         job.join()
 
-        assertEquals(25, controller.state.value.playback.lastReportedProgressPercent)
+        assertEquals(100, controller.state.value.playback.lastPersistedProgressPercent)
+        assertEquals(3, controller.state.value.playback.awardedPoints)
+        assertEquals(true, controller.state.value.playback.rewardClaimed)
         assertEquals(
-            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50", "history", "points"),
+            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:200", "points"),
             dataSource.calls,
         )
     }
 
     @Test
-    fun reportProgressSilentlyFailureKeepsPlaybackAndDoesNotShowGlobalError() = runTest {
+    fun regularProgressSaveFailureKeepsPlaybackWithoutRewardError() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
@@ -1144,16 +1154,55 @@ class AppStateControllerTest {
         val state = controller.state.value
         assertFalse(state.isLoading)
         assertFalse(state.playback.isRewardReporting)
-        assertEquals(true, state.playback.rewardReportError)
+        assertFalse(state.playback.rewardReportError)
         assertEquals(50, state.playback.positionSeconds)
         assertEquals(25, state.playback.progressPercent)
-        assertEquals(0, state.playback.lastReportedProgressPercent)
         assertNull(state.errorMessage)
         assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
     }
 
     @Test
-    fun reportProgressSilentlySkipsUntilNextUnreportedStage() = runTest {
+    fun completionReportFailureShowsRewardErrorWithoutGlobalError() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+        dataSource.progressError = IllegalStateException("backend unavailable")
+        controller.reportProgressSilently(positionSeconds = 200, durationSeconds = 200)
+
+        val state = controller.state.value
+        assertFalse(state.isLoading)
+        assertFalse(state.playback.isRewardReporting)
+        assertEquals(true, state.playback.rewardReportError)
+        assertEquals(100, state.playback.progressPercent)
+        assertNull(state.errorMessage)
+    }
+
+    @Test
+    fun dailyLimitCompletionIsClaimedWithoutCreatingAwardToastEvent() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.progressRewardClaimed = true
+        dataSource.progressRewardStatus = WatchRewardStatus.DAILY_LIMIT_REACHED
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+        controller.reportProgressSilently(positionSeconds = 200, durationSeconds = 200)
+
+        val playback = controller.state.value.playback
+        assertEquals(true, playback.rewardClaimed)
+        assertEquals(WatchRewardStatus.DAILY_LIMIT_REACHED, playback.rewardStatus)
+        assertEquals(0, playback.awardedPoints)
+        assertEquals(0L, playback.rewardAwardVersion)
+        assertEquals(1, dataSource.calls.count { it.startsWith("progress:") })
+        assertFalse(dataSource.calls.contains("points"))
+    }
+
+    @Test
+    fun reportProgressSilentlySkipsPositionsInsideFifteenSecondWindow() = runTest {
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.watchHistory = listOf(dataSource.watchRecord())
         val controller = AppStateController(dataSource)
@@ -1166,7 +1215,6 @@ class AppStateControllerTest {
         controller.reportProgressSilently(positionSeconds = 200, durationSeconds = 200)
 
         val state = controller.state.value
-        assertEquals(100, state.playback.lastReportedProgressPercent)
         assertEquals(2, dataSource.calls.count { it.startsWith("progress:") })
         assertEquals(
             listOf(
@@ -1178,11 +1226,7 @@ class AppStateControllerTest {
                 "favorite-status:book-1",
                 "comments:book-1",
                 "progress:book-1:1:150",
-                "history",
-                "points",
                 "progress:book-1:1:200",
-                "history",
-                "points",
             ),
             dataSource.calls,
         )
@@ -2047,6 +2091,9 @@ class AppStateControllerTest {
         var watchHistory: List<WatchRecord> = emptyList()
         var progressError: Throwable? = null
         var progressGate: CompletableDeferred<Unit>? = null
+        var progressRewardClaimed: Boolean = false
+        var progressRewardStatus: WatchRewardStatus = WatchRewardStatus.NOT_COMPLETE
+        var progressAwardedPoints: Int = 0
         var pointBalance: Int = 25
         var snapshot: WatchEpisodeSnapshot = WatchEpisodeSnapshot.empty("book-1", 1)
         var snapshotError: Throwable? = null
@@ -2200,7 +2247,6 @@ class AppStateControllerTest {
             } else {
                 ((positionSeconds.toDouble() / durationSeconds.toDouble()) * 100).toInt().coerceIn(0, 100)
             }
-            val settledPercent = listOf(25, 50, 75, 100).lastOrNull { it <= rawPercent } ?: rawPercent
             val progress = WatchProgressReport(
                 bookId = book.id,
                 bookTitle = book.title,
@@ -2209,7 +2255,10 @@ class AppStateControllerTest {
                 chapterId = episode.chapterId,
                 positionSeconds = positionSeconds,
                 durationSeconds = durationSeconds,
-                progressPercent = settledPercent,
+                progressPercent = rawPercent,
+                rewardClaimed = progressRewardClaimed,
+                rewardStatus = progressRewardStatus,
+                awardedPoints = progressAwardedPoints,
             )
             lastProgress = progress
             return progress
