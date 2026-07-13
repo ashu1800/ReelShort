@@ -15,6 +15,12 @@ internal val TextPrimary = Color(0xFFF8FAFC)
 internal val TextSecondary = Color(0xFFA7B0C0)
 internal val DangerSurface = Color(0xFF37191D)
 internal val DangerText = Color(0xFFFFB4BC)
+internal val SuccessSurface = Color(0xFF123222)
+internal val SuccessText = Color(0xFF8FE0B2)
+internal val SuccessBorder = Color(0xFF286346)
+internal val InfoSurface = Color(0xFF172B3D)
+internal val InfoText = Color(0xFF9CCBEE)
+internal val InfoBorder = Color(0xFF315B78)
 
 /**
  * 金色背景上的深棕文字。统一此前散落、数值不一致的 0xFF281600 / 0xFF221400 / 0xFF241500 / 0xFF1A1203。

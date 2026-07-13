@@ -23,7 +23,12 @@ import com.reelshort.app.ui.theme.PosterFallbackText
 import com.reelshort.app.ui.theme.WhiteEdge
 
 @Composable
-internal fun PosterBlock(title: String, coverUrl: String?, modifier: Modifier = Modifier) {
+internal fun PosterBlock(
+    title: String,
+    coverUrl: String?,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = title,
+) {
     val normalizedCoverUrl = coverUrl.coverUrlOrNull()
     var showFallback by remember(normalizedCoverUrl) { mutableStateOf(true) }
 
@@ -41,7 +46,7 @@ internal fun PosterBlock(title: String, coverUrl: String?, modifier: Modifier = 
                     .data(normalizedCoverUrl)
                     .crossfade(true)
                     .build(),
-                contentDescription = title,
+                contentDescription = contentDescription,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),
                 onLoading = { showFallback = true },

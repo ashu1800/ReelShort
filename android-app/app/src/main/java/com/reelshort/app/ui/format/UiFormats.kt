@@ -5,6 +5,7 @@ import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.state.AuthMode
+import com.reelshort.app.state.UiMessageType
 
 internal fun appBrandName(): String = "ShortLink"
 
@@ -265,6 +266,63 @@ internal fun authRegisterEnabled(
         verificationCode.length == 6
 
 internal fun commercialSheetAutoDismissesAfterSubmit(): Boolean = false
+
+internal enum class AccountAction {
+    SEND_VERIFICATION,
+    WALLET_BIND_OR_REPLACE,
+    WALLET_UNBIND,
+    POINT_TRANSFER,
+    WITHDRAWAL,
+}
+
+internal fun accountActionRequiresConfirmation(action: AccountAction): Boolean =
+    action == AccountAction.WALLET_UNBIND ||
+        action == AccountAction.POINT_TRANSFER ||
+        action == AccountAction.WITHDRAWAL
+
+internal fun accountSheetStartsFullyExpanded(): Boolean = true
+
+internal fun accountSheetUsesScrollableContent(): Boolean = true
+
+internal fun accountCardsUseContentDrivenHeight(): Boolean = true
+
+internal fun posterOverlayTitleMaxLines(fontScale: Float): Int = if (fontScale >= 1.3f) 1 else 2
+
+internal fun responsivePosterMinimumWidthDp(): Int = 136
+
+internal fun posterCardContentDescription(title: String, episodeCount: Int, language: AppLanguage): String =
+    "$title, $episodeCount${strings(language).posterEpisodeUnit}"
+
+internal fun posterImageIsDecorativeInsideCard(): Boolean = true
+
+internal enum class MessageVisualTone {
+    SUCCESS,
+    ERROR,
+    INFO,
+}
+
+internal fun messageVisualTone(type: UiMessageType): MessageVisualTone =
+    when (type) {
+        UiMessageType.SUCCESS -> MessageVisualTone.SUCCESS
+        UiMessageType.ERROR -> MessageVisualTone.ERROR
+        UiMessageType.INFO -> MessageVisualTone.INFO
+    }
+
+internal fun topMessageUsesLiveRegion(): Boolean = true
+
+internal fun bankCardEntryCollectsSensitiveData(): Boolean = false
+
+internal fun accountConfirmationTitle(language: AppLanguage): String =
+    if (language == AppLanguage.TRADITIONAL_CHINESE) "確認操作" else "Confirm action"
+
+internal fun accountConfirmationBody(summary: String, language: AppLanguage): String =
+    if (language == AppLanguage.TRADITIONAL_CHINESE) "請再次確認：$summary。此操作可能無法撤銷。" else "Please confirm: $summary. This action may not be reversible."
+
+internal fun accountConfirmationConfirm(language: AppLanguage): String =
+    if (language == AppLanguage.TRADITIONAL_CHINESE) "確認" else "Confirm"
+
+internal fun accountConfirmationCancel(language: AppLanguage): String =
+    if (language == AppLanguage.TRADITIONAL_CHINESE) "取消" else "Cancel"
 
 internal fun walletSheetShouldDismiss(
     visible: Boolean,

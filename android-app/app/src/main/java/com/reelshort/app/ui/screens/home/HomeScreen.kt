@@ -17,6 +17,7 @@ import com.reelshort.app.ui.components.PosterCard
 import com.reelshort.app.ui.components.SectionHeader
 import com.reelshort.app.ui.format.homeEmptyState
 import com.reelshort.app.ui.format.strings
+import com.reelshort.app.ui.format.responsivePosterMinimumWidthDp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,7 +34,7 @@ internal fun HomeScreen(
         onRefresh = onRefresh,
     ) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Adaptive(responsivePosterMinimumWidthDp().dp),
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),

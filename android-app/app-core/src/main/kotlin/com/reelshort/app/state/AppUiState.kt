@@ -32,12 +32,28 @@ enum class AuthMode {
     REGISTER,
 }
 
+enum class AccountOperation {
+    WALLET_VERIFICATION,
+    PASSWORD_VERIFICATION,
+    WALLET_MUTATION,
+    WITHDRAWAL,
+    POINT_TRANSFER,
+    PASSWORD_CHANGE,
+}
+
+enum class UiMessageType {
+    SUCCESS,
+    ERROR,
+    INFO,
+}
+
 data class AppUiState(
     val screen: AppScreen = AppScreen.HOME,
     val language: AppLanguage = AppLanguage.DEFAULT,
     val authMode: AuthMode = AuthMode.LOGIN,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val messageType: UiMessageType? = null,
     val apiBaseUrl: String = "",
     val apiHealthStatus: ApiHealthStatus? = null,
     val session: AuthSession? = null,
@@ -45,6 +61,10 @@ data class AppUiState(
     val authPromptVisible: Boolean = false,
     val authSmsCountdownSeconds: Int = 0,
     val authSmsCountdownTrigger: Long = 0,
+    val walletSmsCountdownSeconds: Int = 0,
+    val walletSmsCountdownTrigger: Long = 0,
+    val passwordSmsCountdownSeconds: Int = 0,
+    val passwordSmsCountdownTrigger: Long = 0,
     val pendingPlaybackEpisode: EpisodeSummary? = null,
     val homeShelf: List<BookSummary> = emptyList(),
     val isHomeRefreshing: Boolean = false,
@@ -62,6 +82,7 @@ data class AppUiState(
     val orders: List<RechargeOrderSummary> = emptyList(),
     val wallet: WalletInfo? = null,
     val walletMutationVersion: Long = 0,
+    val accountOperation: AccountOperation? = null,
     val withdrawalSummary: WithdrawalSummary? = null,
     val withdrawals: List<WithdrawalRecord> = emptyList(),
     val pointTransfers: List<PointTransferRecord> = emptyList(),

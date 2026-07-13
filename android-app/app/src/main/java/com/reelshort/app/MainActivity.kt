@@ -83,7 +83,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onSendPasswordChangeVerification = remember(viewModel) { viewModel::sendPasswordChangeVerification }
     val onBindWallet = remember(viewModel) { viewModel::bindWallet }
     val onUnbindWallet = remember(viewModel) { viewModel::unbindWallet }
-    val onSubmitBankCard = remember(viewModel) { viewModel::submitBankCard }
     val onSubmitWithdrawal = remember(viewModel) { viewModel::submitWithdrawal }
     val onTransferPoints = remember(viewModel) { viewModel::transferPoints }
     val onChangePassword = remember(viewModel) { viewModel::changePassword }
@@ -130,7 +129,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onSendPasswordChangeVerification = onSendPasswordChangeVerification,
                 onBindWallet = onBindWallet,
                 onUnbindWallet = onUnbindWallet,
-                onSubmitBankCard = onSubmitBankCard,
                 onSubmitWithdrawal = onSubmitWithdrawal,
                 onTransferPoints = onTransferPoints,
                 onChangePassword = onChangePassword,
@@ -150,6 +148,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
             )
             TopErrorToast(
                 message = state.errorMessage,
+                type = state.messageType ?: com.reelshort.app.state.UiMessageType.ERROR,
                 onDismiss = onErrorDismiss,
                 modifier = Modifier
                     .align(Alignment.TopCenter)

@@ -1683,6 +1683,38 @@ class AppStateControllerTest {
 
         assertEquals(listOf("password:sms"), dataSource.calls)
         assertEquals("Verification code sent. Enter the latest 6-digit code within 120 seconds.", controller.state.value.errorMessage)
+        assertEquals(UiMessageType.SUCCESS, controller.state.value.messageType)
+        assertEquals(120, controller.state.value.passwordSmsCountdownSeconds)
+        assertEquals(1, controller.state.value.passwordSmsCountdownTrigger)
+    }
+
+    @Test
+    fun walletSmsCountdownAdvancesOnlyAfterSuccessfulSend() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession("+14155550101", "token-demo", "Bearer", "+14155550101"),
+        )
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+
+        controller.sendWalletVerification(SmsVerificationPurpose.WALLET_REPLACE)
+
+        assertEquals(120, controller.state.value.walletSmsCountdownSeconds)
+        assertEquals(1, controller.state.value.walletSmsCountdownTrigger)
+    }
+
+    @Test
+    fun failedWalletSmsDoesNotAdvanceCountdown() = runTest {
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession("+14155550101", "token-demo", "Bearer", "+14155550101"),
+        )
+        dataSource.walletSmsError = IllegalStateException("SMS failed")
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+
+        controller.sendWalletVerification(SmsVerificationPurpose.WALLET_REPLACE)
+
+        assertEquals(0, controller.state.value.walletSmsCountdownTrigger)
+        assertEquals(UiMessageType.ERROR, controller.state.value.messageType)
     }
 
     @Test
@@ -1765,6 +1797,36 @@ class AppStateControllerTest {
     }
 
     @Test
+    fun accountMutationRejectsDuplicateSubmissionWhileRequestIsRunning() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(
+            restoredSession = AuthSession(
+                username = "+14155550101",
+                token = "token-demo",
+                tokenType = "Bearer",
+                phoneE164 = "+14155550101",
+            ),
+        )
+        dataSource.walletMutationGate = gate
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+
+        val first = launch { controller.bindWallet("wallet-a", "123456") }
+        runCurrent()
+        assertEquals(AccountOperation.WALLET_MUTATION, controller.state.value.accountOperation)
+
+        val duplicate = launch { controller.bindWallet("wallet-a", "123456") }
+        runCurrent()
+        assertEquals(1, dataSource.calls.count { it == "wallet:bind:wallet-a" })
+
+        gate.complete(Unit)
+        first.join()
+        duplicate.join()
+        assertNull(controller.state.value.accountOperation)
+    }
+
+    @Test
     fun unbindWalletSuccessAdvancesWalletMutationVersion() = runTest {
         val dataSource = FakeAppDataSource(
             restoredSession = AuthSession(
@@ -1793,14 +1855,18 @@ class AppStateControllerTest {
                 phoneE164 = "+14155550101",
             ),
         )
-        dataSource.walletMutationError = IllegalStateException("Wallet update failed")
         val controller = AppStateController(dataSource)
         controller.restoreSession()
+        controller.sendWalletVerification(SmsVerificationPurpose.WALLET_REPLACE)
+        assertEquals(UiMessageType.SUCCESS, controller.state.value.messageType)
+        dataSource.walletMutationError = IllegalStateException("Wallet update failed")
         val initialVersion = controller.state.value.walletMutationVersion
 
         controller.bindWallet("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "123456")
 
         assertEquals(initialVersion, controller.state.value.walletMutationVersion)
+        assertNull(controller.state.value.accountOperation)
+        assertEquals(UiMessageType.ERROR, controller.state.value.messageType)
     }
 
     @Test
@@ -2008,6 +2074,8 @@ class AppStateControllerTest {
         var socialError: Throwable? = null
         var walletError: Throwable? = null
         var walletMutationError: Throwable? = null
+        var walletMutationGate: CompletableDeferred<Unit>? = null
+        var walletSmsError: Throwable? = null
         var withdrawalSummaryError: Throwable? = null
         var withdrawalsError: Throwable? = null
         var transfersError: Throwable? = null
@@ -2185,11 +2253,13 @@ class AppStateControllerTest {
 
         override suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult {
             calls += "wallet-sms:${purpose.name}"
+            walletSmsError?.let { throw it }
             return SmsSendResult(120)
         }
 
         override suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo {
             calls += "wallet:bind:$walletAddress"
+            walletMutationGate?.await()
             walletMutationError?.let { throw it }
             return WalletInfo("TRC20", walletAddress, "2026-07-07T00:00:00Z")
         }
