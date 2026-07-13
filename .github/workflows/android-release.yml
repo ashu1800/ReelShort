@@ -79,9 +79,10 @@ jobs:
       - name: Run Compose instrumentation tests
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
-          api-level: 35
+          api-level: 34
           arch: x86_64
           profile: pixel_2
+          emulator-options: -no-window -gpu off -no-snapshot -noaudio -no-boot-anim -accel off
           script: cd android-app && ./gradlew :app:connectedDebugAndroidTest --no-daemon
 
       - name: Build signed release APK
