@@ -69,7 +69,7 @@ where not exists (select 1 from point_daily_earning_rules where earning_date = c
 insert into point_daily_earning_quotas (
     id, user_id, earning_date, fluctuation_percent, effective_maximum, earned_points, created_at, updated_at
 )
-select min(transactions.id),
+select min(transactions.id::text)::uuid,
        transactions.user_id,
        current_date,
        0,
