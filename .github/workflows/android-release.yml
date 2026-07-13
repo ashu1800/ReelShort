@@ -42,6 +42,9 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Prepare Gradle wrapper
+        run: chmod +x android-app/gradlew
+
       - name: Validate release tag and version
         shell: bash
         run: |
