@@ -92,6 +92,7 @@ Token 缺失返回 `401 unauthorized`，Token 错误返回 `403 forbidden`。
 - `DISABLED` 和 `BLACKLISTED` 用户返回 `403 user is not active`。
 - 重复上报同一用户、同一短剧、同一集、同一阶段不会重复发积分。
 - 模拟到高阶段时，现有奖励逻辑会补齐未领取的低阶段。
+- 模拟观看复用 `WATCH_REWARD` 自动奖励路径，会与 App 观看奖励共享 `points.daily-earned.maximum` 每账号每日上限。
 - 成功上报会写后台审计日志，操作者标记为 `internal-operations`。
 
 响应：

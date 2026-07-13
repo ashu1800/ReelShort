@@ -15,6 +15,7 @@ import com.reelshort.backend.system.config.SystemConfigDefinition.ValueType;
 public class SystemConfigRegistry {
 
 	public static final String POINTS_WATCH_STAGE_POINTS = "points.watch.stage-points";
+	public static final String POINTS_DAILY_EARNED_MAXIMUM = "points.daily-earned.maximum";
 	public static final String CONTENT_RECOMMENDATION_STRATEGY = "content.recommendation.strategy";
 	public static final String WITHDRAW_MINIMUM_POINTS = "withdraw.minimum-points";
 	public static final String WITHDRAW_USDT_PER_POINT = "withdraw.usdt-per-point";
@@ -23,6 +24,9 @@ public class SystemConfigRegistry {
 	private final List<SystemConfigDefinition> definitions = List.of(
 			new SystemConfigDefinition(POINTS_WATCH_STAGE_POINTS, "1", "Points awarded for each watch progress stage.",
 					ValueType.INTEGER, 0, 1000, Set.of()),
+			new SystemConfigDefinition(POINTS_DAILY_EARNED_MAXIMUM, "1000",
+					"Maximum automatically earned points per account per day. Zero disables the limit.",
+					ValueType.INTEGER, 0, 1_000_000, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_MINIMUM_POINTS, "100", "Minimum points required for withdrawal.",
 					ValueType.INTEGER, 1, 1_000_000, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_USDT_PER_POINT, "0.001", "USDT value of one point for withdrawals.",

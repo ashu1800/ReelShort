@@ -13,6 +13,10 @@ Authorization: Bearer <admin-token>
 | Key | 默认值 | 规则 | 说明 |
 | --- | --- | --- | --- |
 | `points.watch.stage-points` | `1` | 整数，`0..1000` | 单个观看阶段奖励积分。 |
+| `points.daily-earned.maximum` | `1000` | 整数，`0..1000000` | 每账号每日自动获取积分上限，`0` 表示不限制。 |
+| `withdraw.minimum-points` | `100` | 整数，`1..1000000` | 最低提现积分。 |
+| `withdraw.usdt-per-point` | `0.001` | 非负小数，最多 8 位小数，最大 `100` | 1 积分对应的 USDT 数量。 |
+| `points.transfer.minimum-points` | `1` | 整数，`1..1000000` | 用户积分交易最低积分。 |
 | `content.recommendation.strategy` | `LATEST` | `LATEST` / `POPULAR` | 首页推荐策略占位。 |
 
 ## `GET /api/admin/system/configs`

@@ -59,8 +59,13 @@ public class PointTransaction {
 
 	public static PointTransaction watchReward(UUID userId, int amount, int balanceAfter, String bookId, int episodeNum,
 			int stage) {
+		return watchReward(userId, amount, balanceAfter, bookId, episodeNum, stage, OffsetDateTime.now());
+	}
+
+	public static PointTransaction watchReward(UUID userId, int amount, int balanceAfter, String bookId, int episodeNum,
+			int stage, OffsetDateTime createdAt) {
 		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "WATCH_REWARD", bookId, episodeNum,
-				stage, null, OffsetDateTime.now());
+				stage, null, createdAt);
 	}
 
 	public static PointTransaction adminAdjustment(UUID userId, int amount, int balanceAfter, String reason) {

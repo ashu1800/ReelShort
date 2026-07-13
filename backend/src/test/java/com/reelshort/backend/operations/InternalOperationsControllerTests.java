@@ -20,11 +20,14 @@ import com.reelshort.backend.content.ContentEpisode;
 import com.reelshort.backend.content.ContentEpisodeCache;
 import com.reelshort.backend.content.ContentEpisodeCacheRepository;
 import com.reelshort.backend.points.PointsService;
+import com.reelshort.backend.system.config.SystemConfigRegistry;
+import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
 import com.reelshort.backend.watch.WatchProgressRequest;
 import com.reelshort.backend.watch.WatchService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -61,6 +64,15 @@ class InternalOperationsControllerTests {
 
 	@Autowired
 	private AdminAuditLogRepository adminAuditLogRepository;
+
+	@Autowired
+	private SystemConfigService systemConfigService;
+
+	@AfterEach
+	void resetConfigs() {
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_STAGE_POINTS, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+	}
 
 	@Test
 	void internalOperationsEndpointsRequireSuperToken() throws Exception {
@@ -203,6 +215,33 @@ class InternalOperationsControllerTests {
 				.andExpect(jsonPath("$.data.awardedStages").isEmpty())
 				.andExpect(jsonPath("$.data.awardedPoints").value(0))
 				.andExpect(jsonPath("$.data.balance").value(4));
+	}
+
+	@Test
+	void simulatedWatchProgressUsesDailyEarnedMaximum() throws Exception {
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1");
+		RegisteredUser user = createUser("+1", "4155550711", "Password123");
+
+		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
+				.header("X-Internal-Super-Token", TOKEN)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "bookId": "book-sim-cap",
+						  "bookTitle": "Sim Cap Drama",
+						  "filteredTitle": "sim-cap-drama",
+						  "episodeNum": 1,
+						  "chapterId": "chapter-1",
+						  "positionSeconds": 300,
+						  "durationSeconds": 300,
+						  "progressPercent": 100,
+						  "reason": "ops capped simulation"
+						}
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.awardedStages", containsInAnyOrder(25, 50, 75, 100)))
+				.andExpect(jsonPath("$.data.awardedPoints").value(1))
+				.andExpect(jsonPath("$.data.balance").value(1));
 	}
 
 	@Test

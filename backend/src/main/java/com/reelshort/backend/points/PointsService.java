@@ -59,8 +59,9 @@ public class PointsService {
 
 	public WatchRewardResult awardWatchProgress(UUID userId, String bookId, int episodeNum, int progressPercent) {
 		int stagePoints = systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_STAGE_POINTS);
+		int dailyEarnedMaximum = systemConfigService.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM);
 		return userActionLocks.withUserLock(userId, () -> pointAwardTransaction.awardWatchProgress(userId, bookId,
-				episodeNum, progressPercent, REWARD_STAGES, stagePoints));
+				episodeNum, progressPercent, REWARD_STAGES, stagePoints, dailyEarnedMaximum));
 	}
 
 	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason) {

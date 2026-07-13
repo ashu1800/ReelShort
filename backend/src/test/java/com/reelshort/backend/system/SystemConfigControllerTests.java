@@ -43,6 +43,7 @@ class SystemConfigControllerTests {
 		systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_POINTS, "100");
 		systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT, "0.001");
 		systemConfigService.update(SystemConfigRegistry.POINTS_TRANSFER_MINIMUM_POINTS, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 	}
 
 	@Test
@@ -52,8 +53,9 @@ class SystemConfigControllerTests {
 		mockMvc.perform(get("/api/admin/system/configs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data", hasSize(5)))
+				.andExpect(jsonPath("$.data", hasSize(6)))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.watch.stage-points")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.maximum")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("content.recommendation.strategy")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.minimum-points")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.usdt-per-point")))
@@ -153,6 +155,19 @@ class SystemConfigControllerTests {
 				.andExpect(jsonPath("$.data.value").value("POPULAR"));
 
 		updateConfig(adminToken, "content.recommendation.strategy", "recent")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+	}
+
+	@Test
+	void adminCanUpdateDailyEarnedMaximum() throws Exception {
+		String adminToken = adminLogin();
+
+		updateConfig(adminToken, "points.daily-earned.maximum", "250")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.value").value("250"));
+
+		updateConfig(adminToken, "points.daily-earned.maximum", "-1")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value(400));
 	}
