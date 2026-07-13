@@ -59,6 +59,7 @@ import com.reelshort.app.ui.format.searchDiscoveryGroups
 import com.reelshort.app.ui.format.searchEmptyState
 import com.reelshort.app.ui.format.searchShowsResultsFirst
 import com.reelshort.app.ui.format.strings
+import com.reelshort.app.ui.format.responsivePosterMinimumWidthDp
 import com.reelshort.app.ui.theme.Divider
 import com.reelshort.app.ui.theme.GoldStroke
 import com.reelshort.app.ui.theme.GoldSurfaceStrong
@@ -90,7 +91,7 @@ internal fun SearchScreen(
     }
 
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Adaptive(responsivePosterMinimumWidthDp().dp),
         contentPadding = PaddingValues(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 112.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),

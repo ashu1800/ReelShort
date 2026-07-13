@@ -36,6 +36,7 @@ import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.components.AccentLine
 import com.reelshort.app.ui.components.GoldOutlinedButton
 import com.reelshort.app.ui.components.LoginTextField
+import com.reelshort.app.ui.components.TextFieldKind
 import com.reelshort.app.ui.components.PrimaryActionButton
 import com.reelshort.app.ui.components.RememberPasswordRow
 import com.reelshort.app.ui.components.SecondaryActionTextButton
@@ -205,6 +206,7 @@ internal fun AuthForm(
             onValueChange = { phoneNumber = it.filter(Char::isDigit) },
             label = copy.authUsernameLabel,
             enabled = !state.isLoading,
+            kind = TextFieldKind.PHONE,
         )
         LoginTextField(
             value = password,
@@ -212,6 +214,7 @@ internal fun AuthForm(
             label = copy.authPasswordLabel,
             enabled = !state.isLoading,
             isPassword = true,
+            kind = TextFieldKind.PASSWORD,
         )
         if (isLoginMode) {
             RememberPasswordRow(
@@ -234,11 +237,12 @@ internal fun AuthForm(
             )
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                LoginTextField(
+            LoginTextField(
                     value = verificationCode,
                     onValueChange = { verificationCode = it.filter(Char::isDigit).take(6) },
                     label = copy.authVerificationCodeLabel,
                     enabled = !state.isLoading,
+                    kind = TextFieldKind.VERIFICATION_CODE,
                     modifier = Modifier.weight(1f),
                 )
                 GoldOutlinedButton(

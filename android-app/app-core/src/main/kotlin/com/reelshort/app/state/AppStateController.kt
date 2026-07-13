@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
 
 class AppStateController(private val dataSource: AppDataSource) {
     private val mutableState = MutableStateFlow(AppUiState(apiBaseUrl = dataSource.apiBaseUrl))
@@ -26,6 +27,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     private var playbackRequestVersion = 0L
     private var accountRequestVersion = 0L
     private var favoritesRequestVersion = 0L
+    private val accountOperationMutex = Mutex()
 
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
@@ -76,6 +78,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                     homeShelf = emptyList(),
                     isLoading = false,
                     errorMessage = "内容暂时加载失败，可以稍后刷新。",
+                    messageType = UiMessageType.ERROR,
                 )
             }
         }
@@ -112,6 +115,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 authPromptVisible = false,
                 authSmsCountdownSeconds = 0,
                 errorMessage = registrationSimulationMessage(),
+                messageType = UiMessageType.SUCCESS,
             )
         }
     }
@@ -122,17 +126,24 @@ class AppStateController(private val dataSource: AppDataSource) {
             it.copy(
                 isLoading = false,
                 errorMessage = smsSentMessage(),
+                messageType = UiMessageType.SUCCESS,
                 authSmsCountdownSeconds = result.expiresInSeconds,
                 authSmsCountdownTrigger = it.authSmsCountdownTrigger + 1,
             )
         }
     }
 
-    suspend fun sendPasswordChangeVerification() = runWithLoading(ErrorContext.ACCOUNT) {
+    suspend fun sendPasswordChangeVerification() = runAccountOperation(AccountOperation.PASSWORD_VERIFICATION) {
         requireAuthenticatedAccount()
-        dataSource.sendPasswordChangeVerification()
+        val result = dataSource.sendPasswordChangeVerification()
         mutableState.update {
-            it.copy(isLoading = false, errorMessage = smsSentMessage())
+            it.copy(
+                isLoading = false,
+                errorMessage = smsSentMessage(),
+                messageType = UiMessageType.SUCCESS,
+                passwordSmsCountdownSeconds = result.expiresInSeconds,
+                passwordSmsCountdownTrigger = it.passwordSmsCountdownTrigger + 1,
+            )
         }
     }
 
@@ -184,7 +195,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 return
             }
             if (episode == null) {
-                mutableState.update { it.copy(isLoading = false, errorMessage = "内容暂时加载失败，可以稍后刷新。") }
+                mutableState.update { it.copy(isLoading = false, errorMessage = "内容暂时加载失败，可以稍后刷新。", messageType = UiMessageType.ERROR) }
                 return
             }
             openPlayerForAuthenticatedUser(book, episode, requestVersion)
@@ -219,6 +230,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 homeShelf = homeShelf ?: emptyList(),
                 isLoading = false,
                 errorMessage = if (homeShelf == null) "内容暂时加载失败，可以稍后刷新。" else null,
+                messageType = if (homeShelf == null) UiMessageType.ERROR else null,
             )
         }
         if (homeShelf != null) {
@@ -242,7 +254,7 @@ class AppStateController(private val dataSource: AppDataSource) {
      * 不触发全局居中 loading 弹窗，且失败时保留旧数据并给出顶部错误提示。
      */
     suspend fun refreshHomeWithPull() {
-        mutableState.update { it.copy(screen = AppScreen.HOME, isHomeRefreshing = true, errorMessage = null) }
+        mutableState.update { it.copy(screen = AppScreen.HOME, isHomeRefreshing = true, errorMessage = null, messageType = null) }
         try {
             val homeShelf = dataSource.loadHomeShelf()
             mutableState.update {
@@ -257,13 +269,14 @@ class AppStateController(private val dataSource: AppDataSource) {
                 it.copy(
                     isHomeRefreshing = false,
                     errorMessage = userFacingErrorMessage(error, ErrorContext.CONTENT),
+                    messageType = UiMessageType.ERROR,
                 )
             }
         }
     }
 
     suspend fun openHome() {
-        mutableState.update { it.copy(screen = AppScreen.HOME, errorMessage = null) }
+        mutableState.update { it.copy(screen = AppScreen.HOME, errorMessage = null, messageType = null) }
         if (state.value.homeShelf.isEmpty()) {
             refreshHome()
             return
@@ -304,7 +317,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     fun showSearch() {
-        mutableState.update { it.copy(screen = AppScreen.SEARCH, errorMessage = null) }
+        mutableState.update { it.copy(screen = AppScreen.SEARCH, errorMessage = null, messageType = null) }
     }
 
     suspend fun setLanguage(language: AppLanguage) {
@@ -337,6 +350,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 it.copy(
                     isLoading = false,
                     errorMessage = userFacingErrorMessage(error, ErrorContext.CONTENT),
+                    messageType = UiMessageType.ERROR,
                 )
             }
         }
@@ -361,6 +375,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                     playerReturnScreen = returnScreen,
                     isLoading = false,
                     errorMessage = "内容暂时加载失败，可以稍后刷新。",
+                    messageType = UiMessageType.ERROR,
                 )
             }
             return@runWithLoading
@@ -444,6 +459,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                     playerReturnScreen = AppScreen.ACCOUNT,
                     isLoading = false,
                     errorMessage = "内容暂时加载失败，可以稍后刷新。",
+                    messageType = UiMessageType.ERROR,
                 )
             }
             return@runWithLoading
@@ -724,7 +740,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     private suspend fun runSocialAction(block: suspend () -> Unit) {
-        mutableState.update { it.copy(errorMessage = null) }
+        mutableState.update { it.copy(errorMessage = null, messageType = null) }
         try {
             block()
         } catch (error: CancellationException) {
@@ -733,6 +749,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update {
                 it.copy(
                     errorMessage = userFacingErrorMessage(error, ErrorContext.SOCIAL),
+                    messageType = UiMessageType.ERROR,
                     authPromptVisible = if (shouldPromptForLogin(error, ErrorContext.SOCIAL)) true else it.authPromptVisible,
                 )
             }
@@ -850,21 +867,27 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun sendWalletVerification(purpose: SmsVerificationPurpose) = runWithLoading(ErrorContext.ACCOUNT) {
+    suspend fun sendWalletVerification(purpose: SmsVerificationPurpose) = runAccountOperation(AccountOperation.WALLET_VERIFICATION) {
         requireAuthenticatedAccount()
-        dataSource.sendWalletVerification(purpose)
+        val result = dataSource.sendWalletVerification(purpose)
         mutableState.update {
-            it.copy(isLoading = false, errorMessage = smsSentMessage())
+            it.copy(
+                isLoading = false,
+                errorMessage = smsSentMessage(),
+                messageType = UiMessageType.SUCCESS,
+                walletSmsCountdownSeconds = result.expiresInSeconds,
+                walletSmsCountdownTrigger = it.walletSmsCountdownTrigger + 1,
+            )
         }
     }
 
-    suspend fun bindWallet(walletAddress: String, verificationCode: String) = runWithLoading(ErrorContext.ACCOUNT) {
+    suspend fun bindWallet(walletAddress: String, verificationCode: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
         requireAuthenticatedAccount()
         dataSource.bindWallet(walletAddress, verificationCode)
         reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
     }
 
-    suspend fun unbindWallet(verificationCode: String) = runWithLoading(ErrorContext.ACCOUNT) {
+    suspend fun unbindWallet(verificationCode: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
         requireAuthenticatedAccount()
         dataSource.unbindWallet(verificationCode)
         reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
@@ -876,20 +899,20 @@ class AppStateController(private val dataSource: AppDataSource) {
         mutableState.update { it.copy(isLoading = false) }
     }
 
-    suspend fun submitWithdrawal(pointAmount: Int) = runWithLoading(ErrorContext.ACCOUNT) {
+    suspend fun submitWithdrawal(pointAmount: Int) = runAccountOperation(AccountOperation.WITHDRAWAL) {
         requireAuthenticatedAccount()
         dataSource.submitWithdrawal(pointAmount)
         reloadAccountSnapshotAfterAction(withdrawalSubmittedMessage())
     }
 
-    suspend fun transferPoints(recipientAccount: String, pointAmount: Int) = runWithLoading(ErrorContext.ACCOUNT) {
+    suspend fun transferPoints(recipientAccount: String, pointAmount: Int) = runAccountOperation(AccountOperation.POINT_TRANSFER) {
         requireAuthenticatedAccount()
         dataSource.transferPoints(recipientAccount, pointAmount)
         reloadAccountSnapshotAfterAction(transferSubmittedMessage())
     }
 
     suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) =
-        runWithLoading(ErrorContext.ACCOUNT) {
+        runAccountOperation(AccountOperation.PASSWORD_CHANGE) {
             requireAuthenticatedAccount()
             dataSource.changePassword(oldPassword, newPassword, verificationCode)
             dataSource.clearSession()
@@ -908,12 +931,13 @@ class AppStateController(private val dataSource: AppDataSource) {
                     watchHistory = emptyList(),
                     continueWatchingBooks = emptyMap(),
                     errorMessage = passwordChangedMessage(),
+                    messageType = UiMessageType.SUCCESS,
                 )
             }
         }
 
     fun clearError() {
-        mutableState.update { it.copy(errorMessage = null) }
+        mutableState.update { it.copy(errorMessage = null, messageType = null) }
     }
 
     fun showAuthPrompt() {
@@ -933,7 +957,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun checkApiHealth() {
-        mutableState.update { it.copy(isLoading = true, errorMessage = null) }
+        mutableState.update { it.copy(isLoading = true, errorMessage = null, messageType = null) }
         try {
             val status = dataSource.checkSystemHealth()
             mutableState.update {
@@ -967,7 +991,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     private suspend fun runWithLoading(errorContext: ErrorContext, block: suspend () -> Unit) {
-        mutableState.update { it.copy(isLoading = true, errorMessage = null) }
+        mutableState.update { it.copy(isLoading = true, errorMessage = null, messageType = null) }
         try {
             block()
         } catch (error: CancellationException) {
@@ -983,6 +1007,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                     session = if (blockedAccount) null else it.session,
                     isLoading = false,
                     errorMessage = userFacingErrorMessage(error, errorContext),
+                    messageType = UiMessageType.ERROR,
                     authPromptVisible = if (blockedAccount) {
                         false
                     } else if (shouldPromptForLogin(error, errorContext)) {
@@ -993,6 +1018,19 @@ class AppStateController(private val dataSource: AppDataSource) {
                     pendingPlaybackEpisode = if (blockedAccount) null else it.pendingPlaybackEpisode,
                 )
             }
+        }
+    }
+
+    private suspend fun runAccountOperation(operation: AccountOperation, block: suspend () -> Unit) {
+        if (!accountOperationMutex.tryLock()) {
+            return
+        }
+        mutableState.update { it.copy(accountOperation = operation) }
+        try {
+            runWithLoading(ErrorContext.ACCOUNT, block)
+        } finally {
+            mutableState.update { it.copy(accountOperation = null) }
+            accountOperationMutex.unlock()
         }
     }
 
@@ -1023,6 +1061,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update {
                 it.copy(
                     errorMessage = successMessage,
+                    messageType = UiMessageType.SUCCESS,
                     isLoading = false,
                     walletMutationVersion = if (walletMutationCompleted) {
                         it.walletMutationVersion + 1

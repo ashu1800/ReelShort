@@ -31,9 +31,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.ui.format.strings
+import com.reelshort.app.ui.format.posterOverlayTitleMaxLines
+import com.reelshort.app.ui.format.posterCardContentDescription
 import com.reelshort.app.ui.theme.PrimaryGold
 import com.reelshort.app.ui.theme.TextPrimary
 
@@ -47,6 +52,8 @@ internal fun PosterCard(
     language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
 ) {
     val copy = strings(language)
+    val fontScale = LocalDensity.current.fontScale
+    val compactOverlay = fontScale >= 1.3f
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -60,9 +67,12 @@ internal fun PosterCard(
             .aspectRatio(2f / 3f)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(MaterialTheme.shapes.medium)
+            .clearAndSetSemantics {
+                contentDescription = posterCardContentDescription(book.title, book.chapterCount, language)
+            }
             .clickable(interactionSource = interaction, indication = LocalIndication.current, onClick = onClick),
     ) {
-        PosterBlock(book.title, book.coverUrl, Modifier.matchParentSize())
+        PosterBlock(book.title, book.coverUrl, Modifier.matchParentSize(), contentDescription = null)
         // 底部渐变遮罩，保证标题在任何封面上都可读
         Box(
             modifier = Modifier
@@ -84,9 +94,9 @@ internal fun PosterCard(
             Text(
                 book.title,
                 color = TextPrimary,
-                style = MaterialTheme.typography.titleSmall,
+                style = if (compactOverlay) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
+                maxLines = posterOverlayTitleMaxLines(fontScale),
                 overflow = TextOverflow.Ellipsis,
             )
             Row(
