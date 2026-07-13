@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,15 +19,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
 import androidx.activity.compose.BackHandler
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.util.UnstableApi
 import com.reelshort.app.state.AppScreen
 import com.reelshort.app.ui.MainShell
 import com.reelshort.app.ui.ReelShortViewModel
 import com.reelshort.app.ui.components.LoadingDialog
 import com.reelshort.app.ui.components.TopErrorToast
+import com.reelshort.app.ui.components.UpdateDialog
+import com.reelshort.app.ui.format.updateStrings
 import com.reelshort.app.ui.screens.auth.AuthBottomSheet
 import com.reelshort.app.ui.theme.ReelShortTheme
 import kotlinx.coroutines.delay
+import com.reelshort.app.update.UpdateState
 
+@UnstableApi
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,8 +48,16 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+@UnstableApi
 private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val state by viewModel.state.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
+    val updateCopy = updateStrings(state.language)
+    val installPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        viewModel.onInstallPermissionResult()
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.bootstrap()
@@ -51,6 +66,18 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
         if (state.errorMessage != null) {
             delay(4_000)
             viewModel.clearError()
+        }
+    }
+    LaunchedEffect(updateState) {
+        val current = updateState
+        if (current is UpdateState.UpToDate || (current is UpdateState.Failed && current.release == null)) {
+            delay(4_000)
+            viewModel.dismissUpdate()
+        }
+    }
+    LaunchedEffect(updateState) {
+        if (updateState is UpdateState.PermissionRequired) {
+            installPermissionLauncher.launch(viewModel.unknownSourcesSettingsIntent())
         }
     }
 
@@ -70,6 +97,11 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onBackFromPlayer = remember(viewModel) { viewModel::backFromPlayer }
     val onBackFromFavorites = remember(viewModel) { viewModel::backFromFavorites }
     val onCheckApiHealth = remember(viewModel) { viewModel::checkApiHealth }
+    val onCheckForUpdate = remember(viewModel) { viewModel::checkForUpdate }
+    val onDownloadUpdate = remember(viewModel) { viewModel::downloadUpdate }
+    val onCancelUpdateDownload = remember(viewModel) { viewModel::cancelUpdateDownload }
+    val onInstallUpdate = remember(viewModel) { viewModel::installUpdate }
+    val onDismissUpdate = remember(viewModel) { viewModel::dismissUpdate }
     val onShowAuthPrompt = remember(viewModel) { viewModel::showAuthPrompt }
     val onShowRegisterAuthPrompt = remember(viewModel) {
         {
@@ -121,6 +153,9 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onBackFromPlayer = onBackFromPlayer,
                 onBackFromFavorites = onBackFromFavorites,
                 onCheckApiHealth = onCheckApiHealth,
+                appVersionLabel = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                isCheckingForUpdate = (updateState as? UpdateState.Checking)?.manual == true,
+                onCheckForUpdate = onCheckForUpdate,
                 onShowAuthPrompt = onShowAuthPrompt,
                 onShowRegisterAuthPrompt = onShowRegisterAuthPrompt,
                 onRefreshHome = onRefreshHome,
@@ -160,6 +195,32 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 modifier = Modifier
                     .align(Alignment.Center)
                     .zIndex(1f),
+            )
+            UpdateDialog(
+                state = updateState,
+                language = state.language,
+                onDownload = onDownloadUpdate,
+                onCancelDownload = onCancelUpdateDownload,
+                onInstall = onInstallUpdate,
+                onOpenSettings = { installPermissionLauncher.launch(viewModel.unknownSourcesSettingsIntent()) },
+                onDismiss = onDismissUpdate,
+            )
+            val updateMessage = when (val current = updateState) {
+                is UpdateState.UpToDate -> updateCopy.latestVersion
+                is UpdateState.Failed -> if (current.release == null) updateCopy.checkFailed else null
+                else -> null
+            }
+            TopErrorToast(
+                message = updateMessage,
+                type = if (updateState is UpdateState.UpToDate) {
+                    com.reelshort.app.state.UiMessageType.SUCCESS
+                } else {
+                    com.reelshort.app.state.UiMessageType.ERROR
+                },
+                onDismiss = onDismissUpdate,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .zIndex(3f),
             )
         }
     }

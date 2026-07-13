@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic payment secret used only by SecurityConfigurationTests"
+paths = ['''backend/src/test/java/com/reelshort/backend/SecurityConfigurationTests\.java''']
+regexes = ['''A9f3xK2mP7qR4tY8vN6cL1sD5hJ0wZ3e''']

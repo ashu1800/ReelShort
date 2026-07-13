@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
@@ -96,6 +97,7 @@ import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
 import com.reelshort.app.ui.format.guestAccountEntryAuthModes
 import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.strings
+import com.reelshort.app.ui.format.updateStrings
 import com.reelshort.app.ui.format.walletSheetShouldDismiss
 import com.reelshort.app.ui.format.accountConfirmationBody
 import com.reelshort.app.ui.format.accountConfirmationCancel
@@ -141,7 +143,10 @@ internal fun AccountScreen(
     pointTransfers: List<PointTransferRecord>,
     apiBaseUrl: String,
     apiHealthStatus: ApiHealthStatus?,
+    appVersionLabel: String,
+    isCheckingForUpdate: Boolean,
     onCheckApiHealth: () -> Unit,
+    onCheckForUpdate: () -> Unit,
     onShowAuthPrompt: () -> Unit,
     onShowRegisterAuthPrompt: () -> Unit,
     onOpenFavorites: () -> Unit,
@@ -168,6 +173,7 @@ internal fun AccountScreen(
     var bankCardSheetVisible by remember { mutableStateOf(false) }
     var pendingConfirmation by remember { mutableStateOf<PendingAccountConfirmation?>(null) }
     val copy = strings(language)
+    val updateCopy = updateStrings(language)
 
     LaunchedEffect(walletMutationVersion) {
         if (
@@ -289,6 +295,14 @@ internal fun AccountScreen(
                     subtitle = copy.languageSubtitle,
                     trailing = language.displayName,
                     onClick = { languageSheetVisible = true },
+                )
+                AccountMenuDivider()
+                AccountMenuRow(
+                    icon = Icons.Rounded.SystemUpdate,
+                    title = updateCopy.versionTitle,
+                    subtitle = appVersionLabel,
+                    trailing = if (isCheckingForUpdate) updateCopy.checking else updateCopy.checkForUpdates,
+                    onClick = if (isCheckingForUpdate) null else onCheckForUpdate,
                 )
                 AccountMenuDivider()
                 AccountMenuRow(

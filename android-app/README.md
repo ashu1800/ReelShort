@@ -14,11 +14,17 @@ Android 原生客户端骨架，规划使用 Kotlin、Jetpack Compose 和 Androi
 ## 模块结构
 
 - `app`：Android Compose UI 模块，负责页面骨架和本地交互。
-- `app-core`：纯 Kotlin JVM 核心模块，包含 Spring Boot API 配置、统一响应模型、App 数据模型、`ReelShortApiClient` 边界、`FakeReelShortApiClient`、`OkHttpReelShortApiClient`、`SessionStore`、`InMemorySessionStore`、`FileSessionStore`、`AppDataSource`、`AppRepository`、`AppUiState`、`PlaybackState` 和 `AppStateController`。
+- `app-core`：纯 Kotlin JVM 核心模块，包含 Spring Boot API 配置、统一响应模型、App 数据模型、`ReelShortApiClient` 边界、`FakeReelShortApiClient`、`OkHttpReelShortApiClient`、`SessionStore`、`InMemorySessionStore`、`FileSessionStore`、`AppDataSource`、`AppRepository`、`AppUiState`、`PlaybackState`、`AppStateController` 和 GitHub Release 更新解析/下载状态边界。
 
 App 只访问 Spring Boot API，不直接访问 Flask 内容源服务。生产默认 API 地址为 `https://shortlink.hjj888.cc/api/app`，本地联调可通过 Gradle 属性 `reelshortApiBaseUrl` 覆盖。当前 `FakeReelShortApiClient` 用于无 Android SDK 环境下的结构验证；`OkHttpReelShortApiClient` 用于真实 Spring Boot API 访问，并通过 token provider 为受保护 App 业务接口添加 Bearer Token；健康检查使用公开的 `/api/system/health`，不携带 Bearer Token。`SessionStore` 提供纯 Kotlin 会话存储边界，`FileSessionStore` 仅保留给 JVM 测试和非 Android 使用；Android 组合根使用 AndroidX Security Crypto 加密保存登录会话和记住密码凭据，加密会话存储不可用时仅使用进程内会话并删除旧版明文会话文件，重启后要求用户重新登录。`AppStateController` 以 `StateFlow<AppUiState>` 暴露登录、启动恢复、登出、首页、搜索、详情、播放、观看上报、积分、观看记录、订单和 API 诊断状态，并避免重复启动恢复覆盖当前页面；Compose UI 只负责展示状态和触发动作。`PlaybackState` 保存当前剧集、分集、播放 URL、播放位置、进度百分比、已上报进度和播放地址刷新结果，播放页通过 Media3 消费合法 HTTP/HTTPS 媒体 URL，定时同步播放器当前位置，并自动静默上报观看奖励阶段。
 
 当前机器已配置 Android SDK，可构建 debug APK 并安装到雷电模拟器进行基础启动验证。
+
+## GitHub Release 更新
+
+稳定版标签使用 `vX.Y.Z`，GitHub Release 必须上传 `ShortLink-vX.Y.Z.apk` 和同名 `.sha256` 文件。App 冷启动后台检查稳定版，Me 页可手动检查；下载后会验证 SHA-256、包名、递增 `versionCode` 和当前签名证书，再打开系统安装器。普通 Android 设备仍需要用户确认安装，并可能需要为 ShortLink 开启“允许安装未知应用”。
+
+正式 Release 由 `.github/workflows/android-release.yml` 构建。签名材料只能通过 `ANDROID_SIGNING_KEYSTORE_BASE64`、`ANDROID_SIGNING_STORE_PASSWORD`、`ANDROID_SIGNING_KEY_ALIAS` 和 `ANDROID_SIGNING_KEY_PASSWORD` Secrets 提供，禁止提交 keystore 或密码文件。
 
 ## 可运行验证
 

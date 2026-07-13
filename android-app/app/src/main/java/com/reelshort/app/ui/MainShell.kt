@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.util.UnstableApi
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
@@ -41,6 +42,7 @@ import com.reelshort.app.ui.theme.PrimaryGold
 import com.reelshort.app.ui.theme.TextSecondary
 
 @Composable
+@UnstableApi
 internal fun MainShell(
     state: AppUiState,
     onScreenSelected: (AppScreen) -> Unit,
@@ -58,6 +60,9 @@ internal fun MainShell(
     onBackFromPlayer: () -> Unit,
     onBackFromFavorites: () -> Unit,
     onCheckApiHealth: () -> Unit,
+    appVersionLabel: String,
+    isCheckingForUpdate: Boolean,
+    onCheckForUpdate: () -> Unit,
     onShowAuthPrompt: () -> Unit,
     onShowRegisterAuthPrompt: () -> Unit,
     onRefreshHome: () -> Unit,
@@ -154,7 +159,10 @@ internal fun MainShell(
                             pointTransfers = state.pointTransfers,
                             apiBaseUrl = state.apiBaseUrl,
                             apiHealthStatus = state.apiHealthStatus,
+                            appVersionLabel = appVersionLabel,
+                            isCheckingForUpdate = isCheckingForUpdate,
                             onCheckApiHealth = onCheckApiHealth,
+                            onCheckForUpdate = onCheckForUpdate,
                             onShowAuthPrompt = onShowAuthPrompt,
                             onShowRegisterAuthPrompt = onShowRegisterAuthPrompt,
                             onOpenFavorites = onOpenFavorites,

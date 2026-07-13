@@ -6,6 +6,8 @@ Thumbs.db
 .worktrees/
 服务器.md
 服务器.txt
+新服务器.md
+key_*.pub
 
 # Logs
 *.log
@@ -43,6 +45,11 @@ android-app/build/
 android-app/**/build/
 android-app/local.properties
 android-app/.idea/
+*.jks
+*.keystore
+*.p12
+*.signing.properties
+android-app/release-signing/
 
 # Environment
 .env

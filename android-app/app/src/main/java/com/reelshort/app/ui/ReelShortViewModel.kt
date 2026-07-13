@@ -17,9 +17,21 @@ import com.reelshort.app.state.AppStateController
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.BuildConfig
 import com.reelshort.app.AndroidSessionStore
+import com.reelshort.app.update.AndroidUpdateInstaller
+import com.reelshort.app.update.AndroidUpdatePackageVerifier
+import com.reelshort.app.update.GitHubReleaseUpdateClient
+import com.reelshort.app.update.InstallRequest
+import com.reelshort.app.update.OkHttpReleaseDownloader
+import com.reelshort.app.update.SemanticVersion
+import com.reelshort.app.update.UpdateCoordinator
+import com.reelshort.app.update.UpdateState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * App 的 ViewModel。在 Android 层用 [viewModelScope] 承载协程，旋屏时自动保留；
@@ -28,12 +40,63 @@ import java.io.File
  */
 class ReelShortViewModel(
     private val controller: AppStateController,
+    private val updateCoordinator: UpdateCoordinator,
+    private val updateInstaller: AndroidUpdateInstaller,
+    private val updateCacheDir: File,
 ) : ViewModel() {
 
     val state: StateFlow<AppUiState> = controller.state
+    val updateState: StateFlow<UpdateState> = updateCoordinator.state
+    private var startupUpdateCheckStarted = false
+    private var downloadJob: Job? = null
 
     fun bootstrap() {
         viewModelScope.launch { controller.restoreSession() }
+        if (!startupUpdateCheckStarted) {
+            startupUpdateCheckStarted = true
+            viewModelScope.launch { updateCoordinator.checkForUpdate(manual = false) }
+        }
+    }
+
+    fun checkForUpdate() {
+        viewModelScope.launch { updateCoordinator.checkForUpdate(manual = true) }
+    }
+
+    fun downloadUpdate() {
+        if (downloadJob?.isActive == true) return
+        downloadJob = viewModelScope.launch {
+            try {
+                updateCoordinator.downloadAvailable(updateCacheDir)
+            } catch (_: CancellationException) {
+                updateCoordinator.downloadCancelled()
+            }
+        }
+    }
+
+    fun cancelUpdateDownload() {
+        downloadJob?.cancel()
+        updateCoordinator.downloadCancelled()
+    }
+
+    fun dismissUpdate() = updateCoordinator.dismiss()
+
+    fun installUpdate() {
+        handleInstallRequest(updateCoordinator.prepareInstall(updateInstaller.canRequestPackageInstalls()))
+    }
+
+    fun onInstallPermissionResult() {
+        handleInstallRequest(
+            updateCoordinator.onInstallPermissionResult(updateInstaller.canRequestPackageInstalls()),
+        )
+    }
+
+    fun unknownSourcesSettingsIntent() = updateInstaller.unknownSourcesSettingsIntent()
+
+    private fun handleInstallRequest(request: InstallRequest?) {
+        if (request is InstallRequest.Install) {
+            runCatching { updateInstaller.install(request.apkFile) }
+                .onFailure { updateCoordinator.installationFailed() }
+        }
     }
 
     fun selectScreen(screen: com.reelshort.app.state.AppScreen) {
@@ -162,6 +225,7 @@ class ReelShortViewModel(
     fun clearError() = controller.clearError()
 
     override fun onCleared() {
+        downloadJob?.cancel()
         super.onCleared()
     }
 
@@ -180,6 +244,23 @@ class ReelShortViewModel(
                     val credentialStore = com.reelshort.app.AndroidCredentialStore.create(context)
                     val languagePreferenceStore = com.reelshort.app.AndroidLanguagePreferenceStore(context)
                     val apiConfig = ApiConfig(BuildConfig.REELSHORT_API_BASE_URL)
+                    val updateHttpClient = OkHttpClient.Builder()
+                        .connectTimeout(15, TimeUnit.SECONDS)
+                        .readTimeout(60, TimeUnit.SECONDS)
+                        .callTimeout(15, TimeUnit.MINUTES)
+                        .build()
+                    val currentVersion = SemanticVersion.parse(BuildConfig.VERSION_NAME)
+                        ?: error("VERSION_NAME must use X.Y.Z")
+                    val updateCoordinator = UpdateCoordinator(
+                        releaseClient = GitHubReleaseUpdateClient(
+                            httpClient = updateHttpClient,
+                            userAgent = "ShortLink-Android/${BuildConfig.VERSION_NAME}",
+                        ),
+                        downloader = OkHttpReleaseDownloader(updateHttpClient),
+                        packageVerifier = AndroidUpdatePackageVerifier.create(context),
+                        currentVersion = currentVersion,
+                    )
+                    val updateInstaller = AndroidUpdateInstaller(context)
                     lateinit var repository: AppRepository
                     val apiClient = OkHttpReelShortApiClient(
                         config = apiConfig,
@@ -194,7 +275,12 @@ class ReelShortViewModel(
                         apiBaseUrl = apiConfig.baseUrl,
                     )
                     val controller = AppStateController(repository)
-                    return ReelShortViewModel(controller) as T
+                    return ReelShortViewModel(
+                        controller = controller,
+                        updateCoordinator = updateCoordinator,
+                        updateInstaller = updateInstaller,
+                        updateCacheDir = context.cacheDir,
+                    ) as T
                 }
             }
     }
