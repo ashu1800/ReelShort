@@ -1,6 +1,6 @@
 # Points API
 
-当前文档记录阶段 1 App 积分账户、积分流水和观看阶段奖励。
+当前文档记录 App 积分账户、积分流水和按视频时长计算的观看奖励。
 
 所有接口都需要普通用户 Bearer Token：
 
@@ -44,7 +44,7 @@ Authorization: Bearer <token>
       "source": "WATCH_REWARD",
       "bookId": "book-1",
       "episodeNum": 1,
-      "stage": 75,
+      "stage": null,
       "reason": null,
       "createdAt": "2026-06-26T17:30:00+08:00"
     }
@@ -56,16 +56,16 @@ Authorization: Bearer <token>
 
 ## 观看奖励规则
 
-- 奖励阶段固定为 `25 / 50 / 75 / 100`。
-- 每个阶段奖励积分由系统配置 `points.watch.stage-points` 决定，默认 `1`。
-- 每个账号每日自动获取积分上限由系统配置 `points.daily-earned.maximum` 决定，默认 `1000`；`0` 表示不限制。
-- 每日上限按服务器自然日重置，只统计 `WATCH_REWARD` 自动奖励；充值、后台调整和用户转账不计入该上限。
-- 当一次观看奖励会超过当天剩余额度时，只发放剩余额度；额度用完后仍记录阶段已领取，但不增加余额、不生成 0 金额流水。
-- 当 `points.watch.stage-points = 0` 时，后端仍记录阶段已领取，但不增加余额、不生成 0 金额流水。
-- 同一用户、同一 `bookId`、同一 `episodeNum`、同一阶段只能发放一次。
-- 如果进度从低阶段直接跳到高阶段，会一次性补发所有已达到且未领取的阶段。
+- 视频播放完成（进度达到 `100%`）后一次性发放，不再使用 `25 / 50 / 75 / 100` 阶段。
+- 奖励积分为 `max(1, floor(服务端视频时长 / points.watch.seconds-per-point))`，默认每完整 `60` 秒 `1` 积分。
+- 视频真实时长由播放接口从上游取得并作为元数据缓存；客户端提交的时长不参与积分计算。
+- 同一用户、同一 `bookId`、同一 `episodeNum` 永久只领取一次，重复播放不补发。
+- 每账号每日基础上限由 `points.daily-earned.maximum` 控制，默认 `1000`；`0` 表示不限制。
+- `points.daily-earned.fluctuation-percent` 默认 `35`，每个账号每天随机分配 `0..35` 的向下浮动百分比。
+- 当日有效上限为 `floor(基础上限 * (100 - 随机浮动值) / 100)`；规则按服务器自然日快照，后台修改次日生效。
+- 超过剩余额度时只发剩余积分；额度为零时仍记录该视频已领取，不生成零金额流水，也不允许次日补发。
 - 观看奖励来源为 `WATCH_REWARD`，后台积分调整来源为 `ADMIN_ADJUSTMENT`，充值订单入账来源为 `RECHARGE_ORDER`。
-- 非观看奖励流水的 `bookId`、`episodeNum`、`stage` 可以为空，`reason` 记录后台调整原因或充值订单号。
+- 新观看奖励流水的 `stage` 为空；非观看奖励流水的 `bookId`、`episodeNum`、`stage` 也可以为空。
 - `RECHARGE_ORDER` 流水只由后端内部订单结算边界生成，公开 App API 不能直接创建充值流水。
 
 错误：

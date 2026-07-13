@@ -164,7 +164,7 @@ class WalletWithdrawalTransferControllerTests {
 	void withdrawalSubmissionFreezesPointsAndAdminApprovalDeductsFrozenPoints() throws Exception {
 		String adminToken = adminLogin();
 		RegisteredUser user = createUser("+1", "4155550202", "Password123");
-		adjustPoints(adminToken, user.userId(), 200, "seed withdrawal balance");
+		adjustPoints(adminToken, user.userId(), 4000, "seed withdrawal balance");
 		bindWallet(user.token(), VALID_TRC_ADDRESS);
 
 		String withdrawalId = JsonPath.read(mockMvc.perform(post("/api/app/withdrawals")
@@ -172,12 +172,12 @@ class WalletWithdrawalTransferControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "pointAmount": 120
+						  "pointAmount": 3600
 						}
 						"""))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("PENDING"))
-				.andExpect(jsonPath("$.data.pointAmount").value(120))
+				.andExpect(jsonPath("$.data.pointAmount").value(3600))
 				.andExpect(jsonPath("$.data.walletAddress").value(VALID_TRC_ADDRESS))
 				.andReturn()
 				.getResponse()
@@ -191,9 +191,9 @@ class WalletWithdrawalTransferControllerTests {
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(200))
-				.andExpect(jsonPath("$.data.frozenPoints").value(120))
-				.andExpect(jsonPath("$.data.availablePoints").value(80));
+				.andExpect(jsonPath("$.data.balance").value(4000))
+				.andExpect(jsonPath("$.data.frozenPoints").value(3600))
+				.andExpect(jsonPath("$.data.availablePoints").value(400));
 
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", UUID.fromString(withdrawalId))
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
@@ -223,9 +223,9 @@ class WalletWithdrawalTransferControllerTests {
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(80))
+				.andExpect(jsonPath("$.data.balance").value(400))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
-				.andExpect(jsonPath("$.data.availablePoints").value(80));
+				.andExpect(jsonPath("$.data.availablePoints").value(400));
 
 		mockMvc.perform(get("/api/app/points/records")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
@@ -237,14 +237,14 @@ class WalletWithdrawalTransferControllerTests {
 	void adminRejectionReleasesFrozenWithdrawalPoints() throws Exception {
 		String adminToken = adminLogin();
 		RegisteredUser user = createUser("+1", "4155550203", "Password123");
-		adjustPoints(adminToken, user.userId(), 150, "seed withdrawal balance");
+		adjustPoints(adminToken, user.userId(), 4000, "seed withdrawal balance");
 		bindWallet(user.token(), VALID_TRC_ADDRESS);
 		String withdrawalId = JsonPath.read(mockMvc.perform(post("/api/app/withdrawals")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "pointAmount": 100
+						  "pointAmount": 3600
 						}
 						"""))
 				.andExpect(status().isOk())
@@ -277,17 +277,18 @@ class WalletWithdrawalTransferControllerTests {
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(150))
+				.andExpect(jsonPath("$.data.balance").value(4000))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
-				.andExpect(jsonPath("$.data.availablePoints").value(150));
+				.andExpect(jsonPath("$.data.availablePoints").value(4000));
 	}
 
 	@Test
 	void withdrawalUsdtAmountIsRoundedToStorageScale() throws Exception {
 		String adminToken = adminLogin();
 		try {
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_POINTS, "1");
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT, "0.12345678");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT, "0.12345678");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_USD, "1");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, "1");
 			RegisteredUser user = createUser("+1", "4155550210", "Password123");
 			adjustPoints(adminToken, user.userId(), 200, "seed withdrawal balance");
 			bindWallet(user.token(), VALID_TRC_ADDRESS);
@@ -305,8 +306,9 @@ class WalletWithdrawalTransferControllerTests {
 					.andExpect(jsonPath("$.data.usdtPerPoint").value("0.12345678"));
 		}
 		finally {
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_POINTS, "100");
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT, "0.001");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT, "0.02");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_USD, "7.2");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, "10");
 		}
 	}
 

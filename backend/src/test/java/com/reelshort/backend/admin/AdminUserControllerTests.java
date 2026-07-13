@@ -21,6 +21,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
+import com.reelshort.backend.content.ContentEpisodeRuntimeCache;
+import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -31,6 +33,9 @@ class AdminUserControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
 
 	@Test
 	void adminCanListUsersWithPointBalance() throws Exception {
@@ -48,7 +53,7 @@ class AdminUserControllerTests {
 	void adminCanViewUserDetail() throws Exception {
 		String adminToken = adminLogin();
 		RegisteredUser user = registerAppUser("admin-detail-alice");
-		reportProgress(user.token(), "detail-book", 1, 80, 100);
+		reportProgress(user.token(), "detail-book", 1, 100, 100);
 
 		mockMvc.perform(get("/api/admin/users/{userId}", user.userId())
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
@@ -57,12 +62,12 @@ class AdminUserControllerTests {
 				.andExpect(jsonPath("$.data.username").value(user.username()))
 				.andExpect(jsonPath("$.data.phoneE164").value(user.username()))
 				.andExpect(jsonPath("$.data.status").value("ACTIVE"))
-				.andExpect(jsonPath("$.data.pointBalance").value(3))
+				.andExpect(jsonPath("$.data.pointBalance").value(1))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
-				.andExpect(jsonPath("$.data.availablePoints").value(3))
+				.andExpect(jsonPath("$.data.availablePoints").value(1))
 				.andExpect(jsonPath("$.data.walletAddress").doesNotExist())
 				.andExpect(jsonPath("$.data.watchRecordCount").value(1))
-				.andExpect(jsonPath("$.data.pointRecordCount").value(3))
+				.andExpect(jsonPath("$.data.pointRecordCount").value(1))
 				.andExpect(jsonPath("$.data.withdrawalRecordCount").value(0))
 				.andExpect(jsonPath("$.data.pointTransferRecordCount").value(0));
 	}
@@ -94,7 +99,7 @@ class AdminUserControllerTests {
 		String adminToken = adminLogin();
 		RegisteredUser first = registerAppUser("admin-activity-alice");
 		RegisteredUser second = registerAppUser("admin-activity-bob");
-		reportProgress(first.token(), "first-book", 1, 80, 100);
+		reportProgress(first.token(), "first-book", 1, 100, 100);
 		reportProgress(second.token(), "second-book", 1, 100, 100);
 
 		mockMvc.perform(get("/api/admin/users/{userId}/watch-records", first.userId())
@@ -106,7 +111,7 @@ class AdminUserControllerTests {
 		mockMvc.perform(get("/api/admin/users/{userId}/point-records", first.userId())
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data", hasSize(3)))
+				.andExpect(jsonPath("$.data", hasSize(1)))
 				.andExpect(jsonPath("$.data[0].source").value("WATCH_REWARD"));
 	}
 
@@ -276,6 +281,12 @@ class AdminUserControllerTests {
 
 	private void reportProgress(String token, String bookId, int episodeNum, int positionSeconds, int durationSeconds)
 			throws Exception {
+		ContentEpisodeRuntimeCache runtime = runtimeCacheRepository
+				.findByBookIdAndEpisodeNumAndChapterId(bookId, episodeNum, "chapter-" + episodeNum)
+				.orElseGet(() -> ContentEpisodeRuntimeCache.create(bookId, episodeNum, "chapter-" + episodeNum,
+						durationSeconds));
+		runtime.update(durationSeconds);
+		runtimeCacheRepository.save(runtime);
 		mockMvc.perform(post("/api/app/watch/progress")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)

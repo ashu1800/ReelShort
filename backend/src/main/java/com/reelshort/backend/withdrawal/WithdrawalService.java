@@ -47,13 +47,14 @@ public class WithdrawalService {
 	public WithdrawalSummaryResponse summary(UUID userId) {
 		PointAccount account = pointAccountRepository.findByUserId(userId).orElse(null);
 		UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
-		BigDecimal usdtPerPoint = systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT);
+		WithdrawalConversion conversion = conversion();
 		int balance = account == null ? 0 : account.balance();
 		int frozenPoints = account == null ? 0 : account.frozenPoints();
 		int availablePoints = account == null ? 0 : account.availablePoints();
 		return new WithdrawalSummaryResponse(balance, frozenPoints, availablePoints,
-				systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_MINIMUM_POINTS),
-				usdtPerPoint.stripTrailingZeros().toPlainString(), wallet == null ? null : wallet.walletAddress());
+				conversion.minimumPoints(), decimal(conversion.usdtPerPoint()), decimal(conversion.cnyPerPoint()),
+				decimal(conversion.cnyPerUsd()), decimal(conversion.minimumUsd()),
+				wallet == null ? null : wallet.walletAddress());
 	}
 
 	@Transactional(readOnly = true)
@@ -73,7 +74,8 @@ public class WithdrawalService {
 	@Transactional
 	public WithdrawalResponse create(UUID userId, int pointAmount) {
 		return userActionLocks.withUserLock(userId, () -> {
-			int minimum = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_MINIMUM_POINTS);
+			WithdrawalConversion conversion = conversion();
+			int minimum = conversion.minimumPoints();
 			if (pointAmount < minimum) {
 				throw new AdminException(400, "withdrawal amount below minimum");
 			}
@@ -90,11 +92,26 @@ public class WithdrawalService {
 				throw new AdminException(400, exception.getMessage());
 			}
 			pointAccountRepository.save(account);
-			BigDecimal usdtPerPoint = systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT);
-			WithdrawalRequest request = WithdrawalRequest.create(userId, pointAmount, usdtPerPoint,
+			WithdrawalRequest request = WithdrawalRequest.create(userId, pointAmount, conversion,
 					wallet.network(), wallet.walletAddress());
 			return WithdrawalResponse.from(withdrawalRequestRepository.save(request));
 		});
+	}
+
+	private WithdrawalConversion conversion() {
+		try {
+			return new WithdrawalConversion(
+					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT),
+					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_CNY_PER_USD),
+					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_MINIMUM_USD));
+		}
+		catch (IllegalArgumentException exception) {
+			throw new AdminException(400, exception.getMessage());
+		}
+	}
+
+	private String decimal(BigDecimal value) {
+		return value.stripTrailingZeros().toPlainString();
 	}
 
 	@Transactional

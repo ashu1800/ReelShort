@@ -12,10 +12,12 @@ Authorization: Bearer <admin-token>
 
 | Key | 默认值 | 规则 | 说明 |
 | --- | --- | --- | --- |
-| `points.watch.stage-points` | `1` | 整数，`0..1000` | 单个观看阶段奖励积分。 |
+| `points.watch.seconds-per-point` | `60` | 整数，`1..86400` | 完成视频后每获得 1 积分所需秒数。 |
 | `points.daily-earned.maximum` | `1000` | 整数，`0..1000000` | 每账号每日自动获取积分上限，`0` 表示不限制。 |
-| `withdraw.minimum-points` | `100` | 整数，`1..1000000` | 最低提现积分。 |
-| `withdraw.usdt-per-point` | `0.001` | 非负小数，最多 8 位小数，最大 `100` | 1 积分对应的 USDT 数量。 |
+| `points.daily-earned.fluctuation-percent` | `35` | 整数，`0..100` | 每账号每日随机向下浮动百分比的上限。 |
+| `withdraw.cny-per-point` | `0.02` | 正数，最多 8 位小数，最大 `100` | 1 积分对应人民币金额。 |
+| `withdraw.cny-per-usd` | `7.2` | 正数，最多 8 位小数，最大 `1000` | 1 USD 对应人民币金额。 |
+| `withdraw.minimum-usd` | `10` | 正数，最多 2 位小数 | 最低提现美元价值。 |
 | `points.transfer.minimum-points` | `1` | 整数，`1..1000000` | 用户积分交易最低积分。 |
 | `content.recommendation.strategy` | `LATEST` | `LATEST` / `POPULAR` | 首页推荐策略占位。 |
 
@@ -31,9 +33,9 @@ Authorization: Bearer <admin-token>
   "message": "success",
   "data": [
     {
-      "key": "points.watch.stage-points",
-      "value": "1",
-      "description": "Points awarded for each watch progress stage.",
+      "key": "points.watch.seconds-per-point",
+      "value": "60",
+      "description": "Completed video seconds required for one watch reward point.",
       "updatedAt": null
     }
   ],

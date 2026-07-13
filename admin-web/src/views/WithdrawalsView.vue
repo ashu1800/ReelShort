@@ -140,8 +140,19 @@ onMounted(loadWithdrawals)
         </template>
       </el-table-column>
       <el-table-column align="right" label="积分" prop="pointAmount" width="100" />
+      <el-table-column align="right" label="人民币价值" width="130">
+        <template #default="{ row }">
+          {{ row.cnyPerPoint ? `${(Number(row.pointAmount) * Number(row.cnyPerPoint)).toFixed(2)} CNY` : '-' }}
+        </template>
+      </el-table-column>
       <el-table-column align="right" label="USDT" width="110">
         <template #default="{ row }">{{ row.usdtAmount }}</template>
+      </el-table-column>
+      <el-table-column label="汇率快照" min-width="180">
+        <template #default="{ row }">
+          <span v-if="row.cnyPerUsd">1 USD = {{ row.cnyPerUsd }} CNY</span>
+          <span v-else class="muted">历史记录</span>
+        </template>
       </el-table-column>
       <el-table-column label="钱包地址" min-width="260">
         <template #default="{ row }">

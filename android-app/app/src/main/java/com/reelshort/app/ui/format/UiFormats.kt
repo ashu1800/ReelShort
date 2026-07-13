@@ -4,8 +4,11 @@ import androidx.media3.common.C
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.WatchRecord
+import com.reelshort.app.data.WithdrawalSummary
 import com.reelshort.app.state.AuthMode
 import com.reelshort.app.state.UiMessageType
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 internal fun appBrandName(): String = "ShortLink"
 
@@ -266,6 +269,72 @@ internal fun authRegisterEnabled(
         verificationCode.length == 6
 
 internal fun commercialSheetAutoDismissesAfterSubmit(): Boolean = false
+
+internal fun withdrawalConversionLines(
+    summary: WithdrawalSummary?,
+    pointAmount: Int,
+    language: AppLanguage,
+): List<String> {
+    val copy = strings(language)
+    if (summary == null) {
+        return listOf(
+            "${copy.accountWithdrawAvailableLabel} 0 ${copy.listPointsLabel} · " +
+                "${copy.accountWithdrawMinimumLabel} 0 · ${copy.accountWithdrawRateLabel} = - USDT",
+        )
+    }
+    val cnyPerPoint = summary.cnyPerPoint.toPositiveDecimalOrNull()
+    val cnyPerUsd = summary.cnyPerUsd.toPositiveDecimalOrNull()
+    val minimumUsd = summary.minimumUsd.toPositiveDecimalOrNull()
+    if (cnyPerPoint == null || cnyPerUsd == null || minimumUsd == null) {
+        return listOf(
+            "${copy.accountWithdrawAvailableLabel} ${summary.availablePoints} ${copy.listPointsLabel} · " +
+                "${copy.accountWithdrawMinimumLabel} ${summary.minimumPoints} · " +
+                "${copy.accountWithdrawRateLabel} = ${summary.usdtPerPoint} USDT",
+        )
+    }
+
+    val lines = mutableListOf(
+        "${copy.accountWithdrawAvailableLabel} ${summary.availablePoints} ${copy.listPointsLabel} · " +
+            "${copy.accountWithdrawMinimumLabel} ${summary.minimumPoints} ${copy.listPointsLabel} / " +
+            "${minimumUsd.toUiDecimal()} USD",
+        "${copy.accountWithdrawRateLabel} = ${cnyPerPoint.toUiDecimal()} CNY · " +
+            "1 USD = ${cnyPerUsd.toUiDecimal()} CNY",
+    )
+    if (pointAmount > 0) {
+        val points = pointAmount.toBigDecimal()
+        val cnyAmount = points.multiply(cnyPerPoint)
+        val usdtAmount = points.multiply(cnyPerPoint).divide(cnyPerUsd, 6, RoundingMode.HALF_UP)
+        val estimateLabel = if (language == AppLanguage.TRADITIONAL_CHINESE) "預計" else "Estimated"
+        lines += "$estimateLabel ${cnyAmount.toUiDecimal()} CNY ≈ ${usdtAmount.toUiDecimal()} USDT"
+    }
+    return lines
+}
+
+internal fun withdrawalStatusLabel(status: String, language: AppLanguage): String =
+    when (status.uppercase()) {
+        "PENDING" -> if (language == AppLanguage.TRADITIONAL_CHINESE) "審核中" else "Pending"
+        "APPROVED" -> if (language == AppLanguage.TRADITIONAL_CHINESE) "已完成" else "Completed"
+        "REJECTED" -> if (language == AppLanguage.TRADITIONAL_CHINESE) "已拒絕" else "Rejected"
+        else -> status
+    }
+
+internal fun withdrawalRecordDetail(
+    status: String,
+    adminNote: String?,
+    txHash: String?,
+    language: AppLanguage,
+): String? = when {
+    status.equals("REJECTED", ignoreCase = true) && !adminNote.isNullOrBlank() ->
+        (if (language == AppLanguage.TRADITIONAL_CHINESE) "原因：" else "Reason: ") + adminNote
+    status.equals("APPROVED", ignoreCase = true) && !txHash.isNullOrBlank() -> "TX: $txHash"
+    else -> null
+}
+
+private fun String?.toPositiveDecimalOrNull(): BigDecimal? =
+    this?.toBigDecimalOrNull()?.takeIf { it > BigDecimal.ZERO }
+
+private fun BigDecimal.toUiDecimal(): String =
+    setScale(6, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
 
 internal enum class AccountAction {
     SEND_VERIFICATION,

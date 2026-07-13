@@ -2,6 +2,7 @@ package com.reelshort.backend.system;
 
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -14,12 +15,14 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
+import com.reelshort.backend.points.PointsService;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
 
@@ -36,14 +39,24 @@ class SystemConfigControllerTests {
 	@Autowired
 	private SystemConfigService systemConfigService;
 
+	@Autowired
+	private PointsService pointsService;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
 	@AfterEach
 	void resetConfigs() {
-		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_STAGE_POINTS, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "35");
 		systemConfigService.update(SystemConfigRegistry.CONTENT_RECOMMENDATION_STRATEGY, "LATEST");
-		systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_POINTS, "100");
-		systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_POINT, "0.001");
+		systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT, "0.02");
+		systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_USD, "7.2");
+		systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, "10");
 		systemConfigService.update(SystemConfigRegistry.POINTS_TRANSFER_MINIMUM_POINTS, "1");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		jdbcTemplate.update("delete from point_daily_earning_quotas");
+		jdbcTemplate.update("delete from point_daily_earning_rules");
 	}
 
 	@Test
@@ -53,70 +66,36 @@ class SystemConfigControllerTests {
 		mockMvc.perform(get("/api/admin/system/configs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data", hasSize(6)))
-				.andExpect(jsonPath("$.data[*].key", hasItem("points.watch.stage-points")))
+				.andExpect(jsonPath("$.data", hasSize(8)))
+				.andExpect(jsonPath("$.data[*].key", hasItem("points.watch.seconds-per-point")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.maximum")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.fluctuation-percent")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("content.recommendation.strategy")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.minimum-points")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.usdt-per-point")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.cny-per-point")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.cny-per-usd")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.minimum-usd")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.transfer.minimum-points")));
 	}
 
 	@Test
-	void adminCanUpdateWatchStagePointsAndAffectsRewards() throws Exception {
+	void adminCanUpdateWatchSecondsPerPoint() throws Exception {
 		String adminToken = adminLogin();
-		String appToken = registerAndExtractAppToken("config-reward-user");
 
-		mockMvc.perform(post("/api/admin/system/configs/{configKey}", "points.watch.stage-points")
+		mockMvc.perform(post("/api/admin/system/configs/{configKey}", "points.watch.seconds-per-point")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "value": "2"
+						  "value": "30"
 						}
 						"""))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.value").value("2"));
-
-		reportProgress(appToken, "config-book", 1, 25, 100)
-				.andExpect(jsonPath("$.data.awardedPoints").value(2));
+				.andExpect(jsonPath("$.data.value").value("30"));
 
 		mockMvc.perform(get("/api/admin/audit-logs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data[*].action", hasItem("SYSTEM_CONFIG_UPDATED")));
-	}
-
-	@Test
-	void zeroWatchStagePointsClaimsStageWithoutBalanceOrTransaction() throws Exception {
-		String adminToken = adminLogin();
-		String appToken = registerAndExtractAppToken("config-zero-reward-user");
-
-		updateConfig(adminToken, "points.watch.stage-points", "0")
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.value").value("0"));
-
-		reportProgress(appToken, "config-zero-book", 1, 25, 100)
-				.andExpect(jsonPath("$.data.awardedPoints").value(0))
-				.andExpect(jsonPath("$.data.awardedStages", hasSize(1)))
-				.andExpect(jsonPath("$.data.awardedStages[0]").value(25));
-
-		mockMvc.perform(get("/api/app/points/account")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + appToken))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(0));
-
-		mockMvc.perform(get("/api/app/points/records")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + appToken))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data", hasSize(0)));
-
-		updateConfig(adminToken, "points.watch.stage-points", "1")
-				.andExpect(status().isOk());
-
-		reportProgress(appToken, "config-zero-book", 1, 25, 100)
-				.andExpect(jsonPath("$.data.awardedPoints").value(0))
-				.andExpect(jsonPath("$.data.awardedStages", hasSize(0)));
 	}
 
 	@Test
@@ -134,7 +113,7 @@ class SystemConfigControllerTests {
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.code").value(404));
 
-		mockMvc.perform(post("/api/admin/system/configs/{configKey}", "points.watch.stage-points")
+		mockMvc.perform(post("/api/admin/system/configs/{configKey}", "points.watch.seconds-per-point")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
@@ -173,20 +152,43 @@ class SystemConfigControllerTests {
 	}
 
 	@Test
-	void withdrawalUsdtPerPointRejectsExcessScaleAndOutOfRangeValues() throws Exception {
+	void withdrawalConversionConfigsRejectInvalidValues() throws Exception {
 		String adminToken = adminLogin();
 
-		updateConfig(adminToken, "withdraw.usdt-per-point", "0.123456789")
+		updateConfig(adminToken, "withdraw.cny-per-point", "0.123456789")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value(400));
 
-		updateConfig(adminToken, "withdraw.usdt-per-point", "1001")
+		updateConfig(adminToken, "withdraw.cny-per-usd", "1001")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value(400));
 
-		updateConfig(adminToken, "withdraw.usdt-per-point", "0.12345678")
+		updateConfig(adminToken, "withdraw.cny-per-point", "0.12345678")
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.value").value("0.12345678"));
+	}
+
+	@Test
+	void adminDailyLimitChangesApplyStartingWithTheNextServerDay() throws Exception {
+		String adminToken = adminLogin();
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
+
+		updateConfig(adminToken, "points.daily-earned.maximum", "250")
+				.andExpect(status().isOk());
+
+		assertThat(pointsService.awardWatchProgress(java.util.UUID.randomUUID(), "admin-snapshot-book", 1, 100, 1000)
+				.awardedPoints()).isEqualTo(1000);
+	}
+
+	@Test
+	void withdrawalConversionRejectsACombinationThatOverflowsMinimumPoints() throws Exception {
+		String adminToken = adminLogin();
+
+		updateConfig(adminToken, "withdraw.cny-per-point", "0.00000001")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
 	}
 
 	@Test

@@ -2,6 +2,7 @@ package com.reelshort.app.network
 
 import com.reelshort.app.config.ApiConfig
 import com.reelshort.app.data.AuthSession
+import com.reelshort.app.data.WatchRewardStatus
 import com.reelshort.app.session.InMemorySessionStore
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
@@ -270,7 +271,10 @@ class OkHttpReelShortApiClientTest {
                   "positionSeconds": 90,
                   "durationSeconds": 120,
                   "progressPercent": 75,
-                  "awardedStages": [25, 50, 75]
+                  "awardedStages": [],
+                  "rewardClaimed": true,
+                  "rewardStatus": "AWARDED",
+                  "awardedPoints": 2
                 }
             """.trimIndent()))
             val client = client(server, token = "token-123")
@@ -282,7 +286,10 @@ class OkHttpReelShortApiClientTest {
             assertEquals("Bearer token-123", request.getHeader("Authorization"))
             assertEquals(90, snapshot.positionSeconds)
             assertEquals(75, snapshot.progressPercent)
-            assertEquals(listOf(25, 50, 75), snapshot.awardedStages)
+            assertEquals(emptyList(), snapshot.awardedStages)
+            assertEquals(true, snapshot.rewardClaimed)
+            assertEquals(WatchRewardStatus.AWARDED, snapshot.rewardStatus)
+            assertEquals(2, snapshot.awardedPoints)
         }
     }
 
@@ -300,8 +307,10 @@ class OkHttpReelShortApiClientTest {
                   "positionSeconds": 90,
                   "durationSeconds": 180,
                   "progressPercent": 50,
-                  "awardedStages": [25, 50],
-                  "awardedPoints": 2,
+                  "awardedStages": [],
+                  "rewardClaimed": true,
+                  "rewardStatus": "AWARDED",
+                  "awardedPoints": 3,
                   "updatedAt": "2026-06-27T15:30:00+08:00"
                 }
             """.trimIndent()))
@@ -326,6 +335,94 @@ class OkHttpReelShortApiClientTest {
             )
             assertEquals(50, report.progressPercent)
             assertEquals("chapter-1", report.chapterId)
+            assertEquals(true, report.rewardClaimed)
+            assertEquals(WatchRewardStatus.AWARDED, report.rewardStatus)
+            assertEquals(3, report.awardedPoints)
+        }
+    }
+
+    @Test
+    fun legacyEpisodeSnapshotDefaultsMissingRewardFields() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                {
+                  "bookId": "book-1",
+                  "episodeNum": 2,
+                  "positionSeconds": 30,
+                  "durationSeconds": 120,
+                  "progressPercent": 25,
+                  "awardedStages": [25]
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val snapshot = client.getEpisodeSnapshot("book-1", 2)
+
+            assertEquals(false, snapshot.rewardClaimed)
+            assertEquals(WatchRewardStatus.NOT_COMPLETE, snapshot.rewardStatus)
+            assertEquals(0, snapshot.awardedPoints)
+        }
+    }
+
+    @Test
+    fun legacyCompletedSnapshotIsTreatedAsAlreadyClaimed() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                {
+                  "bookId": "book-1",
+                  "episodeNum": 2,
+                  "positionSeconds": 120,
+                  "durationSeconds": 120,
+                  "progressPercent": 100,
+                  "awardedStages": [25, 50, 75, 100]
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val snapshot = client.getEpisodeSnapshot("book-1", 2)
+
+            assertEquals(true, snapshot.rewardClaimed)
+            assertEquals(WatchRewardStatus.ALREADY_CLAIMED, snapshot.rewardStatus)
+        }
+    }
+
+    @Test
+    fun withdrawalSummaryMapsCurrencyConversionAndKeepsOldResponseCompatible() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                {
+                  "balance": 5000,
+                  "frozenPoints": 200,
+                  "availablePoints": 4800,
+                  "minimumPoints": 3600,
+                  "usdtPerPoint": "0.002777778",
+                  "cnyPerPoint": "0.02",
+                  "cnyPerUsd": "7.2",
+                  "minimumUsd": "10",
+                  "walletAddress": "TTest"
+                }
+            """.trimIndent()))
+            server.enqueue(successBody("""
+                {
+                  "balance": 100,
+                  "frozenPoints": 0,
+                  "availablePoints": 100,
+                  "minimumPoints": 50,
+                  "usdtPerPoint": "0.001",
+                  "walletAddress": null
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val current = client.getWithdrawalSummary()
+            val legacy = client.getWithdrawalSummary()
+
+            assertEquals("0.02", current.cnyPerPoint)
+            assertEquals("7.2", current.cnyPerUsd)
+            assertEquals("10", current.minimumUsd)
+            assertEquals(null, legacy.cnyPerPoint)
+            assertEquals(null, legacy.cnyPerUsd)
+            assertEquals(null, legacy.minimumUsd)
         }
     }
 
@@ -505,4 +602,5 @@ class OkHttpReelShortApiClientTest {
               "timestamp": "2026-06-27T15:30:00+08:00"
             }
         """.trimIndent())
+
 }

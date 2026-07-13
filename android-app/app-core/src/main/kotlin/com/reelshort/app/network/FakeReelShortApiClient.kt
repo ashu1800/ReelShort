@@ -111,8 +111,7 @@ class FakeReelShortApiClient : ReelShortApiClient {
         frozenPoints = 3,
         availablePoints = 15,
         records = listOf(
-            PointRecord(1, "观看达到 25%"),
-            PointRecord(1, "观看达到 50%"),
+            PointRecord(2, "观看完成奖励"),
             PointRecord(10, "后台活动赠送"),
         ),
     )
@@ -136,7 +135,17 @@ class FakeReelShortApiClient : ReelShortApiClient {
     }
 
     override suspend fun getWithdrawalSummary(): WithdrawalSummary =
-        WithdrawalSummary(18, 3, 15, 100, "0.001", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc")
+        WithdrawalSummary(
+            balance = 18,
+            frozenPoints = 3,
+            availablePoints = 15,
+            minimumPoints = 100,
+            usdtPerPoint = "0.001",
+            walletAddress = "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc",
+            cnyPerPoint = "0.02",
+            cnyPerUsd = "7.2",
+            minimumUsd = "10",
+        )
 
     override suspend fun getWithdrawals(): List<WithdrawalRecord> =
         listOf(

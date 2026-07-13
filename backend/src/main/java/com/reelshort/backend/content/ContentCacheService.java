@@ -4,9 +4,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -14,6 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class ContentCacheService {
+	private static final ConcurrentHashMap<String, ReentrantLock> VIDEO_CACHE_LOCKS = new ConcurrentHashMap<>();
 
 	private static final Duration SHELF_STALE_AFTER = Duration.ofHours(12);
 
@@ -31,6 +36,7 @@ public class ContentCacheService {
 	private final ContentBookCacheRepository contentBookCacheRepository;
 	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 	private final ContentVideoCacheRepository contentVideoCacheRepository;
+	private final ContentEpisodeRuntimeCacheRepository contentEpisodeRuntimeCacheRepository;
 	private final ContentRefreshRunRepository contentRefreshRunRepository;
 	private final ContentRefreshRunRecorder contentRefreshRunRecorder;
 	private final ContentCacheProperties contentCacheProperties;
@@ -40,6 +46,7 @@ public class ContentCacheService {
 			ContentBookCacheRepository contentBookCacheRepository,
 			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
 			ContentVideoCacheRepository contentVideoCacheRepository,
+			ContentEpisodeRuntimeCacheRepository contentEpisodeRuntimeCacheRepository,
 			ContentRefreshRunRepository contentRefreshRunRepository,
 			ContentRefreshRunRecorder contentRefreshRunRecorder,
 			ContentCacheProperties contentCacheProperties,
@@ -49,6 +56,7 @@ public class ContentCacheService {
 		this.contentBookCacheRepository = contentBookCacheRepository;
 		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
 		this.contentVideoCacheRepository = contentVideoCacheRepository;
+		this.contentEpisodeRuntimeCacheRepository = contentEpisodeRuntimeCacheRepository;
 		this.contentRefreshRunRepository = contentRefreshRunRepository;
 		this.contentRefreshRunRecorder = contentRefreshRunRecorder;
 		this.contentCacheProperties = contentCacheProperties;
@@ -199,13 +207,30 @@ public class ContentCacheService {
 	@Transactional(noRollbackFor = ContentProviderException.class)
 	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId,
 			ContentLocale locale) {
+		String lockKey = bookId + "\u0000" + episodeNum + "\u0000" + chapterId + "\u0000" + locale.apiValue();
+		ReentrantLock lock = VIDEO_CACHE_LOCKS.computeIfAbsent(lockKey, ignored -> new ReentrantLock());
+		lock.lock();
+		boolean releaseAfterMethod = true;
 		try {
+			if (TransactionSynchronizationManager.isSynchronizationActive()) {
+				releaseAfterMethod = false;
+				TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+					@Override
+					public void afterCompletion(int status) {
+						lock.unlock();
+					}
+				});
+			}
 			ContentVideo video = contentProvider.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId, locale);
 			saveVideo(bookId, episodeNum, filteredTitle, chapterId, locale, video);
 			return video;
 		}
 		catch (ContentProviderException exception) {
 			return cachedVideoOrThrow(bookId, episodeNum, filteredTitle, chapterId, locale, exception);
+		} finally {
+			if (releaseAfterMethod) {
+				lock.unlock();
+			}
 		}
 	}
 
@@ -361,6 +386,13 @@ public class ContentCacheService {
 						videoJson));
 		cache.update(videoJson);
 		contentVideoCacheRepository.save(cache);
+		if (video.duration() > 0) {
+			ContentEpisodeRuntimeCache runtime = contentEpisodeRuntimeCacheRepository
+					.findByBookIdAndEpisodeNumAndChapterId(bookId, episodeNum, chapterId)
+					.orElseGet(() -> ContentEpisodeRuntimeCache.create(bookId, episodeNum, chapterId, video.duration()));
+			runtime.update(video.duration());
+			contentEpisodeRuntimeCacheRepository.save(runtime);
+		}
 	}
 
 	private ContentVideo cachedVideoOrThrow(String bookId, int episodeNum, String filteredTitle, String chapterId,
@@ -378,9 +410,21 @@ public class ContentCacheService {
 					if (!isVideoFallbackCacheFresh(cache)) {
 						throw exception;
 					}
-					return readVideo(cache.videoJson());
+					ContentVideo video = readVideo(cache.videoJson());
+					if (video.duration() > 0) {
+						saveRuntime(bookId, episodeNum, chapterId, video.duration());
+					}
+					return video;
 				})
 				.orElseThrow(() -> exception);
+	}
+
+	private void saveRuntime(String bookId, int episodeNum, String chapterId, int durationSeconds) {
+		ContentEpisodeRuntimeCache runtime = contentEpisodeRuntimeCacheRepository
+				.findByBookIdAndEpisodeNumAndChapterId(bookId, episodeNum, chapterId)
+				.orElseGet(() -> ContentEpisodeRuntimeCache.create(bookId, episodeNum, chapterId, durationSeconds));
+		runtime.update(durationSeconds);
+		contentEpisodeRuntimeCacheRepository.save(runtime);
 	}
 
 	private boolean isVideoFallbackCacheFresh(ContentVideoCache cache) {
