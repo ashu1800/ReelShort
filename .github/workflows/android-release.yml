@@ -151,13 +151,23 @@ jobs:
           apk="ShortLink-${RELEASE_TAG}.apk"
           remote_dir="/opt/reelshort/releases/android"
           ssh_options=(-i "$HOME/.ssh/shortlink-release" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
-          scp -i "$HOME/.ssh/shortlink-release" -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+          retry() {
+            local attempt=1
+            until "$@"; do
+              if (( attempt >= 5 )); then
+                return 1
+              fi
+              sleep $((attempt * 5))
+              attempt=$((attempt + 1))
+            done
+          }
+          retry scp -i "$HOME/.ssh/shortlink-release" -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
             "dist/$apk" "$SSH_USER@$SSH_HOST:$remote_dir/$apk.part"
-          scp -i "$HOME/.ssh/shortlink-release" -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+          retry scp -i "$HOME/.ssh/shortlink-release" -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
             "dist/$apk.sha256" "$SSH_USER@$SSH_HOST:$remote_dir/$apk.sha256.part"
-          scp -i "$HOME/.ssh/shortlink-release" -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+          retry scp -i "$HOME/.ssh/shortlink-release" -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
             dist/latest.json "$SSH_USER@$SSH_HOST:$remote_dir/latest.json.part"
-          ssh "${ssh_options[@]}" "$SSH_USER@$SSH_HOST" \
+          retry ssh "${ssh_options[@]}" "$SSH_USER@$SSH_HOST" \
             "set -eu; cd '$remote_dir'; test -s '$apk.part'; test -s '$apk.sha256.part'; test -s latest.json.part; chmod 0644 '$apk.part' '$apk.sha256.part' latest.json.part; mv -f '$apk.part' '$apk'; mv -f '$apk.sha256.part' '$apk.sha256'; mv -f latest.json.part latest.json"
 
       - name: Remove release SSH identity
