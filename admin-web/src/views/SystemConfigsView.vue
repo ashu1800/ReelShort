@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
 import { fetchSystemConfigs, updateSystemConfig } from '../services/adminApi'
 import type { SystemConfig } from '../services/adminApi'
+import { configDisplayName, configDisplayDescription } from './systemConfigLabels'
 
 const loading = ref(false)
 const savingKey = ref('')
@@ -61,13 +62,21 @@ onMounted(loadConfigs)
     </div>
     <el-alert v-if="error" :title="error" show-icon type="error" />
     <el-table v-loading="loading" :data="configs" border>
-      <el-table-column label="配置键" min-width="240" prop="key" />
+      <el-table-column label="配置项" min-width="200">
+        <template #default="{ row }">
+          <span>{{ configDisplayName(row.key) }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="配置值" min-width="220">
         <template #default="{ row }">
           <el-input v-model="draftValues[row.key]" />
         </template>
       </el-table-column>
-      <el-table-column label="说明" min-width="260" prop="description" />
+      <el-table-column label="说明" min-width="260">
+        <template #default="{ row }">
+          <span>{{ configDisplayDescription(row.key, row.description) }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="更新时间" min-width="220" prop="updatedAt" />
       <el-table-column align="right" label="操作" width="120">
         <template #default="{ row }">
