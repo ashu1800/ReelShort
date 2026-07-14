@@ -242,6 +242,12 @@ public class WithdrawalService {
 
 	/**
 	 * Lock the withdrawal, broadcast TRC20 USDT transfer, then deduct frozen points and mark APPROVED.
+	 *
+	 * <p>Known trade-off: the on-chain broadcast ({@link TronClient#transferUSDT}) happens inside a
+	 * database transaction with a pessimistic lock held. This is intentional — we broadcast FIRST so
+	 * that if anything fails after the transfer, the points are NOT deducted (platform loses points,
+	 * not real USDT). The extremely rare case of broadcast-success-but-db-failure requires manual
+	 * audit. Batch processing is serial, so only one transaction/lock is held at a time.
 	 */
 	@Transactional
 	public String approveWithTransfer(UUID withdrawalId, String hotWalletPrivateKey, String adminUsername) {

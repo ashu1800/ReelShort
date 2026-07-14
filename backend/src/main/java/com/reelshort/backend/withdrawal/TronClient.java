@@ -116,19 +116,26 @@ public class TronClient {
 
 		// 1. Build the unsigned transaction
 		JsonNode triggerResponse = triggersmartcontract(ownerAddress, parameter);
-		if (triggerResponse.path("result").path("code").asInt(-1) != 0
-				&& triggerResponse.has("result") && !triggerResponse.path("result").isEmpty()) {
-			String message = triggerResponse.path("result").path("message").asText("trigger failed");
+		// TronGrid returns error as { "result": { "code": <nonzero>, "message": "..." } }
+		// Success may be { "result": { "code": 0 } } or { "result": true } or no result field at all.
+		JsonNode resultNode = triggerResponse.path("result");
+		if (resultNode.isObject() && resultNode.has("code") && resultNode.get("code").asInt(0) != 0) {
+			String message = resultNode.path("message").asText("trigger failed");
 			throw new WithdrawalException(502, "TRC20 trigger failed: " + message);
 		}
 		JsonNode transaction = triggerResponse.path("transaction");
-		String rawDataHex = transaction.path("transaction").path("raw_data_hex").asText(
-				transaction.path("raw_data_hex").asText(""));
+		String rawDataHex = transaction.path("raw_data_hex").asText("");
+		if (rawDataHex.isEmpty()) {
+			rawDataHex = transaction.path("transaction").path("raw_data_hex").asText("");
+		}
 		if (rawDataHex.isEmpty()) {
 			throw new WithdrawalException(502, "missing raw_data_hex in trigger response");
 		}
-		String txid = transaction.path("transaction").path("txid").asText(
-				transaction.path("txid").asText(""));
+		// TronGrid returns "txID" (camelCase) — try both casing
+		String txid = transaction.path("txID").asText("");
+		if (txid.isEmpty()) {
+			txid = transaction.path("txid").asText("");
+		}
 
 		// 2. Sign the transaction
 		byte[] rawBytes = hexStringToBytes(rawDataHex);

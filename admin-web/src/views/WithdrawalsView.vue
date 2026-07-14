@@ -128,6 +128,8 @@ async function doBatchApprove() {
     }
     batchStep.value = 'totp'
     await loadWithdrawals()
+    // Clear private key from memory immediately after use
+    hotWalletPrivateKey.value = ''
   } catch (error) {
     ElMessage.error(backendErrorMessage(error, '批量打款失败'))
   } finally {
@@ -137,6 +139,9 @@ async function doBatchApprove() {
 
 function closeBatchDialog() {
   batchDialogVisible.value = false
+  // Clear sensitive data from memory
+  hotWalletPrivateKey.value = ''
+  totpCode.value = ''
 }
 
 // Legacy manual txHash approval (fallback)
