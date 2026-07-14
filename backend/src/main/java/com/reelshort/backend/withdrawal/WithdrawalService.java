@@ -20,6 +20,7 @@ import com.reelshort.backend.system.concurrency.UserActionLocks;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.system.security.TotpService;
+import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.wallet.UserWallet;
 import com.reelshort.backend.wallet.UserWalletRepository;
@@ -280,7 +281,7 @@ public class WithdrawalService {
 
 	private String userAccount(UUID userId) {
 		return userAccountRepository.findById(userId)
-				.map(user -> user.phoneE164() == null ? user.username() : user.phoneE164())
+				.map(UserAccount::username)
 				.orElse(null);
 	}
 

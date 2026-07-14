@@ -12,6 +12,7 @@ import SystemLogsView from '../views/SystemLogsView.vue'
 import SystemRuntimeView from '../views/SystemRuntimeView.vue'
 import TwoFactorView from '../views/TwoFactorView.vue'
 import UsersView from '../views/UsersView.vue'
+import VipOrdersView from '../views/VipOrdersView.vue'
 import WithdrawalsView from '../views/WithdrawalsView.vue'
 
 export const router = createRouter({
@@ -47,6 +48,11 @@ export const router = createRouter({
       path: '/withdrawals',
       name: 'withdrawals',
       component: WithdrawalsView,
+    },
+    {
+      path: '/vip-orders',
+      name: 'vip-orders',
+      component: VipOrdersView,
     },
     {
       path: '/2fa',

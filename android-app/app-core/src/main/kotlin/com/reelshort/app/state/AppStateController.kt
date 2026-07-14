@@ -9,7 +9,6 @@ import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.SavedCredentials
-import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.network.ApiClientException
@@ -114,72 +113,54 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     suspend fun login(
-        countryCode: String,
-        phoneNumber: String,
+        username: String,
         password: String,
         rememberPassword: Boolean = false,
     ) = runWithLoading(ErrorContext.LOGIN) {
-        val session = dataSource.login(countryCode, phoneNumber, password)
-        updateSavedCredentials(countryCode, phoneNumber, password, rememberPassword)
+        val session = dataSource.login(username, password)
+        updateSavedCredentials(username, password, rememberPassword)
         openHomeAfterAuthentication(session)
     }
 
     suspend fun register(
-        countryCode: String,
-        phoneNumber: String,
+        username: String,
         password: String,
-        verificationCode: String,
+        captchaId: String,
+        captchaAnswer: String,
     ) = runWithLoading(ErrorContext.REGISTER) {
-        dataSource.register(countryCode, phoneNumber, password, verificationCode)
+        val session = dataSource.register(username, password, captchaId, captchaAnswer)
+        updateSavedCredentials(username, password, rememberPassword = false)
         mutableState.update {
             it.copy(
                 isLoading = false,
                 authPromptVisible = false,
-                authSmsCountdownSeconds = 0,
-                errorMessage = registrationSimulationMessage(),
-                messageType = UiMessageType.SUCCESS,
+                captchaId = "",
+                captchaImageBase64 = "",
+                errorMessage = null,
             )
         }
+        openHomeAfterAuthentication(session)
     }
 
-    suspend fun sendAuthSms(countryCode: String, phoneNumber: String) = runWithLoading(ErrorContext.REGISTER) {
-        val result = dataSource.sendAuthSms(SmsVerificationPurpose.PUBLIC_REGISTER, countryCode, phoneNumber)
+    suspend fun fetchCaptcha() = runWithLoading(ErrorContext.REGISTER) {
+        val challenge = dataSource.fetchCaptcha()
         mutableState.update {
             it.copy(
                 isLoading = false,
-                errorMessage = smsSentMessage(),
-                messageType = UiMessageType.SUCCESS,
-                authSmsCountdownSeconds = result.expiresInSeconds,
-                authSmsCountdownTrigger = it.authSmsCountdownTrigger + 1,
-            )
-        }
-    }
-
-    suspend fun sendPasswordChangeVerification() = runAccountOperation(AccountOperation.PASSWORD_VERIFICATION) {
-        requireAuthenticatedAccount()
-        val result = dataSource.sendPasswordChangeVerification()
-        mutableState.update {
-            it.copy(
-                isLoading = false,
-                errorMessage = smsSentMessage(),
-                messageType = UiMessageType.SUCCESS,
-                passwordSmsCountdownSeconds = result.expiresInSeconds,
-                passwordSmsCountdownTrigger = it.passwordSmsCountdownTrigger + 1,
+                captchaId = challenge.captchaId,
+                captchaImageBase64 = challenge.imageBase64,
             )
         }
     }
 
     private suspend fun updateSavedCredentials(
-        countryCode: String,
-        phoneNumber: String,
+        username: String,
         password: String,
         rememberPassword: Boolean,
     ) {
         if (rememberPassword) {
             val credentials = SavedCredentials(
-                username = "$countryCode$phoneNumber",
-                countryCode = countryCode,
-                phoneNumber = phoneNumber,
+                username = username,
                 password = password,
                 rememberPassword = true,
             )
@@ -874,6 +855,8 @@ class AppStateController(private val dataSource: AppDataSource) {
                 pointAccount = points,
                 orders = orders,
                 wallet = wallet,
+                vipUntil = wallet?.vipUntil ?: it.vipUntil,
+                vipPriceUsdt = wallet?.vipPriceUsdt ?: it.vipPriceUsdt,
                 withdrawalSummary = withdrawalSummary,
                 withdrawals = withdrawals,
                 pointTransfers = pointTransfers,
@@ -924,6 +907,8 @@ class AppStateController(private val dataSource: AppDataSource) {
                     pointAccount = points,
                     orders = orders,
                     wallet = wallet,
+                    vipUntil = wallet?.vipUntil ?: it.vipUntil,
+                    vipPriceUsdt = wallet?.vipPriceUsdt ?: it.vipPriceUsdt,
                     withdrawalSummary = withdrawalSummary,
                     withdrawals = withdrawals,
                     pointTransfers = pointTransfers,
@@ -935,30 +920,22 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun sendWalletVerification(purpose: SmsVerificationPurpose) = runAccountOperation(AccountOperation.WALLET_VERIFICATION) {
+    suspend fun bindWallet(walletAddress: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
         requireAuthenticatedAccount()
-        val result = dataSource.sendWalletVerification(purpose)
-        mutableState.update {
-            it.copy(
-                isLoading = false,
-                errorMessage = smsSentMessage(),
-                messageType = UiMessageType.SUCCESS,
-                walletSmsCountdownSeconds = result.expiresInSeconds,
-                walletSmsCountdownTrigger = it.walletSmsCountdownTrigger + 1,
-            )
-        }
-    }
-
-    suspend fun bindWallet(walletAddress: String, verificationCode: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
-        requireAuthenticatedAccount()
-        dataSource.bindWallet(walletAddress, verificationCode)
+        dataSource.bindWallet(walletAddress)
         reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
     }
 
-    suspend fun unbindWallet(verificationCode: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
+    suspend fun unbindWallet() = runAccountOperation(AccountOperation.WALLET_MUTATION) {
         requireAuthenticatedAccount()
-        dataSource.unbindWallet(verificationCode)
+        dataSource.unbindWallet()
         reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
+    }
+
+    suspend fun createVipOrder() = runAccountOperation(AccountOperation.WALLET_MUTATION) {
+        requireAuthenticatedAccount()
+        dataSource.createVipOrder()
+        reloadAccountSnapshotAfterAction(vipOrderCreatedMessage())
     }
 
     suspend fun submitBankCard(holderName: String, cardNumber: String) = runWithLoading(ErrorContext.ACCOUNT) {
@@ -979,10 +956,10 @@ class AppStateController(private val dataSource: AppDataSource) {
         reloadAccountSnapshotAfterAction(transferSubmittedMessage())
     }
 
-    suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) =
+    suspend fun changePassword(oldPassword: String, newPassword: String) =
         runAccountOperation(AccountOperation.PASSWORD_CHANGE) {
             requireAuthenticatedAccount()
-            dataSource.changePassword(oldPassword, newPassword, verificationCode)
+            dataSource.changePassword(oldPassword, newPassword)
             dataSource.clearSession()
             dataSource.clearSavedCredentials()
             mutableState.update {
@@ -1021,7 +998,15 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     fun dismissAuthPrompt() {
-        mutableState.update { it.copy(authPromptVisible = false, pendingPlaybackEpisode = null, authMode = AuthMode.LOGIN) }
+        mutableState.update {
+            it.copy(
+                authPromptVisible = false,
+                pendingPlaybackEpisode = null,
+                authMode = AuthMode.LOGIN,
+                captchaId = "",
+                captchaImageBase64 = "",
+            )
+        }
     }
 
     suspend fun checkApiHealth() {
@@ -1242,8 +1227,10 @@ class AppStateController(private val dataSource: AppDataSource) {
         if (context == ErrorContext.CONTENT) {
             return "内容暂时加载失败，可以稍后刷新。"
         }
-        if (context == ErrorContext.REGISTER && "invalid verification code" in normalizedMessage) {
-            return invalidVerificationCodeMessage()
+        if (context == ErrorContext.REGISTER &&
+            ("captcha" in normalizedMessage || "invalid verification code" in normalizedMessage)
+        ) {
+            return invalidCaptchaMessage()
         }
         if (context == ErrorContext.REGISTER &&
             error is ApiClientException &&
@@ -1253,7 +1240,10 @@ class AppStateController(private val dataSource: AppDataSource) {
             return registerBadRequestMessage()
         }
         if (error is ApiClientException && error.statusCode == 401 && (context == ErrorContext.LOGIN || context == ErrorContext.REGISTER)) {
-            return "手机号或密码错误"
+            return credentialErrorMessage()
+        }
+        if (error is ApiClientException && error.statusCode == 409 && context == ErrorContext.REGISTER) {
+            return usernameExistsMessage()
         }
         if (error is ApiClientException && error.statusCode == 401) {
             return "登录状态已失效，请重新登录。"
@@ -1261,33 +1251,39 @@ class AppStateController(private val dataSource: AppDataSource) {
         if ((context == ErrorContext.LOGIN || context == ErrorContext.REGISTER) &&
             ("invalid username or password" in normalizedMessage || "invalid credentials" in normalizedMessage)
         ) {
-            return "手机号或密码错误"
+            return credentialErrorMessage()
         }
         return rawMessage.ifBlank { error::class.simpleName ?: "请求失败" }
     }
 
-    private fun smsSentMessage(): String =
+    private fun invalidCaptchaMessage(): String =
         when (state.value.language) {
-            AppLanguage.ENGLISH -> "Verification code sent. Enter the latest 6-digit code within 120 seconds."
-            AppLanguage.TRADITIONAL_CHINESE -> "驗證碼已發送，請在 120 秒內輸入最新 6 位數驗證碼。"
-        }
-
-    private fun registrationSimulationMessage(): String =
-        when (state.value.language) {
-            AppLanguage.ENGLISH -> "Registration completed. Account access must be opened internally."
-            AppLanguage.TRADITIONAL_CHINESE -> "註冊流程已完成，帳號需要內部開通後才能登入。"
-        }
-
-    private fun invalidVerificationCodeMessage(): String =
-        when (state.value.language) {
-            AppLanguage.ENGLISH -> "Verification code is incorrect."
-            AppLanguage.TRADITIONAL_CHINESE -> "驗證碼錯誤。"
+            AppLanguage.ENGLISH -> "Captcha answer is incorrect."
+            AppLanguage.TRADITIONAL_CHINESE -> "圖形驗證碼錯誤。"
         }
 
     private fun registerBadRequestMessage(): String =
         when (state.value.language) {
-            AppLanguage.ENGLISH -> "Check phone number, password, and verification code."
-            AppLanguage.TRADITIONAL_CHINESE -> "請檢查手機號、密碼和驗證碼。"
+            AppLanguage.ENGLISH -> "Check username, password, and captcha answer."
+            AppLanguage.TRADITIONAL_CHINESE -> "請檢查用戶名、密碼和圖形驗證碼。"
+        }
+
+    private fun credentialErrorMessage(): String =
+        when (state.value.language) {
+            AppLanguage.ENGLISH -> "Invalid username or password."
+            AppLanguage.TRADITIONAL_CHINESE -> "用戶名或密碼錯誤。"
+        }
+
+    private fun usernameExistsMessage(): String =
+        when (state.value.language) {
+            AppLanguage.ENGLISH -> "Username already exists."
+            AppLanguage.TRADITIONAL_CHINESE -> "用戶名已存在。"
+        }
+
+    private fun vipOrderCreatedMessage(): String =
+        when (state.value.language) {
+            AppLanguage.ENGLISH -> "VIP order created. Submit payment to activate VIP."
+            AppLanguage.TRADITIONAL_CHINESE -> "VIP 訂單已建立，完成付款後即可啟用。"
         }
 
     private fun passwordChangedMessage(): String =

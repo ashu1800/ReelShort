@@ -3,6 +3,7 @@ package com.reelshort.backend.content;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -21,6 +22,7 @@ import com.reelshort.backend.auth.AccessTokenRepository;
 import com.reelshort.backend.auth.TokenHasher;
 import com.reelshort.backend.admin.AdminTokenRepository;
 import com.reelshort.backend.admin.AdminUserRepository;
+import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.system.web.GlobalExceptionHandler;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
@@ -33,6 +35,12 @@ class ContentControllerTests {
 
 	@MockitoBean
 	private ContentCacheService contentCacheService;
+
+	@MockitoBean
+	private VipGateService vipGateService;
+
+	@MockitoBean
+	private SystemConfigService systemConfigService;
 
 	@MockitoBean
 	private AccessTokenRepository accessTokenRepository;
@@ -118,6 +126,7 @@ class ContentControllerTests {
 		when(contentCacheService.getEpisodes("book-1", "love-story", ContentLocale.ENGLISH)).thenReturn(List.of(
 				new ContentEpisode(1, "chapter-1", "The Beginning", "The first conflict starts."),
 				new ContentEpisode(2, "chapter-2", "The Choice", "A risky choice follows.")));
+		when(vipGateService.isVip(nullable(com.reelshort.backend.auth.CurrentUser.class))).thenReturn(true);
 
 		mockMvc.perform(get("/api/app/content/books/book-1/episodes")
 				.param("filteredTitle", "love-story"))

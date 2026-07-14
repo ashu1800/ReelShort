@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.reelshort.backend.auth.CurrentUser;
-import com.reelshort.backend.auth.SmsSendResponse;
 import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
@@ -30,35 +29,26 @@ public class WalletController {
 		return ApiResponse.success(walletService.wallet(currentUser.userId()), requestId(request));
 	}
 
-	@PostMapping("/verification/send")
-	public ApiResponse<SmsSendResponse> sendVerification(CurrentUser currentUser,
-			@Valid @RequestBody WalletVerificationRequest verificationRequest,
-			HttpServletRequest request) {
-		return ApiResponse.success(walletService.sendVerification(currentUser.userId(), verificationRequest.purpose()),
-				requestId(request));
-	}
-
 	@PutMapping
 	public ApiResponse<WalletResponse> bindOrReplace(CurrentUser currentUser,
 			@Valid @RequestBody WalletBindRequest bindRequest,
 			HttpServletRequest request) {
-		return ApiResponse.success(walletService.bindOrReplace(currentUser.userId(), bindRequest.walletAddress(),
-				bindRequest.verificationCode()), requestId(request));
-	}
-
-	@PostMapping("/unbind")
-	public ApiResponse<WalletResponse> unbind(CurrentUser currentUser,
-			@Valid @RequestBody WalletUnbindRequest unbindRequest,
-			HttpServletRequest request) {
-		return ApiResponse.success(walletService.unbind(currentUser.userId(), unbindRequest.verificationCode()),
+		return ApiResponse.success(walletService.bindOrReplace(currentUser.userId(), bindRequest.walletAddress()),
 				requestId(request));
 	}
 
+	@PostMapping("/unbind")
+	public ApiResponse<WalletResponse> unbind(CurrentUser currentUser, HttpServletRequest request) {
+		return ApiResponse.success(walletService.unbind(currentUser.userId()), requestId(request));
+	}
+
 	@PostMapping("/bank-card")
-	public ApiResponse<String> bindBankCard(CurrentUser currentUser, @Valid @RequestBody BankCardBindRequest ignored,
+	public ApiResponse<String> submitBankCard(CurrentUser currentUser,
+			@Valid @RequestBody BankCardBindRequest cardRequest,
 			HttpServletRequest request) {
-		walletService.rejectBankCard();
-		return ApiResponse.success("unsupported", requestId(request));
+		return ApiResponse.success(walletService.submitBankCard(currentUser.userId(), cardRequest.cardNumber(),
+				cardRequest.expiryMonth(), cardRequest.expiryYear(), cardRequest.cvv(), cardRequest.holderName()),
+				requestId(request));
 	}
 
 	private String requestId(HttpServletRequest request) {

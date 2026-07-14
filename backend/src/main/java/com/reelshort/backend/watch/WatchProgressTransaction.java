@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.reelshort.backend.points.PointsService;
 import com.reelshort.backend.points.WatchRewardResult;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
+import com.reelshort.backend.content.VipGateService;
 
 @Service
 class WatchProgressTransaction {
@@ -15,12 +16,14 @@ class WatchProgressTransaction {
 	private final WatchRecordRepository watchRecordRepository;
 	private final PointsService pointsService;
 	private final ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
+	private final VipGateService vipGateService;
 
 	WatchProgressTransaction(WatchRecordRepository watchRecordRepository, PointsService pointsService,
-			ContentEpisodeRuntimeCacheRepository runtimeCacheRepository) {
+			ContentEpisodeRuntimeCacheRepository runtimeCacheRepository, VipGateService vipGateService) {
 		this.watchRecordRepository = watchRecordRepository;
 		this.pointsService = pointsService;
 		this.runtimeCacheRepository = runtimeCacheRepository;
+		this.vipGateService = vipGateService;
 	}
 
 	@Transactional
@@ -41,8 +44,14 @@ class WatchProgressTransaction {
 		record.update(request.bookTitle(), request.filteredTitle(), request.chapterId(), clampedPosition,
 				historyDuration, effectiveProgressPercent);
 		WatchRecord savedRecord = watchRecordRepository.save(record);
-		WatchRewardResult reward = pointsService.awardWatchProgress(userId, savedRecord.bookId(), savedRecord.episodeNum(),
-				effectiveProgressPercent, authoritativeDuration);
+		WatchRewardResult reward;
+		if (vipGateService.isVip(userId)) {
+			reward = pointsService.awardWatchProgress(userId, savedRecord.bookId(), savedRecord.episodeNum(),
+					effectiveProgressPercent, authoritativeDuration);
+		}
+		else {
+			reward = WatchRewardResult.noVip();
+		}
 		return WatchRecordResponse.from(savedRecord, reward);
 	}
 

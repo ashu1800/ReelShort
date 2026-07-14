@@ -27,31 +27,29 @@ class AppRepository(
 
     override suspend fun checkGeoIp(): String? = geoIpClient.detectCountryCode()
 
-    override suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession {
-        val session = apiClient.login(countryCode, phoneNumber, password)
+    override suspend fun login(username: String, password: String): AuthSession {
+        val session = apiClient.login(username, password)
         sessionStore.saveSession(session)
         currentToken = session.token
         return session
     }
 
     override suspend fun register(
-        countryCode: String,
-        phoneNumber: String,
+        username: String,
         password: String,
-        verificationCode: String,
-    ): RegisterSimulationResult = apiClient.register(countryCode, phoneNumber, password, verificationCode)
+        captchaId: String,
+        captchaAnswer: String,
+    ): AuthSession {
+        val session = apiClient.register(username, password, captchaId, captchaAnswer)
+        sessionStore.saveSession(session)
+        currentToken = session.token
+        return session
+    }
 
-    override suspend fun sendAuthSms(
-        purpose: SmsVerificationPurpose,
-        countryCode: String,
-        phoneNumber: String,
-    ): SmsSendResult = apiClient.sendAuthSms(purpose, countryCode, phoneNumber)
+    override suspend fun fetchCaptcha(): CaptchaChallenge = apiClient.fetchCaptcha()
 
-    override suspend fun sendPasswordChangeVerification(): SmsSendResult =
-        apiClient.sendPasswordChangeVerification()
-
-    override suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) {
-        apiClient.changePassword(oldPassword, newPassword, verificationCode)
+    override suspend fun changePassword(oldPassword: String, newPassword: String) {
+        apiClient.changePassword(oldPassword, newPassword)
     }
 
     override suspend fun loadHomeShelf(): List<BookSummary> =
@@ -101,14 +99,14 @@ class AppRepository(
 
     override suspend fun loadWallet(): WalletInfo = apiClient.getWallet()
 
-    override suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult =
-        apiClient.sendWalletVerification(purpose)
+    override suspend fun bindWallet(walletAddress: String): WalletInfo =
+        apiClient.bindWallet(walletAddress)
 
-    override suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo =
-        apiClient.bindWallet(walletAddress, verificationCode)
+    override suspend fun unbindWallet(): WalletInfo = apiClient.unbindWallet()
 
-    override suspend fun unbindWallet(verificationCode: String): WalletInfo =
-        apiClient.unbindWallet(verificationCode)
+    override suspend fun createVipOrder(): VipOrder = apiClient.createVipOrder()
+
+    override suspend fun loadVipOrders(): List<VipOrder> = apiClient.getVipOrders()
 
     override suspend fun submitBankCard(holderName: String, cardNumber: String) {
         apiClient.submitBankCard(holderName, cardNumber)

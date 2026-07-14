@@ -66,7 +66,7 @@ class SystemConfigControllerTests {
 		mockMvc.perform(get("/api/admin/system/configs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data", hasSize(8)))
+				.andExpect(jsonPath("$.data", hasSize(10)))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.watch.seconds-per-point")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.maximum")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.fluctuation-percent")))
@@ -74,7 +74,9 @@ class SystemConfigControllerTests {
 				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.cny-per-point")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.cny-per-usd")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.minimum-usd")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("points.transfer.minimum-points")));
+				.andExpect(jsonPath("$.data[*].key", hasItem("points.transfer.minimum-points")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("vip.price-usdt")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("vip.free-episodes")));
 	}
 
 	@Test

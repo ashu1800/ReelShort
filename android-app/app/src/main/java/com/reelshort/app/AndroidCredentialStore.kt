@@ -17,16 +17,10 @@ class AndroidCredentialStore private constructor(
             if (!rememberPassword) {
                 return@runCatching null
             }
-            val countryCode = prefs.getString(KEY_COUNTRY_CODE, null)?.takeIf { it.isNotBlank() } ?: "+1"
-            val phoneNumber = prefs.getString(KEY_PHONE_NUMBER, null)?.takeIf { it.isNotBlank() }
-                ?: prefs.getString(KEY_USERNAME, null)?.takeIf { it.isNotBlank() }
-                ?: return@runCatching null
-            val username = prefs.getString(KEY_USERNAME, null)?.takeIf { it.isNotBlank() } ?: "$countryCode$phoneNumber"
+            val username = prefs.getString(KEY_USERNAME, null)?.takeIf { it.isNotBlank() } ?: return@runCatching null
             val password = prefs.getString(KEY_PASSWORD, null)?.takeIf { it.isNotBlank() } ?: return@runCatching null
             SavedCredentials(
                 username = username,
-                countryCode = countryCode,
-                phoneNumber = phoneNumber,
                 password = password,
                 rememberPassword = true,
             )
@@ -37,8 +31,6 @@ class AndroidCredentialStore private constructor(
         runCatching {
             preferences?.edit()
                 ?.putString(KEY_USERNAME, credentials.username)
-                ?.putString(KEY_COUNTRY_CODE, credentials.countryCode)
-                ?.putString(KEY_PHONE_NUMBER, credentials.phoneNumber)
                 ?.putString(KEY_PASSWORD, credentials.password)
                 ?.putBoolean(KEY_REMEMBER_PASSWORD, credentials.rememberPassword)
                 ?.apply()
@@ -54,8 +46,6 @@ class AndroidCredentialStore private constructor(
     companion object {
         private const val PREFS_NAME = "reelshort-credentials"
         private const val KEY_USERNAME = "username"
-        private const val KEY_COUNTRY_CODE = "countryCode"
-        private const val KEY_PHONE_NUMBER = "phoneNumber"
         private const val KEY_PASSWORD = "password"
         private const val KEY_REMEMBER_PASSWORD = "rememberPassword"
 

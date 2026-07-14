@@ -20,6 +20,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCache;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
+import com.reelshort.backend.user.UserAccount;
+import com.reelshort.backend.user.UserAccountRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -33,6 +35,9 @@ class PointsControllerTests {
 
 	@Autowired
 	private ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
+
+	@Autowired
+	private UserAccountRepository userAccountRepository;
 
 	@Test
 	void accountStartsWithZeroBalance() throws Exception {
@@ -57,7 +62,7 @@ class PointsControllerTests {
 
 	@Test
 	void watchProgressAwardsStageOnceAndCreatesTransaction() throws Exception {
-		String token = registerAndExtractToken("points-carol");
+		String token = registerVipUserAndExtractToken("points-carol");
 
 		reportProgress(token, "book-1", 1, 30, 120)
 				.andExpect(jsonPath("$.data.awardedPoints").value(0))
@@ -84,7 +89,7 @@ class PointsControllerTests {
 
 	@Test
 	void watchProgressJumpAwardsAllReachedStages() throws Exception {
-		String token = registerAndExtractToken("points-dan");
+		String token = registerVipUserAndExtractToken("points-dan");
 
 		reportProgress(token, "book-2", 2, 100, 100)
 				.andExpect(jsonPath("$.data.awardedPoints").value(1))
@@ -124,6 +129,14 @@ class PointsControllerTests {
 
 	private String registerAndExtractToken(String username) throws Exception {
 		return TestAppUsers.token(mockMvc, objectMapper, username);
+	}
+
+	private String registerVipUserAndExtractToken(String username) throws Exception {
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, username);
+		UserAccount account = userAccountRepository.findById(user.userId()).orElseThrow();
+		account.grantVip(java.time.OffsetDateTime.now().plusDays(1));
+		userAccountRepository.save(account);
+		return user.token();
 	}
 
 	private record ResultActionsFacade(org.springframework.test.web.servlet.ResultActions resultActions) {

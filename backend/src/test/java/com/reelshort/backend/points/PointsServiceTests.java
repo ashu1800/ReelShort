@@ -30,6 +30,7 @@ import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
+import com.reelshort.backend.user.UserStatus;
 import com.reelshort.backend.watch.WatchProgressRequest;
 import com.reelshort.backend.watch.WatchRecordResponse;
 import com.reelshort.backend.watch.WatchService;
@@ -45,9 +46,6 @@ class PointsServiceTests {
 
 	@Autowired
 	private PointAccountRepository pointAccountRepository;
-
-	@Autowired
-	private PointTransferRepository pointTransferRepository;
 
 	@Autowired
 	private UserAccountRepository userAccountRepository;
@@ -284,7 +282,7 @@ class PointsServiceTests {
 
 	@Test
 	void concurrentWatchReportsOnlyAwardSameStageOnce() throws Exception {
-		UUID userId = UUID.randomUUID();
+		UUID userId = createVipUser();
 		runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create("book-watch-race", 1, "chapter-1", 100));
 		CountDownLatch ready = new CountDownLatch(2);
 		CountDownLatch start = new CountDownLatch(1);
@@ -353,29 +351,6 @@ class PointsServiceTests {
 	}
 
 	@Test
-	void transferRollsBackWhenRecipientWouldOverflow() {
-		UserAccount sender = userAccountRepository.save(
-				UserAccount.createPhoneAccount("+1", "4155550601", "+14155550601", "hash"));
-		UserAccount recipient = userAccountRepository.save(
-				UserAccount.createPhoneAccount("+1", "4155550602", "+14155550602", "hash"));
-		PointAccount senderAccount = PointAccount.create(sender.id());
-		senderAccount.add(10);
-		pointAccountRepository.save(senderAccount);
-		PointAccount recipientAccount = PointAccount.create(recipient.id());
-		recipientAccount.add(Integer.MAX_VALUE);
-		pointAccountRepository.saveAndFlush(recipientAccount);
-
-		assertThatThrownBy(() -> pointsService.transfer(sender.id(), "+14155550602", 5))
-				.isInstanceOf(AdminException.class)
-				.hasMessage("point balance overflow");
-
-		assertThat(pointsService.account(sender.id()).balance()).isEqualTo(10);
-		assertThat(pointsService.account(recipient.id()).balance()).isEqualTo(Integer.MAX_VALUE);
-		assertThat(pointTransferRepository.findBySenderUserIdOrRecipientUserIdOrderByCreatedAtDesc(
-				sender.id(), sender.id())).isEmpty();
-	}
-
-	@Test
 	void watchRewardsAreScopedByUser() {
 		UUID firstUserId = UUID.randomUUID();
 		UUID secondUserId = UUID.randomUUID();
@@ -390,6 +365,14 @@ class PointsServiceTests {
 	private WatchProgressRequest request(String bookId, int episodeNum, int positionSeconds, int durationSeconds) {
 		return new WatchProgressRequest(bookId, "Title " + bookId, "filtered-" + bookId, episodeNum,
 				"chapter-" + episodeNum, positionSeconds, durationSeconds);
+	}
+
+	private UUID createVipUser() {
+		UUID userId = UUID.randomUUID();
+		UserAccount user = UserAccount.create("vip-race-" + userId, "hash", UserStatus.ACTIVE);
+		user.grantVip(java.time.OffsetDateTime.now().plusDays(1));
+		userAccountRepository.saveAndFlush(user);
+		return user.id();
 	}
 
 	@TestConfiguration

@@ -4,6 +4,7 @@ import {
   DataAnalysis,
   Document,
   FolderOpened,
+  GoldMedal,
   Lock,
   Money,
   Monitor,
@@ -62,6 +63,10 @@ async function logout() {
         <el-menu-item index="/withdrawals">
           <el-icon><Coin /></el-icon>
           <span>提现申请</span>
+        </el-menu-item>
+        <el-menu-item index="/vip-orders">
+          <el-icon><GoldMedal /></el-icon>
+          <span>VIP 订单</span>
         </el-menu-item>
         <el-menu-item index="/2fa">
           <el-icon><Lock /></el-icon>

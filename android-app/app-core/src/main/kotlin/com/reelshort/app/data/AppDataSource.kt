@@ -7,24 +7,18 @@ interface AppDataSource {
 
     suspend fun checkGeoIp(): String?
 
-    suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession
+    suspend fun login(username: String, password: String): AuthSession
 
     suspend fun register(
-        countryCode: String,
-        phoneNumber: String,
+        username: String,
         password: String,
-        verificationCode: String,
-    ): RegisterSimulationResult
+        captchaId: String,
+        captchaAnswer: String,
+    ): AuthSession
 
-    suspend fun sendAuthSms(
-        purpose: SmsVerificationPurpose,
-        countryCode: String,
-        phoneNumber: String,
-    ): SmsSendResult
+    suspend fun fetchCaptcha(): CaptchaChallenge
 
-    suspend fun sendPasswordChangeVerification(): SmsSendResult
-
-    suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String)
+    suspend fun changePassword(oldPassword: String, newPassword: String)
 
     suspend fun loadHomeShelf(): List<BookSummary>
 
@@ -57,11 +51,13 @@ interface AppDataSource {
 
     suspend fun loadWallet(): WalletInfo
 
-    suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult
+    suspend fun bindWallet(walletAddress: String): WalletInfo
 
-    suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo
+    suspend fun unbindWallet(): WalletInfo
 
-    suspend fun unbindWallet(verificationCode: String): WalletInfo
+    suspend fun createVipOrder(): VipOrder
+
+    suspend fun loadVipOrders(): List<VipOrder>
 
     suspend fun submitBankCard(holderName: String, cardNumber: String)
 

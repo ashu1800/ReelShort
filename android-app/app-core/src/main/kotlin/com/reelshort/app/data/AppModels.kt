@@ -11,29 +11,16 @@ data class SavedCredentials(
     val username: String,
     val password: String,
     val rememberPassword: Boolean,
-    val countryCode: String = "+1",
-    val phoneNumber: String = username.removePrefix(countryCode).ifBlank { username },
-)
-
-enum class SmsVerificationPurpose {
-    PUBLIC_REGISTER,
-    WALLET_BIND,
-    WALLET_REPLACE,
-    WALLET_UNBIND,
-    PASSWORD_CHANGE,
-}
-
-data class SmsSendResult(
-    val expiresInSeconds: Int,
-)
-
-data class RegisterSimulationResult(
-    val status: String,
 )
 
 data class ApiHealthStatus(
     val status: String,
     val service: String? = null,
+)
+
+data class CaptchaChallenge(
+    val captchaId: String,
+    val imageBase64: String,
 )
 
 data class BookSummary(
@@ -157,6 +144,19 @@ data class WalletInfo(
     val network: String,
     val walletAddress: String?,
     val updatedAt: String?,
+    val vipUntil: String? = null,
+    val vipPriceUsdt: String? = null,
+)
+
+data class VipOrder(
+    val id: String,
+    val orderNo: String,
+    val usdtAmount: String,
+    val status: String,
+    val paymentMethod: String,
+    val txHash: String?,
+    val createdAt: String,
+    val confirmedAt: String?,
 )
 
 data class WithdrawalSummary(

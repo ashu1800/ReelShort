@@ -11,49 +11,37 @@ data class BackendApiResponse<T>(
 
 @Serializable
 data class AuthRequestDto(
-    val countryCode: String,
-    val phoneNumber: String,
+    val username: String,
     val password: String,
 )
 
 @Serializable
 data class RegisterRequestDto(
-    val countryCode: String,
-    val phoneNumber: String,
+    val username: String,
     val password: String,
-    val verificationCode: String,
+    val captchaId: String,
+    val captchaAnswer: String,
 )
 
 @Serializable
-data class RegisterSimulationResponseDto(
-    val status: String,
+data class AuthSessionDto(
+    val username: String,
+    val token: String,
+    val tokenType: String,
+    val userId: String? = null,
+    val phoneE164: String? = null,
 )
 
 @Serializable
-data class SmsSendRequestDto(
-    val purpose: String,
-    val countryCode: String,
-    val phoneNumber: String,
-)
-
-@Serializable
-data class SmsSendResponseDto(
-    val expiresInSeconds: Int,
+data class CaptchaResponseDto(
+    val captchaId: String,
+    val imageBase64: String,
 )
 
 @Serializable
 data class PasswordChangeRequestDto(
     val oldPassword: String,
     val newPassword: String,
-    val verificationCode: String,
-)
-
-@Serializable
-data class AuthSessionDto(
-    val username: String,
-    val phoneE164: String? = null,
-    val token: String,
-    val tokenType: String,
 )
 
 @Serializable
@@ -153,22 +141,25 @@ data class WalletResponseDto(
     val network: String,
     val walletAddress: String? = null,
     val updatedAt: String? = null,
-)
-
-@Serializable
-data class WalletVerificationRequestDto(
-    val purpose: String,
+    val vipUntil: String? = null,
+    val vipPriceUsdt: String? = null,
 )
 
 @Serializable
 data class WalletBindRequestDto(
     val walletAddress: String,
-    val verificationCode: String,
 )
 
 @Serializable
-data class WalletUnbindRequestDto(
-    val verificationCode: String,
+data class VipOrderDto(
+    val id: String,
+    val orderNo: String,
+    val usdtAmount: String,
+    val status: String,
+    val paymentMethod: String,
+    val txHash: String? = null,
+    val createdAt: String,
+    val confirmedAt: String? = null,
 )
 
 @Serializable

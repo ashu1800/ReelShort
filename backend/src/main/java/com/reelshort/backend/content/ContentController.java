@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 
 import com.reelshort.backend.system.api.ApiResponse;
+import com.reelshort.backend.system.config.SystemConfigRegistry;
+import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.system.web.RequestIdFilter;
 import com.reelshort.backend.auth.CurrentUser;
 
@@ -23,9 +25,14 @@ import jakarta.validation.constraints.NotBlank;
 public class ContentController {
 
 	private final ContentCacheService contentCacheService;
+	private final VipGateService vipGateService;
+	private final SystemConfigService systemConfigService;
 
-	public ContentController(ContentCacheService contentCacheService) {
+	public ContentController(ContentCacheService contentCacheService, VipGateService vipGateService,
+			SystemConfigService systemConfigService) {
 		this.contentCacheService = contentCacheService;
+		this.vipGateService = vipGateService;
+		this.systemConfigService = systemConfigService;
 	}
 
 	@GetMapping("/search")
@@ -54,9 +61,15 @@ public class ContentController {
 	public ApiResponse<List<ContentEpisode>> episodes(@PathVariable @NotBlank String bookId,
 			@RequestParam @NotBlank String filteredTitle,
 			@RequestParam(required = false) String locale,
+			CurrentUser currentUser,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentCacheService.getEpisodes(bookId, filteredTitle, parseLocale(locale)), requestId);
+		List<ContentEpisode> episodes = contentCacheService.getEpisodes(bookId, filteredTitle, parseLocale(locale));
+		if (!vipGateService.isVip(currentUser)) {
+			int freeEpisodes = systemConfigService.intValue(SystemConfigRegistry.VIP_FREE_EPISODES);
+			episodes = episodes.size() > freeEpisodes ? episodes.subList(0, freeEpisodes) : episodes;
+		}
+		return ApiResponse.success(episodes, requestId);
 	}
 
 	@GetMapping("/books/{bookId}/episodes/{episodeNum}/play")

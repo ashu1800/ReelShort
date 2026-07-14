@@ -180,6 +180,21 @@ export type PaymentEventFilters = {
   paymentChannel?: string
 }
 
+export type VipOrderStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED'
+
+export type VipOrder = {
+  id: string
+  userId: string
+  orderNo: string
+  usdtAmount: string
+  txHash: string | null
+  status: VipOrderStatus
+  paymentMethod: string
+  confirmedBy: string | null
+  createdAt: string
+  confirmedAt: string | null
+}
+
 export type AdminDashboardSummary = {
   users: {
     total: number
@@ -478,5 +493,20 @@ export async function fetchPaymentEvents(filters: PaymentEventFilters = {}) {
   const response = await http.get<ApiResponse<PaymentEvent[]>>('/payments/events', {
     params: filters,
   })
+  return response.data.data
+}
+
+export async function fetchVipOrders() {
+  const response = await http.get<ApiResponse<VipOrder[]>>('/vip/orders')
+  return response.data.data
+}
+
+export async function confirmVipOrder(orderId: string, txHash: string) {
+  const response = await http.post<ApiResponse<VipOrder>>(`/vip/orders/${orderId}/confirm`, { txHash })
+  return response.data.data
+}
+
+export async function rejectVipOrder(orderId: string) {
+  const response = await http.post<ApiResponse<VipOrder>>(`/vip/orders/${orderId}/reject`)
   return response.data.data
 }

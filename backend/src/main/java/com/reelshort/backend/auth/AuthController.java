@@ -1,5 +1,6 @@
 package com.reelshort.backend.auth;
 
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,28 +18,29 @@ import jakarta.validation.Valid;
 public class AuthController {
 
 	private final AuthService authService;
+	private final CaptchaService captchaService;
 
-	public AuthController(AuthService authService) {
+	public AuthController(AuthService authService, CaptchaService captchaService) {
 		this.authService = authService;
+		this.captchaService = captchaService;
 	}
 
 	@PostMapping("/register")
-	public ApiResponse<RegisterSimulationResponse> register(@Valid @RequestBody RegisterRequest request,
+	public ApiResponse<AuthToken> register(@Valid @RequestBody RegisterRequest request,
 			HttpServletRequest httpRequest) {
-		return ApiResponse.success(authService.register(request.countryCode(), request.phoneNumber(),
-				request.password(), request.verificationCode()), requestId(httpRequest));
+		return ApiResponse.success(authService.register(request.username(), request.password(), request.captchaId(),
+				request.captchaAnswer()), requestId(httpRequest));
 	}
 
 	@PostMapping("/login")
 	public ApiResponse<AuthToken> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-		return ApiResponse.success(authService.login(request.countryCode(), request.phoneNumber(), request.password()),
-				requestId(httpRequest));
+		return ApiResponse.success(authService.login(request.username(), request.password()), requestId(httpRequest));
 	}
 
-	@PostMapping("/sms/send")
-	public ApiResponse<SmsSendResponse> sendSms(@Valid @RequestBody SmsSendRequest request,
-			HttpServletRequest httpRequest) {
-		return ApiResponse.success(authService.sendSms(request.purpose(), request.countryCode(), request.phoneNumber()),
+	@GetMapping("/captcha")
+	public ApiResponse<CaptchaResponse> captcha(HttpServletRequest httpRequest) {
+		CaptchaChallenge challenge = captchaService.generate();
+		return ApiResponse.success(new CaptchaResponse(challenge.id().toString(), challenge.imageBase64()),
 				requestId(httpRequest));
 	}
 
@@ -46,14 +48,8 @@ public class AuthController {
 	public ApiResponse<String> changePassword(CurrentUser currentUser,
 			@Valid @RequestBody PasswordChangeRequest request,
 			HttpServletRequest httpRequest) {
-		authService.changePassword(currentUser, request.oldPassword(), request.newPassword(), request.verificationCode());
+		authService.changePassword(currentUser, request.oldPassword(), request.newPassword());
 		return ApiResponse.success("password changed", requestId(httpRequest));
-	}
-
-	@PostMapping("/password/verification/send")
-	public ApiResponse<SmsSendResponse> sendPasswordChangeVerification(CurrentUser currentUser,
-			HttpServletRequest httpRequest) {
-		return ApiResponse.success(authService.sendPasswordChangeVerification(currentUser), requestId(httpRequest));
 	}
 
 	@PostMapping("/logout")

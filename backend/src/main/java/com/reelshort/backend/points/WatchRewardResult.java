@@ -15,4 +15,8 @@ public record WatchRewardResult(
 	public static WatchRewardResult durationUnavailable() {
 		return new WatchRewardResult(List.of(), 0, false, WatchRewardStatus.DURATION_UNAVAILABLE);
 	}
+
+	public static WatchRewardResult noVip() {
+		return new WatchRewardResult(List.of(), 0, false, WatchRewardStatus.NOT_VIP);
+	}
 }

@@ -5,18 +5,17 @@ import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.CaptchaChallenge
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
-import com.reelshort.app.data.RegisterSimulationResult
 import com.reelshort.app.data.SavedCredentials
-import com.reelshort.app.data.SmsSendResult
-import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
+import com.reelshort.app.data.VipOrder
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
@@ -96,15 +95,15 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
 
-        controller.login("+1", "4155550101", "Password123")
+        controller.login("demo", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
-        assertEquals("+14155550101", state.session?.username)
+        assertEquals("demo", state.session?.username)
         assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
-        assertEquals(listOf("login:+1:4155550101", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf("login:demo", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -112,31 +111,30 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource(homeError = IllegalStateException("content provider returned 502"))
         val controller = AppStateController(dataSource)
 
-        controller.login("+1", "4155550101", "Password123")
+        controller.login("demo", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
-        assertEquals("+14155550101", state.session?.username)
+        assertEquals("demo", state.session?.username)
         assertEquals(emptyList(), state.homeShelf)
         assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
         assertFalse(state.isLoading)
-        assertEquals(listOf("login:+1:4155550101", "home"), dataSource.calls)
+        assertEquals(listOf("login:demo", "home"), dataSource.calls)
     }
 
     @Test
-    fun publicRegisterDoesNotCreateSessionOrLoadHomeShelf() = runTest {
-        val dataSource = FakeAppDataSource(homeError = IllegalStateException("content provider returned 502"))
+    fun registerCreatesSessionAndLoadsHomeShelf() = runTest {
+        val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
 
-        controller.register("+1", "4155550100", "Password123", "000000")
+        controller.register("newuser", "Password123", "captcha-1", "123456")
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
-        assertNull(state.session)
-        assertEquals(emptyList(), state.homeShelf)
-        assertEquals("Registration completed. Account access must be opened internally.", state.errorMessage)
+        assertEquals("newuser", state.session?.username)
+        assertEquals(listOf("book-1", "book-2"), state.homeShelf.map { it.id })
         assertFalse(state.isLoading)
-        assertEquals(listOf("register:+1:4155550100"), dataSource.calls)
+        assertEquals(listOf("register:newuser", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -144,7 +142,7 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource(loginError = IllegalStateException("bad credentials"))
         val controller = AppStateController(dataSource)
 
-        controller.login("+1", "4155550101", "wrong")
+        controller.login("demo", "wrong")
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
@@ -158,11 +156,11 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource(loginError = ApiClientException(401, null, "invalid username or password"))
         val controller = AppStateController(dataSource)
 
-        controller.login("+1", "4155550101", "wrong", rememberPassword = false)
+        controller.login("demo", "wrong", rememberPassword = false)
 
         val state = controller.state.value
         assertEquals(AppScreen.HOME, state.screen)
-        assertEquals("手机号或密码错误", state.errorMessage)
+        assertEquals("Invalid username or password.", state.errorMessage)
     }
 
     @Test
@@ -234,13 +232,11 @@ class AppStateControllerTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
 
-        controller.login("+1", "4155550101", "Password123", rememberPassword = true)
+        controller.login("demo", "Password123", rememberPassword = true)
 
         assertEquals(
             SavedCredentials(
-                username = "+14155550101",
-                countryCode = "+1",
-                phoneNumber = "4155550101",
+                username = "demo",
                 password = "Password123",
                 rememberPassword = true,
             ),
@@ -250,97 +246,67 @@ class AppStateControllerTest {
     }
 
     @Test
-    fun phoneLoginSavesCountryCodePhoneAndPasswordWhenRemembered() = runTest {
+    fun usernameLoginSavesUsernameAndPasswordWhenRemembered() = runTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
 
-        controller.login("+44", "2075550101", "Password123", rememberPassword = true)
+        controller.login("alice", "Password123", rememberPassword = true)
 
         assertEquals(
             SavedCredentials(
-                username = "+442075550101",
-                countryCode = "+44",
-                phoneNumber = "2075550101",
+                username = "alice",
                 password = "Password123",
                 rememberPassword = true,
             ),
             dataSource.savedCredentials,
         )
-        assertEquals("+442075550101", controller.state.value.session?.username)
-        assertEquals(listOf("login:+44:2075550101", "home", "home:cache:save"), dataSource.calls)
+        assertEquals("alice", controller.state.value.session?.username)
+        assertEquals(listOf("login:alice", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
-    fun publicRegisterSimulatesSmsFlowAndDoesNotCreateLoggedInSession() = runTest {
+    fun fetchCaptchaLoadsCaptchaChallengeIntoState() = runTest {
         val dataSource = FakeAppDataSource()
         val controller = AppStateController(dataSource)
 
-        controller.sendAuthSms("+1", "4155550102")
-        controller.register("+1", "4155550102", "Password123", "000000")
+        controller.fetchCaptcha()
 
         val state = controller.state.value
-        assertNull(state.session)
-        assertFalse(state.authPromptVisible)
-        assertEquals("Registration completed. Account access must be opened internally.", state.errorMessage)
-        assertEquals(listOf("sms:PUBLIC_REGISTER:+1:4155550102", "register:+1:4155550102"), dataSource.calls)
+        assertEquals("captcha-1", state.captchaId)
+        assertEquals("base64-image", state.captchaImageBase64)
+        assertEquals(listOf("captcha"), dataSource.calls)
     }
 
     @Test
-    fun sendAuthSmsStartsCountdownOnlyAfterSuccessfulRequest() = runTest {
-        val dataSource = FakeAppDataSource()
+    fun registerInvalidCaptchaUsesFriendlyEnglishMessage() = runTest {
+        val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "invalid captcha"))
         val controller = AppStateController(dataSource)
 
-        controller.sendAuthSms("+1", "4155550102")
+        controller.register("newuser", "Password123", "captcha-1", "123456")
 
-        val state = controller.state.value
-        assertEquals(120, state.authSmsCountdownSeconds)
-        assertEquals(1, state.authSmsCountdownTrigger)
-        assertEquals("Verification code sent. Enter the latest 6-digit code within 120 seconds.", state.errorMessage)
+        assertEquals("Captcha answer is incorrect.", controller.state.value.errorMessage)
     }
 
     @Test
-    fun sendAuthSmsFailureDoesNotStartCountdown() = runTest {
-        val dataSource = FakeAppDataSource(smsError = ApiClientException(400, null, "bad request"))
-        val controller = AppStateController(dataSource)
-
-        controller.sendAuthSms("+1", "4155550102")
-
-        val state = controller.state.value
-        assertEquals(0, state.authSmsCountdownSeconds)
-        assertEquals(0, state.authSmsCountdownTrigger)
-        assertEquals("Check phone number, password, and verification code.", state.errorMessage)
-    }
-
-    @Test
-    fun publicRegisterInvalidVerificationCodeUsesFriendlyEnglishMessage() = runTest {
-        val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "invalid verification code"))
-        val controller = AppStateController(dataSource)
-
-        controller.register("+1", "4155550102", "Password123", "123456")
-
-        assertEquals("Verification code is incorrect.", controller.state.value.errorMessage)
-    }
-
-    @Test
-    fun publicRegisterInvalidVerificationCodeUsesFriendlyTraditionalChineseMessage() = runTest {
-        val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "invalid verification code"))
+    fun registerInvalidCaptchaUsesFriendlyTraditionalChineseMessage() = runTest {
+        val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "invalid captcha"))
         val controller = AppStateController(dataSource)
         controller.setLanguage(AppLanguage.TRADITIONAL_CHINESE)
         dataSource.calls.clear()
 
-        controller.register("+1", "4155550102", "Password123", "123456")
+        controller.register("newuser", "Password123", "captcha-1", "123456")
 
-        assertEquals("驗證碼錯誤。", controller.state.value.errorMessage)
+        assertEquals("圖形驗證碼錯誤。", controller.state.value.errorMessage)
     }
 
     @Test
-    fun publicRegisterBadRequestUsesRegisterFormMessage() = runTest {
+    fun registerBadRequestUsesRegisterFormMessage() = runTest {
         val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "bad request"))
         val controller = AppStateController(dataSource)
 
-        controller.register("+1", "4155550102", "Password123", "123456")
+        controller.register("newuser", "Password123", "captcha-1", "123456")
 
-        assertEquals("Check phone number, password, and verification code.", controller.state.value.errorMessage)
+        assertEquals("Check username, password, and captcha answer.", controller.state.value.errorMessage)
     }
 
     @Test
@@ -350,7 +316,7 @@ class AppStateControllerTest {
         )
         val controller = AppStateController(dataSource)
 
-        controller.login("+1", "4155550101", "Password123", rememberPassword = false)
+        controller.login("demo", "Password123", rememberPassword = false)
 
         assertNull(dataSource.savedCredentials)
         assertNull(controller.state.value.savedCredentials)
@@ -846,15 +812,15 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.login("+1", "4155550101", "Password123")
+        controller.login("demo", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
-        assertEquals("+14155550101", state.session?.username)
+        assertEquals("demo", state.session?.username)
         assertFalse(state.authPromptVisible)
         assertNull(state.pendingPlaybackEpisode)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:+1:4155550101", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -872,15 +838,15 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.login("+1", "4155550101", "Password123")
+        controller.login("demo", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
-        assertEquals("+14155550101", state.session?.username)
+        assertEquals("demo", state.session?.username)
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals(90, state.playback.positionSeconds)
         assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:+1:4155550101", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -890,13 +856,13 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.login("+1", "4155550101", "Password123")
+        controller.login("demo", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:+1:4155550101", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -906,13 +872,13 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         controller.openBook(dataSource.books.first())
-        controller.login("+1", "4155550101", "Password123")
+        controller.login("demo", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(1, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:+1:4155550101", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -1558,7 +1524,7 @@ class AppStateControllerTest {
         val controller = AppStateController(dataSource)
 
         assertFailsWith<CancellationException> {
-            controller.login("+1", "4155550101", "Password123")
+            controller.login("demo", "Password123")
         }
 
         val state = controller.state.value
@@ -1741,82 +1707,28 @@ class AppStateControllerTest {
 
         controller.openAccount()
         controller.showAuthPrompt()
-        controller.login("+1", "4155550101", "Password123")
+        controller.login("demo", "Password123")
 
         val state = controller.state.value
         assertEquals(AppScreen.ACCOUNT, state.screen)
-        assertEquals("+14155550101", state.session?.username)
+        assertEquals("demo", state.session?.username)
         assertFalse(state.authPromptVisible)
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
-        assertEquals(listOf("login:+1:4155550101", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"), dataSource.calls)
-    }
-
-    @Test
-    fun passwordChangeVerificationUsesAuthenticatedPhoneSmsEndpoint() = runTest {
-        val dataSource = FakeAppDataSource(
-            restoredSession = AuthSession(
-                username = "+442075550101",
-                token = "token-demo",
-                tokenType = "Bearer",
-                phoneE164 = "+442075550101",
-            ),
-        )
-        val controller = AppStateController(dataSource)
-        controller.restoreSession()
-        dataSource.calls.clear()
-
-        controller.sendPasswordChangeVerification()
-
-        assertEquals(listOf("password:sms"), dataSource.calls)
-        assertEquals("Verification code sent. Enter the latest 6-digit code within 120 seconds.", controller.state.value.errorMessage)
-        assertEquals(UiMessageType.SUCCESS, controller.state.value.messageType)
-        assertEquals(120, controller.state.value.passwordSmsCountdownSeconds)
-        assertEquals(1, controller.state.value.passwordSmsCountdownTrigger)
-    }
-
-    @Test
-    fun walletSmsCountdownAdvancesOnlyAfterSuccessfulSend() = runTest {
-        val dataSource = FakeAppDataSource(
-            restoredSession = AuthSession("+14155550101", "token-demo", "Bearer", "+14155550101"),
-        )
-        val controller = AppStateController(dataSource)
-        controller.restoreSession()
-
-        controller.sendWalletVerification(SmsVerificationPurpose.WALLET_REPLACE)
-
-        assertEquals(120, controller.state.value.walletSmsCountdownSeconds)
-        assertEquals(1, controller.state.value.walletSmsCountdownTrigger)
-    }
-
-    @Test
-    fun failedWalletSmsDoesNotAdvanceCountdown() = runTest {
-        val dataSource = FakeAppDataSource(
-            restoredSession = AuthSession("+14155550101", "token-demo", "Bearer", "+14155550101"),
-        )
-        dataSource.walletSmsError = IllegalStateException("SMS failed")
-        val controller = AppStateController(dataSource)
-        controller.restoreSession()
-
-        controller.sendWalletVerification(SmsVerificationPurpose.WALLET_REPLACE)
-
-        assertEquals(0, controller.state.value.walletSmsCountdownTrigger)
-        assertEquals(UiMessageType.ERROR, controller.state.value.messageType)
+        assertEquals(listOf("login:demo", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"), dataSource.calls)
     }
 
     @Test
     fun changePasswordClearsSessionSavedCredentialsAndProtectedAccountSnapshot() = runTest {
         val dataSource = FakeAppDataSource(
             restoredSession = AuthSession(
-                username = "+14155550101",
+                username = "demo",
                 token = "token-demo",
                 tokenType = "Bearer",
                 phoneE164 = "+14155550101",
             ),
             savedCredentials = SavedCredentials(
-                username = "+14155550101",
-                countryCode = "+1",
-                phoneNumber = "4155550101",
+                username = "demo",
                 password = "OldPassword123",
                 rememberPassword = true,
             ),
@@ -1826,7 +1738,7 @@ class AppStateControllerTest {
         controller.loadAccountSnapshot()
         dataSource.calls.clear()
 
-        controller.changePassword("OldPassword123", "NewPassword123", "000000")
+        controller.changePassword("OldPassword123", "NewPassword123")
 
         val state = controller.state.value
         assertNull(state.session)
@@ -1843,7 +1755,7 @@ class AppStateControllerTest {
     fun commercialAccountActionsRefreshSnapshotAndShowSuccessMessage() = runTest {
         val dataSource = FakeAppDataSource(
             restoredSession = AuthSession(
-                username = "+14155550101",
+                username = "demo",
                 token = "token-demo",
                 tokenType = "Bearer",
                 phoneE164 = "+14155550101",
@@ -1853,13 +1765,13 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
 
-        controller.transferPoints("+442075550101", 5)
+        controller.transferPoints("alice", 5)
 
         val state = controller.state.value
         assertEquals(AppScreen.ACCOUNT, state.screen)
         assertEquals("Transfer submitted.", state.errorMessage)
         assertEquals(
-            listOf("transfer:+442075550101:5", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"),
+            listOf("transfer:alice:5", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"),
             dataSource.calls,
         )
     }
@@ -1867,7 +1779,7 @@ class AppStateControllerTest {
     @Test
     fun successfulWithdrawalIsNotTurnedIntoFailureWhenSnapshotRefreshFails() = runTest {
         val dataSource = FakeAppDataSource(
-            restoredSession = AuthSession("+14155550101", "token-demo", "Bearer", phoneE164 = "+14155550101"),
+            restoredSession = AuthSession("demo", "token-demo", "Bearer", phoneE164 = "+14155550101"),
         )
         val controller = AppStateController(dataSource)
         controller.restoreSession()
@@ -1886,7 +1798,7 @@ class AppStateControllerTest {
     fun bindWalletSuccessAdvancesWalletMutationVersion() = runTest {
         val dataSource = FakeAppDataSource(
             restoredSession = AuthSession(
-                username = "+14155550101",
+                username = "demo",
                 token = "token-demo",
                 tokenType = "Bearer",
                 phoneE164 = "+14155550101",
@@ -1896,7 +1808,7 @@ class AppStateControllerTest {
         controller.restoreSession()
         val initialVersion = controller.state.value.walletMutationVersion
 
-        controller.bindWallet("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "123456")
+        controller.bindWallet("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc")
 
         assertEquals(initialVersion + 1, controller.state.value.walletMutationVersion)
     }
@@ -1906,7 +1818,7 @@ class AppStateControllerTest {
         val gate = CompletableDeferred<Unit>()
         val dataSource = FakeAppDataSource(
             restoredSession = AuthSession(
-                username = "+14155550101",
+                username = "demo",
                 token = "token-demo",
                 tokenType = "Bearer",
                 phoneE164 = "+14155550101",
@@ -1917,11 +1829,11 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
 
-        val first = launch { controller.bindWallet("wallet-a", "123456") }
+        val first = launch { controller.bindWallet("wallet-a") }
         runCurrent()
         assertEquals(AccountOperation.WALLET_MUTATION, controller.state.value.accountOperation)
 
-        val duplicate = launch { controller.bindWallet("wallet-a", "123456") }
+        val duplicate = launch { controller.bindWallet("wallet-a") }
         runCurrent()
         assertEquals(1, dataSource.calls.count { it == "wallet:bind:wallet-a" })
 
@@ -1935,7 +1847,7 @@ class AppStateControllerTest {
     fun unbindWalletSuccessAdvancesWalletMutationVersion() = runTest {
         val dataSource = FakeAppDataSource(
             restoredSession = AuthSession(
-                username = "+14155550101",
+                username = "demo",
                 token = "token-demo",
                 tokenType = "Bearer",
                 phoneE164 = "+14155550101",
@@ -1945,7 +1857,7 @@ class AppStateControllerTest {
         controller.restoreSession()
         val initialVersion = controller.state.value.walletMutationVersion
 
-        controller.unbindWallet("123456")
+        controller.unbindWallet()
 
         assertEquals(initialVersion + 1, controller.state.value.walletMutationVersion)
     }
@@ -1954,7 +1866,7 @@ class AppStateControllerTest {
     fun failedWalletMutationDoesNotAdvanceWalletMutationVersion() = runTest {
         val dataSource = FakeAppDataSource(
             restoredSession = AuthSession(
-                username = "+14155550101",
+                username = "demo",
                 token = "token-demo",
                 tokenType = "Bearer",
                 phoneE164 = "+14155550101",
@@ -1962,12 +1874,10 @@ class AppStateControllerTest {
         )
         val controller = AppStateController(dataSource)
         controller.restoreSession()
-        controller.sendWalletVerification(SmsVerificationPurpose.WALLET_REPLACE)
-        assertEquals(UiMessageType.SUCCESS, controller.state.value.messageType)
         dataSource.walletMutationError = IllegalStateException("Wallet update failed")
         val initialVersion = controller.state.value.walletMutationVersion
 
-        controller.bindWallet("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "123456")
+        controller.bindWallet("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc")
 
         assertEquals(initialVersion, controller.state.value.walletMutationVersion)
         assertNull(controller.state.value.accountOperation)
@@ -2114,7 +2024,6 @@ class AppStateControllerTest {
     private class FakeAppDataSource(
         private val loginError: Throwable? = null,
         private val registerError: Throwable? = null,
-        private val smsError: Throwable? = null,
         private var restoredSession: AuthSession? = null,
         var savedCredentials: SavedCredentials? = null,
         homeError: Throwable? = null,
@@ -2183,7 +2092,6 @@ class AppStateControllerTest {
         var walletError: Throwable? = null
         var walletMutationError: Throwable? = null
         var walletMutationGate: CompletableDeferred<Unit>? = null
-        var walletSmsError: Throwable? = null
         var withdrawalSummaryError: Throwable? = null
         var withdrawalsError: Throwable? = null
         var transfersError: Throwable? = null
@@ -2205,40 +2113,29 @@ class AppStateControllerTest {
 
         override suspend fun checkGeoIp(): String? = null
 
-        override suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession {
-            calls += "login:$countryCode:$phoneNumber"
+        override suspend fun login(username: String, password: String): AuthSession {
+            calls += "login:$username"
             loginError?.let { throw it }
-            val username = "$countryCode$phoneNumber"
             return AuthSession(username = username, token = "token-$username", tokenType = "Bearer")
         }
 
         override suspend fun register(
-            countryCode: String,
-            phoneNumber: String,
+            username: String,
             password: String,
-            verificationCode: String,
-        ): RegisterSimulationResult {
-            calls += "register:$countryCode:$phoneNumber"
+            captchaId: String,
+            captchaAnswer: String,
+        ): AuthSession {
+            calls += "register:$username"
             registerError?.let { throw it }
-            return RegisterSimulationResult("SIMULATED")
+            return AuthSession(username = username, token = "token-$username", tokenType = "Bearer")
         }
 
-        override suspend fun sendAuthSms(
-            purpose: SmsVerificationPurpose,
-            countryCode: String,
-            phoneNumber: String,
-        ): SmsSendResult {
-            calls += "sms:${purpose.name}:$countryCode:$phoneNumber"
-            smsError?.let { throw it }
-            return SmsSendResult(120)
+        override suspend fun fetchCaptcha(): CaptchaChallenge {
+            calls += "captcha"
+            return CaptchaChallenge(captchaId = "captcha-1", imageBase64 = "base64-image")
         }
 
-        override suspend fun sendPasswordChangeVerification(): SmsSendResult {
-            calls += "password:sms"
-            return SmsSendResult(120)
-        }
-
-        override suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) {
+        override suspend fun changePassword(oldPassword: String, newPassword: String) {
             calls += "password:change"
         }
 
@@ -2363,23 +2260,36 @@ class AppStateControllerTest {
             return WalletInfo("TRC20", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "2026-07-07T00:00:00Z")
         }
 
-        override suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult {
-            calls += "wallet-sms:${purpose.name}"
-            walletSmsError?.let { throw it }
-            return SmsSendResult(120)
-        }
-
-        override suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo {
+        override suspend fun bindWallet(walletAddress: String): WalletInfo {
             calls += "wallet:bind:$walletAddress"
             walletMutationGate?.await()
             walletMutationError?.let { throw it }
             return WalletInfo("TRC20", walletAddress, "2026-07-07T00:00:00Z")
         }
 
-        override suspend fun unbindWallet(verificationCode: String): WalletInfo {
+        override suspend fun unbindWallet(): WalletInfo {
             calls += "wallet:unbind"
             walletMutationError?.let { throw it }
             return WalletInfo("TRC20", null, null)
+        }
+
+        override suspend fun createVipOrder(): VipOrder {
+            calls += "vip:create"
+            return VipOrder(
+                id = "vip-1",
+                orderNo = "VIP1",
+                usdtAmount = "15",
+                status = "PENDING",
+                paymentMethod = "USDT",
+                txHash = null,
+                createdAt = "2026-07-07T00:00:00Z",
+                confirmedAt = null,
+            )
+        }
+
+        override suspend fun loadVipOrders(): List<VipOrder> {
+            calls += "vip:orders"
+            return emptyList()
         }
 
         override suspend fun submitBankCard(holderName: String, cardNumber: String) {
@@ -2427,7 +2337,7 @@ class AppStateControllerTest {
 
         override suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord {
             calls += "transfer:$recipientAccount:$pointAmount"
-            return PointTransferRecord("transfer-1", "OUT", "+14155550101", recipientAccount, pointAmount, "2026-07-07T00:00:00Z")
+            return PointTransferRecord("transfer-1", "OUT", "demo", recipientAccount, pointAmount, "2026-07-07T00:00:00Z")
         }
 
         override suspend fun restoreSession(): AuthSession? {

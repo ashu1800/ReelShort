@@ -3,15 +3,14 @@ package com.reelshort.app.network
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.CaptchaChallenge
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.RechargeOrderSummary
-import com.reelshort.app.data.RegisterSimulationResult
-import com.reelshort.app.data.SmsSendResult
-import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
+import com.reelshort.app.data.VipOrder
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
@@ -23,24 +22,18 @@ import com.reelshort.app.data.PointTransferRecord
 interface ReelShortApiClient {
     suspend fun checkSystemHealth(): ApiHealthStatus
 
-    suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession
+    suspend fun login(username: String, password: String): AuthSession
 
     suspend fun register(
-        countryCode: String,
-        phoneNumber: String,
+        username: String,
         password: String,
-        verificationCode: String,
-    ): RegisterSimulationResult
+        captchaId: String,
+        captchaAnswer: String,
+    ): AuthSession
 
-    suspend fun sendAuthSms(
-        purpose: SmsVerificationPurpose,
-        countryCode: String,
-        phoneNumber: String,
-    ): SmsSendResult
+    suspend fun fetchCaptcha(): CaptchaChallenge
 
-    suspend fun sendPasswordChangeVerification(): SmsSendResult
-
-    suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String)
+    suspend fun changePassword(oldPassword: String, newPassword: String)
 
     suspend fun getHomeShelf(locale: String = "en"): List<BookSummary>
 
@@ -78,11 +71,13 @@ interface ReelShortApiClient {
 
     suspend fun getWallet(): WalletInfo
 
-    suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult
+    suspend fun bindWallet(walletAddress: String): WalletInfo
 
-    suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo
+    suspend fun unbindWallet(): WalletInfo
 
-    suspend fun unbindWallet(verificationCode: String): WalletInfo
+    suspend fun createVipOrder(): VipOrder
+
+    suspend fun getVipOrders(): List<VipOrder>
 
     suspend fun submitBankCard(holderName: String, cardNumber: String)
 

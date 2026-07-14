@@ -3,6 +3,9 @@ package com.reelshort.backend.wallet;
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.UUID;
 
@@ -10,11 +13,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.reelshort.backend.admin.AdminException;
-import com.reelshort.backend.auth.PhoneIdentity;
-import com.reelshort.backend.auth.PhoneNumberNormalizer;
-import com.reelshort.backend.auth.SmsSendResponse;
-import com.reelshort.backend.auth.SmsVerificationPurpose;
-import com.reelshort.backend.auth.SmsVerificationService;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
@@ -29,15 +27,13 @@ public class WalletService {
 
 	private final UserWalletRepository userWalletRepository;
 	private final UserAccountRepository userAccountRepository;
-	private final PhoneNumberNormalizer phoneNumberNormalizer;
-	private final SmsVerificationService smsVerificationService;
+	private final BankCardAttemptRepository bankCardAttemptRepository;
 
 	public WalletService(UserWalletRepository userWalletRepository, UserAccountRepository userAccountRepository,
-			PhoneNumberNormalizer phoneNumberNormalizer, SmsVerificationService smsVerificationService) {
+			BankCardAttemptRepository bankCardAttemptRepository) {
 		this.userWalletRepository = userWalletRepository;
 		this.userAccountRepository = userAccountRepository;
-		this.phoneNumberNormalizer = phoneNumberNormalizer;
-		this.smsVerificationService = smsVerificationService;
+		this.bankCardAttemptRepository = bankCardAttemptRepository;
 	}
 
 	@Transactional(readOnly = true)
@@ -46,23 +42,10 @@ public class WalletService {
 	}
 
 	@Transactional
-	public SmsSendResponse sendVerification(UUID userId, SmsVerificationPurpose purpose) {
-		if (purpose != SmsVerificationPurpose.WALLET_BIND
-				&& purpose != SmsVerificationPurpose.WALLET_REPLACE
-				&& purpose != SmsVerificationPurpose.WALLET_UNBIND) {
-			throw new AdminException(400, "bad request");
-		}
-		return smsVerificationService.send(purpose, phone(userId));
-	}
-
-	@Transactional
-	public WalletResponse bindOrReplace(UUID userId, String walletAddress, String verificationCode) {
+	public WalletResponse bindOrReplace(UUID userId, String walletAddress) {
 		String normalizedWalletAddress = normalizeWalletAddress(walletAddress);
-		PhoneIdentity phone = phone(userId);
+		activeUser(userId);
 		UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
-		SmsVerificationPurpose purpose = wallet == null ? SmsVerificationPurpose.WALLET_BIND
-				: SmsVerificationPurpose.WALLET_REPLACE;
-		smsVerificationService.verifyAndConsume(purpose, phone, verificationCode);
 		if (wallet == null) {
 			wallet = UserWallet.create(userId, normalizedWalletAddress);
 		}
@@ -73,27 +56,46 @@ public class WalletService {
 	}
 
 	@Transactional
-	public WalletResponse unbind(UUID userId, String verificationCode) {
-		PhoneIdentity phone = phone(userId);
-		smsVerificationService.verifyAndConsume(SmsVerificationPurpose.WALLET_UNBIND, phone, verificationCode);
+	public WalletResponse unbind(UUID userId) {
+		activeUser(userId);
 		userWalletRepository.findByUserId(userId).ifPresent(userWalletRepository::delete);
 		return new WalletResponse("TRC20", null, null);
 	}
 
-	public void rejectBankCard() {
-		throw new AdminException(400, "Bank card withdrawal is not supported");
+	/**
+	 * Submit a bank card for withdrawal. Card details are validated (Luhn, expiry, CVV), an attempt is
+	 * recorded, and the submission always fails face verification — bank card withdrawal is intentionally
+	 * never approved.
+	 */
+	@Transactional
+	public String submitBankCard(UUID userId, String cardNumber, String expiryMonth, String expiryYear, String cvv,
+			String holderName) {
+		activeUser(userId);
+		validateCardNumber(cardNumber);
+		validateExpiry(expiryMonth, expiryYear);
+		validateCvv(cvv);
+		if (holderName == null || holderName.isBlank()) {
+			throw new AdminException(400, "card holder name required");
+		}
+		String digits = cardNumber.replaceAll("\\s+", "");
+		String last4 = digits.substring(digits.length() - 4);
+		BankCardAttempt attempt = bankCardAttemptRepository.findByUserId(userId)
+				.orElseGet(() -> BankCardAttempt.create(userId, last4));
+		if (attempt.isLocked()) {
+			throw new AdminException(429, "too many attempts, try again later");
+		}
+		attempt.recordAttempt();
+		bankCardAttemptRepository.save(attempt);
+		return "face verification failed";
 	}
 
-	private PhoneIdentity phone(UUID userId) {
+	private String activeUser(UUID userId) {
 		UserAccount user = userAccountRepository.findById(userId)
 				.orElseThrow(() -> new AdminException(404, "user not found"));
 		if (user.status() != UserStatus.ACTIVE) {
 			throw new AdminException(403, "user disabled");
 		}
-		if (user.phoneCountryCode() == null || user.phoneNumber() == null) {
-			throw new AdminException(400, "phone account required");
-		}
-		return phoneNumberNormalizer.normalize(user.phoneCountryCode(), user.phoneNumber());
+		return user.username();
 	}
 
 	private String normalizeWalletAddress(String walletAddress) {
@@ -102,6 +104,59 @@ public class WalletService {
 			throw new AdminException(400, "invalid wallet address");
 		}
 		return trimmed;
+	}
+
+	private void validateCardNumber(String cardNumber) {
+		if (cardNumber == null) {
+			throw new AdminException(400, "invalid card number");
+		}
+		String digits = cardNumber.replaceAll("\\s+", "");
+		if (!digits.matches("\\d{13,19}") || !luhnValid(digits)) {
+			throw new AdminException(400, "invalid card number");
+		}
+	}
+
+	private boolean luhnValid(String digits) {
+		int sum = 0;
+		boolean doubleDigit = false;
+		for (int index = digits.length() - 1; index >= 0; index--) {
+			int digit = digits.charAt(index) - '0';
+			if (doubleDigit) {
+				digit *= 2;
+				if (digit > 9) {
+					digit -= 9;
+				}
+			}
+			sum += digit;
+			doubleDigit = !doubleDigit;
+		}
+		return sum % 10 == 0;
+	}
+
+	private void validateExpiry(String expiryMonth, String expiryYear) {
+		if (expiryMonth == null || expiryYear == null) {
+			throw new AdminException(400, "invalid expiry");
+		}
+		String month = expiryMonth.trim();
+		String year = expiryYear.trim();
+		if (!month.matches("\\d{2}") || !year.matches("\\d{2}")) {
+			throw new AdminException(400, "invalid expiry");
+		}
+		try {
+			YearMonth expiry = YearMonth.parse("20" + year + "-" + month, DateTimeFormatter.ofPattern("yyyy-MM"));
+			if (expiry.isBefore(YearMonth.now())) {
+				throw new AdminException(400, "card expired");
+			}
+		}
+		catch (RuntimeException exception) {
+			throw new AdminException(400, "invalid expiry");
+		}
+	}
+
+	private void validateCvv(String cvv) {
+		if (cvv == null || !cvv.matches("\\d{3,4}")) {
+			throw new AdminException(400, "invalid cvv");
+		}
 	}
 
 	private boolean isValidTronAddress(String walletAddress) {

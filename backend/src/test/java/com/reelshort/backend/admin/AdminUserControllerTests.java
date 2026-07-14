@@ -23,6 +23,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCache;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
+import com.reelshort.backend.user.UserAccount;
+import com.reelshort.backend.user.UserAccountRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -36,6 +38,9 @@ class AdminUserControllerTests {
 
 	@Autowired
 	private ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
+
+	@Autowired
+	private UserAccountRepository userAccountRepository;
 
 	@Test
 	void adminCanListUsersWithPointBalance() throws Exception {
@@ -53,6 +58,7 @@ class AdminUserControllerTests {
 	void adminCanViewUserDetail() throws Exception {
 		String adminToken = adminLogin();
 		RegisteredUser user = registerAppUser("admin-detail-alice");
+		grantVip(user.userId());
 		reportProgress(user.token(), "detail-book", 1, 100, 100);
 
 		mockMvc.perform(get("/api/admin/users/{userId}", user.userId())
@@ -60,7 +66,6 @@ class AdminUserControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.id").value(user.userId().toString()))
 				.andExpect(jsonPath("$.data.username").value(user.username()))
-				.andExpect(jsonPath("$.data.phoneE164").value(user.username()))
 				.andExpect(jsonPath("$.data.status").value("ACTIVE"))
 				.andExpect(jsonPath("$.data.pointBalance").value(1))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
@@ -68,8 +73,7 @@ class AdminUserControllerTests {
 				.andExpect(jsonPath("$.data.walletAddress").doesNotExist())
 				.andExpect(jsonPath("$.data.watchRecordCount").value(1))
 				.andExpect(jsonPath("$.data.pointRecordCount").value(1))
-				.andExpect(jsonPath("$.data.withdrawalRecordCount").value(0))
-				.andExpect(jsonPath("$.data.pointTransferRecordCount").value(0));
+				.andExpect(jsonPath("$.data.withdrawalRecordCount").value(0));
 	}
 
 	@Test
@@ -99,6 +103,8 @@ class AdminUserControllerTests {
 		String adminToken = adminLogin();
 		RegisteredUser first = registerAppUser("admin-activity-alice");
 		RegisteredUser second = registerAppUser("admin-activity-bob");
+		grantVip(first.userId());
+		grantVip(second.userId());
 		reportProgress(first.token(), "first-book", 1, 100, 100);
 		reportProgress(second.token(), "second-book", 1, 100, 100);
 
@@ -277,6 +283,12 @@ class AdminUserControllerTests {
 	private RegisteredUser registerAppUser(String username) throws Exception {
 		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, username);
 		return new RegisteredUser(user.userId(), user.token(), user.username());
+	}
+
+	private void grantVip(UUID userId) {
+		UserAccount user = userAccountRepository.findById(userId).orElseThrow();
+		user.grantVip(java.time.OffsetDateTime.now().plusDays(1));
+		userAccountRepository.save(user);
 	}
 
 	private void reportProgress(String token, String bookId, int episodeNum, int positionSeconds, int durationSeconds)

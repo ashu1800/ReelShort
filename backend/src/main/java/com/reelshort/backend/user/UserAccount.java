@@ -20,15 +20,6 @@ public class UserAccount {
 	@Column(nullable = false, unique = true, length = 64)
 	private String username;
 
-	@Column(name = "phone_country_code", length = 8)
-	private String phoneCountryCode;
-
-	@Column(name = "phone_number", length = 32)
-	private String phoneNumber;
-
-	@Column(name = "phone_e164", unique = true, length = 32)
-	private String phoneE164;
-
 	@Column(nullable = false, length = 120)
 	private String passwordHash;
 
@@ -36,32 +27,27 @@ public class UserAccount {
 	@Column(nullable = false, length = 24)
 	private UserStatus status;
 
+	@Column(name = "vip_until")
+	private OffsetDateTime vipUntil;
+
 	@Column(nullable = false)
 	private OffsetDateTime createdAt;
 
 	protected UserAccount() {
 	}
 
-	private UserAccount(UUID id, String username, String phoneCountryCode, String phoneNumber, String phoneE164,
-			String passwordHash, UserStatus status, OffsetDateTime createdAt) {
+	private UserAccount(UUID id, String username, String passwordHash, UserStatus status,
+			OffsetDateTime vipUntil, OffsetDateTime createdAt) {
 		this.id = id;
 		this.username = username;
-		this.phoneCountryCode = phoneCountryCode;
-		this.phoneNumber = phoneNumber;
-		this.phoneE164 = phoneE164;
 		this.passwordHash = passwordHash;
 		this.status = status;
+		this.vipUntil = vipUntil;
 		this.createdAt = createdAt;
 	}
 
 	public static UserAccount create(String username, String passwordHash, UserStatus status) {
-		return new UserAccount(UUID.randomUUID(), username, null, null, null, passwordHash, status, OffsetDateTime.now());
-	}
-
-	public static UserAccount createPhoneAccount(String phoneCountryCode, String phoneNumber, String phoneE164,
-			String passwordHash) {
-		return new UserAccount(UUID.randomUUID(), phoneE164, phoneCountryCode, phoneNumber, phoneE164,
-				passwordHash, UserStatus.ACTIVE, OffsetDateTime.now());
+		return new UserAccount(UUID.randomUUID(), username, passwordHash, status, null, OffsetDateTime.now());
 	}
 
 	public UUID id() {
@@ -70,18 +56,6 @@ public class UserAccount {
 
 	public String username() {
 		return username;
-	}
-
-	public String phoneCountryCode() {
-		return phoneCountryCode;
-	}
-
-	public String phoneNumber() {
-		return phoneNumber;
-	}
-
-	public String phoneE164() {
-		return phoneE164;
 	}
 
 	public String passwordHash() {
@@ -98,6 +72,18 @@ public class UserAccount {
 
 	public void changeStatus(UserStatus status) {
 		this.status = status;
+	}
+
+	public OffsetDateTime vipUntil() {
+		return vipUntil;
+	}
+
+	public void grantVip(OffsetDateTime until) {
+		this.vipUntil = until;
+	}
+
+	public boolean isVip() {
+		return vipUntil != null && vipUntil.isAfter(OffsetDateTime.now());
 	}
 
 	public OffsetDateTime createdAt() {

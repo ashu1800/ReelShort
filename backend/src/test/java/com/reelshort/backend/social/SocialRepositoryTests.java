@@ -54,9 +54,13 @@ class SocialRepositoryTests {
 	}
 
 	@Test
-	void commentsListNewestFirst() {
+	void commentsListNewestFirst() throws InterruptedException {
 		String bookId = "book-comments";
 		commentRepository.saveAndFlush(Comment.create(UUID.randomUUID(), "alice", bookId, "first"));
+		// createdAt is captured as OffsetDateTime.now() at create time; separate the two
+		// inserts by a few milliseconds so the DESC ordering is deterministic instead of
+		// relying on sub-millisecond timing.
+		Thread.sleep(10);
 		commentRepository.saveAndFlush(Comment.create(UUID.randomUUID(), "bob", bookId, "second"));
 
 		assertThat(commentRepository.findByBookIdOrderByCreatedAtDesc(bookId))
@@ -65,9 +69,13 @@ class SocialRepositoryTests {
 	}
 
 	@Test
-	void favoritesListedByUserNewestFirst() {
+	void favoritesListedByUserNewestFirst() throws InterruptedException {
 		UUID userId = UUID.randomUUID();
 		favoriteRepository.saveAndFlush(Favorite.create(userId, "book-a", "A", "a", null, 5));
+		// createdAt is captured as OffsetDateTime.now() at create time; separate the two
+		// inserts by a few milliseconds so the DESC ordering is deterministic instead of
+		// relying on sub-millisecond timing.
+		Thread.sleep(10);
 		favoriteRepository.saveAndFlush(Favorite.create(userId, "book-b", "B", "b", null, 6));
 
 		assertThat(favoriteRepository.findByUserIdOrderByCreatedAtDesc(userId))

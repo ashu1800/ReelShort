@@ -1,6 +1,5 @@
 package com.reelshort.app.ui.screens.account
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +35,7 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -63,13 +63,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
-import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WalletInfo
 import com.reelshort.app.data.WithdrawalRecord
@@ -92,7 +90,6 @@ import com.reelshort.app.ui.format.AccountDetailSheet
 import com.reelshort.app.ui.format.accountDetailSheetTitle
 import com.reelshort.app.ui.format.accountContinueWatchingLimit
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
-import com.reelshort.app.ui.format.apiDiagnosticsText
 import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
 import com.reelshort.app.ui.format.guestAccountEntryAuthModes
 import com.reelshort.app.ui.format.guestAccountEntryLabels
@@ -120,7 +117,6 @@ import com.reelshort.app.ui.theme.TextPrimary
 import com.reelshort.app.ui.theme.TextSecondary
 import com.reelshort.app.ui.theme.TranslucentWhiteSurface
 import com.reelshort.app.ui.theme.WhiteEdge
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -137,37 +133,29 @@ internal fun AccountScreen(
     wallet: WalletInfo?,
     walletMutationVersion: Long,
     withdrawalSubmissionVersion: Long,
-    walletSmsCountdownSeconds: Int,
-    walletSmsCountdownTrigger: Long,
-    passwordSmsCountdownSeconds: Int,
-    passwordSmsCountdownTrigger: Long,
+    vipUntil: String?,
+    vipPriceUsdt: String,
     accountOperation: AccountOperation?,
     withdrawalSummary: WithdrawalSummary?,
     withdrawals: List<WithdrawalRecord>,
     pointTransfers: List<PointTransferRecord>,
-    apiBaseUrl: String,
-    apiHealthStatus: ApiHealthStatus?,
     appVersionLabel: String,
     isCheckingForUpdate: Boolean,
-    onCheckApiHealth: () -> Unit,
     onCheckForUpdate: () -> Unit,
     onShowAuthPrompt: () -> Unit,
     onShowRegisterAuthPrompt: () -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenWatchRecord: (WatchRecord) -> Unit,
-    onSendWalletVerification: (SmsVerificationPurpose) -> Unit,
-    onSendPasswordChangeVerification: () -> Unit,
-    onBindWallet: (String, String) -> Unit,
-    onUnbindWallet: (String) -> Unit,
+    onBindWallet: (String) -> Unit,
+    onUnbindWallet: () -> Unit,
+    onCreateVipOrder: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
     onTransferPoints: (String, Int) -> Unit,
-    onChangePassword: (String, String, String) -> Unit,
+    onChangePassword: (String, String) -> Unit,
     onLogout: () -> Unit,
     language: AppLanguage,
     onSetLanguage: (AppLanguage) -> Unit,
 ) {
-    val diagnostics = apiDiagnosticsText(apiHealthStatus, language)
-    var showDiagnostics by remember { mutableStateOf(false) }
     var languageSheetVisible by remember { mutableStateOf(false) }
     var detailSheet by remember { mutableStateOf<AccountDetailSheet?>(null) }
     var walletSheetVisible by remember { mutableStateOf(false) }
@@ -265,6 +253,18 @@ internal fun AccountScreen(
                     )
                     AccountMenuDivider()
                     AccountMenuRow(
+                        icon = Icons.Rounded.Star,
+                        title = if (vipUntil.isNullOrBlank()) copy.accountVipStatusInactive else copy.accountVipStatusActive,
+                        subtitle = vipUntil?.let { "${copy.accountVipExpiryPrefix}$it" }
+                            ?: "${vipPriceUsdt.ifBlank { "" }}${copy.accountVipPriceSuffix}".trim(),
+                        onClick = {
+                            if (vipUntil.isNullOrBlank()) {
+                                onCreateVipOrder()
+                            }
+                        },
+                    )
+                    AccountMenuDivider()
+                    AccountMenuRow(
                         icon = Icons.Rounded.MonetizationOn,
                         title = copy.accountTransferTitle,
                         subtitle = copy.accountTransferRecordsTitle,
@@ -281,7 +281,7 @@ internal fun AccountScreen(
                     AccountMenuRow(
                         icon = Icons.Rounded.Settings,
                         title = copy.accountChangePasswordTitle,
-                        subtitle = copy.authVerificationCodeLabel,
+                        subtitle = copy.accountPasswordNewLabel,
                         onClick = { passwordSheetVisible = true },
                     )
                     AccountMenuDivider()
@@ -319,29 +319,6 @@ internal fun AccountScreen(
                     trailing = if (isCheckingForUpdate) updateCopy.checking else updateCopy.checkForUpdates,
                     onClick = if (isCheckingForUpdate) null else onCheckForUpdate,
                 )
-                AccountMenuDivider()
-                AccountMenuRow(
-                    icon = Icons.Rounded.Settings,
-                    title = copy.diagnosticsTitle,
-                    subtitle = diagnostics.label,
-                    trailing = if (showDiagnostics) copy.diagnosticsCollapse else copy.diagnosticsExpand,
-                    onClick = { showDiagnostics = !showDiagnostics },
-                )
-                AnimatedVisibility(visible = showDiagnostics) {
-                    Column(
-                        modifier = Modifier.padding(start = 52.dp, end = 16.dp, bottom = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text(apiBaseUrl.ifBlank { copy.diagnosticsApiMissing }, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                        Text(diagnostics.message, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
-                        GoldOutlinedButton(
-                            text = copy.diagnosticsRefresh,
-                            enabled = true,
-                            onClick = onCheckApiHealth,
-                            contentColor = PrimaryGold,
-                        )
-                    }
-                }
                 if (isLoggedIn) {
                     AccountMenuDivider()
                     AccountMenuRow(
@@ -376,13 +353,10 @@ internal fun AccountScreen(
     if (walletSheetVisible) {
         WalletBottomSheet(
             wallet = wallet,
-            smsCountdownSeconds = walletSmsCountdownSeconds,
-            smsCountdownTrigger = walletSmsCountdownTrigger,
             language = language,
             onDismiss = { walletSheetVisible = false },
-            onSendVerification = onSendWalletVerification,
             onBindWallet = onBindWallet,
-            onUnbindWallet = { pendingConfirmation = PendingAccountConfirmation.WalletUnbind(it) },
+            onUnbindWallet = { pendingConfirmation = PendingAccountConfirmation.WalletUnbind },
             isSubmitting = accountOperation != null,
         )
     }
@@ -410,10 +384,7 @@ internal fun AccountScreen(
     if (passwordSheetVisible) {
         PasswordBottomSheet(
             language = language,
-            smsCountdownSeconds = passwordSmsCountdownSeconds,
-            smsCountdownTrigger = passwordSmsCountdownTrigger,
             onDismiss = { passwordSheetVisible = false },
-            onSendVerification = onSendPasswordChangeVerification,
             onChangePassword = onChangePassword,
             isSubmitting = accountOperation != null,
         )
@@ -461,7 +432,7 @@ internal fun AccountScreen(
                     onClick = {
                         pendingConfirmation = null
                         when (confirmation) {
-                            is PendingAccountConfirmation.WalletUnbind -> onUnbindWallet(confirmation.code)
+                            is PendingAccountConfirmation.WalletUnbind -> onUnbindWallet()
                             is PendingAccountConfirmation.Withdrawal -> onSubmitWithdrawal(confirmation.points)
                             is PendingAccountConfirmation.Transfer -> onTransferPoints(confirmation.recipient, confirmation.points)
                         }
@@ -989,73 +960,26 @@ private fun AccountEmptyDetail(message: String) {
 private fun WalletBottomSheet(
     wallet: WalletInfo?,
     language: AppLanguage,
-    smsCountdownSeconds: Int,
-    smsCountdownTrigger: Long,
     onDismiss: () -> Unit,
-    onSendVerification: (SmsVerificationPurpose) -> Unit,
-    onBindWallet: (String, String) -> Unit,
-    onUnbindWallet: (String) -> Unit,
+    onBindWallet: (String) -> Unit,
+    onUnbindWallet: () -> Unit,
     isSubmitting: Boolean,
 ) {
     val copy = strings(language)
     var walletAddress by remember(wallet) { mutableStateOf(wallet?.walletAddress.orEmpty()) }
-    var code by remember { mutableStateOf("") }
-    var smsCountdown by remember { mutableStateOf(0) }
-    var lastHandledSmsTrigger by remember { mutableStateOf(smsCountdownTrigger) }
-    LaunchedEffect(smsCountdownTrigger) {
-        if (smsCountdownTrigger > lastHandledSmsTrigger) {
-            smsCountdown = smsCountdownSeconds
-        }
-        lastHandledSmsTrigger = smsCountdownTrigger
-    }
-    LaunchedEffect(smsCountdown) {
-        if (smsCountdown > 0) {
-            delay(1_000)
-            smsCountdown -= 1
-        }
-    }
     AccountFormBottomSheet(onDismiss = onDismiss) {
         SheetForm(title = copy.accountWalletTitle) {
             Text(wallet?.walletAddress ?: copy.accountWalletNoBound, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
             LoginTextField(walletAddress, { walletAddress = it.trim() }, copy.accountWalletAddressLabel, enabled = true)
-            LoginTextField(code, { code = it.filter(Char::isDigit).take(6) }, copy.authVerificationCodeLabel, enabled = true, kind = TextFieldKind.VERIFICATION_CODE)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GoldOutlinedButton(
-                    text = if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
-                    enabled = smsCountdown == 0 && !isSubmitting,
-                    onClick = {
-                        onSendVerification(
-                            if (wallet?.walletAddress.isNullOrBlank()) {
-                                SmsVerificationPurpose.WALLET_BIND
-                            } else {
-                                SmsVerificationPurpose.WALLET_REPLACE
-                            },
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                    contentColor = PrimaryGold,
-                )
-                GoldOutlinedButton(
-                    text = if (smsCountdown > 0) "${smsCountdown}s" else copy.accountWalletUnbindCode,
-                    enabled = !wallet?.walletAddress.isNullOrBlank() && smsCountdown == 0 && !isSubmitting,
-                    onClick = {
-                        onSendVerification(SmsVerificationPurpose.WALLET_UNBIND)
-                    },
-                    modifier = Modifier.weight(1f),
-                    contentColor = DangerText,
-                )
-            }
             PrimaryWalletActionRow(
                 primary = if (wallet?.walletAddress.isNullOrBlank()) copy.accountWalletBindAction else copy.accountWalletReplaceAction,
-                primaryEnabled = walletAddress.isNotBlank() && code.length == 6 && !isSubmitting,
+                primaryEnabled = walletAddress.isNotBlank() && !isSubmitting,
                 onPrimary = {
-                    onBindWallet(walletAddress, code)
+                    onBindWallet(walletAddress)
                 },
                 secondary = copy.accountWalletUnbindAction,
-                secondaryEnabled = !wallet?.walletAddress.isNullOrBlank() && code.length == 6 && !isSubmitting,
-                onSecondary = {
-                    onUnbindWallet(code)
-                },
+                secondaryEnabled = !wallet?.walletAddress.isNullOrBlank() && !isSubmitting,
+                onSecondary = onUnbindWallet,
             )
         }
     }
@@ -1121,11 +1045,11 @@ private fun TransferBottomSheet(
     AccountFormBottomSheet(onDismiss = onDismiss) {
         SheetForm(title = copy.accountTransferTitle) {
             Text(copy.accountTransferHelp, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            LoginTextField(recipient, { recipient = it.trim() }, copy.accountTransferRecipientLabel, enabled = true, kind = TextFieldKind.PHONE)
+            LoginTextField(recipient, { recipient = it.trim() }, copy.accountTransferRecipientLabel, enabled = true)
             LoginTextField(points, { points = it.filter(Char::isDigit) }, copy.accountTransferPointsLabel, enabled = true, kind = TextFieldKind.POINT_AMOUNT)
             PrimaryActionButton(
                 text = copy.accountTransferTitle,
-                enabled = !isSubmitting && recipient.startsWith("+") && amount > 0,
+                enabled = !isSubmitting && recipient.isNotBlank() && amount > 0,
                 onClick = {
                     onTransferPoints(recipient, amount)
                     if (commercialSheetAutoDismissesAfterSubmit()) {
@@ -1141,50 +1065,22 @@ private fun TransferBottomSheet(
 @Composable
 private fun PasswordBottomSheet(
     language: AppLanguage,
-    smsCountdownSeconds: Int,
-    smsCountdownTrigger: Long,
     onDismiss: () -> Unit,
-    onSendVerification: () -> Unit,
-    onChangePassword: (String, String, String) -> Unit,
+    onChangePassword: (String, String) -> Unit,
     isSubmitting: Boolean,
 ) {
     val copy = strings(language)
     var oldPassword by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
-    var smsCountdown by remember { mutableStateOf(0) }
-    var lastHandledSmsTrigger by remember { mutableStateOf(smsCountdownTrigger) }
-    LaunchedEffect(smsCountdownTrigger) {
-        if (smsCountdownTrigger > lastHandledSmsTrigger) {
-            smsCountdown = smsCountdownSeconds
-        }
-        lastHandledSmsTrigger = smsCountdownTrigger
-    }
-    LaunchedEffect(smsCountdown) {
-        if (smsCountdown > 0) {
-            delay(1_000)
-            smsCountdown -= 1
-        }
-    }
     AccountFormBottomSheet(onDismiss = onDismiss) {
         SheetForm(title = copy.accountChangePasswordTitle) {
             LoginTextField(oldPassword, { oldPassword = it }, copy.authPasswordLabel, enabled = true, isPassword = true)
             LoginTextField(newPassword, { newPassword = it }, copy.accountPasswordNewLabel, enabled = true, isPassword = true)
-            LoginTextField(code, { code = it.filter(Char::isDigit).take(6) }, copy.authVerificationCodeLabel, enabled = true, kind = TextFieldKind.VERIFICATION_CODE)
-            GoldOutlinedButton(
-                if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
-                smsCountdown == 0 && !isSubmitting,
-                {
-                    onSendVerification()
-                },
-                Modifier.fillMaxWidth(),
-                PrimaryGold,
-            )
             PrimaryActionButton(
                 text = copy.accountChangePasswordTitle,
-                enabled = !isSubmitting && oldPassword.isNotBlank() && newPassword.length >= 8 && code.length == 6,
+                enabled = !isSubmitting && oldPassword.isNotBlank() && newPassword.length >= 6,
                 onClick = {
-                    onChangePassword(oldPassword, newPassword, code)
+                    onChangePassword(oldPassword, newPassword)
                     if (commercialSheetAutoDismissesAfterSubmit()) {
                         onDismiss()
                     }
@@ -1210,7 +1106,7 @@ private fun BankCardBottomSheet(
 }
 
 private sealed interface PendingAccountConfirmation {
-    data class WalletUnbind(val code: String) : PendingAccountConfirmation
+    data object WalletUnbind : PendingAccountConfirmation
 
     data class Withdrawal(val points: Int) : PendingAccountConfirmation
 

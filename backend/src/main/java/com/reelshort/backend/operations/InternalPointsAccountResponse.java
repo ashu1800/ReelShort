@@ -15,7 +15,7 @@ public record InternalPointsAccountResponse(
 		int availablePoints) {
 
 	static InternalPointsAccountResponse from(UserAccount user, PointAccountResponse account) {
-		return new InternalPointsAccountResponse(user.id(), user.phoneE164(), user.status(), account.balance(),
+		return new InternalPointsAccountResponse(user.id(), user.username(), user.status(), account.balance(),
 				account.frozenPoints(), account.availablePoints());
 	}
 }

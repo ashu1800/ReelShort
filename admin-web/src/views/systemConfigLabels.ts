@@ -36,6 +36,14 @@ export const systemConfigLabels: Record<string, { name: string; description: str
     name: '推荐策略',
     description: '默认内容推荐策略（最新 / 热门）。',
   },
+  'vip.price-usdt': {
+    name: 'VIP 月费（USDT）',
+    description: 'VIP 月度订阅价格（USDT）。',
+  },
+  'vip.free-episodes': {
+    name: '免费集数',
+    description: '非 VIP 用户可观看的免费集数。',
+  },
 }
 
 export function configDisplayName(key: string): string {

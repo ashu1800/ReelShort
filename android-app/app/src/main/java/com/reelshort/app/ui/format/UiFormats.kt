@@ -208,14 +208,12 @@ internal fun supportedPhoneCountryCodes(): List<PhoneCountryCode> =
 
 internal fun smsVerificationSeconds(): Int = 120
 
-internal fun authVerificationCodeLabel(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): String =
-    strings(language).authVerificationCodeLabel
-
-internal fun authSmsCountdownStartsAfterSuccessfulSend(): Boolean = true
-
-internal fun authBottomSheetAvoidsNavigationBar(): Boolean = true
+internal fun authCaptchaAnswerLabel(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): String =
+    strings(language).authCaptchaAnswerLabel
 
 internal fun authSinglePrimaryAction(): Boolean = true
+
+internal fun authBottomSheetAvoidsNavigationBar(): Boolean = true
 
 internal data class AuthSheetCopy(
     val title: String,
@@ -246,27 +244,20 @@ internal fun authSheetCopy(
     }
 }
 
-internal fun authSmsSendEnabled(
-    isLoading: Boolean,
-    smsCountdown: Int,
-    phoneNumber: String,
-    password: String,
-): Boolean =
-    !isLoading &&
-        smsCountdown == 0 &&
-        phoneNumber.isNotBlank() &&
-        password.length >= 6
-
 internal fun authRegisterEnabled(
     isLoading: Boolean,
-    phoneNumber: String,
+    username: String,
     password: String,
-    verificationCode: String,
+    confirmPassword: String,
+    captchaAnswer: String,
+    captchaLoaded: Boolean,
 ): Boolean =
     !isLoading &&
-        phoneNumber.isNotBlank() &&
+        username.isNotBlank() &&
         password.length >= 6 &&
-        verificationCode.length == 6
+        password == confirmPassword &&
+        captchaAnswer.isNotBlank() &&
+        captchaLoaded
 
 internal fun commercialSheetAutoDismissesAfterSubmit(): Boolean = false
 

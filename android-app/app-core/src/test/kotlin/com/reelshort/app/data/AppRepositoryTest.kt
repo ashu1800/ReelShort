@@ -23,9 +23,9 @@ class AppRepositoryTest {
     fun loginStoresBearerTokenForLaterRequests() = runTest {
         val repository = AppRepository(FakeReelShortApiClient())
 
-        val session = repository.login("+1", "4155550101", "Password123")
+        val session = repository.login("demo", "Password123")
 
-        assertEquals("+14155550101", session.username)
+        assertEquals("demo", session.username)
         assertEquals("Bearer", session.tokenType)
         assertEquals(session.token, repository.currentToken)
     }
@@ -35,7 +35,7 @@ class AppRepositoryTest {
         val sessionStore = InMemorySessionStore()
         val firstRepository = AppRepository(FakeReelShortApiClient(), sessionStore)
 
-        val session = firstRepository.login("+1", "4155550101", "Password123")
+        val session = firstRepository.login("demo", "Password123")
         val restoredRepository = AppRepository(FakeReelShortApiClient(), sessionStore)
 
         val restored = restoredRepository.restoreSession()
@@ -50,7 +50,7 @@ class AppRepositoryTest {
         val sessionFile = File(createTempDirectory(prefix = "reelshort-repository-session-test").toFile(), "session.json")
         val firstRepository = AppRepository(FakeReelShortApiClient(), FileSessionStore(sessionFile))
 
-        val session = firstRepository.login("+1", "4155550101", "Password123")
+        val session = firstRepository.login("demo", "Password123")
         val restoredRepository = AppRepository(FakeReelShortApiClient(), FileSessionStore(sessionFile))
 
         val restored = restoredRepository.restoreSession()
@@ -60,22 +60,22 @@ class AppRepositoryTest {
     }
 
     @Test
-    fun publicRegisterSimulatesOnlyAndDoesNotPersistSession() = runTest {
+    fun registerCreatesAndPersistsSession() = runTest {
         val sessionStore = InMemorySessionStore()
         val repository = AppRepository(FakeReelShortApiClient(), sessionStore)
 
-        val result = repository.register("+1", "4155550102", "Password123", "000000")
+        val session = repository.register("newuser", "Password123", "captcha-1", "123456")
 
-        assertEquals("SIMULATED", result.status)
-        assertNull(sessionStore.loadSession())
-        assertNull(repository.currentToken)
+        assertEquals("newuser", session.username)
+        assertEquals(session, sessionStore.loadSession())
+        assertEquals(session.token, repository.currentToken)
     }
 
     @Test
     fun clearSessionRemovesStoredSessionAndMemoryToken() = runTest {
         val sessionStore = InMemorySessionStore()
         val repository = AppRepository(FakeReelShortApiClient(), sessionStore)
-        repository.login("+1", "4155550101", "Password123")
+        repository.login("demo", "Password123")
 
         repository.clearSession()
 
@@ -128,7 +128,7 @@ class AppRepositoryTest {
         val repository = AppRepository(FakeReelShortApiClient(), FailingSessionStore())
 
         assertFailsWith<IllegalStateException> {
-            repository.login("+1", "4155550101", "Password123")
+            repository.login("demo", "Password123")
         }
 
         assertNull(repository.currentToken)

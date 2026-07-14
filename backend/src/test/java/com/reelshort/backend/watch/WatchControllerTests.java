@@ -20,6 +20,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCache;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
+import com.reelshort.backend.user.UserAccount;
+import com.reelshort.backend.user.UserAccountRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -33,6 +35,9 @@ class WatchControllerTests {
 
 	@Autowired
 	private ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
+
+	@Autowired
+	private UserAccountRepository userAccountRepository;
 
 	@Test
 	void progressRequiresAuthentication() throws Exception {
@@ -114,7 +119,7 @@ class WatchControllerTests {
 
 	@Test
 	void episodeSnapshotReturnsHistoryAndRewardClaimState() throws Exception {
-		String token = registerAndExtractToken("watch-snapshot-progress");
+		String token = registerVipUserAndExtractToken("watch-snapshot-progress");
 		reportProgress(token, "book-snapshot", 2, 120, 120);
 
 		mockMvc.perform(get("/api/app/watch/books/book-snapshot/episodes/2/snapshot")
@@ -152,7 +157,7 @@ class WatchControllerTests {
 
 	@Test
 	void completedClientPlaybackUsesAuthoritativeDurationForRewardCalculation() throws Exception {
-		String token = registerAndExtractToken("watch-authoritative-duration");
+		String token = registerVipUserAndExtractToken("watch-authoritative-duration");
 		ContentEpisodeRuntimeCache runtime = ContentEpisodeRuntimeCache.create("book-authoritative", 1,
 				"chapter-1", 120);
 		runtimeCacheRepository.save(runtime);
@@ -194,6 +199,14 @@ class WatchControllerTests {
 
 	private String registerAndExtractToken(String username) throws Exception {
 		return TestAppUsers.token(mockMvc, objectMapper, username);
+	}
+
+	private String registerVipUserAndExtractToken(String username) throws Exception {
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, username);
+		UserAccount account = userAccountRepository.findById(user.userId()).orElseThrow();
+		account.grantVip(java.time.OffsetDateTime.now().plusDays(1));
+		userAccountRepository.save(account);
+		return user.token();
 	}
 
 	private String progressBody(String bookId, String bookTitle, String filteredTitle, int episodeNum, String chapterId,

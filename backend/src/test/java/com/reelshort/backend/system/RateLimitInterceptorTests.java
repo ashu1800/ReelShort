@@ -63,8 +63,7 @@ class RateLimitInterceptorTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "countryCode": "+1",
-						  "phoneNumber": "4155559999",
+						  "username": "ratelimit-user",
 						  "password": "Password123"
 						}
 						"""));

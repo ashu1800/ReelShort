@@ -117,14 +117,14 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void pointsAccountReturnsCurrentUserPointSnapshot() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550701", "Password123");
+		RegisteredUser user = createUser("4155550701", "Password123");
 		pointsService.adjustByAdmin(user.userId(), 12, "seed points");
 
 		mockMvc.perform(get("/api/internal/operations/users/{userId}/points/account", user.userId())
 				.header("X-Internal-Super-Token", TOKEN))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.userId").value(user.userId().toString()))
-				.andExpect(jsonPath("$.data.account").value("+14155550701"))
+				.andExpect(jsonPath("$.data.account").value(user.account()))
 				.andExpect(jsonPath("$.data.status").value("ACTIVE"))
 				.andExpect(jsonPath("$.data.balance").value(12))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
@@ -133,7 +133,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void watchRewardTaskUsesExistingProgressAndDurationReward() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550702", "Password123");
+		RegisteredUser user = createUser("4155550702", "Password123");
 		watchService.reportProgress(user.userId(), new WatchProgressRequest(
 				"book-existing",
 				"Existing Drama",
@@ -164,7 +164,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void watchRewardTaskFallsBackToCachedContentWhenUserHasNoHistory() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550703", "Password123");
+		RegisteredUser user = createUser("4155550703", "Password123");
 		clearContentCaches();
 		seedCachedContent("book-cache", "Cached Drama", "cached-drama");
 
@@ -183,7 +183,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void watchRewardTaskFallbackSkipsFullyClaimedCachedEpisode() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550708", "Password123");
+		RegisteredUser user = createUser("4155550708", "Password123");
 		clearContentCaches();
 		seedCachedContent("book-claimed-cache", "Claimed Drama", "claimed-drama");
 		pointsService.awardWatchProgress(user.userId(), "book-claimed-cache", 1, 100, 300);
@@ -197,7 +197,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void simulatedWatchProgressAwardsDurationRewardIdempotently() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550704", "Password123");
+		RegisteredUser user = createUser("4155550704", "Password123");
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
 				.header("X-Internal-Super-Token", TOKEN)
@@ -251,7 +251,7 @@ class InternalOperationsControllerTests {
 		dailyEarningRuleRepository.deleteAll();
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
-		RegisteredUser user = createUser("+1", "4155550711", "Password123");
+		RegisteredUser user = createUser("4155550711", "Password123");
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
 				.header("X-Internal-Super-Token", TOKEN)
@@ -278,7 +278,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void simulatedWatchProgressRejectsInvalidStageAndInactiveUsers() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550705", "Password123");
+		RegisteredUser user = createUser("4155550705", "Password123");
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
 				.header("X-Internal-Super-Token", TOKEN)
@@ -304,7 +304,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void simulatedWatchProgressRejectsIncompleteProgress() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550707", "Password123");
+		RegisteredUser user = createUser("4155550707", "Password123");
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
 				.header("X-Internal-Super-Token", TOKEN)
@@ -328,7 +328,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void simulatedWatchProgressDoesNotRegressExistingHigherProgress() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550709", "Password123");
+		RegisteredUser user = createUser("4155550709", "Password123");
 		watchService.reportProgress(user.userId(), new WatchProgressRequest(
 				"book-complete",
 				"Complete Drama",
@@ -360,7 +360,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void simulatedWatchProgressRejectsOverlongReasonBeforeAwardingPoints() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550710", "Password123");
+		RegisteredUser user = createUser("4155550710", "Password123");
 		String longReason = "x".repeat(513);
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
@@ -389,7 +389,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void simulatedWatchProgressAuditsOperation() throws Exception {
-		RegisteredUser user = createUser("+1", "4155550706", "Password123");
+		RegisteredUser user = createUser("4155550706", "Password123");
 
 		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", user.userId())
 				.header("X-Internal-Super-Token", TOKEN)
@@ -421,24 +421,17 @@ class InternalOperationsControllerTests {
 				.contains("ops audit simulation");
 	}
 
-	private RegisteredUser createUser(String countryCode, String phoneNumber, String password) throws Exception {
-		String response = mockMvc.perform(post("/api/internal/users/register-phone")
-				.header("X-Internal-Super-Token", TOKEN)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "countryCode": "%s",
-						  "phoneNumber": "%s",
-						  "password": "%s"
-						}
-						""".formatted(countryCode, phoneNumber, password)))
-				.andExpect(status().isOk())
-				.andReturn()
-				.getResponse()
-				.getContentAsString();
-		return new RegisteredUser(
-				UUID.fromString(JsonPath.read(response, "$.data.userId")),
-				JsonPath.read(response, "$.data.phoneE164"));
+	private RegisteredUser createUser(String seed, String password) throws Exception {
+		com.reelshort.backend.TestAppUsers.RegisteredUser user =
+				com.reelshort.backend.TestAppUsers.register(mockMvc, objectMapper, seed, password);
+		grantVip(user.userId());
+		return new RegisteredUser(user.userId(), user.username());
+	}
+
+	private void grantVip(UUID userId) {
+		UserAccount user = userAccountRepository.findById(userId).orElseThrow();
+		user.grantVip(java.time.OffsetDateTime.now().plusDays(1));
+		userAccountRepository.save(user);
 	}
 
 	private void seedCachedContent(String bookId, String title, String filteredTitle) throws Exception {

@@ -3,17 +3,16 @@ package com.reelshort.app.network
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.CaptchaChallenge
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
-import com.reelshort.app.data.RegisterSimulationResult
-import com.reelshort.app.data.SmsSendResult
-import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
+import com.reelshort.app.data.VipOrder
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
@@ -35,28 +34,27 @@ class FakeReelShortApiClient : ReelShortApiClient {
     override suspend fun checkSystemHealth(): ApiHealthStatus =
         ApiHealthStatus(status = "UP", service = "fake-reelshort-backend")
 
-    override suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession = AuthSession(
-        username = "$countryCode$phoneNumber",
-        token = "fake-token-$countryCode$phoneNumber",
+    override suspend fun login(username: String, password: String): AuthSession = AuthSession(
+        username = username,
+        token = "fake-token-$username",
         tokenType = "Bearer",
     )
 
     override suspend fun register(
-        countryCode: String,
-        phoneNumber: String,
+        username: String,
         password: String,
-        verificationCode: String,
-    ): RegisterSimulationResult = RegisterSimulationResult("SIMULATED")
+        captchaId: String,
+        captchaAnswer: String,
+    ): AuthSession = AuthSession(
+        username = username,
+        token = "fake-token-$username",
+        tokenType = "Bearer",
+    )
 
-    override suspend fun sendAuthSms(
-        purpose: SmsVerificationPurpose,
-        countryCode: String,
-        phoneNumber: String,
-    ): SmsSendResult = SmsSendResult(120)
+    override suspend fun fetchCaptcha(): CaptchaChallenge =
+        CaptchaChallenge(captchaId = "fake-captcha", imageBase64 = "")
 
-    override suspend fun sendPasswordChangeVerification(): SmsSendResult = SmsSendResult(120)
-
-    override suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) = Unit
+    override suspend fun changePassword(oldPassword: String, newPassword: String) = Unit
 
     override suspend fun getHomeShelf(locale: String): List<BookSummary> = books
 
@@ -120,15 +118,27 @@ class FakeReelShortApiClient : ReelShortApiClient {
         listOf(RechargeOrderSummary("RO202606270001", 990, 99, "CREATED"))
 
     override suspend fun getWallet(): WalletInfo =
-        WalletInfo("TRC20", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "2026-07-07T00:00:00Z")
+        WalletInfo("TRC20", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "2026-07-07T00:00:00Z", vipUntil = null, vipPriceUsdt = "15")
 
-    override suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult = SmsSendResult(120)
-
-    override suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo =
+    override suspend fun bindWallet(walletAddress: String): WalletInfo =
         WalletInfo("TRC20", walletAddress, "2026-07-07T00:00:00Z")
 
-    override suspend fun unbindWallet(verificationCode: String): WalletInfo =
+    override suspend fun unbindWallet(): WalletInfo =
         WalletInfo("TRC20", null, null)
+
+    override suspend fun createVipOrder(): VipOrder =
+        VipOrder(
+            id = "vip-order-1",
+            orderNo = "VIP20260714000001",
+            usdtAmount = "15",
+            status = "PENDING",
+            paymentMethod = "USDT_TRC20",
+            txHash = null,
+            createdAt = "2026-07-14T00:00:00Z",
+            confirmedAt = null,
+        )
+
+    override suspend fun getVipOrders(): List<VipOrder> = emptyList()
 
     override suspend fun submitBankCard(holderName: String, cardNumber: String) {
         error("Bank card withdrawal is not supported")

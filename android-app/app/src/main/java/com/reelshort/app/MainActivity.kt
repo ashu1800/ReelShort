@@ -98,7 +98,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onOpenFavorites = remember(viewModel) { viewModel::openFavorites }
     val onBackFromPlayer = remember(viewModel) { viewModel::backFromPlayer }
     val onBackFromFavorites = remember(viewModel) { viewModel::backFromFavorites }
-    val onCheckApiHealth = remember(viewModel) { viewModel::checkApiHealth }
     val onCheckForUpdate = remember(viewModel) { viewModel::checkForUpdate }
     val onDownloadUpdate = remember(viewModel) { viewModel::downloadUpdate }
     val onCancelUpdateDownload = remember(viewModel) { viewModel::cancelUpdateDownload }
@@ -113,10 +112,9 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     }
     val onRefreshHome = remember(viewModel) { viewModel::refreshHome }
     val onSetLanguage = remember(viewModel) { viewModel::setLanguage }
-    val onSendWalletVerification = remember(viewModel) { viewModel::sendWalletVerification }
-    val onSendPasswordChangeVerification = remember(viewModel) { viewModel::sendPasswordChangeVerification }
     val onBindWallet = remember(viewModel) { viewModel::bindWallet }
     val onUnbindWallet = remember(viewModel) { viewModel::unbindWallet }
+    val onCreateVipOrder = remember(viewModel) { viewModel::createVipOrder }
     val onSubmitWithdrawal = remember(viewModel) { viewModel::submitWithdrawal }
     val onTransferPoints = remember(viewModel) { viewModel::transferPoints }
     val onChangePassword = remember(viewModel) { viewModel::changePassword }
@@ -128,9 +126,9 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     BackHandler(enabled = state.screen == AppScreen.FAVORITES) {
         viewModel.backFromFavorites()
     }
-    val onLogin = remember(viewModel) { { c: String, phone: String, p: String, r: Boolean -> viewModel.login(c, phone, p, r) } }
-    val onRegister = remember(viewModel) { { c: String, phone: String, p: String, code: String -> viewModel.register(c, phone, p, code) } }
-    val onSendAuthSms = remember(viewModel) { { c: String, phone: String -> viewModel.sendAuthSms(c, phone) } }
+    val onLogin = remember(viewModel) { { u: String, p: String, r: Boolean -> viewModel.login(u, p, r) } }
+    val onRegister = remember(viewModel) { { u: String, p: String, captchaId: String, answer: String -> viewModel.register(u, p, captchaId, answer) } }
+    val onFetchCaptcha = remember(viewModel) { viewModel::fetchCaptcha }
     val onDismissAuthPrompt = remember(viewModel) { viewModel::dismissAuthPrompt }
     val onShowRegisterAuthMode = remember(viewModel) { viewModel::showRegisterAuthMode }
     val onShowLoginAuthMode = remember(viewModel) { viewModel::showLoginAuthMode }
@@ -163,7 +161,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onOpenFavorites = onOpenFavorites,
                 onBackFromPlayer = onBackFromPlayer,
                 onBackFromFavorites = onBackFromFavorites,
-                onCheckApiHealth = onCheckApiHealth,
                 appVersionLabel = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                 isCheckingForUpdate = (updateState as? UpdateState.Checking)?.manual == true,
                 onCheckForUpdate = onCheckForUpdate,
@@ -171,10 +168,9 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onShowRegisterAuthPrompt = onShowRegisterAuthPrompt,
                 onRefreshHome = onRefreshHome,
                 onSetLanguage = onSetLanguage,
-                onSendWalletVerification = onSendWalletVerification,
-                onSendPasswordChangeVerification = onSendPasswordChangeVerification,
                 onBindWallet = onBindWallet,
                 onUnbindWallet = onUnbindWallet,
+                onCreateVipOrder = onCreateVipOrder,
                 onSubmitWithdrawal = onSubmitWithdrawal,
                 onTransferPoints = onTransferPoints,
                 onChangePassword = onChangePassword,
@@ -184,7 +180,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 state = state,
                 onLogin = onLogin,
                 onRegister = onRegister,
-                onSendVerification = onSendAuthSms,
+                onFetchCaptcha = onFetchCaptcha,
                 onShowRegister = onShowRegisterAuthMode,
                 onShowLogin = onShowLoginAuthMode,
                 onDismiss = onDismissAuthPrompt,

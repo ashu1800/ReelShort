@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.reelshort.backend.points.PointTransactionResponse;
-import com.reelshort.backend.points.PointTransferResponse;
 import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 import com.reelshort.backend.watch.WatchRecordResponse;
@@ -70,12 +69,6 @@ public class AdminUserController {
 	@RequireAdminPermission(AdminPermissions.USER_READ)
 	public ApiResponse<List<PointTransactionResponse>> pointRecords(@PathVariable UUID userId, HttpServletRequest request) {
 		return ApiResponse.success(adminUserService.pointRecords(userId), requestId(request));
-	}
-
-	@GetMapping("/{userId}/point-transfers")
-	@RequireAdminPermission(AdminPermissions.POINT_TRANSFER_READ)
-	public ApiResponse<List<PointTransferResponse>> pointTransfers(@PathVariable UUID userId, HttpServletRequest request) {
-		return ApiResponse.success(adminUserService.pointTransfers(userId), requestId(request));
 	}
 
 	@GetMapping("/{userId}/withdrawals")

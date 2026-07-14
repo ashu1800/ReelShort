@@ -7,9 +7,6 @@ import com.reelshort.backend.user.UserStatus;
 public record AdminUserDetailResponse(
 		UUID id,
 		String username,
-		String phoneCountryCode,
-		String phoneNumber,
-		String phoneE164,
 		UserStatus status,
 		int pointBalance,
 		int frozenPoints,
@@ -20,6 +17,5 @@ public record AdminUserDetailResponse(
 		long watchRecordCount,
 		long pointRecordCount,
 		long withdrawalRecordCount,
-		long pointTransferRecordCount,
 		String createdAt) {
 }

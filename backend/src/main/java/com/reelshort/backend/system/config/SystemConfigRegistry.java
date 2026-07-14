@@ -22,6 +22,8 @@ public class SystemConfigRegistry {
 	public static final String WITHDRAW_CNY_PER_USD = "withdraw.cny-per-usd";
 	public static final String WITHDRAW_MINIMUM_USD = "withdraw.minimum-usd";
 	public static final String POINTS_TRANSFER_MINIMUM_POINTS = "points.transfer.minimum-points";
+	public static final String VIP_PRICE_USDT = "vip.price-usdt";
+	public static final String VIP_FREE_EPISODES = "vip.free-episodes";
 
 	private final List<SystemConfigDefinition> definitions = List.of(
 			new SystemConfigDefinition(POINTS_WATCH_SECONDS_PER_POINT, "60",
@@ -39,6 +41,10 @@ public class SystemConfigRegistry {
 					"CNY value of one USD for withdrawal conversion.", ValueType.DECIMAL, 0, 0, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_MINIMUM_USD, "10",
 					"Minimum USD value required for withdrawal.", ValueType.DECIMAL, 0, 0, Set.of()),
+			new SystemConfigDefinition(VIP_PRICE_USDT, "15",
+					"VIP monthly subscription price in USDT.", ValueType.DECIMAL, 0, 0, Set.of()),
+			new SystemConfigDefinition(VIP_FREE_EPISODES, "7",
+					"Number of free episodes viewable without VIP.", ValueType.INTEGER, 1, 100, Set.of()),
 			new SystemConfigDefinition(POINTS_TRANSFER_MINIMUM_POINTS, "1", "Minimum points required for point transfer.",
 					ValueType.INTEGER, 1, 1_000_000, Set.of()),
 			new SystemConfigDefinition(CONTENT_RECOMMENDATION_STRATEGY, "LATEST", "Default content recommendation strategy.",

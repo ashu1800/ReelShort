@@ -38,18 +38,17 @@ class AuthControllerTests {
 	private ContentProvider contentProvider;
 
 	@Test
-	void loginReturnsTokenForValidPhoneCredentials() throws Exception {
+	void loginReturnsTokenForValidCredentials() throws Exception {
 		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, "auth-controller-login");
 
 		mockMvc.perform(post("/api/app/auth/login")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "countryCode": "%s",
-						  "phoneNumber": "%s",
+						  "username": "%s",
 						  "password": "Password123"
 						}
-						""".formatted(user.countryCode(), user.phoneNumber())))
+						""".formatted(user.username())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value(0))
 				.andExpect(jsonPath("$.data.username").value(user.username()))
@@ -78,14 +77,13 @@ class AuthControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "countryCode": "%s",
-						  "phoneNumber": "%s",
+						  "username": "%s",
 						  "password": "wrong"
 						}
-						""".formatted(user.countryCode(), user.phoneNumber())))
+						""".formatted(user.username())))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value(401))
-				.andExpect(jsonPath("$.message").value("invalid phone or password"));
+				.andExpect(jsonPath("$.message").value("invalid username or password"));
 	}
 
 	@Test
@@ -95,7 +93,9 @@ class AuthControllerTests {
 				.content("""
 						{
 						  "username": "legacy",
-						  "password": "Password123"
+						  "password": "Password123",
+						  "captchaId": "00000000-0000-0000-0000-000000000000",
+						  "captchaAnswer": "AAAA"
 						}
 						"""))
 				.andExpect(status().isBadRequest())

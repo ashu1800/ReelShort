@@ -18,11 +18,9 @@ import com.reelshort.app.ui.format.authPromptTitle
 import com.reelshort.app.ui.format.authBottomSheetAvoidsNavigationBar
 import com.reelshort.app.ui.format.AuthSheetCopy
 import com.reelshort.app.ui.format.authRegisterEnabled
-import com.reelshort.app.ui.format.authSmsSendEnabled
-import com.reelshort.app.ui.format.authSmsCountdownStartsAfterSuccessfulSend
 import com.reelshort.app.ui.format.authSheetCopy
 import com.reelshort.app.ui.format.authSinglePrimaryAction
-import com.reelshort.app.ui.format.authVerificationCodeLabel
+import com.reelshort.app.ui.format.authCaptchaAnswerLabel
 import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
 import com.reelshort.app.ui.format.guestAccountEntryAuthModes
 import com.reelshort.app.ui.format.rememberPasswordLabel
@@ -274,30 +272,20 @@ class VisualTextContractTest {
     }
 
     @Test
-    fun phoneRegisterRequiresEnteredVerificationCode() {
-        assertEquals(false, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = ""))
-        assertEquals(false, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = "12345"))
-        assertEquals(true, authRegisterEnabled(isLoading = false, phoneNumber = "4155550101", password = "Password123", verificationCode = "654321"))
-        assertEquals(false, authRegisterEnabled(isLoading = true, phoneNumber = "4155550101", password = "Password123", verificationCode = "654321"))
+    fun captchaRegisterRequiresUsernamePasswordConfirmAndCaptcha() {
+        assertEquals(false, authRegisterEnabled(isLoading = false, username = "", password = "Password123", confirmPassword = "Password123", captchaAnswer = "1234", captchaLoaded = true))
+        assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "short", confirmPassword = "short", captchaAnswer = "1234", captchaLoaded = true))
+        assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "Password123", confirmPassword = "different", captchaAnswer = "1234", captchaLoaded = true))
+        assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "Password123", confirmPassword = "Password123", captchaAnswer = "", captchaLoaded = true))
+        assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "Password123", confirmPassword = "Password123", captchaAnswer = "1234", captchaLoaded = false))
+        assertEquals(true, authRegisterEnabled(isLoading = false, username = "newuser", password = "Password123", confirmPassword = "Password123", captchaAnswer = "1234", captchaLoaded = true))
+        assertEquals(false, authRegisterEnabled(isLoading = true, username = "newuser", password = "Password123", confirmPassword = "Password123", captchaAnswer = "1234", captchaLoaded = true))
     }
 
     @Test
-    fun phoneRegisterSmsRequiresPhoneAndValidPassword() {
-        assertEquals(false, authSmsSendEnabled(isLoading = false, smsCountdown = 0, phoneNumber = "", password = "Password123"))
-        assertEquals(false, authSmsSendEnabled(isLoading = false, smsCountdown = 0, phoneNumber = "4155550101", password = "short"))
-        assertEquals(false, authSmsSendEnabled(isLoading = false, smsCountdown = 120, phoneNumber = "4155550101", password = "Password123"))
-        assertEquals(true, authSmsSendEnabled(isLoading = false, smsCountdown = 0, phoneNumber = "4155550101", password = "Password123"))
-    }
-
-    @Test
-    fun authVerificationCodeLabelDoesNotExposeMockCodeAsLabel() {
-        assertEquals("Verification code", authVerificationCodeLabel(AppLanguage.ENGLISH))
-        assertEquals("驗證碼", authVerificationCodeLabel(AppLanguage.TRADITIONAL_CHINESE))
-    }
-
-    @Test
-    fun authSmsCountdownStartsOnlyAfterSuccessfulSendContract() {
-        assertEquals(true, authSmsCountdownStartsAfterSuccessfulSend())
+    fun captchaAnswerLabelUsesNeutralCopy() {
+        assertEquals("Captcha answer", authCaptchaAnswerLabel(AppLanguage.ENGLISH))
+        assertEquals("驗證碼", authCaptchaAnswerLabel(AppLanguage.TRADITIONAL_CHINESE))
     }
 
     @Test

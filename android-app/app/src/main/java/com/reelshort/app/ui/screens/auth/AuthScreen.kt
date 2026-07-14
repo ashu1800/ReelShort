@@ -1,6 +1,9 @@
 package com.reelshort.app.ui.screens.auth
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,15 +14,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,8 +32,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.graphics.BitmapFactory
+import android.util.Base64
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.state.AuthMode
 import com.reelshort.app.state.AppUiState
@@ -42,22 +49,19 @@ import com.reelshort.app.ui.components.RememberPasswordRow
 import com.reelshort.app.ui.components.SecondaryActionTextButton
 import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.format.authRegisterEnabled
-import com.reelshort.app.ui.format.authSmsSendEnabled
 import com.reelshort.app.ui.format.authSheetCopy
 import com.reelshort.app.ui.format.appBrandName
 import com.reelshort.app.ui.format.strings
-import com.reelshort.app.ui.format.supportedPhoneCountryCodes
 import com.reelshort.app.ui.theme.AppBackground
 import com.reelshort.app.ui.theme.PrimaryGold
 import com.reelshort.app.ui.theme.TextSecondary
-import kotlinx.coroutines.delay
 
 @Composable
 internal fun LoginScreen(
     state: AppUiState,
-    onLogin: (String, String, String, Boolean) -> Unit,
+    onLogin: (String, String, Boolean) -> Unit,
     onRegister: (String, String, String, String) -> Unit,
-    onSendVerification: (String, String) -> Unit,
+    onFetchCaptcha: () -> Unit,
 ) {
     val copy = strings(state.language)
     AppBackground {
@@ -76,7 +80,7 @@ internal fun LoginScreen(
                         subtitle = copy.authLoginSubtitle,
                         onLogin = onLogin,
                         onRegister = onRegister,
-                        onSendVerification = onSendVerification,
+                        onFetchCaptcha = onFetchCaptcha,
                         onShowRegister = {},
                         onShowLogin = {},
                     )
@@ -90,9 +94,9 @@ internal fun LoginScreen(
 internal fun AuthBottomSheet(
     visible: Boolean,
     state: AppUiState,
-    onLogin: (String, String, String, Boolean) -> Unit,
+    onLogin: (String, String, Boolean) -> Unit,
     onRegister: (String, String, String, String) -> Unit,
-    onSendVerification: (String, String) -> Unit,
+    onFetchCaptcha: () -> Unit,
     onShowRegister: () -> Unit,
     onShowLogin: () -> Unit,
     onDismiss: () -> Unit,
@@ -122,7 +126,7 @@ internal fun AuthBottomSheet(
                 subtitle = panelCopy.subtitle,
                 onLogin = onLogin,
                 onRegister = onRegister,
-                onSendVerification = onSendVerification,
+                onFetchCaptcha = onFetchCaptcha,
                 onShowRegister = onShowRegister,
                 onShowLogin = onShowLogin,
                 onDismiss = onDismiss,
@@ -154,36 +158,30 @@ internal fun AuthForm(
     state: AppUiState,
     title: String,
     subtitle: String,
-    onLogin: (String, String, String, Boolean) -> Unit,
+    onLogin: (String, String, Boolean) -> Unit,
     onRegister: (String, String, String, String) -> Unit,
-    onSendVerification: (String, String) -> Unit,
+    onFetchCaptcha: () -> Unit,
     onShowRegister: () -> Unit,
     onShowLogin: () -> Unit,
     onDismiss: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val copy = strings(state.language)
-    var countryCode by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.countryCode ?: "+1") }
-    var phoneNumber by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.phoneNumber ?: "") }
+    var username by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.username ?: "") }
     var password by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.password.orEmpty()) }
-    var verificationCode by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var captchaAnswer by remember { mutableStateOf("") }
     var rememberPassword by remember(state.savedCredentials) { mutableStateOf(state.savedCredentials?.rememberPassword == true) }
-    var smsCountdown by remember { mutableStateOf(0) }
-
-    LaunchedEffect(state.authSmsCountdownTrigger) {
-        if (state.authSmsCountdownTrigger > 0) {
-            smsCountdown = state.authSmsCountdownSeconds
-        }
-    }
-
-    LaunchedEffect(smsCountdown) {
-        if (smsCountdown > 0) {
-            delay(1_000)
-            smsCountdown -= 1
-        }
-    }
 
     val isLoginMode = state.authMode == AuthMode.LOGIN
+
+    // 注册模式下：进入注册模式或验证码尚未加载时，自动拉取一次图形验证码。
+    LaunchedEffect(state.authMode) {
+        if (!isLoginMode && state.captchaImageBase64.isBlank()) {
+            onFetchCaptcha()
+        }
+    }
+
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -196,14 +194,9 @@ internal fun AuthForm(
                 }
             }
         }
-        CountryCodeSelector(
-            selectedCode = countryCode,
-            onSelected = { countryCode = it },
-            enabled = !state.isLoading,
-        )
         LoginTextField(
-            value = phoneNumber,
-            onValueChange = { phoneNumber = it.filter(Char::isDigit) },
+            value = username,
+            onValueChange = { username = it },
             label = copy.authUsernameLabel,
             enabled = !state.isLoading,
             kind = TextFieldKind.PHONE,
@@ -223,12 +216,10 @@ internal fun AuthForm(
                 enabled = !state.isLoading,
                 language = state.language,
             )
-        }
-        if (isLoginMode) {
             PrimaryActionButton(
                 text = if (state.isLoading) copy.authLoginLoading else copy.authLoginAction,
-                enabled = !state.isLoading && phoneNumber.isNotBlank() && password.isNotBlank(),
-                onClick = { onLogin(countryCode, phoneNumber, password, rememberPassword) },
+                enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),
+                onClick = { onLogin(username, password, rememberPassword) },
             )
             SecondaryActionTextButton(
                 text = copy.authRegisterSecondary,
@@ -236,28 +227,34 @@ internal fun AuthForm(
                 enabled = !state.isLoading,
             )
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             LoginTextField(
-                    value = verificationCode,
-                    onValueChange = { verificationCode = it.filter(Char::isDigit).take(6) },
-                    label = copy.authVerificationCodeLabel,
-                    enabled = !state.isLoading,
-                    kind = TextFieldKind.VERIFICATION_CODE,
-                    modifier = Modifier.weight(1f),
-                )
-                GoldOutlinedButton(
-                    text = if (smsCountdown > 0) "${smsCountdown}s" else copy.authSendCode,
-                    enabled = authSmsSendEnabled(state.isLoading, smsCountdown, phoneNumber, password),
-                    onClick = {
-                        onSendVerification(countryCode, phoneNumber)
-                    },
-                    contentColor = PrimaryGold,
-                )
-            }
+                value = confirmPassword,
+                onValueChange = { confirmPassword = it },
+                label = copy.authConfirmPasswordLabel,
+                enabled = !state.isLoading,
+                isPassword = true,
+                kind = TextFieldKind.PASSWORD,
+            )
+            CaptchaBlock(
+                imageBase64 = state.captchaImageBase64,
+                captchaAnswer = captchaAnswer,
+                onAnswerChange = { captchaAnswer = it },
+                onRefresh = onFetchCaptcha,
+                language = state.language,
+                enabled = !state.isLoading,
+                isLoading = state.isLoading,
+            )
             PrimaryActionButton(
                 text = copy.authRegisterAction,
-                enabled = authRegisterEnabled(state.isLoading, phoneNumber, password, verificationCode),
-                onClick = { onRegister(countryCode, phoneNumber, password, verificationCode) },
+                enabled = authRegisterEnabled(
+                    isLoading = state.isLoading,
+                    username = username,
+                    password = password,
+                    confirmPassword = confirmPassword,
+                    captchaAnswer = captchaAnswer,
+                    captchaLoaded = state.captchaImageBase64.isNotBlank(),
+                ),
+                onClick = { onRegister(username, password, state.captchaId, captchaAnswer) },
             )
             SecondaryActionTextButton(
                 text = copy.authLoginSecondary,
@@ -268,53 +265,101 @@ internal fun AuthForm(
     }
 }
 
+@Composable
+private fun CaptchaBlock(
+    imageBase64: String,
+    captchaAnswer: String,
+    onAnswerChange: (String) -> Unit,
+    onRefresh: () -> Unit,
+    language: AppLanguage,
+    enabled: Boolean,
+    isLoading: Boolean,
+) {
+    val copy = strings(language)
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LoginTextField(
+            value = captchaAnswer,
+            onValueChange = onAnswerChange,
+            label = copy.authCaptchaAnswerLabel,
+            enabled = enabled,
+            kind = TextFieldKind.VERIFICATION_CODE,
+            modifier = Modifier.weight(1f),
+        )
+        CaptchaImage(
+            imageBase64 = imageBase64,
+            onRefresh = onRefresh,
+            refreshLabel = copy.authCaptchaRefresh,
+            loadingLabel = copy.authCaptchaLoading,
+            enabled = enabled && !isLoading,
+        )
+    }
+}
+
+@Composable
+private fun CaptchaImage(
+    imageBase64: String,
+    onRefresh: () -> Unit,
+    refreshLabel: String,
+    loadingLabel: String,
+    enabled: Boolean,
+) {
+    val bitmap = remember(imageBase64) {
+        runCatching {
+            val bytes = Base64.decode(imageBase64, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        }.getOrNull()
+    }
+    Box(
+        modifier = Modifier.size(width = 110.dp, height = 52.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = refreshLabel,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clickable(enabled = enabled, onClick = onRefresh),
+            )
+        } else {
+            Text(
+                if (imageBase64.isBlank()) loadingLabel else refreshLabel,
+                color = TextSecondary,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+    GoldOutlinedButton(
+        text = refreshLabel,
+        enabled = enabled,
+        onClick = onRefresh,
+        modifier = Modifier.height(52.dp),
+        contentColor = PrimaryGold,
+    )
+}
+
 internal fun authFormControls(mode: AuthMode, language: AppLanguage): List<String> {
     val copy = strings(language)
     return when (mode) {
         AuthMode.LOGIN -> listOf(
-            "phone",
+            "username",
             "password",
             "rememberPassword",
             "primary:${copy.authLoginAction}",
             "secondary:${copy.authRegisterSecondary}",
         )
         AuthMode.REGISTER -> listOf(
-            "phone",
+            "username",
             "password",
-            "verificationCode",
-            "sendCode",
+            "confirmPassword",
+            "captchaImage",
+            "captchaAnswer",
             "primary:${copy.authRegisterAction}",
             "secondary:${copy.authLoginSecondary}",
         )
-    }
-}
-
-@Composable
-private fun CountryCodeSelector(
-    selectedCode: String,
-    onSelected: (String) -> Unit,
-    enabled: Boolean,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val codes = supportedPhoneCountryCodes()
-    Column {
-        GoldOutlinedButton(
-            text = codes.firstOrNull { it.code == selectedCode }?.let { "${it.code} · ${it.label}" } ?: selectedCode,
-            enabled = enabled,
-            onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth(),
-            contentColor = PrimaryGold,
-        )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            codes.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text("${option.code} · ${option.label}") },
-                    onClick = {
-                        expanded = false
-                        onSelected(option.code)
-                    },
-                )
-            }
-        }
     }
 }

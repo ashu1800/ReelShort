@@ -4,17 +4,16 @@ import com.reelshort.app.config.ApiConfig
 import com.reelshort.app.data.ApiHealthStatus
 import com.reelshort.app.data.AuthSession
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.CaptchaChallenge
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
-import com.reelshort.app.data.RegisterSimulationResult
-import com.reelshort.app.data.SmsSendResult
-import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
+import com.reelshort.app.data.VipOrder
 import com.reelshort.app.data.WatchEpisodeSnapshot
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.WatchRecord
@@ -27,6 +26,7 @@ import com.reelshort.app.network.dto.AuthSessionDto
 import com.reelshort.app.network.dto.ApiHealthStatusDto
 import com.reelshort.app.network.dto.BankCardBindRequestDto
 import com.reelshort.app.network.dto.BackendApiResponse
+import com.reelshort.app.network.dto.CaptchaResponseDto
 import com.reelshort.app.network.dto.CommentDto
 import com.reelshort.app.network.dto.CommentRequestDto
 import com.reelshort.app.network.dto.ContentBookDto
@@ -41,14 +41,10 @@ import com.reelshort.app.network.dto.PointTransferDto
 import com.reelshort.app.network.dto.PointTransferRequestDto
 import com.reelshort.app.network.dto.RechargeOrderDto
 import com.reelshort.app.network.dto.RegisterRequestDto
-import com.reelshort.app.network.dto.RegisterSimulationResponseDto
 import com.reelshort.app.network.dto.SocialToggleDto
-import com.reelshort.app.network.dto.SmsSendRequestDto
-import com.reelshort.app.network.dto.SmsSendResponseDto
+import com.reelshort.app.network.dto.VipOrderDto
 import com.reelshort.app.network.dto.WalletBindRequestDto
 import com.reelshort.app.network.dto.WalletResponseDto
-import com.reelshort.app.network.dto.WalletUnbindRequestDto
-import com.reelshort.app.network.dto.WalletVerificationRequestDto
 import com.reelshort.app.network.dto.WatchProgressRequestDto
 import com.reelshort.app.network.dto.WatchEpisodeSnapshotDto
 import com.reelshort.app.network.dto.WatchRecordDto
@@ -83,41 +79,28 @@ class OkHttpReelShortApiClient(
                 .build(),
         ).toDomain()
 
-    override suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession =
-        post<AuthRequestDto, AuthSessionDto>("/auth/login", AuthRequestDto(countryCode, phoneNumber, password))
+    override suspend fun login(username: String, password: String): AuthSession =
+        post<AuthRequestDto, AuthSessionDto>("/auth/login", AuthRequestDto(username, password))
             .toDomain()
 
     override suspend fun register(
-        countryCode: String,
-        phoneNumber: String,
+        username: String,
         password: String,
-        verificationCode: String,
-    ): RegisterSimulationResult =
-        post<RegisterRequestDto, RegisterSimulationResponseDto>(
+        captchaId: String,
+        captchaAnswer: String,
+    ): AuthSession =
+        post<RegisterRequestDto, AuthSessionDto>(
             "/auth/register",
-            RegisterRequestDto(countryCode, phoneNumber, password, verificationCode),
+            RegisterRequestDto(username, password, captchaId, captchaAnswer),
         ).toDomain()
 
-    override suspend fun sendAuthSms(
-        purpose: SmsVerificationPurpose,
-        countryCode: String,
-        phoneNumber: String,
-    ): SmsSendResult =
-        post<SmsSendRequestDto, SmsSendResponseDto>(
-            "/auth/sms/send",
-            SmsSendRequestDto(purpose.name, countryCode, phoneNumber),
-        ).toDomain()
+    override suspend fun fetchCaptcha(): CaptchaChallenge =
+        get<CaptchaResponseDto>("/auth/captcha", authenticated = false).toDomain()
 
-    override suspend fun sendPasswordChangeVerification(): SmsSendResult =
-        postEmpty<SmsSendResponseDto>(
-            "/auth/password/verification/send",
-            authenticated = true,
-        ).toDomain()
-
-    override suspend fun changePassword(oldPassword: String, newPassword: String, verificationCode: String) {
+    override suspend fun changePassword(oldPassword: String, newPassword: String) {
         post<PasswordChangeRequestDto, String>(
             "/auth/password/change",
-            PasswordChangeRequestDto(oldPassword, newPassword, verificationCode),
+            PasswordChangeRequestDto(oldPassword, newPassword),
             authenticated = true,
         )
     }
@@ -205,27 +188,28 @@ class OkHttpReelShortApiClient(
     override suspend fun getWallet(): WalletInfo =
         get<WalletResponseDto>("/wallet", authenticated = true).toDomain()
 
-    override suspend fun sendWalletVerification(purpose: SmsVerificationPurpose): SmsSendResult =
-        post<WalletVerificationRequestDto, SmsSendResponseDto>(
-            "/wallet/verification/send",
-            WalletVerificationRequestDto(purpose.name),
-            authenticated = true,
-        ).toDomain()
-
-    override suspend fun bindWallet(walletAddress: String, verificationCode: String): WalletInfo =
+    override suspend fun bindWallet(walletAddress: String): WalletInfo =
         postWithMethod<WalletBindRequestDto, WalletResponseDto>(
             path = "/wallet",
-            requestDto = WalletBindRequestDto(walletAddress, verificationCode),
+            requestDto = WalletBindRequestDto(walletAddress),
             method = "PUT",
             authenticated = true,
         ).toDomain()
 
-    override suspend fun unbindWallet(verificationCode: String): WalletInfo =
-        post<WalletUnbindRequestDto, WalletResponseDto>(
+    override suspend fun unbindWallet(): WalletInfo =
+        postEmpty<WalletResponseDto>(
             "/wallet/unbind",
-            WalletUnbindRequestDto(verificationCode),
             authenticated = true,
         ).toDomain()
+
+    override suspend fun createVipOrder(): VipOrder =
+        postEmpty<VipOrderDto>(
+            "/vip/orders",
+            authenticated = true,
+        ).toDomain()
+
+    override suspend fun getVipOrders(): List<VipOrder> =
+        get<List<VipOrderDto>>("/vip/orders", authenticated = true).map { it.toDomain() }
 
     override suspend fun submitBankCard(holderName: String, cardNumber: String) {
         post<BankCardBindRequestDto, String>(
@@ -375,10 +359,8 @@ class OkHttpReelShortApiClient(
     private fun AuthSessionDto.toDomain(): AuthSession =
         AuthSession(username = username, token = token, tokenType = tokenType, phoneE164 = phoneE164)
 
-    private fun RegisterSimulationResponseDto.toDomain(): RegisterSimulationResult =
-        RegisterSimulationResult(status)
-
-    private fun SmsSendResponseDto.toDomain(): SmsSendResult = SmsSendResult(expiresInSeconds)
+    private fun CaptchaResponseDto.toDomain(): CaptchaChallenge =
+        CaptchaChallenge(captchaId = captchaId, imageBase64 = imageBase64)
 
     private fun ApiHealthStatusDto.toDomain(): ApiHealthStatus = ApiHealthStatus(status, service)
 
@@ -437,7 +419,20 @@ class OkHttpReelShortApiClient(
     private fun RechargeOrderDto.toDomain(): RechargeOrderSummary =
         RechargeOrderSummary(orderNo, amountCents, pointAmount, status)
 
-    private fun WalletResponseDto.toDomain(): WalletInfo = WalletInfo(network, walletAddress, updatedAt)
+    private fun WalletResponseDto.toDomain(): WalletInfo =
+        WalletInfo(network, walletAddress, updatedAt, vipUntil, vipPriceUsdt)
+
+    private fun VipOrderDto.toDomain(): VipOrder =
+        VipOrder(
+            id = id,
+            orderNo = orderNo,
+            usdtAmount = usdtAmount,
+            status = status,
+            paymentMethod = paymentMethod,
+            txHash = txHash,
+            createdAt = createdAt,
+            confirmedAt = confirmedAt,
+        )
 
     private fun WithdrawalSummaryDto.toDomain(): WithdrawalSummary =
         WithdrawalSummary(

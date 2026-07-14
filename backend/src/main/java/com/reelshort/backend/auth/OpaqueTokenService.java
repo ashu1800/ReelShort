@@ -34,7 +34,7 @@ public class OpaqueTokenService implements TokenService {
 		OffsetDateTime issuedAt = OffsetDateTime.now();
 		OffsetDateTime expiresAt = issuedAt.plus(authSessionProperties.getAccessTokenTtl());
 		accessTokenRepository.save(AccessToken.issue(tokenHasher.hash(token), user, issuedAt, expiresAt));
-		return new AuthToken(user.id(), user.username(), user.phoneE164(), token, "Bearer");
+		return new AuthToken(user.id(), user.username(), token, "Bearer");
 	}
 
 	@Override

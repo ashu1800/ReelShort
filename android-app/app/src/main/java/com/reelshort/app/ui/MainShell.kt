@@ -23,7 +23,6 @@ import androidx.media3.common.util.UnstableApi
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
-import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.state.AppScreen
 import com.reelshort.app.state.AppUiState
@@ -59,7 +58,6 @@ internal fun MainShell(
     onOpenFavorites: () -> Unit,
     onBackFromPlayer: () -> Unit,
     onBackFromFavorites: () -> Unit,
-    onCheckApiHealth: () -> Unit,
     appVersionLabel: String,
     isCheckingForUpdate: Boolean,
     onCheckForUpdate: () -> Unit,
@@ -67,13 +65,12 @@ internal fun MainShell(
     onShowRegisterAuthPrompt: () -> Unit,
     onRefreshHome: () -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
-    onSendWalletVerification: (SmsVerificationPurpose) -> Unit,
-    onSendPasswordChangeVerification: () -> Unit,
-    onBindWallet: (String, String) -> Unit,
-    onUnbindWallet: (String) -> Unit,
+    onBindWallet: (String) -> Unit,
+    onUnbindWallet: () -> Unit,
+    onCreateVipOrder: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
     onTransferPoints: (String, Int) -> Unit,
-    onChangePassword: (String, String, String) -> Unit,
+    onChangePassword: (String, String) -> Unit,
 ) {
     // 播放器全屏渲染：跳出底部导航与状态栏占位，沉浸式短剧播放
     if (state.screen == AppScreen.PLAYER) {
@@ -150,28 +147,22 @@ internal fun MainShell(
                             wallet = state.wallet,
                             walletMutationVersion = state.walletMutationVersion,
                             withdrawalSubmissionVersion = state.withdrawalSubmissionVersion,
-                            walletSmsCountdownSeconds = state.walletSmsCountdownSeconds,
-                            walletSmsCountdownTrigger = state.walletSmsCountdownTrigger,
-                            passwordSmsCountdownSeconds = state.passwordSmsCountdownSeconds,
-                            passwordSmsCountdownTrigger = state.passwordSmsCountdownTrigger,
+                            vipUntil = state.vipUntil,
+                            vipPriceUsdt = state.vipPriceUsdt,
                             accountOperation = state.accountOperation,
                             withdrawalSummary = state.withdrawalSummary,
                             withdrawals = state.withdrawals,
                             pointTransfers = state.pointTransfers,
-                            apiBaseUrl = state.apiBaseUrl,
-                            apiHealthStatus = state.apiHealthStatus,
                             appVersionLabel = appVersionLabel,
                             isCheckingForUpdate = isCheckingForUpdate,
-                            onCheckApiHealth = onCheckApiHealth,
                             onCheckForUpdate = onCheckForUpdate,
                             onShowAuthPrompt = onShowAuthPrompt,
                             onShowRegisterAuthPrompt = onShowRegisterAuthPrompt,
                             onOpenFavorites = onOpenFavorites,
                             onOpenWatchRecord = onOpenWatchRecord,
-                            onSendWalletVerification = onSendWalletVerification,
-                            onSendPasswordChangeVerification = onSendPasswordChangeVerification,
                             onBindWallet = onBindWallet,
                             onUnbindWallet = onUnbindWallet,
+                            onCreateVipOrder = onCreateVipOrder,
                             onSubmitWithdrawal = onSubmitWithdrawal,
                             onTransferPoints = onTransferPoints,
                             onChangePassword = onChangePassword,

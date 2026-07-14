@@ -51,7 +51,7 @@ class OkHttpReelShortApiClientTest {
             )
 
             val error = assertFailsWith<ApiClientException> {
-                client.login("+1", "4155550101", "bad-password")
+                client.login("demo", "bad-password")
             }
 
             assertEquals(200, error.statusCode)
@@ -82,7 +82,7 @@ class OkHttpReelShortApiClientTest {
             )
 
             val error = assertFailsWith<ApiClientException> {
-                client.login("+1", "4155550101", "bad-password")
+                client.login("demo", "bad-password")
             }
 
             assertEquals(401, error.statusCode)
@@ -96,22 +96,20 @@ class OkHttpReelShortApiClientTest {
         MockWebServer().use { server ->
             server.enqueue(successBody("""
                 {
-                  "username": "+14155550101",
-                  "phoneE164": "+14155550101",
+                  "username": "demo",
                   "token": "token-123",
                   "tokenType": "Bearer"
                 }
             """.trimIndent()))
             val client = client(server)
 
-            val session = client.login("+1", "4155550101", "Password123")
+            val session = client.login("demo", "Password123")
             val request = server.takeRequest()
 
             assertEquals("/api/app/auth/login", request.path)
             assertEquals("POST", request.method)
-            assertEquals("""{"countryCode":"+1","phoneNumber":"4155550101","password":"Password123"}""", request.body.readUtf8())
-            assertEquals("+14155550101", session.username)
-            assertEquals("+14155550101", session.phoneE164)
+            assertEquals("""{"username":"demo","password":"Password123"}""", request.body.readUtf8())
+            assertEquals("demo", session.username)
             assertEquals("token-123", session.token)
         }
     }
@@ -168,19 +166,24 @@ class OkHttpReelShortApiClientTest {
     }
 
     @Test
-    fun passwordChangeVerificationUsesProtectedEndpointWithoutSmsPurposeBody() = runTest {
+    fun fetchCaptchaUsesPublicEndpointWithoutBearerToken() = runTest {
         MockWebServer().use { server ->
-            server.enqueue(successBody("""{ "expiresInSeconds": 120 }"""))
+            server.enqueue(successBody("""
+                {
+                  "captchaId": "captcha-1",
+                  "imageBase64": "base64-image"
+                }
+            """.trimIndent()))
             val client = client(server, token = "token-123")
 
-            val result = client.sendPasswordChangeVerification()
+            val challenge = client.fetchCaptcha()
             val request = server.takeRequest()
 
-            assertEquals("/api/app/auth/password/verification/send", request.path)
-            assertEquals("POST", request.method)
-            assertEquals("Bearer token-123", request.getHeader("Authorization"))
-            assertEquals("", request.body.readUtf8())
-            assertEquals(120, result.expiresInSeconds)
+            assertEquals("/api/app/auth/captcha", request.path)
+            assertEquals("GET", request.method)
+            assertEquals(null, request.getHeader("Authorization"))
+            assertEquals("captcha-1", challenge.captchaId)
+            assertEquals("base64-image", challenge.imageBase64)
         }
     }
 

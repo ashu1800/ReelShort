@@ -1,9 +1,6 @@
 package com.reelshort.backend.auth;
 
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.verify;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -14,7 +11,6 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,9 +18,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.content.ContentBook;
@@ -62,42 +56,19 @@ class AppSecurityContractTests {
 	@MockitoBean
 	private ContentProvider contentProvider;
 
-	@MockitoBean
-	private SmsCallbackClient smsCallbackClient;
-
 	@Test
-	void authEndpointsRemainPublic() throws Exception {
-		mockMvc.perform(post("/api/app/auth/sms/send")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "purpose": "PUBLIC_REGISTER",
-						  "countryCode": "+1",
-						  "phoneNumber": "4155550401"
-						}
-						"""))
+	void captchaEndpointRemainsPublic() throws Exception {
+		mockMvc.perform(get("/api/app/auth/captcha"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.expiresInSeconds").value(120));
-
-		mockMvc.perform(post("/api/app/auth/register")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "countryCode": "+1",
-						  "phoneNumber": "4155550401",
-						  "password": "Password123",
-						  "verificationCode": "%s"
-						}
-						""".formatted(latestSmsCode())))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.status").value("SIMULATED"));
+				.andExpect(jsonPath("$.data.captchaId").isNotEmpty())
+				.andExpect(jsonPath("$.data.imageBase64").isNotEmpty());
 	}
 
 	@Test
 	void malformedJsonReturnsBadRequestInsteadOfInternalServerError() throws Exception {
-		mockMvc.perform(post("/api/app/auth/sms/send")
+		mockMvc.perform(post("/api/app/auth/login")
 				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\\\"purpose\\\":\\\"PUBLIC_REGISTER\\\"}"))
+				.content("{\\\"username\\\":\\\"bad\\\"}"))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("bad request"));
 	}
@@ -207,18 +178,5 @@ class AppSecurityContractTests {
 		mockMvc.perform(get("/api/admin/users"))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value(401));
-	}
-
-	private String registerAndExtractToken(String username) throws Exception {
-		return TestAppUsers.token(mockMvc, objectMapper, username);
-	}
-
-	private String latestSmsCode() {
-		ArgumentCaptor<SmsCallbackMessage> captor = ArgumentCaptor.forClass(SmsCallbackMessage.class);
-		verify(smsCallbackClient, atLeastOnce()).send(captor.capture());
-		String content = captor.getAllValues().get(captor.getAllValues().size() - 1).content();
-		java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("code is (\\d{6})\\.").matcher(content);
-		assertThat(matcher.find()).isTrue();
-		return matcher.group(1);
 	}
 }
