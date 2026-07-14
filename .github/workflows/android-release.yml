@@ -1,4 +1,4 @@
-name: Android Release
+name: Android Self-Hosted Release
 
 on:
   push:
@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: android-release-${{ inputs.tag || github.ref_name }}
@@ -26,7 +26,6 @@ jobs:
       ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
       ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
       ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out release tag
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -54,10 +53,6 @@ jobs:
           app_version="$(cd android-app && ./gradlew :app:printAppVersion --no-daemon -q | tail -n 1)"
           expected="${RELEASE_TAG#v}"
           [[ "${app_version%%/*}" == "$expected" ]]
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists; refusing to overwrite it" >&2
-            exit 1
-          fi
           echo "Building $RELEASE_TAG with app version $app_version"
 
       - name: Restore release keystore
@@ -89,26 +84,83 @@ jobs:
           grep -F "package: name='com.reelshort.app'" "$badging"
           grep -F "versionName='${RELEASE_TAG#v}'" "$badging"
 
-      - name: Prepare Release assets
+      - name: Prepare self-hosted release assets
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
           apk="ShortLink-${RELEASE_TAG}.apk"
+          version="${RELEASE_TAG#v}"
+          app_version="$(cd android-app && ./gradlew :app:printAppVersion --no-daemon -q | tail -n 1)"
+          version_code="${app_version##*/}"
           cp android-app/app/build/outputs/apk/release/app-release.apk "dist/$apk"
           (cd dist && sha256sum "$apk" > "$apk.sha256")
-          chmod 644 "dist/$apk" "dist/$apk.sha256"
+          apk_size="$(stat -c%s "dist/$apk")"
+          checksum_size="$(stat -c%s "dist/$apk.sha256")"
+          published_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          jq -n \
+            --arg versionName "$version" \
+            --argjson versionCode "$version_code" \
+            --arg title "ShortLink $RELEASE_TAG" \
+            --arg releaseNotes "ShortLink $RELEASE_TAG update." \
+            --arg publishedAt "$published_at" \
+            --arg apkUrl "https://shortlink.hjj888.cc/downloads/android/$apk" \
+            --arg sha256Url "https://shortlink.hjj888.cc/downloads/android/$apk.sha256" \
+            --argjson sizeBytes "$apk_size" \
+            --argjson sha256SizeBytes "$checksum_size" \
+            '{
+              versionName: $versionName,
+              versionCode: $versionCode,
+              minimumVersionCode: 1,
+              mandatory: false,
+              title: $title,
+              releaseNotes: $releaseNotes,
+              publishedAt: $publishedAt,
+              apkUrl: $apkUrl,
+              sha256Url: $sha256Url,
+              sizeBytes: $sizeBytes,
+              sha256SizeBytes: $sha256SizeBytes
+            }' > dist/latest.json
+          chmod 644 "dist/$apk" "dist/$apk.sha256" dist/latest.json
 
-      - name: Create stable GitHub Release
+      - name: Configure release SSH identity
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          SSH_PRIVATE_KEY: ${{ secrets.SHORTLINK_RELEASE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SHORTLINK_RELEASE_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "ShortLink ${RELEASE_TAG}" \
-            --generate-notes \
-            dist/"ShortLink-${RELEASE_TAG}.apk" \
-            dist/"ShortLink-${RELEASE_TAG}.apk.sha256"
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/shortlink-release"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/shortlink-release" "$HOME/.ssh/known_hosts"
+
+      - name: Upload and publish release atomically
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SHORTLINK_RELEASE_SSH_HOST }}
+          SSH_PORT: ${{ secrets.SHORTLINK_RELEASE_SSH_PORT }}
+          SSH_USER: ${{ secrets.SHORTLINK_RELEASE_SSH_USER }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST"
+          test -n "$SSH_PORT"
+          test -n "$SSH_USER"
+          apk="ShortLink-${RELEASE_TAG}.apk"
+          remote_dir="/opt/reelshort/releases/android"
+          ssh_options=(-i "$HOME/.ssh/shortlink-release" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          scp -i "$HOME/.ssh/shortlink-release" -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "dist/$apk" "$SSH_USER@$SSH_HOST:$remote_dir/$apk.part"
+          scp -i "$HOME/.ssh/shortlink-release" -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "dist/$apk.sha256" "$SSH_USER@$SSH_HOST:$remote_dir/$apk.sha256.part"
+          scp -i "$HOME/.ssh/shortlink-release" -P "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            dist/latest.json "$SSH_USER@$SSH_HOST:$remote_dir/latest.json.part"
+          ssh "${ssh_options[@]}" "$SSH_USER@$SSH_HOST" \
+            "set -eu; cd '$remote_dir'; test -s '$apk.part'; test -s '$apk.sha256.part'; test -s latest.json.part; chmod 0644 '$apk.part' '$apk.sha256.part' latest.json.part; mv -f '$apk.part' '$apk'; mv -f '$apk.sha256.part' '$apk.sha256'; mv -f latest.json.part latest.json"
+
+      - name: Remove release SSH identity
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.ssh/shortlink-release"

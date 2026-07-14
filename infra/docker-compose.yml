@@ -100,6 +100,8 @@ services:
     container_name: reelshort-nginx
     ports:
       - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ../releases/android:/srv/releases/android:ro
     depends_on:
       backend:
         condition: service_healthy

@@ -2,7 +2,7 @@
 
 单机部署基础设施目录，当前使用 Docker Compose 编排以下服务：
 
-- `nginx`：唯一外部 HTTP 入口，托管后台 Web 静态文件并转发 `/api/` 到后端。
+- `nginx`：唯一外部 HTTP 入口，托管后台 Web、ShortLink Android 更新文件并转发其他 `/api/` 请求到后端。
 - `backend`：Spring Boot 核心业务服务。
 - `content-provider`：Flask ReelShort 内容源服务，仅供后端内部访问。
 - `postgres`：核心业务数据库。
@@ -19,6 +19,15 @@ docker compose --env-file .env up -d --build
 
 - 后台 Web：`http://localhost`
 - 后端健康检查：`http://localhost/actuator/health`
+
+## Android 更新文件
+
+发布文件保存在仓库同级部署目录 `releases/android/`；生产部署对应 `/opt/reelshort/releases/android/`。Compose 将该目录只读挂载到 Nginx：
+
+- 版本清单：`/api/app/update/latest`
+- APK 与摘要：`/downloads/android/ShortLink-vX.Y.Z.apk[.sha256]`
+
+下载按客户端 IP 限制为一个并发连接，每个响应前 2 MiB 不限速，之后限制为 1 MiB/s。静态文件支持 HTTP Range 和断点续传，`latest.json` 必须在 APK 与摘要原子落盘后最后替换。
 
 需要从宿主机直接连接 PostgreSQL 或 Redis 调试时，显式叠加仅绑定 loopback 的 override：
 
@@ -54,5 +63,6 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/verify-backup-scripts.ps1
 - 固定开发管理员和支付密钥只允许用于显式 `app-dev` 或测试 profile；通过生产 Compose 启动时，管理员哈希或支付密钥缺失、使用已知开发值或强度不足都会拒绝启动。
 - 默认 Compose 只把 Nginx 暴露到外部；PostgreSQL 和 Redis 仅在 Compose 内部网络可达。宿主机调试必须显式叠加 `docker-compose.local-debug.yml`，且端口只绑定 `127.0.0.1`。
 - Nginx 将 `/api/internal` 和 `/api/internal/` 下的路径透传到 backend；这些接口必须依赖 `X-Internal-Super-Token`、支付回调密钥等后端接口级鉴权，公网调用方不得记录或泄露内部密钥。
+- Android 发布目录由无 sudo 的 `shortlink-release` 用户写入，Nginx 仅以只读方式挂载；正式签名密钥不得上传服务器。
 - Flask 内容源通过 Compose 内部网络访问，不应直接暴露给公网。
 - Compose 默认设置 `REELSHORT_RATE_LIMIT_STORE=redis`，后端通过内部服务名 `redis` 访问 Redis；本地直接运行后端时默认仍使用内存限流。
