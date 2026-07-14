@@ -57,6 +57,14 @@ public class WithdrawalService {
 				wallet == null ? null : wallet.walletAddress());
 	}
 
+	/**
+	 * Current withdrawal conversion thresholds without any user-specific data, for operations tools.
+	 */
+	@Transactional(readOnly = true)
+	public WithdrawalConversion.Snapshot thresholds() {
+		return conversion().toSnapshot();
+	}
+
 	@Transactional(readOnly = true)
 	public List<WithdrawalResponse> userWithdrawals(UUID userId) {
 		return withdrawalRequestRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()

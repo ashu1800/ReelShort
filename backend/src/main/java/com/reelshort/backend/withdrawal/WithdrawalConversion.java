@@ -50,4 +50,26 @@ final class WithdrawalConversion {
 	BigDecimal minimumUsd() {
 		return minimumUsd;
 	}
+
+	/**
+	 * Snapshot of the withdrawal conversion thresholds, exposing the same computed values the App
+	 * sees in {@link WithdrawalSummaryResponse} but without any user-specific fields. Used by the
+	 * operations API for scripts/tools that need the current limits.
+	 */
+	public record Snapshot(
+			int minimumPoints,
+			String usdtPerPoint,
+			String cnyPerPoint,
+			String cnyPerUsd,
+			String minimumUsd) {
+	}
+
+	Snapshot toSnapshot() {
+		return new Snapshot(minimumPoints(), strip(usdtPerPoint()), strip(cnyPerPoint), strip(cnyPerUsd),
+				strip(minimumUsd));
+	}
+
+	private static String strip(BigDecimal value) {
+		return value.stripTrailingZeros().toPlainString();
+	}
 }
