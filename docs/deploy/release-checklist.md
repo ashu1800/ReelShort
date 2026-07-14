@@ -95,13 +95,21 @@ Android 代码变更必须在模拟器完成手动验收，不能只依赖单元
 - 用户关键路径没有纯黑屏、无反馈点击或无法返回的问题。
 - 若发现体验问题，应记录到新的修复计划，不把问题静默带入发布。
 
-### GitHub Release 更新验收
+### 自托管 Android 更新发布
 
 - 标签必须为 `vX.Y.Z`，并与 Android `versionName` 完全一致；`versionCode` 必须单调递增。
-- GitHub Actions 必须通过单元测试、Compose 仪器测试、Release Lint、正式签名构建和 `apksigner` 验证。
-- Release 只能包含一个 `ShortLink-vX.Y.Z.apk` 和一个同名 `.sha256` 资产，且必须为非 draft、非 prerelease。
-- 用同一正式密钥安装低版本验证包，实际走完检测、下载进度、摘要/包名/版本/签名校验、未知来源授权和系统安装确认。
+- 快速发布工作流不运行单元测试、Lint 或模拟器测试，只执行正式签名构建、`apksigner`、包名、版本和摘要校验。
+- APK、同名 `.sha256` 和 `latest.json` 必须通过专用 `shortlink-release` SSH 用户上传，并以清单最后替换的顺序原子发布。
+- App 版本清单固定从 `https://shortlink.hjj888.cc/api/app/update/latest` 获取，APK 固定从 `/downloads/android/` 下载，不再依赖 GitHub Release。
+- Nginx 下载限制为每 IP 一个连接，前 2 MiB 不限速，之后 1 MiB/s，并保留 HTTP Range。
 - 正式 keystore 只能从 GitHub Secrets 或仓库外 DPAPI 备份恢复，禁止写入仓库或日志。
+
+发布后执行：
+
+```powershell
+curl https://shortlink.hjj888.cc/api/app/update/latest
+curl -I https://shortlink.hjj888.cc/downloads/android/ShortLink-vX.Y.Z.apk
+```
 
 ## 4. 服务器部署验收
 

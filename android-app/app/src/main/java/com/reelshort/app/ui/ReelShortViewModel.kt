@@ -19,10 +19,10 @@ import com.reelshort.app.BuildConfig
 import com.reelshort.app.AndroidSessionStore
 import com.reelshort.app.update.AndroidUpdateInstaller
 import com.reelshort.app.update.AndroidUpdatePackageVerifier
-import com.reelshort.app.update.GitHubReleaseUpdateClient
 import com.reelshort.app.update.InstallRequest
 import com.reelshort.app.update.OkHttpReleaseDownloader
 import com.reelshort.app.update.SemanticVersion
+import com.reelshort.app.update.ShortLinkUpdateClient
 import com.reelshort.app.update.UpdateCoordinator
 import com.reelshort.app.update.UpdateState
 import kotlinx.coroutines.CancellationException
@@ -252,7 +252,7 @@ class ReelShortViewModel(
                     val currentVersion = SemanticVersion.parse(BuildConfig.VERSION_NAME)
                         ?: error("VERSION_NAME must use X.Y.Z")
                     val updateCoordinator = UpdateCoordinator(
-                        releaseClient = GitHubReleaseUpdateClient(
+                        releaseClient = ShortLinkUpdateClient(
                             httpClient = updateHttpClient,
                             userAgent = "ShortLink-Android/${BuildConfig.VERSION_NAME}",
                         ),
