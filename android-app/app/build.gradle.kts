@@ -19,8 +19,8 @@ val releaseSigningConfigured = listOf(
     signingKeyAlias,
     signingKeyPassword,
 ).all { !it.isNullOrBlank() }
-val appVersionName = providers.gradleProperty("appVersionName").orElse("0.2.0").get()
-val appVersionCode = providers.gradleProperty("appVersionCode").orElse("2").get().toInt()
+val appVersionName = providers.gradleProperty("appVersionName").orElse("0.3.0").get()
+val appVersionCode = providers.gradleProperty("appVersionCode").orElse("3").get().toInt()
 require(appVersionCode > 0) { "appVersionCode must be positive" }
 
 android {
