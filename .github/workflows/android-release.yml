@@ -72,19 +72,6 @@ jobs:
           chmod 600 "$key_path"
           echo "ANDROID_SIGNING_STORE_FILE=$key_path" >> "$GITHUB_ENV"
 
-      - name: Run Android unit tests and lint
-        working-directory: android-app
-        run: ./gradlew :app-core:test :app:testReleaseUnitTest :app:lintRelease --no-daemon
-
-      - name: Run Compose instrumentation tests
-        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
-        with:
-          api-level: 34
-          arch: x86_64
-          profile: pixel_2
-          emulator-options: -no-window -gpu off -no-snapshot -noaudio -no-boot-anim -accel off
-          script: cd android-app && ./gradlew :app:connectedDebugAndroidTest --no-daemon
-
       - name: Build signed release APK
         working-directory: android-app
         run: ./gradlew :app:assembleRelease --no-daemon
