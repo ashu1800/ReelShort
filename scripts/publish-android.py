@@ -234,9 +234,9 @@ def upload_to_cos(config: dict, version_name: str, apk_path: Path, sha256_path: 
     apk_key = f"{OBJECT_KEY_PREFIX}/ShortLink-v{version_name}.apk"
     sha_key = f"{OBJECT_KEY_PREFIX}/ShortLink-v{version_name}.apk.sha256"
 
-    client.upload_file(Bucket=bucket, Key=apk_key, LocalPath=str(apk_path), EnableMD5=True)
+    client.upload_file(Bucket=bucket, Key=apk_key, LocalFilePath=str(apk_path), EnableMD5=True)
     print(f"Uploaded {apk_key}")
-    client.upload_file(Bucket=bucket, Key=sha_key, LocalPath=str(sha256_path), EnableMD5=True)
+    client.upload_file(Bucket=bucket, Key=sha_key, LocalFilePath=str(sha256_path), EnableMD5=True)
     print(f"Uploaded {sha_key}")
 
 
@@ -266,6 +266,7 @@ def publish_to_backend(config: dict, version_name: str, version_code: int, relea
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST", headers={
         "Content-Type": "application/json",
+        "User-Agent": "ShortLinkPublisher/1.0",
         "X-Internal-Super-Token": config["REELSHORT_INTERNAL_SUPER_TOKEN"],
     })
     try:
