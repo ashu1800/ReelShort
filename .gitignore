@@ -55,3 +55,4 @@ android-app/release-signing/
 .env
 .env.*
 !.env.example
+.zcode/

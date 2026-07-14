@@ -79,6 +79,11 @@ services:
       REELSHORT_RATE_LIMIT_STORE: ${REELSHORT_RATE_LIMIT_STORE:-redis}
       REELSHORT_REDIS_HOST: redis
       REELSHORT_REDIS_PORT: 6379
+      REELSHORT_COS_SECRET_ID: ${REELSHORT_COS_SECRET_ID:-}
+      REELSHORT_COS_SECRET_KEY: ${REELSHORT_COS_SECRET_KEY:-}
+      REELSHORT_COS_REGION: ${REELSHORT_COS_REGION:-ap-chengdu}
+      REELSHORT_COS_BUCKET: ${REELSHORT_COS_BUCKET:-}
+      REELSHORT_RELEASE_PRESIGN_TTL: ${REELSHORT_RELEASE_PRESIGN_TTL:-1h}
     expose:
       - "8080"
     depends_on:
@@ -100,8 +105,6 @@ services:
     container_name: reelshort-nginx
     ports:
       - "${NGINX_PORT:-80}:80"
-    volumes:
-      - ../releases/android:/srv/releases/android:ro
     depends_on:
       backend:
         condition: service_healthy

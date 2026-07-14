@@ -95,21 +95,21 @@ Android 代码变更必须在模拟器完成手动验收，不能只依赖单元
 - 用户关键路径没有纯黑屏、无反馈点击或无法返回的问题。
 - 若发现体验问题，应记录到新的修复计划，不把问题静默带入发布。
 
-### 自托管 Android 更新发布
+### Android 更新发布（对象存储方式）
 
-- 标签必须为 `vX.Y.Z`，并与 Android `versionName` 完全一致；`versionCode` 必须单调递增。
-- 快速发布工作流不运行单元测试、Lint 或模拟器测试，只执行正式签名构建、`apksigner`、包名、版本和摘要校验。
-- APK、同名 `.sha256` 和 `latest.json` 必须通过专用 `shortlink-release` SSH 用户上传，并以清单最后替换的顺序原子发布。
-- App 版本清单固定从 `https://shortlink.hjj888.cc/api/app/update/latest` 获取，APK 固定从 `/downloads/android/` 下载，不再依赖 GitHub Release。
-- Nginx 下载限制为每 IP 一个连接，前 2 MiB 不限速，之后 1 MiB/s，并保留 HTTP Range。
-- 正式 keystore 只能从 GitHub Secrets 或仓库外 DPAPI 备份恢复，禁止写入仓库或日志。
+- 版本号必须为 `X.Y.Z`，并与 Android `versionName` 完全一致；`versionCode` 必须单调递增。
+- 发布使用本地脚本 `python scripts/publish-android.py`，详细前置准备和参数见 `docs/deploy/publish-android.md`。
+- 脚本完成签名构建、`apksigner` / 包名 / versionName 校验、SHA-256 和大小计算后，上传 APK 和 `.sha256` 到腾讯 COS，再 POST 发布元数据到后端 `POST /api/internal/release/publish`。
+- 后端在 `app_releases` 表 upsert 发布记录，App 版本清单从 `https://shortlink.hjj888.cc/api/app/release/latest` 获取，APK 下载链接由后端按需生成的短时 COS 预签名 URL 提供。
+- 正式 keystore 只能从仓库外备份恢复，通过 `ANDROID_SIGNING_*` 环境变量注入；COS 密钥和超级 Token 只在 `.env`（gitignored）或部署环境变量中，禁止写入仓库或日志。
 
 发布后执行：
 
 ```powershell
-curl https://shortlink.hjj888.cc/api/app/update/latest
-curl -I https://shortlink.hjj888.cc/downloads/android/ShortLink-vX.Y.Z.apk
+curl -s https://shortlink.hjj888.cc/api/app/release/latest | python -m json.tool
 ```
+
+确认返回的 `versionName`、`versionCode`、`apkSha256` 和预签名 `apkUrl` 正确后，在 App「我的」页面手动检查更新。
 
 ## 4. 服务器部署验收
 

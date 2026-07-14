@@ -19,6 +19,7 @@ import com.reelshort.backend.admin.AdminProperties;
 import com.reelshort.backend.admin.AdminSessionProperties;
 import com.reelshort.backend.content.ContentCacheProperties;
 import com.reelshort.backend.content.ContentRefreshProperties;
+import com.reelshort.backend.release.AppReleaseProperties;
 import com.reelshort.backend.system.api.ApiErrorResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
@@ -26,9 +27,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
-@EnableConfigurationProperties(
-		{AdminProperties.class, AdminSessionProperties.class, AuthSessionProperties.class,
-				ContentRefreshProperties.class, ContentCacheProperties.class})
+	@EnableConfigurationProperties(
+			{AdminProperties.class, AdminSessionProperties.class, AuthSessionProperties.class,
+					ContentRefreshProperties.class, ContentCacheProperties.class, AppReleaseProperties.class})
 public class SecurityConfig {
 
 	private final BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter;
@@ -61,7 +62,9 @@ public class SecurityConfig {
 								"/api/app/content/shelves/**",
 								"/api/app/content/books/*",
 								"/api/app/content/books/*/episodes",
-								"/api/app/social/books/*/comments")
+								"/api/app/social/books/*/comments",
+								"/api/app/release/latest",
+								"/api/app/update/latest")
 						.access((authentication, context) -> new AuthorizationDecision(
 								context.getRequest().getAttribute(BearerTokenAuthenticationFilter.AUTH_FAILURE_ATTRIBUTE)
 										== null))

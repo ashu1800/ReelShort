@@ -19,6 +19,7 @@ import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.content.ContentProviderException;
 import com.reelshort.backend.payment.PaymentException;
+import com.reelshort.backend.release.ReleaseException;
 import com.reelshort.backend.social.SocialException;
 import com.reelshort.backend.system.api.ApiErrorResponse;
 import com.reelshort.backend.system.alerts.SystemAlertException;
@@ -89,6 +90,12 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(SocialException.class)
 	public ResponseEntity<ApiErrorResponse> handleSocialException(SocialException exception,
+			HttpServletRequest request) {
+		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(ReleaseException.class)
+	public ResponseEntity<ApiErrorResponse> handleReleaseException(ReleaseException exception,
 			HttpServletRequest request) {
 		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
 	}

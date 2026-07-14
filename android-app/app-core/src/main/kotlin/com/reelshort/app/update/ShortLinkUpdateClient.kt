@@ -64,10 +64,18 @@ class ShortLinkUpdateClient(
     private fun validateAssetUrl(value: String, expectedName: String) {
         val uri = runCatching { URI(value) }.getOrNull()
             ?: throw ReleaseUpdateException.InvalidRelease("asset URL is invalid")
-        if (uri.scheme != "https" || uri.host != UPDATE_HOST || uri.port != -1 || uri.userInfo != null) {
-            throw ReleaseUpdateException.InvalidRelease("asset URL must use $UPDATE_HOST HTTPS")
+        if (uri.scheme != "https" || uri.port != -1 || uri.userInfo != null) {
+            throw ReleaseUpdateException.InvalidRelease("asset URL must be HTTPS without port or userinfo")
         }
-        if (uri.rawQuery != null || uri.rawFragment != null || uri.path != "$DOWNLOAD_PATH$expectedName") {
+        // COS pre-signed download URLs are served from <bucket>.cos.<region>.myqcloud.com and carry
+        // signing query parameters, so we only pin to the COS domain suffix and require the path to
+        // end with the expected object file name.
+        val host = uri.host
+        if (host == null || !host.endsWith(COS_HOST_SUFFIX)) {
+            throw ReleaseUpdateException.InvalidRelease("asset URL must be a COS domain")
+        }
+        val path = uri.rawPath ?: ""
+        if (uri.rawFragment != null || !path.endsWith("/$expectedName")) {
             throw ReleaseUpdateException.InvalidRelease("asset URL path is invalid")
         }
     }
@@ -104,9 +112,8 @@ class ShortLinkUpdateClient(
     )
 
     companion object {
-        const val DEFAULT_ENDPOINT = "https://shortlink.hjj888.cc/api/app/update/latest"
-        private const val UPDATE_HOST = "shortlink.hjj888.cc"
-        private const val DOWNLOAD_PATH = "/downloads/android/"
+        const val DEFAULT_ENDPOINT = "https://shortlink.hjj888.cc/api/app/release/latest"
+        private const val COS_HOST_SUFFIX = ".myqcloud.com"
         private const val APK_CONTENT_TYPE = "application/vnd.android.package-archive"
         private const val MAX_JSON_BYTES = 65_536L
         private const val MAX_RELEASE_NOTES_CHARS = 4_000
