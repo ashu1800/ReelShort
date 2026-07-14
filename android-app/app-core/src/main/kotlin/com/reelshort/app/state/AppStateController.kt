@@ -13,6 +13,7 @@ import com.reelshort.app.data.SmsVerificationPurpose
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.network.ApiClientException
+import com.reelshort.app.network.GeoIpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,7 @@ class AppStateController(private val dataSource: AppDataSource) {
     private var rewardReportInFlight = false
     private var pendingCompletionReport: PendingCompletionReport? = null
     private var sessionRestored = false
+    private var geoChecked = false
     private var searchRequestVersion = 0L
     private var playbackRequestVersion = 0L
     private var accountRequestVersion = 0L
@@ -83,6 +85,24 @@ class AppStateController(private val dataSource: AppDataSource) {
                     messageType = UiMessageType.ERROR,
                 )
             }
+        }
+    }
+
+    /**
+     * Check the user's IP geo-location once at startup. If mainland China is detected, set
+     * [AppUiState.geoBlocked] to block the app. Fail-open: any error leaves the app usable.
+     */
+    suspend fun checkGeoRestriction() {
+        if (geoChecked) return
+        geoChecked = true
+        try {
+            val countryCode = dataSource.checkGeoIp()
+            if (countryCode != null && GeoIpClient.BLOCKED_COUNTRIES.contains(countryCode.uppercase())) {
+                mutableState.update { it.copy(geoBlocked = true) }
+            }
+        }
+        catch (_: Exception) {
+            // Fail-open: geo-IP check failure should not block the app
         }
     }
 

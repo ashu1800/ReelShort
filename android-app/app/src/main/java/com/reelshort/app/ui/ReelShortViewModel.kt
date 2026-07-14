@@ -51,6 +51,7 @@ class ReelShortViewModel(
     private var downloadJob: Job? = null
 
     fun bootstrap() {
+        viewModelScope.launch { controller.checkGeoRestriction() }
         viewModelScope.launch { controller.restoreSession() }
         if (!startupUpdateCheckStarted) {
             startupUpdateCheckStarted = true

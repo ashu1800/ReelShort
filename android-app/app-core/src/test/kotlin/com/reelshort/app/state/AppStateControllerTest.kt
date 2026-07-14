@@ -2203,6 +2203,8 @@ class AppStateControllerTest {
             return ApiHealthStatus(status = "UP", service = "fake-backend")
         }
 
+        override suspend fun checkGeoIp(): String? = null
+
         override suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession {
             calls += "login:$countryCode:$phoneNumber"
             loginError?.let { throw it }

@@ -5,6 +5,8 @@ interface AppDataSource {
 
     suspend fun checkSystemHealth(): ApiHealthStatus
 
+    suspend fun checkGeoIp(): String?
+
     suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession
 
     suspend fun register(

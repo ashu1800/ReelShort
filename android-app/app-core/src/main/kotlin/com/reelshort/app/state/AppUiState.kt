@@ -52,6 +52,7 @@ data class AppUiState(
     val language: AppLanguage = AppLanguage.DEFAULT,
     val authMode: AuthMode = AuthMode.LOGIN,
     val isLoading: Boolean = false,
+    val geoBlocked: Boolean = false,
     val errorMessage: String? = null,
     val messageType: UiMessageType? = null,
     val apiBaseUrl: String = "",

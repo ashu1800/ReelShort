@@ -1,5 +1,6 @@
 package com.reelshort.app.data
 
+import com.reelshort.app.network.GeoIpClient
 import com.reelshort.app.network.ReelShortApiClient
 import com.reelshort.app.session.CredentialStore
 import com.reelshort.app.session.HomeShelfStore
@@ -16,12 +17,15 @@ class AppRepository(
     private val credentialStore: CredentialStore = InMemoryCredentialStore(),
     private val homeShelfStore: HomeShelfStore = InMemoryHomeShelfStore(),
     private val languagePreferenceStore: LanguagePreferenceStore = InMemoryLanguagePreferenceStore(),
+    private val geoIpClient: GeoIpClient = GeoIpClient(),
     override val apiBaseUrl: String = "",
 ) : AppDataSource {
     var currentToken: String? = null
         private set
 
     override suspend fun checkSystemHealth(): ApiHealthStatus = apiClient.checkSystemHealth()
+
+    override suspend fun checkGeoIp(): String? = geoIpClient.detectCountryCode()
 
     override suspend fun login(countryCode: String, phoneNumber: String, password: String): AuthSession {
         val session = apiClient.login(countryCode, phoneNumber, password)

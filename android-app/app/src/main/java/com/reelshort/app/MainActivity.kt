@@ -23,9 +23,11 @@ import androidx.media3.common.util.UnstableApi
 import com.reelshort.app.state.AppScreen
 import com.reelshort.app.ui.MainShell
 import com.reelshort.app.ui.ReelShortViewModel
+import com.reelshort.app.ui.components.GeoBlockedScreen
 import com.reelshort.app.ui.components.LoadingDialog
 import com.reelshort.app.ui.components.TopErrorToast
 import com.reelshort.app.ui.components.UpdateDialog
+import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.updateStrings
 import com.reelshort.app.ui.screens.auth.AuthBottomSheet
 import com.reelshort.app.ui.theme.ReelShortTheme
@@ -136,6 +138,15 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
 
     ReelShortTheme {
         Box(modifier = Modifier.fillMaxSize()) {
+            if (state.geoBlocked) {
+                val copy = strings(state.language)
+                GeoBlockedScreen(
+                    title = copy.geoBlockedTitle,
+                    message = copy.geoBlockedMessage,
+                    onExit = { android.os.Process.killProcess(android.os.Process.myPid()) },
+                )
+                return@Box
+            }
             MainShell(
                 state = state,
                 onScreenSelected = onScreenSelected,

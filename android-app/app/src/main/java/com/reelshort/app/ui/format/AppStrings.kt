@@ -172,6 +172,8 @@ internal data class AppStrings(
     val posterEpisodeUnit: String,
     val bookRowFallbackSuffix: String,
     val bookRowViewAction: String,
+    val geoBlockedTitle: String,
+    val geoBlockedMessage: String,
 )
 
 internal fun strings(language: AppLanguage): AppStrings =
@@ -346,6 +348,8 @@ internal fun strings(language: AppLanguage): AppStrings =
             posterEpisodeUnit = " eps",
             bookRowFallbackSuffix = " episodes",
             bookRowViewAction = "View",
+            geoBlockedTitle = "Service Unavailable",
+            geoBlockedMessage = "ShortLink is not available in your region. Please use a VPN or try again from a different network.",
         )
         AppLanguage.TRADITIONAL_CHINESE -> AppStrings(
             homeTab = "首頁",
@@ -517,6 +521,8 @@ internal fun strings(language: AppLanguage): AppStrings =
             posterEpisodeUnit = " 集",
             bookRowFallbackSuffix = " 集短劇",
             bookRowViewAction = "查看",
+            geoBlockedTitle = "服務不可用",
+            geoBlockedMessage = "ShortLink 暫未在您所在的地區提供服務，請使用 VPN 或更換網路後再試。",
         )
     }
 
