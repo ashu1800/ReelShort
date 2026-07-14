@@ -56,3 +56,4 @@ android-app/release-signing/
 .env.*
 !.env.example
 .zcode/
+.playwright-mcp/

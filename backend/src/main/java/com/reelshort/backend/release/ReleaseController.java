@@ -2,11 +2,11 @@ package com.reelshort.backend.release;
 
 import java.util.Optional;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,6 +14,10 @@ import jakarta.servlet.http.HttpServletRequest;
 /**
  * App-facing update endpoint. Returns the latest release manifest with short-lived COS pre-signed
  * download URLs. Accessible to guests (no App Bearer token required).
+ *
+ * <p>These endpoints return the {@link UpdateManifestResponse} directly (NOT wrapped in
+ * {@code ApiResponse}), because the Android {@code ShortLinkUpdateClient} deserializes the manifest
+ * fields from the top level of the JSON body.
  */
 @RestController
 public class ReleaseController {
@@ -28,7 +32,7 @@ public class ReleaseController {
 	 * Current manifest path used by App >= 0.4.2.
 	 */
 	@GetMapping("/api/app/release/latest")
-	public ApiResponse<UpdateManifestResponse> latest(HttpServletRequest request) {
+	public ResponseEntity<UpdateManifestResponse> latest(HttpServletRequest request) {
 		return respond(request);
 	}
 
@@ -37,16 +41,15 @@ public class ReleaseController {
 	 * installed clients have upgraded to the {@code /api/app/release/latest} endpoint.
 	 */
 	@GetMapping("/api/app/update/latest")
-	public ApiResponse<UpdateManifestResponse> legacyLatest(HttpServletRequest request) {
+	public ResponseEntity<UpdateManifestResponse> legacyLatest(HttpServletRequest request) {
 		return respond(request);
 	}
 
-	private ApiResponse<UpdateManifestResponse> respond(HttpServletRequest request) {
+	private ResponseEntity<UpdateManifestResponse> respond(HttpServletRequest request) {
 		Optional<UpdateManifestResponse> manifest = releaseService.latestManifest();
 		if (manifest.isEmpty()) {
 			throw new ReleaseException(404, "no release available");
 		}
-		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(manifest.get(), requestId);
+		return ResponseEntity.ok(manifest.get());
 	}
 }

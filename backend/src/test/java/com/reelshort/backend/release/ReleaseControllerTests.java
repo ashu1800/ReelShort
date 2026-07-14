@@ -59,13 +59,12 @@ class ReleaseControllerTests {
 
 		mockMvc.perform(get("/api/app/release/latest"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.code").value(0))
-				.andExpect(jsonPath("$.data.versionName").value("0.4.2"))
-				.andExpect(jsonPath("$.data.versionCode").value(6))
-				.andExpect(jsonPath("$.data.apkUrl").value("https://cos.example.com/signed-apk?token=abc"))
-				.andExpect(jsonPath("$.data.sha256Url").value("https://cos.example.com/signed-sha?token=def"))
-				.andExpect(jsonPath("$.data.sizeBytes").value(12345))
-				.andExpect(jsonPath("$.data.apkSha256")
+				.andExpect(jsonPath("$.versionName").value("0.4.2"))
+				.andExpect(jsonPath("$.versionCode").value(6))
+				.andExpect(jsonPath("$.apkUrl").value("https://cos.example.com/signed-apk?token=abc"))
+				.andExpect(jsonPath("$.sha256Url").value("https://cos.example.com/signed-sha?token=def"))
+				.andExpect(jsonPath("$.sizeBytes").value(12345))
+				.andExpect(jsonPath("$.apkSha256")
 						.value("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"));
 	}
 
