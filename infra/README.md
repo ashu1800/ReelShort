@@ -27,7 +27,7 @@ docker compose --env-file .env up -d --build
 - 版本清单：`/api/app/update/latest`
 - APK 与摘要：`/downloads/android/ShortLink-vX.Y.Z.apk[.sha256]`
 
-下载按客户端 IP 限制为一个并发连接，每个响应前 2 MiB 不限速，之后限制为 1 MiB/s。静态文件支持 HTTP Range 和断点续传，`latest.json` 必须在 APK 与摘要原子落盘后最后替换。
+下载按客户端 IP 限制为一个并发连接，每个响应前 2 MiB 不限速，之后限制为 1 MiB/s。APK 响应禁止 CDN 缓存，确保请求不会绕过源站限速；静态文件支持 HTTP Range 和断点续传，`latest.json` 必须在 APK 与摘要原子落盘后最后替换。
 
 需要从宿主机直接连接 PostgreSQL 或 Redis 调试时，显式叠加仅绑定 loopback 的 override：
 
