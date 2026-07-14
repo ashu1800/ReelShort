@@ -22,6 +22,7 @@ import com.reelshort.backend.payment.PaymentException;
 import com.reelshort.backend.release.ReleaseException;
 import com.reelshort.backend.social.SocialException;
 import com.reelshort.backend.system.api.ApiErrorResponse;
+import com.reelshort.backend.withdrawal.WithdrawalException;
 import com.reelshort.backend.system.alerts.SystemAlertException;
 import com.reelshort.backend.system.logs.SystemLogException;
 
@@ -96,6 +97,12 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(ReleaseException.class)
 	public ResponseEntity<ApiErrorResponse> handleReleaseException(ReleaseException exception,
+			HttpServletRequest request) {
+		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(WithdrawalException.class)
+	public ResponseEntity<ApiErrorResponse> handleWithdrawalException(WithdrawalException exception,
 			HttpServletRequest request) {
 		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
 	}

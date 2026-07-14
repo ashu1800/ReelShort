@@ -51,6 +51,23 @@ public class AdminWithdrawalController {
 				currentAdmin.username()), requestId(request));
 	}
 
+	@PostMapping("/batch-preview")
+	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
+	public ApiResponse<BatchWithdrawalPreviewResponse> batchPreview(
+			@Valid @RequestBody BatchWithdrawalPreviewRequest previewRequest, HttpServletRequest request) {
+		return ApiResponse.success(withdrawalService.batchPreview(previewRequest.withdrawalIds(),
+				previewRequest.hotWalletPrivateKey()), requestId(request));
+	}
+
+	@PostMapping("/batch-approve")
+	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
+	public ApiResponse<BatchWithdrawalResponse> batchApprove(CurrentAdmin currentAdmin,
+			@Valid @RequestBody BatchWithdrawalRequest batchRequest, HttpServletRequest request) {
+		return ApiResponse.success(withdrawalService.batchApprove(batchRequest.withdrawalIds(),
+				batchRequest.hotWalletPrivateKey(), batchRequest.totpCode(), currentAdmin.adminUserId()),
+				requestId(request));
+	}
+
 	private String requestId(HttpServletRequest request) {
 		return (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 	}

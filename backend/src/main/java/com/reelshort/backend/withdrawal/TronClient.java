@@ -1,0 +1,381 @@
+package com.reelshort.backend.withdrawal;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.math.RoundingMode;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+import org.bouncycastle.asn1.sec.SECNamedCurves;
+import org.bouncycastle.asn1.x9.X9ECParameters;
+import org.bouncycastle.crypto.params.ECDomainParameters;
+import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
+import org.bouncycastle.crypto.signers.ECDSASigner;
+import org.bouncycastle.math.ec.ECPoint;
+import org.springframework.stereotype.Service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+/**
+ * TronGrid HTTP client for TRC20 USDT transfer and balance queries. Signs transactions in-memory
+ * using a private key provided per-call by the admin (never persisted).
+ *
+ * <p>Transfer flow: triggersmartcontract (build tx) → sign raw_data_hex with secp256k1 → broadcasthex.
+ */
+@Service
+public class TronClient {
+
+	private static final X9ECParameters SECP256K1 = SECNamedCurves.getByName("secp256k1");
+	private static final ECDomainParameters DOMAIN =
+			new ECDomainParameters(SECP256K1.getCurve(), SECP256K1.getG(), SECP256K1.getN(), SECP256K1.getH());
+	private static final BigDecimal USDT_DECIMALS = new BigDecimal("1000000"); // 6 decimals
+
+	private final TronProperties properties;
+	private final ObjectMapper objectMapper;
+	private final HttpClient httpClient;
+
+	public TronClient(TronProperties properties, ObjectMapper objectMapper) {
+		this.properties = properties;
+		this.objectMapper = objectMapper;
+		this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+	}
+
+	/**
+	 * Derive the Tron base58 address from a hex private key.
+	 */
+	public String addressFromPrivateKey(String hexPrivateKey) {
+		byte[] privKeyBytes = hexStringToBytes(hexPrivateKey);
+		ECPoint pubKeyPoint = DOMAIN.getG().multiply(new BigInteger(1, privKeyBytes)).normalize();
+		byte[] pubKey = pubKeyPoint.getEncoded(false); // uncompressed: 0x04 + X(32) + Y(32)
+		byte[] xy = Arrays.copyOfRange(pubKey, 1, 65); // drop 0x04 prefix
+
+		// Tron address = 0x41 + last 20 bytes of Keccak256(x || y), then Base58Check
+		byte[] keccak = keccak256(xy);
+		byte[] addressBytes = new byte[21];
+		addressBytes[0] = 0x41;
+		System.arraycopy(keccak, keccak.length - 20, addressBytes, 1, 20);
+		return base58CheckEncode(addressBytes);
+	}
+
+	/**
+	 * Get USDT (TRC20) balance for an address, in human-readable USDT (6 decimals).
+	 */
+	public BigDecimal getUsdtBalance(String address) {
+		try {
+			JsonNode account = getAccount(address);
+			JsonNode trc20 = account.path("trc20");
+			if (trc20.isArray()) {
+				for (JsonNode token : trc20) {
+					String key = properties.getUsdtContract();
+					if (token.has(key)) {
+						return new BigDecimal(token.get(key).asText()).divide(USDT_DECIMALS, 6, RoundingMode.DOWN);
+					}
+				}
+			}
+			return BigDecimal.ZERO;
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "failed to query USDT balance: " + exception.getMessage());
+		}
+	}
+
+	/**
+	 * Get TRX balance for an address, in human-readable TRX.
+	 */
+	public BigDecimal getTrxBalance(String address) {
+		try {
+			JsonNode account = getAccount(address);
+			long sun = account.path("balance").asLong(0);
+			return new BigDecimal(sun).divide(new BigDecimal("1000000"), 6, RoundingMode.DOWN);
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "failed to query TRX balance: " + exception.getMessage());
+		}
+	}
+
+	/**
+	 * Transfer USDT (TRC20) from the hot wallet to a recipient. Returns the transaction hash.
+	 *
+	 * @param hexPrivateKey hot wallet private key (hex, no 0x prefix)
+	 * @param toAddress     recipient Tron base58 address
+	 * @param usdtAmount    amount in USDT (e.g. "10.5")
+	 * @return on-chain transaction hash (64 hex chars)
+	 */
+	public String transferUSDT(String hexPrivateKey, String toAddress, BigDecimal usdtAmount) {
+		String ownerAddress = addressFromPrivateKey(hexPrivateKey);
+		BigDecimal rawAmount = usdtAmount.multiply(USDT_DECIMALS).setScale(0, RoundingMode.DOWN);
+		String parameter = encodeTransferParams(toAddress, rawAmount.toBigInteger());
+
+		// 1. Build the unsigned transaction
+		JsonNode triggerResponse = triggersmartcontract(ownerAddress, parameter);
+		if (triggerResponse.path("result").path("code").asInt(-1) != 0
+				&& triggerResponse.has("result") && !triggerResponse.path("result").isEmpty()) {
+			String message = triggerResponse.path("result").path("message").asText("trigger failed");
+			throw new WithdrawalException(502, "TRC20 trigger failed: " + message);
+		}
+		JsonNode transaction = triggerResponse.path("transaction");
+		String rawDataHex = transaction.path("transaction").path("raw_data_hex").asText(
+				transaction.path("raw_data_hex").asText(""));
+		if (rawDataHex.isEmpty()) {
+			throw new WithdrawalException(502, "missing raw_data_hex in trigger response");
+		}
+		String txid = transaction.path("transaction").path("txid").asText(
+				transaction.path("txid").asText(""));
+
+		// 2. Sign the transaction
+		byte[] rawBytes = hexStringToBytes(rawDataHex);
+		byte[] hash = sha256(rawBytes);
+		String[] signature = sign(hash, hexPrivateKey);
+
+		// 3. Broadcast
+		String broadcastResult = broadcast(rawDataHex, txid, signature);
+		if (!"true".equals(broadcastResult)) {
+			throw new WithdrawalException(502, "TRC20 broadcast failed: " + broadcastResult);
+		}
+		return txid;
+	}
+
+	private JsonNode triggersmartcontract(String ownerAddress, String parameter) {
+		Map<String, Object> body = Map.of(
+				"owner_address", ownerAddress,
+				"contract_address", properties.getUsdtContract(),
+				"function_selector", "transfer(address,uint256)",
+				"parameter", parameter,
+				"fee_limit", properties.getFeeLimit(),
+				"visible", true);
+		return postJson(properties.getNodeUrl() + "/wallet/triggersmartcontract", body);
+	}
+
+	private String broadcast(String rawDataHex, String txid, String[] signature) {
+		Map<String, Object> transaction = Map.of(
+				"raw_data_hex", rawDataHex,
+				"txid", txid,
+				"signature", List.of(signature));
+		JsonNode result = postJson(properties.getNodeUrl() + "/wallet/broadcasthex",
+				Map.of("transaction", transaction));
+		return result.path("result").asText("false");
+	}
+
+	private JsonNode getAccount(String address) {
+		return postJson(properties.getNodeUrl() + "/wallet/getaccount",
+				Map.of("address", address, "visible", true));
+	}
+
+	/**
+	 * Encode the transfer(address,uint256) parameters as ABI hex: 32-byte address + 32-byte amount.
+	 */
+	private String encodeTransferParams(String toBase58Address, BigInteger amount) {
+		byte[] addressBytes = base58Decode(toBase58Address);
+		// address is 21 bytes (0x41 prefix + 20 bytes); take last 20, pad to 32
+		byte[] addr20 = Arrays.copyOfRange(addressBytes, addressBytes.length - 20, addressBytes.length);
+		byte[] paddedAddr = new byte[32];
+		System.arraycopy(addr20, 0, paddedAddr, 32 - 20, 20);
+
+		byte[] amountBytes = amount.toByteArray();
+		byte[] paddedAmount = new byte[32];
+		System.arraycopy(amountBytes, 0, paddedAmount, 32 - amountBytes.length, amountBytes.length);
+
+		return bytesToHex(paddedAddr) + bytesToHex(paddedAmount);
+	}
+
+	private String[] sign(byte[] hash, String hexPrivateKey) {
+		BigInteger privateKey = new BigInteger(1, hexStringToBytes(hexPrivateKey));
+		ECDSASigner signer = new ECDSASigner();
+		signer.init(true, new ECPrivateKeyParameters(privateKey, DOMAIN));
+		byte[] hashPadded = padTo32(hash);
+		BigInteger[] rs = signer.generateSignature(hashPadded);
+		BigInteger otherS = DOMAIN.getN().subtract(rs[1]);
+		BigInteger s = rs[1].compareTo(otherS) <= 0 ? rs[1] : otherS;
+		int recId = findRecoveryId(hashPadded, privateKey, rs[0], s);
+		int headerByte = recId + 27;
+		return new String[]{
+				String.format("%02x", headerByte) + String.format("%064x", rs[0]) + String.format("%064x", s)
+		};
+	}
+
+	private static byte[] padTo32(byte[] hash) {
+		byte[] padded = new byte[32];
+		int srcPos = Math.max(0, hash.length - 32);
+		int length = hash.length - srcPos;
+		System.arraycopy(hash, srcPos, padded, 32 - length, length);
+		return padded;
+	}
+
+	private int findRecoveryId(byte[] hash, BigInteger privateKey, BigInteger r, BigInteger s) {
+		for (int recId = 0; recId < 4; recId++) {
+			try {
+				ECPoint q = recoverFromSignature(recId, hash, r, s);
+				if (q != null) {
+					ECPoint expectedQ = DOMAIN.getG().multiply(privateKey).normalize();
+					if (q.equals(expectedQ)) {
+						return recId;
+					}
+				}
+			}
+			catch (Exception ignored) {
+				// try next
+			}
+		}
+		return 0;
+	}
+
+	private ECPoint recoverFromSignature(int recId, byte[] hash, BigInteger r, BigInteger s) {
+		BigInteger n = DOMAIN.getN();
+		BigInteger e = new BigInteger(1, hash);
+		if (r.compareTo(BigInteger.ONE) < 0 || r.compareTo(n) >= 0) {
+			return null;
+		}
+		if (s.compareTo(BigInteger.ONE) < 0 || s.compareTo(n) >= 0) {
+			return null;
+		}
+		BigInteger x = r;
+		if ((recId & 2) != 0) {
+			x = x.add(n);
+		}
+		// Encode the x-coordinate as a compressed point: prefix byte (2 or 3) + x(32 bytes)
+		byte[] encoded = new byte[33];
+		encoded[0] = (byte) ((recId & 1) == 1 ? 0x03 : 0x02);
+		byte[] xBytes = x.toByteArray();
+		int copyLen = Math.min(32, xBytes.length);
+		System.arraycopy(xBytes, xBytes.length - copyLen, encoded, 33 - copyLen, copyLen);
+		ECPoint R = DOMAIN.getCurve().decodePoint(encoded);
+		if (R == null) {
+			return null;
+		}
+		BigInteger eInv = BigInteger.ZERO.subtract(e.mod(n));
+		BigInteger rInv = r.modInverse(n);
+		BigInteger srInv = rInv.multiply(s).mod(n);
+		BigInteger eInvRInv = rInv.multiply(eInv).mod(n);
+		ECPoint q = ECAlgorithms.sumOfTwoMultiplies(DOMAIN.getG(), eInvRInv, R, srInv);
+		return q.normalize();
+	}
+
+	// --- HTTP ---
+
+	private JsonNode postJson(String url, Object body) {
+		try {
+			HttpRequest.Builder builder = HttpRequest.newBuilder()
+					.uri(URI.create(url))
+					.timeout(Duration.ofSeconds(30))
+					.header("Content-Type", "application/json")
+					.header("Accept", "application/json")
+					.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)));
+			if (!properties.getApiKey().isBlank()) {
+				builder.header("TRON-PRO-API-KEY", properties.getApiKey());
+			}
+			HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+			return objectMapper.readTree(response.body());
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "TronGrid request failed: " + exception.getMessage());
+		}
+	}
+
+	// --- Crypto utilities ---
+
+	private static byte[] keccak256(byte[] input) {
+		org.bouncycastle.crypto.digests.KeccakDigest digest = new org.bouncycastle.crypto.digests.KeccakDigest(256);
+		byte[] output = new byte[digest.getDigestSize()];
+		digest.update(input, 0, input.length);
+		digest.doFinal(output, 0);
+		return output;
+	}
+
+	private static byte[] sha256(byte[] input) {
+		try {
+			return MessageDigest.getInstance("SHA-256").digest(input);
+		}
+		catch (Exception exception) {
+			throw new IllegalStateException("SHA-256 not available", exception);
+		}
+	}
+
+	private static byte[] doubleSha256(byte[] input) {
+		return sha256(sha256(input));
+	}
+
+	private static byte[] hexStringToBytes(String hex) {
+		hex = hex.replace("0x", "");
+		int len = hex.length();
+		byte[] data = new byte[len / 2];
+		for (int i = 0; i < len; i += 2) {
+			data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
+					+ Character.digit(hex.charAt(i + 1), 16));
+		}
+		return data;
+	}
+
+	private static String bytesToHex(byte[] bytes) {
+		StringBuilder sb = new StringBuilder();
+		for (byte b : bytes) {
+			sb.append(String.format("%02x", b));
+		}
+		return sb.toString();
+	}
+
+	private static String base58CheckEncode(byte[] payload) {
+		byte[] checksum = Arrays.copyOfRange(doubleSha256(payload), 0, 4);
+		byte[] full = new byte[payload.length + checksum.length];
+		System.arraycopy(payload, 0, full, 0, payload.length);
+		System.arraycopy(checksum, 0, full, payload.length, checksum.length);
+		return base58Encode(full);
+	}
+
+	private static final String BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+	private static String base58Encode(byte[] input) {
+		BigInteger num = new BigInteger(1, input);
+		StringBuilder encoded = new StringBuilder();
+		while (num.compareTo(BigInteger.ZERO) > 0) {
+			BigInteger[] divRem = num.divideAndRemainder(BigInteger.valueOf(58));
+			encoded.insert(0, BASE58_ALPHABET.charAt(divRem[1].intValue()));
+			num = divRem[0];
+		}
+		for (byte b : input) {
+			if (b == 0) {
+				encoded.insert(0, '1');
+			}
+			else {
+				break;
+			}
+		}
+		return encoded.toString();
+	}
+
+	private static byte[] base58Decode(String input) {
+		BigInteger num = BigInteger.ZERO;
+		for (int i = 0; i < input.length(); i++) {
+			int digit = BASE58_ALPHABET.indexOf(input.charAt(i));
+			if (digit < 0) {
+				return new byte[0];
+			}
+			num = num.multiply(BigInteger.valueOf(58)).add(BigInteger.valueOf(digit));
+		}
+		byte[] raw = num.toByteArray();
+		if (raw.length > 0 && raw[0] == 0) {
+			raw = Arrays.copyOfRange(raw, 1, raw.length);
+		}
+		int leadingOnes = 0;
+		while (leadingOnes < input.length() && input.charAt(leadingOnes) == '1') {
+			leadingOnes++;
+		}
+		byte[] decoded = new byte[leadingOnes + raw.length];
+		System.arraycopy(raw, 0, decoded, leadingOnes, raw.length);
+		return decoded;
+	}
+
+	// Minimal EC point math for recovery
+	private static class ECAlgorithms {
+		static ECPoint sumOfTwoMultiplies(ECPoint p1, BigInteger a1, ECPoint p2, BigInteger a2) {
+			return p1.multiply(a1).add(p2.multiply(a2)).normalize();
+		}
+	}
+}

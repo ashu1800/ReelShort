@@ -4,6 +4,7 @@ import {
   DataAnalysis,
   Document,
   FolderOpened,
+  Lock,
   Money,
   Monitor,
   Notebook,
@@ -61,6 +62,10 @@ async function logout() {
         <el-menu-item index="/withdrawals">
           <el-icon><Coin /></el-icon>
           <span>提现申请</span>
+        </el-menu-item>
+        <el-menu-item index="/2fa">
+          <el-icon><Lock /></el-icon>
+          <span>两步验证</span>
         </el-menu-item>
         <el-menu-item index="/content-cache">
           <el-icon><FolderOpened /></el-icon>

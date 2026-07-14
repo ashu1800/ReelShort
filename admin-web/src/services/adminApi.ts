@@ -422,6 +422,58 @@ export async function rejectWithdrawal(withdrawalId: string, reason: string) {
   return response.data.data
 }
 
+export async function batchPreviewWithdrawals(withdrawalIds: string[], hotWalletPrivateKey: string) {
+  const response = await http.post<ApiResponse<BatchWithdrawalPreview>>('/withdrawals/batch-preview', {
+    withdrawalIds,
+    hotWalletPrivateKey,
+  })
+  return response.data.data
+}
+
+export async function batchApproveWithdrawals(
+  withdrawalIds: string[],
+  hotWalletPrivateKey: string,
+  totpCode: string,
+) {
+  const response = await http.post<ApiResponse<BatchWithdrawalResult>>('/withdrawals/batch-approve', {
+    withdrawalIds,
+    hotWalletPrivateKey,
+    totpCode,
+  })
+  return response.data.data
+}
+
+export type BatchWithdrawalPreview = {
+  hotWalletAddress: string
+  hotWalletUsdtBalance: string
+  hotWalletTrxBalance: string
+  totalUsdt: string
+  itemCount: number
+  items: { withdrawalId: string; userAccount: string; usdtAmount: string; walletAddress: string }[]
+}
+
+export type BatchWithdrawalResult = {
+  succeeded: number
+  stoppedAtIndex: number
+  errorMessage: string | null
+  items: { withdrawalId: string; status: string; txHash: string | null; errorMessage: string | null }[]
+}
+
+export async function get2faStatus() {
+  const response = await http.get<ApiResponse<{ enabled: boolean }>>('/2fa/status')
+  return response.data.data
+}
+
+export async function setup2fa() {
+  const response = await http.post<ApiResponse<{ secret: string; otpauthUri: string }>>('/2fa/setup')
+  return response.data.data
+}
+
+export async function enable2fa(secret: string, code: string) {
+  const response = await http.post<ApiResponse<{ enabled: boolean }>>('/2fa/enable', { secret, code })
+  return response.data.data
+}
+
 export async function fetchPaymentEvents(filters: PaymentEventFilters = {}) {
   const response = await http.get<ApiResponse<PaymentEvent[]>>('/payments/events', {
     params: filters,
