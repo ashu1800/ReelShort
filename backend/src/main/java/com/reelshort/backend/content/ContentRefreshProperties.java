@@ -10,8 +10,7 @@ public class ContentRefreshProperties {
 
 	private boolean enabled = true;
 	private List<String> shelves = new ArrayList<>(List.of(ContentShelfType.RECOMMEND.apiValue()));
-	private List<String> locales = new ArrayList<>(List.of(ContentLocale.ENGLISH.apiValue(),
-			ContentLocale.TRADITIONAL_CHINESE.apiValue()));
+	private List<String> locales = new ArrayList<>(List.of(ContentLocale.ENGLISH.apiValue()));
 
 	public boolean isEnabled() {
 		return enabled;

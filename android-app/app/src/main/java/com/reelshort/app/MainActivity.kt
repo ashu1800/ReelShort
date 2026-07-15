@@ -111,7 +111,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
         }
     }
     val onRefreshHome = remember(viewModel) { viewModel::refreshHome }
-    val onSetLanguage = remember(viewModel) { viewModel::setLanguage }
     val onBindWallet = remember(viewModel) { viewModel::bindWallet }
     val onUnbindWallet = remember(viewModel) { viewModel::unbindWallet }
     val onCreateVipOrder = remember(viewModel) { viewModel::createVipOrder }
@@ -168,7 +167,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onShowAuthPrompt = onShowAuthPrompt,
                 onShowRegisterAuthPrompt = onShowRegisterAuthPrompt,
                 onRefreshHome = onRefreshHome,
-                onSetLanguage = onSetLanguage,
                 onBindWallet = onBindWallet,
                 onUnbindWallet = onUnbindWallet,
                 onCreateVipOrder = onCreateVipOrder,

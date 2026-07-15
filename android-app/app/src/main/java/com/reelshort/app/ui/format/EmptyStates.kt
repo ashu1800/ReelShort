@@ -18,7 +18,7 @@ internal data class ApiDiagnosticsText(
 
 internal fun apiDiagnosticsText(
     status: ApiHealthStatus?,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): ApiDiagnosticsText {
     val copy = strings(language)
     if (status == null) {
@@ -32,26 +32,26 @@ internal fun apiDiagnosticsText(
         val service = status.service?.takeIf { it.isNotBlank() } ?: "Spring Boot"
         ApiDiagnosticsText(
             label = copy.diagnosticsUpLabel,
-            message = "${copy.diagnosticsUpMessagePrefix}$service ${if (language == AppLanguage.ENGLISH) "is responding normally." else "正常響應。"}",
+            message = "${copy.diagnosticsUpMessagePrefix}$service is responding normally.",
             isUp = true,
         )
     } else {
         ApiDiagnosticsText(
             label = copy.diagnosticsDownLabel,
-            message = "${copy.diagnosticsDownMessagePrefix}${status.status}${if (language == AppLanguage.ENGLISH) ". Confirm Spring Boot is running." else "，請確認 Spring Boot 是否啟動。"}",
+            message = "${copy.diagnosticsDownMessagePrefix}${status.status}. Confirm Spring Boot is running.",
             isUp = false,
         )
     }
 }
 
-internal fun homeEmptyState(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): ContentEmptyState =
+internal fun homeEmptyState(language: AppLanguage = AppLanguage.ENGLISH): ContentEmptyState =
     ContentEmptyState(
         title = strings(language).homeEmptyTitle,
         message = strings(language).homeEmptyMessage,
         actionLabel = strings(language).homeEmptyAction,
     )
 
-internal fun favoritesEmptyState(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): ContentEmptyState =
+internal fun favoritesEmptyState(language: AppLanguage = AppLanguage.ENGLISH): ContentEmptyState =
     ContentEmptyState(
         title = strings(language).favoritesEmptyTitle,
         message = strings(language).favoritesEmptyMessage,
@@ -60,7 +60,7 @@ internal fun favoritesEmptyState(language: AppLanguage = AppLanguage.TRADITIONAL
 internal fun searchEmptyState(
     query: String,
     resultCount: Int,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): ContentEmptyState? {
     val copy = strings(language)
     if (resultCount > 0) {
@@ -84,7 +84,7 @@ internal fun searchEmptyState(
 internal fun detailEmptyState(
     book: BookSummary?,
     episodeCount: Int,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): ContentEmptyState? {
     val copy = strings(language)
     if (book != null && episodeCount > 0) {

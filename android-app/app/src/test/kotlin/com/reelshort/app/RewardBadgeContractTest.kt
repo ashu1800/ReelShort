@@ -116,49 +116,11 @@ class RewardBadgeContractTest {
     }
 
     @Test
-    fun rewardBadgeCopyIsLocalizedForTraditionalChinese() {
-        val waiting = rewardBadgeState(
-            progressPercent = 18,
-            isReporting = false,
-            hasError = false,
-            language = AppLanguage.TRADITIONAL_CHINESE,
-        )
-        val reporting = rewardBadgeState(
-            progressPercent = 50,
-            isReporting = true,
-            hasError = false,
-            language = AppLanguage.TRADITIONAL_CHINESE,
-        )
-        val complete = rewardBadgeState(
-            progressPercent = 100,
-            isReporting = false,
-            hasError = false,
-            language = AppLanguage.TRADITIONAL_CHINESE,
-            rewardClaimed = true,
-        )
-        val error = rewardBadgeState(
-            progressPercent = 25,
-            isReporting = false,
-            hasError = true,
-            language = AppLanguage.TRADITIONAL_CHINESE,
-        )
-
-        assertEquals("看完影片即可獲得積分", waiting.displayText)
-        assertEquals("同步中", reporting.displayText)
-        assertEquals("已領取積分", complete.displayText)
-        assertEquals("稍後補發", error.displayText)
-    }
-
-    @Test
     fun rewardBadgeInfoSheetCopyIsLocalized() {
         assertEquals("Reward progress", rewardBadgeInfoTitle(AppLanguage.ENGLISH))
         assertEquals("Finish the episode to receive points automatically. If syncing fails, keep watching and we will retry.", rewardBadgeInfoBody(AppLanguage.ENGLISH))
         assertEquals("+1 pt", rewardBadgeAwardLabel(1, AppLanguage.ENGLISH))
         assertEquals("+3 pt", rewardBadgeAwardLabel(3, AppLanguage.ENGLISH))
-        assertEquals("獎勵進度", rewardBadgeInfoTitle(AppLanguage.TRADITIONAL_CHINESE))
-        assertEquals("看完一集即可自動獲得積分。若同步失敗，繼續觀看時會自動重試。", rewardBadgeInfoBody(AppLanguage.TRADITIONAL_CHINESE))
-        assertEquals("+1 積分", rewardBadgeAwardLabel(1, AppLanguage.TRADITIONAL_CHINESE))
-        assertEquals("+3 積分", rewardBadgeAwardLabel(3, AppLanguage.TRADITIONAL_CHINESE))
     }
 
     @Test

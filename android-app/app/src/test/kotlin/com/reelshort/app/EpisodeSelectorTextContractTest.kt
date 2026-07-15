@@ -179,7 +179,6 @@ class EpisodeSelectorTextContractTest {
 
         assertEquals(EpisodeWatchStatusType.WATCHED, watched.type)
         assertEquals("Watched", episodeWatchStatusLabel(watched, AppLanguage.ENGLISH))
-        assertEquals("已看", episodeWatchStatusLabel(watched, AppLanguage.TRADITIONAL_CHINESE))
         assertEquals(EpisodeWatchStatusType.IN_PROGRESS, inProgress.type)
         assertEquals("58%", episodeWatchStatusLabel(inProgress, AppLanguage.ENGLISH))
     }

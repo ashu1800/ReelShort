@@ -46,7 +46,7 @@ import com.reelshort.app.ui.theme.TextSecondary
 internal fun EpisodeRow(
     episode: EpisodeSummary,
     bookDescription: String,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
     onClick: () -> Unit,
 ) {
     val subtitle = episodeSubtitle(episode.description, bookDescription)

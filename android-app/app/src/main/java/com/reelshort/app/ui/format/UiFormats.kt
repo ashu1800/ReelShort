@@ -31,7 +31,7 @@ internal fun mediaDurationSeconds(durationMs: Long, fallbackDurationSeconds: Int
 
 internal fun episodeNumberLabel(
     number: Int,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): String {
     val copy = strings(language)
     return "${copy.playerEpisodePrefix}${number.coerceAtLeast(0).toString().padStart(2, '0')}${copy.playerEpisodeUnit}"
@@ -39,7 +39,7 @@ internal fun episodeNumberLabel(
 
 internal fun episodeTitle(
     episode: EpisodeSummary,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): String =
     episode.title.trim().takeIf { it.isNotBlank() }
         ?.let { "${episodeNumberLabel(episode.number, language)} · $it" }
@@ -48,7 +48,7 @@ internal fun episodeTitle(
 internal fun episodeSubtitle(episodeDescription: String, bookDescription: String): String =
     episodeDescription.trim().ifBlank { bookDescription.trim() }
 
-internal fun episodeRowActionLabel(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): String =
+internal fun episodeRowActionLabel(language: AppLanguage = AppLanguage.ENGLISH): String =
     strings(language).playerPlayAction
 
 internal fun playerSurfaceAspectRatio(): Float = 9f / 16f
@@ -57,7 +57,7 @@ internal fun playerStartsAutomatically(): Boolean = true
 
 internal fun playerLoadingLabel(
     episodeNumber: Int,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): String {
     val copy = strings(language)
     return "${copy.playerLoadingPrefix}${episodeNumberLabel(episodeNumber, language)}${copy.playerLoadingSuffix}"
@@ -114,7 +114,7 @@ internal fun playerErrorNextEpisode(
 
 internal fun episodeSelectorLabel(
     totalEpisodes: Int,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): String {
     val copy = strings(language)
     return "${copy.playerEpisodeSelectorPrefix} · ${copy.playerEpisodeSelectorCompleted} · ${copy.playerEpisodeSelectorTotalPrefix}${totalEpisodes.coerceAtLeast(0)}${copy.playerEpisodeSelectorTotalSuffix}"
@@ -158,7 +158,7 @@ internal fun episodeWatchStatus(
 
 internal fun episodeWatchStatusLabel(
     status: EpisodeWatchStatus,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): String =
     when (status.type) {
         EpisodeWatchStatusType.CURRENT -> strings(language).playerEpisodeStatusCurrent
@@ -167,10 +167,10 @@ internal fun episodeWatchStatusLabel(
         EpisodeWatchStatusType.NONE -> ""
     }
 
-internal fun playerSecondaryActionLabels(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): List<String> =
+internal fun playerSecondaryActionLabels(language: AppLanguage = AppLanguage.ENGLISH): List<String> =
     listOf(strings(language).playerRefreshAction)
 
-internal fun guestAccountEntryLabels(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): List<String> {
+internal fun guestAccountEntryLabels(language: AppLanguage = AppLanguage.ENGLISH): List<String> {
     val copy = strings(language)
     return listOf(copy.accountGuestSignIn, copy.accountGuestRegister)
 }
@@ -180,35 +180,14 @@ internal fun guestAccountEntryAuthModes(): List<AuthMode> =
 
 internal fun authPromptTitle(
     hasPendingPlayback: Boolean,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): String =
     if (hasPendingPlayback) strings(language).authPromptPlayback else strings(language).authPromptAccount
 
-internal fun rememberPasswordLabel(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): String =
+internal fun rememberPasswordLabel(language: AppLanguage = AppLanguage.ENGLISH): String =
     strings(language).rememberPassword
 
-internal data class PhoneCountryCode(
-    val code: String,
-    val label: String,
-)
-
-internal fun supportedPhoneCountryCodes(): List<PhoneCountryCode> =
-    listOf(
-        PhoneCountryCode("+1", "United States / Canada"),
-        PhoneCountryCode("+44", "United Kingdom"),
-        PhoneCountryCode("+61", "Australia"),
-        PhoneCountryCode("+65", "Singapore"),
-        PhoneCountryCode("+852", "Hong Kong"),
-        PhoneCountryCode("+853", "Macau"),
-        PhoneCountryCode("+886", "Taiwan"),
-        PhoneCountryCode("+81", "Japan"),
-        PhoneCountryCode("+82", "South Korea"),
-        PhoneCountryCode("+60", "Malaysia"),
-    )
-
-internal fun smsVerificationSeconds(): Int = 120
-
-internal fun authCaptchaAnswerLabel(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): String =
+internal fun authCaptchaAnswerLabel(language: AppLanguage = AppLanguage.ENGLISH): String =
     strings(language).authCaptchaAnswerLabel
 
 internal fun authSinglePrimaryAction(): Boolean = true
@@ -225,7 +204,7 @@ internal data class AuthSheetCopy(
 internal fun authSheetCopy(
     mode: AuthMode,
     hasPendingPlayback: Boolean,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): AuthSheetCopy {
     val copy = strings(language)
     return when (mode) {
@@ -295,7 +274,7 @@ internal fun withdrawalConversionLines(
         val points = pointAmount.toBigDecimal()
         val cnyAmount = points.multiply(cnyPerPoint)
         val usdtAmount = points.multiply(cnyPerPoint).divide(cnyPerUsd, 6, RoundingMode.HALF_UP)
-        val estimateLabel = if (language == AppLanguage.TRADITIONAL_CHINESE) "預計" else "Estimated"
+        val estimateLabel = "Estimated"
         lines += "$estimateLabel ${cnyAmount.toUiDecimal()} CNY ≈ ${usdtAmount.toUiDecimal()} USDT"
     }
     return lines
@@ -303,9 +282,9 @@ internal fun withdrawalConversionLines(
 
 internal fun withdrawalStatusLabel(status: String, language: AppLanguage): String =
     when (status.uppercase()) {
-        "PENDING" -> if (language == AppLanguage.TRADITIONAL_CHINESE) "審核中" else "Pending"
-        "APPROVED" -> if (language == AppLanguage.TRADITIONAL_CHINESE) "已完成" else "Completed"
-        "REJECTED" -> if (language == AppLanguage.TRADITIONAL_CHINESE) "已拒絕" else "Rejected"
+        "PENDING" -> "Pending"
+        "APPROVED" -> "Completed"
+        "REJECTED" -> "Rejected"
         else -> status
     }
 
@@ -316,7 +295,7 @@ internal fun withdrawalRecordDetail(
     language: AppLanguage,
 ): String? = when {
     status.equals("REJECTED", ignoreCase = true) && !adminNote.isNullOrBlank() ->
-        (if (language == AppLanguage.TRADITIONAL_CHINESE) "原因：" else "Reason: ") + adminNote
+        "Reason: " + adminNote
     status.equals("APPROVED", ignoreCase = true) && !txHash.isNullOrBlank() -> "TX: $txHash"
     else -> null
 }
@@ -372,17 +351,14 @@ internal fun topMessageUsesLiveRegion(): Boolean = true
 
 internal fun bankCardEntryCollectsSensitiveData(): Boolean = false
 
-internal fun accountConfirmationTitle(language: AppLanguage): String =
-    if (language == AppLanguage.TRADITIONAL_CHINESE) "確認操作" else "Confirm action"
+internal fun accountConfirmationTitle(language: AppLanguage): String = "Confirm action"
 
 internal fun accountConfirmationBody(summary: String, language: AppLanguage): String =
-    if (language == AppLanguage.TRADITIONAL_CHINESE) "請再次確認：$summary。此操作可能無法撤銷。" else "Please confirm: $summary. This action may not be reversible."
+    "Please confirm: $summary. This action may not be reversible."
 
-internal fun accountConfirmationConfirm(language: AppLanguage): String =
-    if (language == AppLanguage.TRADITIONAL_CHINESE) "確認" else "Confirm"
+internal fun accountConfirmationConfirm(language: AppLanguage): String = "Confirm"
 
-internal fun accountConfirmationCancel(language: AppLanguage): String =
-    if (language == AppLanguage.TRADITIONAL_CHINESE) "取消" else "Cancel"
+internal fun accountConfirmationCancel(language: AppLanguage): String = "Cancel"
 
 internal fun walletSheetShouldDismiss(
     visible: Boolean,

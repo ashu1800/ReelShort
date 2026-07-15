@@ -24,7 +24,7 @@ internal fun rewardBadgeState(
     progressPercent: Int,
     isReporting: Boolean,
     hasError: Boolean,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
     rewardClaimed: Boolean = false,
     rewardStatus: WatchRewardStatus = WatchRewardStatus.NOT_COMPLETE,
 ): RewardBadgeState {
@@ -66,59 +66,49 @@ internal fun rewardBadgeContentDescription(state: RewardBadgeState, language: Ap
 internal fun rewardBadgeInfoTitle(language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "Reward progress"
-        AppLanguage.TRADITIONAL_CHINESE -> "獎勵進度"
     }
 
 internal fun rewardBadgeInfoBody(language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "Finish the episode to receive points automatically. If syncing fails, keep watching and we will retry."
-        AppLanguage.TRADITIONAL_CHINESE -> "看完一集即可自動獲得積分。若同步失敗，繼續觀看時會自動重試。"
     }
 
 internal fun rewardBadgeAwardLabel(points: Int, language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "+${points.coerceAtLeast(0)} pt"
-        AppLanguage.TRADITIONAL_CHINESE -> "+${points.coerceAtLeast(0)} 積分"
     }
 
 private fun rewardBadgeWaitingLabel(language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "Finish watching to earn"
-        AppLanguage.TRADITIONAL_CHINESE -> "看完影片即可獲得積分"
     }
 
 private fun rewardBadgeReadyLabel(language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "Episode complete"
-        AppLanguage.TRADITIONAL_CHINESE -> "觀看完成"
     }
 
 private fun rewardBadgeSyncingLabel(language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "Syncing"
-        AppLanguage.TRADITIONAL_CHINESE -> "同步中"
     }
 
 private fun rewardBadgeCompleteLabel(language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "Points claimed"
-        AppLanguage.TRADITIONAL_CHINESE -> "已領取積分"
     }
 
 private fun rewardBadgeDailyLimitLabel(language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "Daily limit reached"
-        AppLanguage.TRADITIONAL_CHINESE -> "今日額度已滿"
     }
 
 private fun rewardBadgeUnavailableLabel(language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "Reward unavailable"
-        AppLanguage.TRADITIONAL_CHINESE -> "暫時無法領取"
     }
 
 private fun rewardBadgeRetryLabel(language: AppLanguage): String =
     when (language) {
         AppLanguage.ENGLISH -> "Retry later"
-        AppLanguage.TRADITIONAL_CHINESE -> "稍後補發"
     }

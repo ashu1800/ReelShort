@@ -6,7 +6,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.reelshort.app.config.ApiConfig
 import com.reelshort.app.data.AppRepository
-import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.WatchRecord
@@ -204,10 +203,6 @@ class ReelShortViewModel(
 
     fun logout() {
         viewModelScope.launch { controller.logout() }
-    }
-
-    fun setLanguage(language: AppLanguage) {
-        viewModelScope.launch { controller.setLanguage(language) }
     }
 
     fun showAuthPrompt() = controller.showAuthPrompt()

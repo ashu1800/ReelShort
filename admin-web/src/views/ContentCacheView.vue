@@ -18,7 +18,6 @@ const shelfOptions = [
 ]
 const localeOptions = [
   { label: 'English', value: 'en' },
-  { label: '繁體中文', value: 'zh-TW' },
 ]
 
 async function loadStatus() {

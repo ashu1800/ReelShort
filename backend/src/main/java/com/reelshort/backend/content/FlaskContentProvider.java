@@ -81,7 +81,7 @@ public class FlaskContentProvider implements ContentProvider {
 				uri("/api/v1/reelshort/video/{bookId}/{episodeNum}")
 						.queryParam("filtered_title", filteredTitle)
 						.queryParam("chapter_id", chapterId)
-						.queryParam("locale", locale.apiValue())
+						.queryParam("locale", "en")
 						.buildAndExpand(bookId, episodeNum)
 						.toUriString());
 		return response.toContentVideo();

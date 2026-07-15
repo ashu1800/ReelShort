@@ -24,16 +24,11 @@ class ContentMetadataRefreshServiceTests {
 		ContentMetadataRefreshService service = new ContentMetadataRefreshService(contentCacheService, properties);
 		when(contentCacheService.refreshShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH,
 				ContentRefreshTriggerSource.SCHEDULED)).thenReturn(List.of());
-		when(contentCacheService.refreshShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE,
-				ContentRefreshTriggerSource.SCHEDULED))
-				.thenReturn(List.of());
 
 		int refreshed = service.refreshShelves(List.of("recommend", "unknown"));
 
-		assertThat(refreshed).isEqualTo(2);
+		assertThat(refreshed).isEqualTo(1);
 		verify(contentCacheService).refreshShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH,
-				ContentRefreshTriggerSource.SCHEDULED);
-		verify(contentCacheService).refreshShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE,
 				ContentRefreshTriggerSource.SCHEDULED);
 	}
 

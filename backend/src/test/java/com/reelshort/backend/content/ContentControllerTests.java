@@ -72,25 +72,27 @@ class ContentControllerTests {
 
 	@Test
 	void searchPassesRequestedLocaleToContentCache() throws Exception {
-		when(contentCacheService.search("愛情", ContentLocale.TRADITIONAL_CHINESE)).thenReturn(List.of(
-				new ContentBook("book-1", "愛情轟炸", "book-1", "https://example.com/cover.jpg",
-						"繁體中文簡介。", 12)));
+		when(contentCacheService.search("love", ContentLocale.ENGLISH)).thenReturn(List.of(
+				new ContentBook("book-1", "Love Bombing", "book-1", "https://example.com/cover.jpg",
+						"An English romance.", 12)));
 
 		mockMvc.perform(get("/api/app/content/search")
-				.param("keywords", "愛情")
-				.param("locale", "zh-TW"))
+				.param("keywords", "love")
+				.param("locale", "en"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data[0].title").value("愛情轟炸"))
-				.andExpect(jsonPath("$.data[0].description").value("繁體中文簡介。"));
+				.andExpect(jsonPath("$.data[0].title").value("Love Bombing"))
+				.andExpect(jsonPath("$.data[0].description").value("An English romance."));
 	}
 
 	@Test
-	void contentEndpointsRejectUnsupportedLocale() throws Exception {
-		mockMvc.perform(get("/api/app/content/search")
-				.param("keywords", "love")
-				.param("locale", "zh-CN"))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value(400));
+	void contentEndpointsResolveAnyLocaleToEnglish() throws Exception {
+		// The app is English-only; any incoming locale resolves to ENGLISH.
+		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(
+				new ContentBook("book-en", "English Drama", "book-en", "https://example.com/en.jpg", "desc.", 4)));
+
+		mockMvc.perform(get("/api/app/home/recommend").param("locale", "zh-CN"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[0].bookId").value("book-en"));
 	}
 
 	@Test
@@ -194,13 +196,13 @@ class ContentControllerTests {
 
 	@Test
 	void homeRecommendPassesRequestedLocale() throws Exception {
-		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE)).thenReturn(List.of(
-				new ContentBook("book-home", "首頁推薦", "book-home", "https://example.com/home.jpg",
-						"繁體首頁描述。", 6)));
+		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(
+				new ContentBook("book-home", "Home Pick", "book-home", "https://example.com/home.jpg",
+						"Home shelf description.", 6)));
 
-		mockMvc.perform(get("/api/app/home/recommend").param("locale", "zh-TW"))
+		mockMvc.perform(get("/api/app/home/recommend").param("locale", "en"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data[0].title").value("首頁推薦"));
+				.andExpect(jsonPath("$.data[0].title").value("Home Pick"));
 	}
 
 	@Test

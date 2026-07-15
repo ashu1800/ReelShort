@@ -40,26 +40,8 @@ DEFAULT_CATALOG_SEARCH_KEYWORDS = (
     "queen",
 )
 
-SUPPORTED_LOCALES = {"en", "zh-TW"}
+SUPPORTED_LOCALES = {"en"}
 DEFAULT_LOCALE = "en"
-DEFAULT_CATALOG_SEARCH_KEYWORDS_ZH_TW = (
-    "愛情",
-    "億萬富翁",
-    "霸總",
-    "婚姻",
-    "復仇",
-    "黑幫",
-    "狼人",
-    "Alpha",
-    "Luna",
-    "契約",
-    "懷孕",
-    "秘密",
-    "老闆",
-    "家庭",
-    "醫生",
-    "女王",
-)
 
 MAX_CATALOG_KEYWORDS = 50
 MAX_CATALOG_PAGES_PER_KEYWORD = 5
@@ -583,15 +565,11 @@ class ReelShortClient:
         return len(books) >= max_books
 
     def _catalog_search_keywords(self, locale: str = DEFAULT_LOCALE):
-        if locale == "zh-TW":
-            raw_keywords = os.getenv("REELSHORT_CATALOG_SEARCH_KEYWORDS_ZH_TW", "")
-            defaults = list(DEFAULT_CATALOG_SEARCH_KEYWORDS_ZH_TW)
-        else:
-            raw_keywords = os.getenv(
-                "REELSHORT_CATALOG_SEARCH_KEYWORDS_EN",
-                os.getenv("REELSHORT_CATALOG_SEARCH_KEYWORDS", ""),
-            )
-            defaults = list(DEFAULT_CATALOG_SEARCH_KEYWORDS)
+        raw_keywords = os.getenv(
+            "REELSHORT_CATALOG_SEARCH_KEYWORDS_EN",
+            os.getenv("REELSHORT_CATALOG_SEARCH_KEYWORDS", ""),
+        )
+        defaults = list(DEFAULT_CATALOG_SEARCH_KEYWORDS)
         keywords = [keyword.strip() for keyword in raw_keywords.split(",") if keyword.strip()]
         return (keywords or defaults)[:MAX_CATALOG_KEYWORDS]
 

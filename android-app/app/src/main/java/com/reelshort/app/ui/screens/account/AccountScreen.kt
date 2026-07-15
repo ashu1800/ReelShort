@@ -31,7 +31,6 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
@@ -160,9 +159,7 @@ internal fun AccountScreen(
     onSubmitBankCard: (String, String, String, String, String) -> Unit,
     onLogout: () -> Unit,
     language: AppLanguage,
-    onSetLanguage: (AppLanguage) -> Unit,
 ) {
-    var languageSheetVisible by remember { mutableStateOf(false) }
     var detailSheet by remember { mutableStateOf<AccountDetailSheet?>(null) }
     var walletSheetVisible by remember { mutableStateOf(false) }
     var lastHandledWalletMutationVersion by remember { mutableStateOf(walletMutationVersion) }
@@ -293,14 +290,6 @@ internal fun AccountScreen(
         item {
             AccountMenuGroup {
                 AccountMenuRow(
-                    icon = Icons.Rounded.Language,
-                    title = copy.languageTitle,
-                    subtitle = copy.languageSubtitle,
-                    trailing = language.displayName,
-                    onClick = { languageSheetVisible = true },
-                )
-                AccountMenuDivider()
-                AccountMenuRow(
                     icon = Icons.Rounded.SystemUpdate,
                     title = updateCopy.versionTitle,
                     subtitle = appVersionLabel,
@@ -394,30 +383,6 @@ internal fun AccountScreen(
             onRefresh = onRefreshVipOrder,
             onDismiss = { vipSheetVisible = false },
         )
-    }
-
-    if (languageSheetVisible) {
-        ModalBottomSheet(onDismissRequest = { languageSheetVisible = false }, containerColor = Panel) {
-            Column(
-                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text(copy.languageTitle, color = TextPrimary, style = MaterialTheme.typography.titleLarge)
-                AppLanguage.entries.forEach { option ->
-                    AccountMenuRow(
-                        icon = Icons.Rounded.Language,
-                        title = option.displayName,
-                        subtitle = option.locale,
-                        trailing = if (option == language) copy.accountSelectedLanguage else "",
-                        highlight = option == language,
-                        onClick = {
-                            languageSheetVisible = false
-                            onSetLanguage(option)
-                        },
-                    )
-                }
-            }
-        }
     }
 
     pendingConfirmation?.let { confirmation ->
@@ -733,7 +698,7 @@ private fun ContinueWatchingPosterCard(
             .heightIn(min = 224.dp)
             .semantics {
                 contentDescription =
-                    "$title, ${copy.listEpisodePrefix}${record.episode}${if (language == AppLanguage.ENGLISH) "" else copy.playerEpisodeUnit}, ${progress}%"
+                    "$title, ${copy.listEpisodePrefix}${record.episode}, ${progress}%"
             }
             .clickable(onClick = onClick),
         color = Panel.copy(alpha = 0.92f),
@@ -757,7 +722,7 @@ private fun ContinueWatchingPosterCard(
                         .padding(horizontal = 9.dp, vertical = 5.dp),
                 ) {
                     Text(
-                        "${copy.listEpisodePrefix}${record.episode}${if (language == AppLanguage.ENGLISH) "" else copy.playerEpisodeUnit}",
+                        "${copy.listEpisodePrefix}${record.episode}",
                         color = PrimaryGold,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
@@ -854,7 +819,7 @@ private fun ContinueWatchingRow(record: WatchRecord, language: AppLanguage, onCl
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(record.bookTitle, color = TextPrimary, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "${copy.listEpisodePrefix}${record.episode}${if (language == AppLanguage.ENGLISH) "" else copy.playerEpisodeUnit} · ${record.progressPercent}%",
+                "${copy.listEpisodePrefix}${record.episode} · ${record.progressPercent}%",
                 color = TextSecondary,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
@@ -1103,7 +1068,7 @@ private fun BankCardBottomSheet(
                 )
             } else {
                 Text(
-                    if (language == AppLanguage.TRADITIONAL_CHINESE) "正在進行人臉識別驗證..." else "Performing face verification...",
+                    "Performing face verification...",
                     color = TextSecondary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -1111,13 +1076,13 @@ private fun BankCardBottomSheet(
                 CircularProgressIndicator(color = PrimaryGold, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    if (language == AppLanguage.TRADITIONAL_CHINESE) "驗證失敗" else "Verification failed",
+                    "Verification failed",
                     color = DangerText,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(16.dp))
                 GoldOutlinedButton(
-                    if (language == AppLanguage.TRADITIONAL_CHINESE) "重試" else "Retry", !isLoading,
+                    "Retry", !isLoading,
                     {
                         onSubmit(holderName, cardNumber, expiryMonth, expiryYear, cvv)
                     },
@@ -1138,10 +1103,8 @@ private sealed interface PendingAccountConfirmation {
 
 private fun PendingAccountConfirmation.summary(language: AppLanguage): String =
     when (this) {
-        is PendingAccountConfirmation.WalletUnbind ->
-            if (language == AppLanguage.TRADITIONAL_CHINESE) "解除 TRC20 錢包綁定" else "unbind the TRC20 wallet"
-        is PendingAccountConfirmation.Withdrawal ->
-            if (language == AppLanguage.TRADITIONAL_CHINESE) "提領 $points 積分" else "withdraw $points points"
+        is PendingAccountConfirmation.WalletUnbind -> "unbind the TRC20 wallet"
+        is PendingAccountConfirmation.Withdrawal -> "withdraw $points points"
     }
 
 @Composable
@@ -1356,7 +1319,7 @@ private fun VipBottomSheet(
                 Text(copy.vipPayHint, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Text("${copy.vipPayStatusPending}", color = PrimaryGold, style = MaterialTheme.typography.bodyMedium)
                 GoldOutlinedButton(
-                    if (language == AppLanguage.TRADITIONAL_CHINESE) "刷新狀態" else "Refresh status",
+                    "Refresh status",
                     true, onRefresh, Modifier.fillMaxWidth(), PrimaryGold,
                 )
             } else {

@@ -28,7 +28,7 @@ import com.reelshort.app.ui.theme.TextPrimary
 @Composable
 internal fun LoadingDialog(
     visible: Boolean,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(

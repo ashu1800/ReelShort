@@ -131,10 +131,10 @@ class OkHttpReelShortApiClientTest {
             """.trimIndent()))
             val client = client(server, token = "token-123")
 
-            val books = client.getHomeShelf("zh-TW")
+            val books = client.getHomeShelf("en")
             val request = server.takeRequest()
 
-            assertEquals("/api/app/home/recommend?locale=zh-TW", request.path)
+            assertEquals("/api/app/home/recommend?locale=en", request.path)
             assertEquals(null, request.getHeader("Authorization"))
             assertEquals("book-1", books.single().id)
             assertEquals("alpha", books.single().filteredTitle)
@@ -193,10 +193,10 @@ class OkHttpReelShortApiClientTest {
             server.enqueue(successBody("[]"))
             val client = client(server, token = "token-123")
 
-            val result = client.search("Alpha Love", "zh-TW")
+            val result = client.search("Alpha Love", "en")
             val request = server.takeRequest()
 
-            assertEquals("/api/app/content/search?keywords=Alpha%20Love&locale=zh-TW", request.path)
+            assertEquals("/api/app/content/search?keywords=Alpha%20Love&locale=en", request.path)
             assertEquals(null, request.getHeader("Authorization"))
             assertEquals(emptyList(), result)
         }
@@ -217,10 +217,10 @@ class OkHttpReelShortApiClientTest {
             """.trimIndent()))
             val client = client(server, token = "token-123")
 
-            val book = client.getBook("book 1", "zh-TW")
+            val book = client.getBook("book 1", "en")
             val request = server.takeRequest()
 
-            assertEquals("/api/app/content/books/book%201?locale=zh-TW", request.path)
+            assertEquals("/api/app/content/books/book%201?locale=en", request.path)
             assertEquals(null, request.getHeader("Authorization"))
             assertEquals("book 1", book.id)
             assertEquals("Alpha", book.title)
@@ -246,18 +246,18 @@ class OkHttpReelShortApiClientTest {
             """.trimIndent()))
             val client = client(server, token = "token-123")
 
-            val episodes = client.getEpisodes("book 1", "alpha", "zh-TW")
-            val video = client.getVideoUrl("book 1", 1, "alpha", "chapter 1", "zh-TW")
+            val episodes = client.getEpisodes("book 1", "alpha", "en")
+            val video = client.getVideoUrl("book 1", 1, "alpha", "chapter 1", "en")
             val episodesRequest = server.takeRequest()
             val videoRequest = server.takeRequest()
 
-            assertEquals("/api/app/content/books/book%201/episodes?filteredTitle=alpha&locale=zh-TW", episodesRequest.path)
+            assertEquals("/api/app/content/books/book%201/episodes?filteredTitle=alpha&locale=en", episodesRequest.path)
             assertEquals(null, episodesRequest.getHeader("Authorization"))
             assertEquals(1, episodes.single().number)
             assertEquals("chapter-1", episodes.single().chapterId)
             assertEquals("Opening Trap", episodes.single().title)
             assertEquals("A deal goes wrong.", episodes.single().description)
-            assertEquals("/api/app/content/books/book%201/episodes/1/play?filteredTitle=alpha&chapterId=chapter%201&locale=zh-TW", videoRequest.path)
+            assertEquals("/api/app/content/books/book%201/episodes/1/play?filteredTitle=alpha&chapterId=chapter%201&locale=en", videoRequest.path)
             assertEquals("Bearer token-123", videoRequest.getHeader("Authorization"))
             assertEquals("https://cdn.example.com/book-1/1.m3u8", video.url)
             assertEquals(180, video.durationSeconds)

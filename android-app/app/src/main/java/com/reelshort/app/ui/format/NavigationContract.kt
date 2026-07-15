@@ -26,7 +26,7 @@ internal fun primaryTabRefreshModes(): Map<AppScreen, TabRefreshMode> =
         AppScreen.ACCOUNT to TabRefreshMode.CACHE_FIRST_BACKGROUND_REFRESH,
     )
 
-internal fun accountEntryLabels(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): List<String> {
+internal fun accountEntryLabels(language: AppLanguage = AppLanguage.ENGLISH): List<String> {
     val copy = strings(language)
     return listOf(
         copy.accountFavoritesTitle,
@@ -67,7 +67,7 @@ internal fun accountDashboardSections(): List<AccountDashboardSection> =
         AccountDashboardSection.SECONDARY_SETTINGS,
     )
 
-internal fun accountPrimaryActionLabels(language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE): List<String> {
+internal fun accountPrimaryActionLabels(language: AppLanguage = AppLanguage.ENGLISH): List<String> {
     val copy = strings(language)
     return listOf(
         copy.accountFavoritesTitle,
@@ -96,7 +96,7 @@ internal fun accountPrimaryActionSheet(label: String, language: AppLanguage = Ap
 
 internal fun accountDetailSheetTitle(
     sheet: AccountDetailSheet,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ): String {
     val copy = strings(language)
     return when (sheet) {
@@ -108,7 +108,7 @@ internal fun accountDetailSheetTitle(
 }
 
 internal val AppScreen.navigationLabel: String
-    get() = navigationLabel(AppLanguage.TRADITIONAL_CHINESE)
+    get() = navigationLabel(AppLanguage.ENGLISH)
 
 internal fun AppScreen.navigationLabel(language: AppLanguage): String =
     when (this) {

@@ -81,31 +81,22 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
-	void getShelfCachesSameBookIdSeparatelyByLocale() {
+	void getShelfCachesEnglishBook() {
 		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
 				.thenReturn(List.of(book("book-1", "Love Story")));
-		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE))
-				.thenReturn(List.of(book("book-1", "愛情故事")));
 
 		List<ContentBook> english = contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH);
-		List<ContentBook> traditionalChinese = contentCacheService.getShelf(
-				ContentShelfType.RECOMMEND,
-				ContentLocale.TRADITIONAL_CHINESE);
 
 		assertThat(english).extracting(ContentBook::title).containsExactly("Love Story");
-		assertThat(traditionalChinese).extracting(ContentBook::title).containsExactly("愛情故事");
 		assertThat(contentBookCacheRepository.findByBookIdAndLocale("book-1", ContentLocale.ENGLISH)).isPresent()
 				.get()
 				.satisfies(cache -> assertThat(cache.title()).isEqualTo("Love Story"));
-		assertThat(contentBookCacheRepository.findByBookIdAndLocale("book-1", ContentLocale.TRADITIONAL_CHINESE)).isPresent()
-				.get()
-				.satisfies(cache -> assertThat(cache.title()).isEqualTo("愛情故事"));
 	}
 
 	@Test
-	void getShelfPersistsTraditionalChineseBookUsingStableIdForRealBookIdLength() {
+	void getShelfPersistsBookUsingStableIdForRealBookIdLength() {
 		String longBookId = "670f2d8f4f3f2cb1c8ab1234";
-		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE))
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
 				.thenReturn(List.of(new ContentBook(
 						longBookId,
 						"億萬戀人",
@@ -114,10 +105,10 @@ class ContentCacheServiceTests {
 						"desc",
 						88)));
 
-		List<ContentBook> books = contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE);
+		List<ContentBook> books = contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH);
 
 		assertThat(books).extracting(ContentBook::bookId).containsExactly(longBookId);
-		assertThat(contentBookCacheRepository.findByBookIdAndLocale(longBookId, ContentLocale.TRADITIONAL_CHINESE)).isPresent()
+		assertThat(contentBookCacheRepository.findByBookIdAndLocale(longBookId, ContentLocale.ENGLISH)).isPresent()
 				.get()
 				.satisfies(cache -> {
 					assertThat(cache.title()).isEqualTo("億萬戀人");
@@ -140,19 +131,16 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
-	void searchCachedFallbackKeepsLocaleBucketsIsolated() {
+	void searchCachedFallbackReturnsCachedMetadata() {
 		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(
 				new ContentBook("book-en", "Love Contract", "love-contract", "https://example.com/en.jpg", "", 20),
 				ContentLocale.ENGLISH));
-		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(
-				new ContentBook("book-zh", "愛情契約", "love-contract", "https://example.com/zh.jpg", "", 20),
-				ContentLocale.TRADITIONAL_CHINESE));
-		when(contentProvider.search("愛情", ContentLocale.TRADITIONAL_CHINESE))
+		when(contentProvider.search("Love", ContentLocale.ENGLISH))
 				.thenThrow(new ContentProviderException(404, "content provider returned 404"));
 
-		List<ContentBook> books = contentCacheService.search("愛情", ContentLocale.TRADITIONAL_CHINESE);
+		List<ContentBook> books = contentCacheService.search("Love", ContentLocale.ENGLISH);
 
-		assertThat(books).extracting(ContentBook::bookId).containsExactly("book-zh");
+		assertThat(books).extracting(ContentBook::bookId).containsExactly("book-en");
 	}
 
 	@Test
@@ -254,12 +242,12 @@ class ContentCacheServiceTests {
 
 	@Test
 	void refreshShelfWithRunRecordsFailureAndRethrows() {
-		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.TRADITIONAL_CHINESE))
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
 				.thenThrow(new ContentProviderException(503, "content provider unavailable"));
 
 		assertThatThrownBy(() -> contentCacheService.refreshShelf(
 				ContentShelfType.RECOMMEND,
-				ContentLocale.TRADITIONAL_CHINESE,
+				ContentLocale.ENGLISH,
 				ContentRefreshTriggerSource.SCHEDULED))
 				.isInstanceOf(ContentProviderException.class)
 				.hasMessage("content provider unavailable");
@@ -268,7 +256,7 @@ class ContentCacheServiceTests {
 				.singleElement()
 				.satisfies(run -> {
 					assertThat(run.triggerSource()).isEqualTo(ContentRefreshTriggerSource.SCHEDULED);
-					assertThat(run.locale()).isEqualTo(ContentLocale.TRADITIONAL_CHINESE);
+					assertThat(run.locale()).isEqualTo(ContentLocale.ENGLISH);
 					assertThat(run.status()).isEqualTo(ContentRefreshRunStatus.FAILED);
 					assertThat(run.itemCount()).isZero();
 					assertThat(run.errorMessage()).isEqualTo("content provider unavailable");
@@ -423,15 +411,11 @@ class ContentCacheServiceTests {
 		assertThat(status.videoCacheCount()).isZero();
 		assertThat(status.recentRefreshRuns()).isEmpty();
 		assertThat(status.shelves())
-				.hasSize(6);
+				.hasSize(3);
 		assertThat(status.shelves())
 				.filteredOn(shelf -> shelf.shelfType().equals("drama-dub") && shelf.locale().equals("en"))
 				.singleElement()
 				.satisfies(shelf -> assertThat(shelf.itemCount()).isEqualTo(1));
-		assertThat(status.shelves())
-				.filteredOn(shelf -> shelf.shelfType().equals("drama-dub") && shelf.locale().equals("zh-TW"))
-				.singleElement()
-				.satisfies(shelf -> assertThat(shelf.itemCount()).isZero());
 	}
 
 	@Test

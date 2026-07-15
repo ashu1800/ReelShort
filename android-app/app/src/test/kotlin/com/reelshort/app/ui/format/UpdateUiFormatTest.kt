@@ -35,10 +35,9 @@ class UpdateUiFormatTest {
     }
 
     @Test
-    fun exposesEnglishAndTraditionalChineseUpdateCopy() {
+    fun exposesEnglishUpdateCopy() {
         assertEquals("App version", updateStrings(AppLanguage.ENGLISH).versionTitle)
         assertEquals("Check", updateStrings(AppLanguage.ENGLISH).checkForUpdates)
-        assertEquals("應用程式版本", updateStrings(AppLanguage.TRADITIONAL_CHINESE).versionTitle)
         assertTrue(updateStrings(AppLanguage.ENGLISH).permissionBody.contains("unknown apps"))
     }
 

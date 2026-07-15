@@ -21,7 +21,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import com.reelshort.app.data.BookSummary
-import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.state.AppScreen
@@ -64,7 +63,6 @@ internal fun MainShell(
     onShowAuthPrompt: () -> Unit,
     onShowRegisterAuthPrompt: () -> Unit,
     onRefreshHome: () -> Unit,
-    onSetLanguage: (AppLanguage) -> Unit,
     onBindWallet: (String) -> Unit,
     onUnbindWallet: () -> Unit,
     onCreateVipOrder: () -> Unit,
@@ -172,7 +170,6 @@ internal fun MainShell(
                             onSubmitBankCard = onSubmitBankCard,
                             onLogout = onLogout,
                             language = state.language,
-                            onSetLanguage = onSetLanguage,
                         )
                     }
                 }

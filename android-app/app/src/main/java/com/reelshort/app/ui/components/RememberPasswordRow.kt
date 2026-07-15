@@ -26,7 +26,7 @@ internal fun RememberPasswordRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ) {
     Row(
         modifier = Modifier

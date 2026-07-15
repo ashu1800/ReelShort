@@ -105,17 +105,6 @@ def test_search_returns_spring_boot_contract(client):
     }
 
 
-def test_search_passes_supported_locale_to_client():
-    fake = FakeReelShortClient()
-    app = create_app(client=fake)
-
-    response = app.test_client().get("/api/v1/reelshort/search?keywords=%E6%84%9B%E6%83%85&locale=zh-TW")
-
-    assert response.status_code == 200
-    assert fake.calls == [("search", "愛情", "zh-TW")]
-    assert response.get_json()["results"][0]["description"] == "zh-TW"
-
-
 def test_search_rejects_unsupported_locale(client):
     response = client.get("/api/v1/reelshort/search?keywords=love&locale=zh-CN")
 
@@ -156,16 +145,6 @@ def test_shelf_endpoints_return_books(client, path, shelf_name):
     }
 
 
-def test_recommend_passes_locale_to_client():
-    fake = FakeReelShortClient()
-    app = create_app(client=fake)
-
-    response = app.test_client().get("/api/v1/reelshort/recommend?locale=zh-TW")
-
-    assert response.status_code == 200
-    assert fake.calls == [("shelf", "recommend", "zh-TW")]
-
-
 def test_episodes_return_spring_boot_contract(client):
     response = client.get("/api/v1/reelshort/episodes/book-1?filtered_title=love-story")
 
@@ -184,16 +163,6 @@ def test_episodes_require_filtered_title(client):
 
     assert response.status_code == 400
     assert response.get_json() == {"error": "filtered_title is required"}
-
-
-def test_episodes_passes_locale_to_client():
-    fake = FakeReelShortClient()
-    app = create_app(client=fake)
-
-    response = app.test_client().get("/api/v1/reelshort/episodes/book-1?filtered_title=love-story&locale=zh-TW")
-
-    assert response.status_code == 200
-    assert fake.calls == [("episodes", "book-1", "love-story", "zh-TW")]
 
 
 def test_map_book_preserves_description_from_upstream_alias():
@@ -342,31 +311,6 @@ def test_reelshort_client_records_empty_search_diagnostic(monkeypatch):
     assert diagnostics["recent_events"][0]["context"] == {
         "keywords": "missing",
         "locale": "en",
-    }
-
-
-def test_reelshort_client_builds_localized_search_data_url(monkeypatch):
-    captured = {}
-
-    class FakeResponse:
-        status_code = 200
-        ok = True
-
-        def json(self):
-            return {"pageProps": {"books": []}}
-
-    def fake_get(url, params, timeout, **kwargs):
-        captured["url"] = url
-        captured["params"] = params
-        return FakeResponse()
-
-    monkeypatch.setattr("app.requests.get", fake_get)
-
-    ReelShortClient("https://site.example", "id", 3, build_id="build-1").search("愛情", locale="zh-TW")
-
-    assert captured == {
-        "url": "https://site.example/_next/data/build-1/zh-TW/search.json",
-        "params": {"keywords": "愛情"},
     }
 
 
@@ -567,77 +511,6 @@ def test_reelshort_client_maps_home_fallback_shelf_when_legacy_data_returns_404(
             "book_pic": "https://example.com/fallback.jpg",
             "description": "",
             "chapter_count": 16,
-        }
-    ]
-
-
-def test_reelshort_client_prefers_locale_shelf_data_for_traditional_chinese(monkeypatch):
-    calls = []
-
-    class FakeResponse:
-        text = ""
-
-        def __init__(self, status_code, payload=None):
-            self.status_code = status_code
-            self.ok = 200 <= status_code < 300
-            self.payload = payload or {}
-
-        def json(self):
-            return self.payload
-
-    def fake_get(url, params=None, timeout=None, **kwargs):
-        calls.append(url)
-        if url.endswith("/_next/data/build-1/zh-TW/recommend.json"):
-            return FakeResponse(
-                200,
-                {
-                    "pageProps": {
-                        "books": [
-                            {
-                                "book_id": "book-zh",
-                                "book_title": "繁中推薦",
-                                "book_pic": "https://example.com/zh.jpg",
-                                "chapter_count": 9,
-                            }
-                        ]
-                    }
-                },
-            )
-        if url.endswith("/_next/data/build-1/37/recommend.json"):
-            return FakeResponse(
-                200,
-                {
-                    "pageProps": {
-                        "books": [
-                            {
-                                "book_id": "book-en",
-                                "book_title": "English Recommend",
-                                "book_pic": "https://example.com/en.jpg",
-                                "chapter_count": 10,
-                            }
-                        ]
-                    }
-                },
-            )
-        raise AssertionError(f"unexpected URL {url}")
-
-    monkeypatch.setattr("app.requests.get", fake_get)
-    monkeypatch.setenv("REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD", "0")
-
-    client = ReelShortClient("https://site.example", "37", 3)
-    client.build_id = "build-1"
-
-    results = client.shelf("recommend", locale="zh-TW")
-
-    assert calls == ["https://site.example/_next/data/build-1/zh-TW/recommend.json"]
-    assert results == [
-        {
-            "book_id": "book-zh",
-            "book_title": "繁中推薦",
-            "filtered_title": "book-book-zh",
-            "book_pic": "https://example.com/zh.jpg",
-            "description": "",
-            "chapter_count": 9,
         }
     ]
 

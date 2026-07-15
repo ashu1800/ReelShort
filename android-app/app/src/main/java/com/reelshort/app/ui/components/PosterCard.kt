@@ -49,7 +49,7 @@ import com.reelshort.app.ui.theme.TextPrimary
 internal fun PosterCard(
     book: BookSummary,
     onClick: () -> Unit,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ) {
     val copy = strings(language)
     val fontScale = LocalDensity.current.fontScale

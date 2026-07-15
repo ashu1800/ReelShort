@@ -65,34 +65,6 @@ internal fun updateStrings(language: AppLanguage): UpdateStrings = when (languag
         downloadError = "The update couldn't be downloaded. Try again.",
         installError = "Android couldn't open the installer. Check the installation permission and try again.",
     )
-    AppLanguage.TRADITIONAL_CHINESE -> UpdateStrings(
-        versionTitle = "應用程式版本",
-        checkForUpdates = "檢查",
-        checking = "正在檢查…",
-        latestVersion = "目前已是最新版本。",
-        checkFailed = "無法檢查更新，請確認網路連線後重試。",
-        availableTitle = "發現新版本",
-        publishedLabel = "發布時間",
-        sizeLabel = "下載大小",
-        releaseNotes = "更新內容",
-        updateNow = "立即更新",
-        later = "稍後",
-        downloading = "正在下載更新",
-        verifying = "正在驗證更新…",
-        cancel = "取消",
-        retry = "重試",
-        permissionTitle = "允許安裝應用程式",
-        permissionBody = "Android 需要允許 ShortLink 安裝未知應用程式。請在設定中開啟權限後返回此處。",
-        openSettings = "開啟設定",
-        readyTitle = "可以安裝",
-        readyBody = "APK 已通過完整性、套件名稱、版本與簽章驗證。Android 將要求你確認安裝。",
-        install = "安裝",
-        storageError = "儲存空間不足，無法下載此更新。",
-        verificationError = "下載的 APK 未通過安全驗證，已將檔案刪除。",
-        invalidReleaseError = "此 GitHub Release 不完整或格式無效。",
-        downloadError = "無法下載更新，請重試。",
-        installError = "Android 無法開啟安裝程式，請確認安裝權限後重試。",
-    )
 }
 
 internal fun formatUpdateBytes(bytes: Long): String {

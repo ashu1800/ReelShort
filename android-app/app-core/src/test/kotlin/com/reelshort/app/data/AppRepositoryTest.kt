@@ -111,7 +111,7 @@ class AppRepositoryTest {
 
         assertEquals(AppLanguage.ENGLISH, repository.loadLanguagePreference())
 
-        repository.saveLanguagePreference(AppLanguage.TRADITIONAL_CHINESE)
+        repository.saveLanguagePreference(AppLanguage.ENGLISH)
 
         val restoredRepository = AppRepository(
             FakeReelShortApiClient(),
@@ -120,7 +120,7 @@ class AppRepositoryTest {
             InMemoryHomeShelfStore(),
             languageStore,
         )
-        assertEquals(AppLanguage.TRADITIONAL_CHINESE, restoredRepository.loadLanguagePreference())
+        assertEquals(AppLanguage.ENGLISH, restoredRepository.loadLanguagePreference())
     }
 
     @Test

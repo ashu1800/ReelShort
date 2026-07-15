@@ -1,10 +1,7 @@
 package com.reelshort.backend.content;
 
-import java.util.Arrays;
-
 public enum ContentLocale {
-	ENGLISH("en"),
-	TRADITIONAL_CHINESE("zh-TW");
+	ENGLISH("en");
 
 	private final String apiValue;
 
@@ -17,12 +14,7 @@ public enum ContentLocale {
 	}
 
 	public static ContentLocale fromApiValue(String value) {
-		if (value == null || value.isBlank()) {
-			return ENGLISH;
-		}
-		return Arrays.stream(values())
-				.filter(locale -> locale.apiValue.equals(value))
-				.findFirst()
-				.orElseThrow(() -> new IllegalArgumentException("unsupported locale: " + value));
+		// The app is English-only; any incoming locale resolves to ENGLISH.
+		return ENGLISH;
 	}
 }

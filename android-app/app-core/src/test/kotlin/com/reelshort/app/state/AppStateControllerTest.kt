@@ -288,18 +288,6 @@ class AppStateControllerTest {
     }
 
     @Test
-    fun registerInvalidCaptchaUsesFriendlyTraditionalChineseMessage() = runTest {
-        val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "invalid captcha"))
-        val controller = AppStateController(dataSource)
-        controller.setLanguage(AppLanguage.TRADITIONAL_CHINESE)
-        dataSource.calls.clear()
-
-        controller.register("newuser", "Password123", "captcha-1", "123456")
-
-        assertEquals("圖形驗證碼錯誤。", controller.state.value.errorMessage)
-    }
-
-    @Test
     fun registerBadRequestUsesRegisterFormMessage() = runTest {
         val dataSource = FakeAppDataSource(registerError = ApiClientException(400, null, "bad request"))
         val controller = AppStateController(dataSource)
@@ -1908,14 +1896,14 @@ class AppStateControllerTest {
         controller.search("Alpha")
         dataSource.calls.clear()
 
-        controller.setLanguage(AppLanguage.TRADITIONAL_CHINESE)
+        controller.setLanguage(AppLanguage.ENGLISH)
 
         val state = controller.state.value
-        assertEquals(AppLanguage.TRADITIONAL_CHINESE, state.language)
+        assertEquals(AppLanguage.ENGLISH, state.language)
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals("", state.searchQuery)
         assertEquals(emptyList(), state.searchResults)
-        assertEquals(listOf("language:save:zh-TW", "home", "home:cache:save"), dataSource.calls)
+        assertEquals(listOf("language:save:en", "home", "home:cache:save"), dataSource.calls)
     }
 
     @Test
@@ -1926,15 +1914,15 @@ class AppStateControllerTest {
         dataSource.calls.clear()
         dataSource.homeError = IllegalStateException("content unavailable")
 
-        controller.setLanguage(AppLanguage.TRADITIONAL_CHINESE)
+        controller.setLanguage(AppLanguage.ENGLISH)
 
         val state = controller.state.value
-        assertEquals(AppLanguage.TRADITIONAL_CHINESE, state.language)
+        assertEquals(AppLanguage.ENGLISH, state.language)
         assertEquals(AppScreen.HOME, state.screen)
         assertEquals("", state.searchQuery)
         assertEquals(emptyList(), state.searchResults)
         assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
-        assertEquals(listOf("language:save:zh-TW", "home"), dataSource.calls)
+        assertEquals(listOf("language:save:en", "home"), dataSource.calls)
     }
 
     @Test

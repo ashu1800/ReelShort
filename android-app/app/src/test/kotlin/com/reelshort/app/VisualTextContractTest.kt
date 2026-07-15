@@ -24,8 +24,6 @@ import com.reelshort.app.ui.format.authCaptchaAnswerLabel
 import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
 import com.reelshort.app.ui.format.guestAccountEntryAuthModes
 import com.reelshort.app.ui.format.rememberPasswordLabel
-import com.reelshort.app.ui.format.supportedPhoneCountryCodes
-import com.reelshort.app.ui.format.smsVerificationSeconds
 import com.reelshort.app.ui.format.LoadingFeedbackMode
 import com.reelshort.app.ui.format.loadingFeedbackMode
 import com.reelshort.app.ui.format.TabRefreshMode
@@ -55,8 +53,6 @@ class VisualTextContractTest {
         assertEquals("ShortLink", appBrandName())
         assertEquals("ShortLink user", strings(AppLanguage.ENGLISH).accountUserFallback)
         assertEquals("Signed in · ShortLink", strings(AppLanguage.ENGLISH).accountLoggedInStatus)
-        assertEquals("ShortLink 用戶", strings(AppLanguage.TRADITIONAL_CHINESE).accountUserFallback)
-        assertEquals("已登入 · ShortLink", strings(AppLanguage.TRADITIONAL_CHINESE).accountLoggedInStatus)
     }
 
     @Test
@@ -262,16 +258,6 @@ class VisualTextContractTest {
     }
 
     @Test
-    fun phoneAuthUsesSupportedNonMainlandCountryCodesAndMockSmsTimeout() {
-        val codes = supportedPhoneCountryCodes()
-
-        assertEquals("+1", codes.first().code)
-        assertTrue(codes.none { it.code == "+86" })
-        assertTrue(codes.map { it.code }.containsAll(listOf("+44", "+61", "+852", "+886", "+81", "+82")))
-        assertEquals(120, smsVerificationSeconds())
-    }
-
-    @Test
     fun captchaRegisterRequiresUsernamePasswordConfirmAndCaptcha() {
         assertEquals(false, authRegisterEnabled(isLoading = false, username = "", password = "Password123", confirmPassword = "Password123", captchaAnswer = "1234", captchaLoaded = true))
         assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "short", confirmPassword = "short", captchaAnswer = "1234", captchaLoaded = true))
@@ -285,7 +271,6 @@ class VisualTextContractTest {
     @Test
     fun captchaAnswerLabelUsesNeutralCopy() {
         assertEquals("Captcha answer", authCaptchaAnswerLabel(AppLanguage.ENGLISH))
-        assertEquals("驗證碼", authCaptchaAnswerLabel(AppLanguage.TRADITIONAL_CHINESE))
     }
 
     @Test
@@ -297,8 +282,6 @@ class VisualTextContractTest {
     fun commercialAccountActionsHaveLocalizedCopy() {
         assertEquals("Received", strings(AppLanguage.ENGLISH).accountTransferInLabel)
         assertEquals("Sent", strings(AppLanguage.ENGLISH).accountTransferOutLabel)
-        assertEquals("轉入", strings(AppLanguage.TRADITIONAL_CHINESE).accountTransferInLabel)
-        assertEquals("轉出", strings(AppLanguage.TRADITIONAL_CHINESE).accountTransferOutLabel)
     }
 
     @Test

@@ -1258,49 +1258,41 @@ class AppStateController(private val dataSource: AppDataSource) {
     private fun invalidCaptchaMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Captcha answer is incorrect."
-            AppLanguage.TRADITIONAL_CHINESE -> "圖形驗證碼錯誤。"
         }
 
     private fun registerBadRequestMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Check username, password, and captcha answer."
-            AppLanguage.TRADITIONAL_CHINESE -> "請檢查用戶名、密碼和圖形驗證碼。"
         }
 
     private fun credentialErrorMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Invalid username or password."
-            AppLanguage.TRADITIONAL_CHINESE -> "用戶名或密碼錯誤。"
         }
 
     private fun usernameExistsMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Username already exists."
-            AppLanguage.TRADITIONAL_CHINESE -> "用戶名已存在。"
         }
 
     private fun vipOrderCreatedMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "VIP order created. Submit payment to activate VIP."
-            AppLanguage.TRADITIONAL_CHINESE -> "VIP 訂單已建立，完成付款後即可啟用。"
         }
 
     private fun passwordChangedMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Password changed. Sign in again with the new password."
-            AppLanguage.TRADITIONAL_CHINESE -> "密碼已修改，請使用新密碼重新登入。"
         }
 
     private fun walletUpdatedMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Wallet updated."
-            AppLanguage.TRADITIONAL_CHINESE -> "錢包已更新。"
         }
 
     private fun withdrawalSubmittedMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Withdrawal submitted."
-            AppLanguage.TRADITIONAL_CHINESE -> "提現申請已提交。"
         }
 
     private enum class ErrorContext {

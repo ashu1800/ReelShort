@@ -47,16 +47,12 @@ internal fun ListRow(title: String, subtitle: String, trailing: String, highligh
 @Composable
 internal fun WatchRecordRow(
     record: WatchRecord,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ) {
     val copy = strings(language)
     ListRow(
         title = record.bookTitle,
-        subtitle = if (language == AppLanguage.ENGLISH) {
-            "${copy.listEpisodePrefix}${record.episode}"
-        } else {
-            "${copy.listEpisodePrefix}${record.episode}${copy.playerEpisodeUnit}"
-        },
+        subtitle = "${copy.listEpisodePrefix}${record.episode}",
         trailing = "${record.progressPercent}%",
     )
 }
@@ -64,7 +60,7 @@ internal fun WatchRecordRow(
 @Composable
 internal fun PointRecordRow(
     record: PointRecord,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ) {
     val copy = strings(language)
     ListRow(
@@ -78,7 +74,7 @@ internal fun PointRecordRow(
 @Composable
 internal fun OrderRow(
     order: RechargeOrderSummary,
-    language: AppLanguage = AppLanguage.TRADITIONAL_CHINESE,
+    language: AppLanguage = AppLanguage.ENGLISH,
 ) {
     val copy = strings(language)
     ListRow(
