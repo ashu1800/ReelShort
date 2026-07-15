@@ -308,7 +308,9 @@ private fun CaptchaImage(
 ) {
     val bitmap = remember(imageBase64) {
         runCatching {
-            val bytes = Base64.decode(imageBase64, Base64.DEFAULT)
+            // Backend returns "data:image/png;base64,..." — strip the data URI prefix
+            val pureBase64 = if (imageBase64.contains(",")) imageBase64.substringAfter(",") else imageBase64
+            val bytes = Base64.decode(pureBase64, Base64.DEFAULT)
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
         }.getOrNull()
     }
