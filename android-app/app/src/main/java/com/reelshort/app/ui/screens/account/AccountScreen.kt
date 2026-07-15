@@ -1392,7 +1392,7 @@ private fun VipBottomSheet(
                 }
             } else if (latestVipOrder != null && latestVipOrder.status == "PENDING") {
                 // State 2: Non-VIP with pending order — show payment info
-                Text("${copy.vipPayAmount}${latestVipOrder.usdtAmount} USDT", color = PrimaryGold, style = MaterialTheme.typography.titleMedium)
+                Text("${copy.vipPayAmount}${latestVipOrder.payableAmount ?: latestVipOrder.usdtAmount} USDT", color = PrimaryGold, style = MaterialTheme.typography.titleMedium)
                 Text("${copy.vipPayOrderNo}${latestVipOrder.orderNo}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(4.dp))
                 Text(copy.vipPayAddress, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)

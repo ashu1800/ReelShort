@@ -9,6 +9,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -175,6 +176,48 @@ public class TronClient {
 		return postJson(properties.getNodeUrl() + "/wallet/getaccount",
 				Map.of("address", address, "visible", true));
 	}
+
+	/**
+	 * Fetch recent incoming TRC20 USDT transfers to an address. Returns a list of {txHash, amount}
+	 * pairs for matching against pending VIP orders.
+	 */
+	public List<IncomingTransfer> fetchIncomingUsdtTransfers(String address, int limit) {
+		try {
+			HttpRequest.Builder builder = HttpRequest.newBuilder()
+					.uri(URI.create(String.format("%s/v1/accounts/%s/transactions/trc20"
+							+ "?limit=%d&contract_address=%s&only_to=true&order_by=block_timestamp,desc",
+							properties.getNodeUrl(), address, limit, properties.getUsdtContract())))
+					.timeout(Duration.ofSeconds(15))
+					.header("Accept", "application/json");
+			if (!properties.getApiKey().isBlank()) {
+				builder.header("TRON-PRO-API-KEY", properties.getApiKey());
+			}
+			HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+			JsonNode root = objectMapper.readTree(response.body());
+			JsonNode data = root.path("data");
+			List<IncomingTransfer> transfers = new ArrayList<>();
+			if (data.isArray()) {
+				for (JsonNode tx : data) {
+					String toAddress = tx.path("to").asText("");
+					if (!address.equals(toAddress)) {
+						continue;
+					}
+					String txHash = tx.path("transaction_id").asText("");
+					BigDecimal rawAmount = new BigDecimal(tx.path("value").asText("0"));
+					BigDecimal amount = rawAmount.divide(USDT_DECIMALS, 6, RoundingMode.DOWN);
+					transfers.add(new IncomingTransfer(txHash, amount));
+				}
+			}
+			return transfers;
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "failed to fetch TRC20 transfers: " + exception.getMessage());
+		}
+	}
+
+	public record IncomingTransfer(String txHash, BigDecimal amount) {
+	}
+
 
 	/**
 	 * Encode the transfer(address,uint256) parameters as ABI hex: 32-byte address + 32-byte amount.

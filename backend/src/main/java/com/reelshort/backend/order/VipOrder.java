@@ -1,6 +1,7 @@
 package com.reelshort.backend.order;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -12,6 +13,8 @@ import jakarta.persistence.Table;
 @Entity
 @Table(name = "vip_orders")
 public class VipOrder {
+
+	private static final BigDecimal SUFFIX_DIVISOR = new BigDecimal("10000");
 
 	@Id
 	@Column(nullable = false)
@@ -25,6 +28,9 @@ public class VipOrder {
 
 	@Column(name = "usdt_amount", nullable = false, precision = 18, scale = 6)
 	private BigDecimal usdtAmount;
+
+	@Column(name = "unique_suffix", nullable = false)
+	private int uniqueSuffix;
 
 	@Column(name = "tx_hash", length = 128)
 	private String txHash;
@@ -47,20 +53,29 @@ public class VipOrder {
 	protected VipOrder() {
 	}
 
-	private VipOrder(UUID id, UUID userId, String orderNo, BigDecimal usdtAmount, String status,
-			String paymentMethod, OffsetDateTime createdAt) {
+	private VipOrder(UUID id, UUID userId, String orderNo, BigDecimal usdtAmount, int uniqueSuffix,
+			String status, String paymentMethod, OffsetDateTime createdAt) {
 		this.id = id;
 		this.userId = userId;
 		this.orderNo = orderNo;
 		this.usdtAmount = usdtAmount;
+		this.uniqueSuffix = uniqueSuffix;
 		this.status = status;
 		this.paymentMethod = paymentMethod;
 		this.createdAt = createdAt;
 	}
 
-	public static VipOrder create(UUID userId, String orderNo, BigDecimal usdtAmount) {
-		return new VipOrder(UUID.randomUUID(), userId, orderNo, usdtAmount, "PENDING", "USDT_TRC20",
+	public static VipOrder create(UUID userId, String orderNo, BigDecimal usdtAmount, int uniqueSuffix) {
+		return new VipOrder(UUID.randomUUID(), userId, orderNo, usdtAmount, uniqueSuffix, "PENDING", "USDT_TRC20",
 				OffsetDateTime.now());
+	}
+
+	/**
+	 * The actual amount the user must transfer: base price + unique suffix as micro-USDT.
+	 * e.g. base=15.000000, suffix=73 → 15.0073
+	 */
+	public BigDecimal payableAmount() {
+		return usdtAmount.add(BigDecimal.valueOf(uniqueSuffix).divide(SUFFIX_DIVISOR, 6, RoundingMode.DOWN));
 	}
 
 	public void confirm(String txHash, String confirmedBy) {
@@ -86,6 +101,7 @@ public class VipOrder {
 	public UUID userId() { return userId; }
 	public String orderNo() { return orderNo; }
 	public BigDecimal usdtAmount() { return usdtAmount; }
+	public int uniqueSuffix() { return uniqueSuffix; }
 	public String txHash() { return txHash; }
 	public String status() { return status; }
 	public String paymentMethod() { return paymentMethod; }

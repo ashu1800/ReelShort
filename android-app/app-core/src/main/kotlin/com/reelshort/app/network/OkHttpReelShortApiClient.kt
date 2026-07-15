@@ -430,6 +430,7 @@ class OkHttpReelShortApiClient(
             id = id,
             orderNo = orderNo,
             usdtAmount = usdtAmount,
+            payableAmount = payableAmount,
             status = status,
             paymentMethod = paymentMethod,
             txHash = txHash,

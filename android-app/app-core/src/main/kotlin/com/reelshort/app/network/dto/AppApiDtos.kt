@@ -156,6 +156,7 @@ data class VipOrderDto(
     val id: String,
     val orderNo: String,
     val usdtAmount: String,
+    val payableAmount: String? = null,
     val status: String,
     val paymentMethod: String,
     val txHash: String? = null,
