@@ -33,23 +33,23 @@ public class AdminVipOrderController {
 
 	@GetMapping
 	@RequireAdminPermission(AdminPermissions.ORDER_READ)
-	public ApiResponse<List<VipOrder>> list(HttpServletRequest request) {
-		return ApiResponse.success(vipOrderService.allOrders(), requestId(request));
+	public ApiResponse<List<VipOrderResponse>> list(HttpServletRequest request) {
+		return ApiResponse.success(vipOrderService.allOrders().stream().map(VipOrderResponse::from).toList(), requestId(request));
 	}
 
 	@PostMapping("/{orderId}/confirm")
 	@RequireAdminPermission(AdminPermissions.ORDER_READ)
-	public ApiResponse<VipOrder> confirm(CurrentAdmin currentAdmin, @PathVariable UUID orderId,
+	public ApiResponse<VipOrderResponse> confirm(CurrentAdmin currentAdmin, @PathVariable UUID orderId,
 			@Valid @RequestBody VipConfirmRequest confirmRequest, HttpServletRequest request) {
-		return ApiResponse.success(vipOrderService.confirm(orderId, confirmRequest.txHash(), currentAdmin.username()),
+		return ApiResponse.success(VipOrderResponse.from(vipOrderService.confirm(orderId, confirmRequest.txHash(), currentAdmin.username())),
 				requestId(request));
 	}
 
 	@PostMapping("/{orderId}/reject")
 	@RequireAdminPermission(AdminPermissions.ORDER_READ)
-	public ApiResponse<VipOrder> reject(CurrentAdmin currentAdmin, @PathVariable UUID orderId,
+	public ApiResponse<VipOrderResponse> reject(CurrentAdmin currentAdmin, @PathVariable UUID orderId,
 			HttpServletRequest request) {
-		return ApiResponse.success(vipOrderService.reject(orderId, currentAdmin.username()), requestId(request));
+		return ApiResponse.success(VipOrderResponse.from(vipOrderService.reject(orderId, currentAdmin.username())), requestId(request));
 	}
 
 	private String requestId(HttpServletRequest request) {

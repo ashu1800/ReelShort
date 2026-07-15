@@ -24,13 +24,13 @@ public class VipOrderController {
 	}
 
 	@PostMapping("/orders")
-	public ApiResponse<VipOrder> createOrder(CurrentUser currentUser, HttpServletRequest request) {
-		return ApiResponse.success(vipOrderService.create(currentUser.userId()), requestId(request));
+	public ApiResponse<VipOrderResponse> createOrder(CurrentUser currentUser, HttpServletRequest request) {
+		return ApiResponse.success(VipOrderResponse.from(vipOrderService.create(currentUser.userId())), requestId(request));
 	}
 
 	@GetMapping("/orders")
-	public ApiResponse<List<VipOrder>> myOrders(CurrentUser currentUser, HttpServletRequest request) {
-		return ApiResponse.success(vipOrderService.userOrders(currentUser.userId()), requestId(request));
+	public ApiResponse<List<VipOrderResponse>> myOrders(CurrentUser currentUser, HttpServletRequest request) {
+		return ApiResponse.success(vipOrderService.userOrders(currentUser.userId()).stream().map(VipOrderResponse::from).toList(), requestId(request));
 	}
 
 	private String requestId(HttpServletRequest request) {
