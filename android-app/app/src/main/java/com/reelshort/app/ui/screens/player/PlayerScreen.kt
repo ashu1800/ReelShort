@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.ModeComment
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
@@ -285,6 +286,7 @@ internal fun PlayerScreen(
             selectedEpisode = state.selectedEpisode,
             watchHistory = state.watchHistory,
             language = state.language,
+            vipUntil = state.vipUntil,
             onDismiss = { episodeSheetVisible = false },
             onSelectEpisode = { selected ->
                 episodeSheetVisible = false
@@ -942,9 +944,11 @@ private fun EpisodeSelectorBottomSheet(
     selectedEpisode: EpisodeSummary?,
     watchHistory: List<WatchRecord>,
     language: AppLanguage,
+    vipUntil: String?,
     onDismiss: () -> Unit,
     onSelectEpisode: (EpisodeSummary) -> Unit,
 ) {
+    val isVip = !vipUntil.isNullOrBlank()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -993,6 +997,7 @@ private fun EpisodeSelectorBottomSheet(
                         selected = selected,
                         status = status,
                         language = language,
+                        locked = !isVip && episode.number > 7,
                         onClick = { onSelectEpisode(episode) },
                     )
                 }
@@ -1007,6 +1012,7 @@ private fun EpisodeSelectorItem(
     selected: Boolean,
     status: EpisodeWatchStatus,
     language: AppLanguage,
+    locked: Boolean = false,
     onClick: () -> Unit,
 ) {
     val statusLabel = episodeWatchStatusLabel(status, language)
@@ -1033,9 +1039,17 @@ private fun EpisodeSelectorItem(
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (locked && !selected) {
+                    Icon(
+                        Icons.Rounded.Lock,
+                        contentDescription = "VIP",
+                        tint = PrimaryGold,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
                 Text(
                     episode.number.coerceAtLeast(0).toString(),
-                    color = foreground,
+                    color = if (locked && !selected) TextSecondary else foreground,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
