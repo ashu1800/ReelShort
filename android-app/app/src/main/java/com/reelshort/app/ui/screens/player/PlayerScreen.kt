@@ -187,6 +187,7 @@ internal fun PlayerScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             CircleIconButton(icon = Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = copy.playerScreen, onClick = onBack)
+            val isVip = !state.vipUntil.isNullOrBlank()
             val badgeState = rewardBadgeState(
                 progressPercent = playback.progressPercent,
                 isReporting = playback.isRewardReporting,
@@ -195,7 +196,7 @@ internal fun PlayerScreen(
                 rewardClaimed = playback.rewardClaimed,
                 rewardStatus = playback.rewardStatus,
             )
-            if (badgeState.visualState != RewardBadgeVisualState.WAITING || playback.progressPercent > 0) {
+            if (isVip && (badgeState.visualState != RewardBadgeVisualState.WAITING || playback.progressPercent > 0)) {
                 Box(contentAlignment = Alignment.TopEnd) {
                     RewardBadgeChip(
                         state = badgeState,
