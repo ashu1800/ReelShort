@@ -81,6 +81,12 @@ public class ContentController {
 			CurrentUser currentUser,
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
+		if (!vipGateService.isVip(currentUser)) {
+			int freeEpisodes = systemConfigService.intValue(SystemConfigRegistry.VIP_FREE_EPISODES);
+			if (episodeNum > freeEpisodes) {
+				throw new ContentProviderException(403, "VIP required to watch this episode");
+			}
+		}
 		return ApiResponse.success(contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId,
 				parseLocale(locale)), requestId);
 	}

@@ -157,6 +157,7 @@ class ContentControllerTests {
 
 	@Test
 	void playReturnsProviderVideoInUnifiedEnvelope() throws Exception {
+		when(vipGateService.isVip(nullable(com.reelshort.backend.auth.CurrentUser.class))).thenReturn(true);
 		when(contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1", ContentLocale.ENGLISH))
 				.thenReturn(new ContentVideo(
 						"https://cdn.example.com/video.m3u8",
