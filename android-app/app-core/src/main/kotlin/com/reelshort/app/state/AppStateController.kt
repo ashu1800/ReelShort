@@ -938,10 +938,9 @@ class AppStateController(private val dataSource: AppDataSource) {
         reloadAccountSnapshotAfterAction(vipOrderCreatedMessage())
     }
 
-    suspend fun submitBankCard(holderName: String, cardNumber: String) = runWithLoading(ErrorContext.ACCOUNT) {
+    suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) = runWithLoading(ErrorContext.ACCOUNT) {
         requireAuthenticatedAccount()
-        dataSource.submitBankCard(holderName, cardNumber)
-        mutableState.update { it.copy(isLoading = false) }
+        dataSource.submitBankCard(holderName, cardNumber, expiryMonth, expiryYear, cvv)
     }
 
     suspend fun submitWithdrawal(pointAmount: Int) = runAccountOperation(AccountOperation.WITHDRAWAL) {

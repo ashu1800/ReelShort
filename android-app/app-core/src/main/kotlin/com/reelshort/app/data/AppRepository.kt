@@ -108,8 +108,8 @@ class AppRepository(
 
     override suspend fun loadVipOrders(): List<VipOrder> = apiClient.getVipOrders()
 
-    override suspend fun submitBankCard(holderName: String, cardNumber: String) {
-        apiClient.submitBankCard(holderName, cardNumber)
+    override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
+        apiClient.submitBankCard(holderName, cardNumber, expiryMonth, expiryYear, cvv)
     }
 
     override suspend fun loadWithdrawalSummary(): WithdrawalSummary = apiClient.getWithdrawalSummary()

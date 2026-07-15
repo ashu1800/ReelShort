@@ -118,6 +118,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onSubmitWithdrawal = remember(viewModel) { viewModel::submitWithdrawal }
     val onTransferPoints = remember(viewModel) { viewModel::transferPoints }
     val onChangePassword = remember(viewModel) { viewModel::changePassword }
+    val onSubmitBankCard = remember(viewModel) { viewModel::submitBankCard }
 
     // 播放器与收藏页为全屏沉浸式，系统返回键回到上一级而非退出 App
     BackHandler(enabled = state.screen == AppScreen.PLAYER) {
@@ -174,6 +175,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onSubmitWithdrawal = onSubmitWithdrawal,
                 onTransferPoints = onTransferPoints,
                 onChangePassword = onChangePassword,
+                onSubmitBankCard = onSubmitBankCard,
             )
             AuthBottomSheet(
                 visible = state.authPromptVisible,

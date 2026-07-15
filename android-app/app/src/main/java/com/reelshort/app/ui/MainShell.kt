@@ -71,6 +71,7 @@ internal fun MainShell(
     onSubmitWithdrawal: (Int) -> Unit,
     onTransferPoints: (String, Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
+    onSubmitBankCard: (String, String, String, String, String) -> Unit,
 ) {
     // 播放器全屏渲染：跳出底部导航与状态栏占位，沉浸式短剧播放
     if (state.screen == AppScreen.PLAYER) {
@@ -166,6 +167,7 @@ internal fun MainShell(
                             onSubmitWithdrawal = onSubmitWithdrawal,
                             onTransferPoints = onTransferPoints,
                             onChangePassword = onChangePassword,
+                            onSubmitBankCard = onSubmitBankCard,
                             onLogout = onLogout,
                             language = state.language,
                             onSetLanguage = onSetLanguage,

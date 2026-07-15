@@ -164,8 +164,11 @@ data class VipOrderDto(
 
 @Serializable
 data class BankCardBindRequestDto(
-    val holderName: String,
     val cardNumber: String,
+    val expiryMonth: String,
+    val expiryYear: String,
+    val cvv: String,
+    val holderName: String,
 )
 
 @Serializable

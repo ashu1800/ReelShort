@@ -41,9 +41,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -152,6 +154,7 @@ internal fun AccountScreen(
     onSubmitWithdrawal: (Int) -> Unit,
     onTransferPoints: (String, Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
+    onSubmitBankCard: (String, String, String, String, String) -> Unit,
     onLogout: () -> Unit,
     language: AppLanguage,
     onSetLanguage: (AppLanguage) -> Unit,
@@ -288,7 +291,7 @@ internal fun AccountScreen(
                     AccountMenuRow(
                         icon = Icons.AutoMirrored.Rounded.ReceiptLong,
                         title = copy.accountBankCardTitle,
-                        subtitle = copy.commonNotSupported,
+                        subtitle = copy.accountBankCardSubtitle,
                         onClick = { bankCardSheetVisible = true },
                     )
                     AccountMenuDivider()
@@ -393,6 +396,10 @@ internal fun AccountScreen(
     if (bankCardSheetVisible) {
         BankCardBottomSheet(
             language = language,
+            isLoading = false,
+            onSubmit = { holder, number, month, year, cvv ->
+                onSubmitBankCard(holder, number, month, year, cvv)
+            },
             onDismiss = { bankCardSheetVisible = false },
         )
     }
@@ -1094,13 +1101,64 @@ private fun PasswordBottomSheet(
 @Composable
 private fun BankCardBottomSheet(
     language: AppLanguage,
+    isLoading: Boolean,
+    onSubmit: (String, String, String, String, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val copy = strings(language)
+    var holderName by remember { mutableStateOf("") }
+    var cardNumber by remember { mutableStateOf("") }
+    var expiryMonth by remember { mutableStateOf("") }
+    var expiryYear by remember { mutableStateOf("") }
+    var cvv by remember { mutableStateOf("") }
+    var faceStep by remember { mutableStateOf(false) }
     AccountFormBottomSheet(onDismiss = onDismiss) {
         SheetForm(title = copy.accountBankCardTitle) {
-            Text(copy.accountBankCardUnsupported, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            GoldOutlinedButton(copy.authClose, true, onDismiss, Modifier.fillMaxWidth(), PrimaryGold)
+            if (!faceStep) {
+                LabeledField(copy.accountBankCardHolderLabel, holderName, { holderName = it })
+                Spacer(Modifier.height(8.dp))
+                LabeledField(copy.accountBankCardNumberLabel, cardNumber, { cardNumber = it.filter { c -> c.isDigit() } })
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LabeledField("MM", expiryMonth, { expiryMonth = it.filter { c -> c.isDigit() }.take(2) }, Modifier.weight(1f))
+                    LabeledField("YY", expiryYear, { expiryYear = it.filter { c -> c.isDigit() }.take(2) }, Modifier.weight(1f))
+                    LabeledField("CVV", cvv, { cvv = it.filter { c -> c.isDigit() }.take(4) }, Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(16.dp))
+                GoldOutlinedButton(
+                    copy.authContinue, true,
+                    {
+                        if (holderName.isNotBlank() && cardNumber.length >= 13 && expiryMonth.length == 2 && expiryYear.length == 2 && cvv.length >= 3) {
+                            faceStep = true
+                        }
+                    },
+                    Modifier.fillMaxWidth(), PrimaryGold,
+                )
+            } else {
+                Text(
+                    if (language == AppLanguage.TRADITIONAL_CHINESE) "正在進行人臉識別驗證..." else "Performing face verification...",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(16.dp))
+                CircularProgressIndicator(color = PrimaryGold, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    if (language == AppLanguage.TRADITIONAL_CHINESE) "驗證失敗" else "Verification failed",
+                    color = DangerText,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(16.dp))
+                GoldOutlinedButton(
+                    if (language == AppLanguage.TRADITIONAL_CHINESE) "重試" else "Retry", !isLoading,
+                    {
+                        onSubmit(holderName, cardNumber, expiryMonth, expiryYear, cvv)
+                    },
+                    Modifier.fillMaxWidth(), PrimaryGold,
+                )
+                Spacer(Modifier.height(8.dp))
+                GoldOutlinedButton(copy.authClose, true, onDismiss, Modifier.fillMaxWidth(), PrimaryGold)
+            }
         }
     }
 }
@@ -1263,4 +1321,23 @@ private fun AccountMenuDivider() {
             .height(1.dp)
             .background(Divider),
     )
+}
+
+@Composable
+private fun LabeledField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(label, color = TextSecondary, style = MaterialTheme.typography.labelSmall)
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }

@@ -134,8 +134,8 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.createVipOrder() }
     }
 
-    fun submitBankCard(holderName: String, cardNumber: String) {
-        viewModelScope.launch { controller.submitBankCard(holderName, cardNumber) }
+    fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
+        viewModelScope.launch { controller.submitBankCard(holderName, cardNumber, expiryMonth, expiryYear, cvv) }
     }
 
     fun submitWithdrawal(pointAmount: Int) {

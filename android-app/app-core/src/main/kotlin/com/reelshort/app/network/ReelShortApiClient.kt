@@ -79,7 +79,7 @@ interface ReelShortApiClient {
 
     suspend fun getVipOrders(): List<VipOrder>
 
-    suspend fun submitBankCard(holderName: String, cardNumber: String)
+    suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String)
 
     suspend fun getWithdrawalSummary(): WithdrawalSummary
 

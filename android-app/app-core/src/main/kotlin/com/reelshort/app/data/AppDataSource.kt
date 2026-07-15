@@ -59,7 +59,7 @@ interface AppDataSource {
 
     suspend fun loadVipOrders(): List<VipOrder>
 
-    suspend fun submitBankCard(holderName: String, cardNumber: String)
+    suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String)
 
     suspend fun loadWithdrawalSummary(): WithdrawalSummary
 

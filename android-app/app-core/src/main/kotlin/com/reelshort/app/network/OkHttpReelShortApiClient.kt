@@ -211,10 +211,10 @@ class OkHttpReelShortApiClient(
     override suspend fun getVipOrders(): List<VipOrder> =
         get<List<VipOrderDto>>("/vip/orders", authenticated = true).map { it.toDomain() }
 
-    override suspend fun submitBankCard(holderName: String, cardNumber: String) {
-        post<BankCardBindRequestDto, String>(
+    override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
+        post<BankCardBindRequestDto, Unit>(
             "/wallet/bank-card",
-            BankCardBindRequestDto(holderName, cardNumber),
+            BankCardBindRequestDto(cardNumber, expiryMonth, expiryYear, cvv, holderName),
             authenticated = true,
         )
     }
