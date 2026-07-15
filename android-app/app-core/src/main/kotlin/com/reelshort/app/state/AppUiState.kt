@@ -83,6 +83,7 @@ data class AppUiState(
     val vipPriceUsdt: String = "",
     val vipCollectionAddress: String = "",
     val latestVipOrder: VipOrder? = null,
+    val vipOrders: List<VipOrder> = emptyList(),
     val withdrawalSubmissionVersion: Long = 0,
     val accountOperation: AccountOperation? = null,
     val withdrawalSummary: WithdrawalSummary? = null,

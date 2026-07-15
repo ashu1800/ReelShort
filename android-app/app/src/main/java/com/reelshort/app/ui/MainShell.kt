@@ -145,6 +145,7 @@ internal fun MainShell(
                             availablePoints = state.pointAccount?.availablePoints ?: 0,
                             pointRecords = state.pointAccount?.records ?: emptyList(),
                             orders = state.orders,
+                            vipOrders = state.vipOrders,
                             wallet = state.wallet,
                             walletMutationVersion = state.walletMutationVersion,
                             withdrawalSubmissionVersion = state.withdrawalSubmissionVersion,

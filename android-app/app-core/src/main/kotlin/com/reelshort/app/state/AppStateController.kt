@@ -837,6 +837,7 @@ class AppStateController(private val dataSource: AppDataSource) {
         val points = dataSource.loadPointAccount()
         val orders = dataSource.loadOrders()
         val wallet = loadOptionalAccountData(null) { dataSource.loadWallet() }
+        val vipOrders = loadOptionalAccountData(emptyList()) { dataSource.loadVipOrders() }
         val withdrawalSummary = loadOptionalAccountData(null) { dataSource.loadWithdrawalSummary() }
         val withdrawals = loadOptionalAccountData(emptyList()) { dataSource.loadWithdrawals() }
         if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
@@ -857,6 +858,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 vipUntil = wallet?.vipUntil ?: it.vipUntil,
                 vipPriceUsdt = wallet?.vipPriceUsdt ?: it.vipPriceUsdt,
                 vipCollectionAddress = wallet?.vipCollectionAddress ?: it.vipCollectionAddress,
+                vipOrders = vipOrders,
                 withdrawalSummary = withdrawalSummary,
                 withdrawals = withdrawals,
                 isLoading = false,

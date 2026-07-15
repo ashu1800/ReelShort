@@ -133,6 +133,7 @@ internal fun AccountScreen(
     availablePoints: Int,
     pointRecords: List<PointRecord>,
     orders: List<RechargeOrderSummary>,
+    vipOrders: List<VipOrder> = emptyList(),
     wallet: WalletInfo?,
     walletMutationVersion: Long,
     withdrawalSubmissionVersion: Long,
@@ -282,7 +283,7 @@ internal fun AccountScreen(
                     AccountMenuRow(
                         icon = Icons.AutoMirrored.Rounded.ReceiptLong,
                         title = copy.accountOrdersTitle,
-                        subtitle = if (orders.isEmpty()) copy.accountOrdersReserved else "${orders.size}",
+                        subtitle = if (vipOrders.isEmpty()) copy.accountOrdersReserved else "${vipOrders.size}",
                         onClick = { detailSheet = AccountDetailSheet.ORDERS },
                     )
                 }
@@ -566,6 +567,7 @@ private fun AccountPrimaryActions(
     pointRecords: List<PointRecord>,
     withdrawalSummary: WithdrawalSummary?,
     orders: List<RechargeOrderSummary>,
+    vipOrders: List<VipOrder> = emptyList(),
     language: AppLanguage,
     onOpenFavorites: () -> Unit,
     onShowAuthPrompt: () -> Unit,
@@ -809,6 +811,33 @@ private fun ContinueWatchingPosterCard(
 }
 
 @Composable
+private fun VipOrderRow(order: VipOrder, language: AppLanguage) {
+    val copy = strings(language)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "${copy.vipPayAmount}${order.payableAmount ?: order.usdtAmount} USDT",
+                color = PrimaryGold,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(order.orderNo, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+        }
+        val (statusColor, statusText) = when (order.status) {
+            "CONFIRMED" -> SuccessText to copy.vipPayStatusConfirmed
+            "REJECTED" -> DangerText to copy.vipPayStatusRejected
+            else -> PrimaryGold to copy.vipPayStatusPending
+        }
+        Text(statusText, color = statusColor, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
 private fun ContinueWatchingRow(record: WatchRecord, language: AppLanguage, onClick: () -> Unit) {
     val copy = strings(language)
     Row(
@@ -843,6 +872,7 @@ private fun AccountDetailBottomSheet(
     records: List<WatchRecord>,
     pointRecords: List<PointRecord>,
     orders: List<RechargeOrderSummary>,
+    vipOrders: List<VipOrder> = emptyList(),
     withdrawals: List<WithdrawalRecord>,
     language: AppLanguage,
     onDismiss: () -> Unit,
@@ -881,10 +911,12 @@ private fun AccountDetailBottomSheet(
                     }
                 }
                 AccountDetailSheet.ORDERS -> {
-                    if (orders.isEmpty()) {
+                    if (vipOrders.isEmpty()) {
                         item { AccountEmptyDetail(copy.accountOrdersReserved) }
                     } else {
-                        items(orders, key = { it.orderNo }) { OrderRow(it, language) }
+                        items(vipOrders, key = { it.id }) { order ->
+                            VipOrderRow(order, language)
+                        }
                     }
                 }
                 AccountDetailSheet.WITHDRAWALS -> {
