@@ -77,4 +77,8 @@ public class BankCardAttempt {
 		}
 		return this.attemptCount;
 	}
+
+	public void updateLast4(String last4) {
+		this.cardNumberLast4 = last4;
+	}
 }

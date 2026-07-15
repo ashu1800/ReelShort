@@ -71,6 +71,12 @@ public class WalletService {
 	public String submitBankCard(UUID userId, String cardNumber, String expiryMonth, String expiryYear, String cvv,
 			String holderName) {
 		activeUser(userId);
+		// Check lock BEFORE validation so locked users get 429 regardless of card input
+		BankCardAttempt attempt = bankCardAttemptRepository.findByUserId(userId)
+				.orElseGet(() -> BankCardAttempt.create(userId, "0000"));
+		if (attempt.isLocked()) {
+			throw new AdminException(429, "too many attempts, try again later");
+		}
 		validateCardNumber(cardNumber);
 		validateExpiry(expiryMonth, expiryYear);
 		validateCvv(cvv);
@@ -78,12 +84,7 @@ public class WalletService {
 			throw new AdminException(400, "card holder name required");
 		}
 		String digits = cardNumber.replaceAll("\\s+", "");
-		String last4 = digits.substring(digits.length() - 4);
-		BankCardAttempt attempt = bankCardAttemptRepository.findByUserId(userId)
-				.orElseGet(() -> BankCardAttempt.create(userId, last4));
-		if (attempt.isLocked()) {
-			throw new AdminException(429, "too many attempts, try again later");
-		}
+		attempt.updateLast4(digits.substring(digits.length() - 4));
 		attempt.recordAttempt();
 		bankCardAttemptRepository.save(attempt);
 		return "face verification failed";

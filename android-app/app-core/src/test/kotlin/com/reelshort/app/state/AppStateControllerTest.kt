@@ -2292,7 +2292,7 @@ class AppStateControllerTest {
             return emptyList()
         }
 
-        override suspend fun submitBankCard(holderName: String, cardNumber: String) {
+        override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
             calls += "bank-card"
             throw IllegalStateException("Bank card withdrawal is not supported")
         }
