@@ -65,10 +65,6 @@ public class ContentController {
 			HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 		List<ContentEpisode> episodes = contentCacheService.getEpisodes(bookId, filteredTitle, parseLocale(locale));
-		if (!vipGateService.isVip(currentUser)) {
-			int freeEpisodes = systemConfigService.intValue(SystemConfigRegistry.VIP_FREE_EPISODES);
-			episodes = episodes.size() > freeEpisodes ? episodes.subList(0, freeEpisodes) : episodes;
-		}
 		return ApiResponse.success(episodes, requestId);
 	}
 

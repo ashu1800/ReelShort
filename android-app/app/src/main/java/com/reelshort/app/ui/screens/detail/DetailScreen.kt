@@ -32,9 +32,11 @@ internal fun DetailScreen(
     book: BookSummary?,
     episodes: List<EpisodeSummary>,
     language: AppLanguage,
+    vipUntil: String?,
     onOpenPlayer: (EpisodeSummary) -> Unit,
 ) {
     val copy = strings(language)
+    val isVip = !vipUntil.isNullOrBlank()
     val emptyState = detailEmptyState(book, episodes.size, language)
     if (book == null) {
         EmptyState(emptyState ?: return)
@@ -51,7 +53,13 @@ internal fun DetailScreen(
             item { EmptyState(emptyState) }
         }
         items(episodes, key = { "${it.chapterId}-${it.number}" }) { episode ->
-            EpisodeRow(episode, book.description, language = language, onClick = { onOpenPlayer(episode) })
+            EpisodeRow(
+                episode = episode,
+                bookDescription = book.description,
+                language = language,
+                locked = !isVip && episode.number > 7,
+                onClick = { onOpenPlayer(episode) },
+            )
         }
     }
 }

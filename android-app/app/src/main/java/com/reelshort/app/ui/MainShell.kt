@@ -130,7 +130,7 @@ internal fun MainShell(
                             onRefresh = onRefreshHome,
                         )
                         AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
-                        AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, state.language, onOpenPlayer)
+                        AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, state.language, state.vipUntil, onOpenPlayer)
                         AppScreen.PLAYER -> Unit
                         AppScreen.FAVORITES -> FavoritesScreen(state.favorites, state.language, onOpenBook, onBackFromFavorites)
                         AppScreen.ACCOUNT -> AccountScreen(

@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
@@ -47,6 +48,7 @@ internal fun EpisodeRow(
     episode: EpisodeSummary,
     bookDescription: String,
     language: AppLanguage = AppLanguage.ENGLISH,
+    locked: Boolean = false,
     onClick: () -> Unit,
 ) {
     val subtitle = episodeSubtitle(episode.description, bookDescription)
@@ -100,8 +102,19 @@ internal fun EpisodeRow(
                     )
                 }
             }
-            Text(episodeRowActionLabel(language), color = PrimaryGold, style = MaterialTheme.typography.bodyMedium)
-            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
+            if (locked) {
+                Surface(
+                    color = GoldSurfaceSoft,
+                    contentColor = PrimaryGold,
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text("VIP", color = PrimaryGold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                }
+                Icon(Icons.Rounded.Lock, contentDescription = null, tint = PrimaryGold, modifier = Modifier.size(20.dp))
+            } else {
+                Text(episodeRowActionLabel(language), color = PrimaryGold, style = MaterialTheme.typography.bodyMedium)
+                Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }
