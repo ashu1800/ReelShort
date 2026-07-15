@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,13 +41,6 @@ public class VipOrderService {
 
 	private int allocateUniqueSuffix() {
 		List<Integer> usedSuffixes = vipOrderRepository.findPendingSuffixes();
-		for (int attempt = 0; attempt < 50; attempt++) {
-			int candidate = ThreadLocalRandom.current().nextInt(1, SUFFIX_MAX + 1);
-			if (!usedSuffixes.contains(candidate)) {
-				return candidate;
-			}
-		}
-		// Fallback: linear scan
 		for (int s = 1; s <= SUFFIX_MAX; s++) {
 			if (!usedSuffixes.contains(s)) {
 				return s;
