@@ -1368,7 +1368,7 @@ def test_reelshort_client_fetches_video_episode_page(monkeypatch):
     )
 
     assert calls[0] == {
-        "url": "https://site.example/_next/data/build-1/id/episodes/episode-1-love-story-book-1-chapter-1.json",
+        "url": "https://site.example/_next/data/build-1/en/episodes/episode-1-love-story-book-1-chapter-1.json",
         "params": {"play_time": "1", "slug": "episode-1-love-story-book-1-chapter-1"},
     }
     assert video == {
@@ -1411,7 +1411,7 @@ def test_reelshort_client_falls_back_to_episode_html_when_legacy_video_data_retu
 
     def fake_get(url, params=None, timeout=None, **kwargs):
         calls.append({"url": url, "params": params})
-        if url.endswith("/_next/data/build-1/37/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1.json"):
+        if url.endswith("/_next/data/build-1/en/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1.json"):
             return FakeResponse(404)
         if url.endswith("/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1"):
             return FakeResponse(200, text=html)
@@ -1442,7 +1442,7 @@ def test_reelshort_client_falls_back_to_episode_html_when_legacy_video_data_retu
 
     assert calls[:2] == [
         {
-            "url": "https://site.example/_next/data/build-1/37/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1.json",
+            "url": "https://site.example/_next/data/build-1/en/episodes/episode-1-fiancee-s-betrayal-book-1-chapter-1.json",
             "params": {"play_time": "1", "slug": "episode-1-fiancee-s-betrayal-book-1-chapter-1"},
         },
         {

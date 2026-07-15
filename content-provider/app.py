@@ -218,8 +218,9 @@ class ReelShortClient:
     ):
         slug = f"episode-{episode_num}-{filtered_title}-{book_id}-{chapter_id}"
         try:
-            payload = self._get_data(
+            payload = self._get_locale_data(
                 f"/episodes/{quote(slug, safe='')}.json",
+                locale=locale,
                 params={"play_time": "1", "slug": slug},
             )
         except UpstreamError as exception:
