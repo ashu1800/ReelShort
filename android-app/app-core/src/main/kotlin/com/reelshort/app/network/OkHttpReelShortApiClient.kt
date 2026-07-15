@@ -9,7 +9,6 @@ import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
-import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
@@ -37,8 +36,6 @@ import com.reelshort.app.network.dto.FavoriteRequestDto
 import com.reelshort.app.network.dto.PasswordChangeRequestDto
 import com.reelshort.app.network.dto.PointAccountDto
 import com.reelshort.app.network.dto.PointRecordDto
-import com.reelshort.app.network.dto.PointTransferDto
-import com.reelshort.app.network.dto.PointTransferRequestDto
 import com.reelshort.app.network.dto.RechargeOrderDto
 import com.reelshort.app.network.dto.RegisterRequestDto
 import com.reelshort.app.network.dto.SocialToggleDto
@@ -232,16 +229,6 @@ class OkHttpReelShortApiClient(
         post<WithdrawalCreateRequestDto, WithdrawalDto>(
             "/withdrawals",
             WithdrawalCreateRequestDto(pointAmount),
-            authenticated = true,
-        ).toDomain()
-
-    override suspend fun getPointTransfers(): List<PointTransferRecord> =
-        get<List<PointTransferDto>>("/points/transfers", authenticated = true).map { it.toDomain() }
-
-    override suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord =
-        post<PointTransferRequestDto, PointTransferDto>(
-            "/points/transfers",
-            PointTransferRequestDto(recipientAccount, pointAmount),
             authenticated = true,
         ).toDomain()
 
@@ -465,9 +452,6 @@ class OkHttpReelShortApiClient(
             createdAt = createdAt,
             reviewedAt = reviewedAt,
         )
-
-    private fun PointTransferDto.toDomain(): PointTransferRecord =
-        PointTransferRecord(id, direction, senderAccount, recipientAccount, pointAmount, createdAt)
 
     private fun SocialToggleDto.toDomain(): SocialToggleResult = SocialToggleResult(active, count)
 

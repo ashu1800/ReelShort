@@ -8,7 +8,6 @@ import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
-import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.SocialToggleResult
 import com.reelshort.app.data.VideoUrl
@@ -178,12 +177,6 @@ class FakeReelShortApiClient : ReelShortApiClient {
 
     override suspend fun submitWithdrawal(pointAmount: Int): WithdrawalRecord =
         getWithdrawals().first().copy(pointAmount = pointAmount)
-
-    override suspend fun getPointTransfers(): List<PointTransferRecord> =
-        listOf(PointTransferRecord("transfer-1", "OUT", "+14155550101", "+44207550101", 5, "2026-07-07T00:00:00Z"))
-
-    override suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord =
-        PointTransferRecord("transfer-new", "OUT", "+14155550101", recipientAccount, pointAmount, "2026-07-07T00:00:00Z")
 
     override suspend fun toggleLike(bookId: String): SocialToggleResult {
         if (!likedBooks.add(bookId)) likedBooks.remove(bookId)

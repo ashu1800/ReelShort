@@ -17,7 +17,6 @@ import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WalletInfo
 import com.reelshort.app.data.WithdrawalRecord
 import com.reelshort.app.data.WithdrawalSummary
-import com.reelshort.app.data.PointTransferRecord
 
 interface ReelShortApiClient {
     suspend fun checkSystemHealth(): ApiHealthStatus
@@ -88,10 +87,6 @@ interface ReelShortApiClient {
     suspend fun getWithdrawals(): List<WithdrawalRecord>
 
     suspend fun submitWithdrawal(pointAmount: Int): WithdrawalRecord
-
-    suspend fun getPointTransfers(): List<PointTransferRecord>
-
-    suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord
 
     suspend fun toggleLike(bookId: String): SocialToggleResult
 

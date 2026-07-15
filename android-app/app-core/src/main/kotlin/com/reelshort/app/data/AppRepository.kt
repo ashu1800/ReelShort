@@ -121,11 +121,6 @@ class AppRepository(
     override suspend fun submitWithdrawal(pointAmount: Int): WithdrawalRecord =
         apiClient.submitWithdrawal(pointAmount)
 
-    override suspend fun loadPointTransfers(): List<PointTransferRecord> = apiClient.getPointTransfers()
-
-    override suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord =
-        apiClient.transferPoints(recipientAccount, pointAmount)
-
     override suspend fun toggleLike(book: BookSummary): SocialToggleResult = apiClient.toggleLike(book.id)
 
     override suspend fun loadLikeStatus(book: BookSummary): SocialToggleResult = apiClient.getLikeStatus(book.id)

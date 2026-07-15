@@ -70,7 +70,6 @@ internal fun MainShell(
     onCreateVipOrder: () -> Unit,
     onRefreshVipOrder: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
-    onTransferPoints: (String, Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
     onSubmitBankCard: (String, String, String, String, String) -> Unit,
 ) {
@@ -156,7 +155,6 @@ internal fun MainShell(
                             accountOperation = state.accountOperation,
                             withdrawalSummary = state.withdrawalSummary,
                             withdrawals = state.withdrawals,
-                            pointTransfers = state.pointTransfers,
                             appVersionLabel = appVersionLabel,
                             isCheckingForUpdate = isCheckingForUpdate,
                             onCheckForUpdate = onCheckForUpdate,
@@ -169,7 +167,6 @@ internal fun MainShell(
                             onCreateVipOrder = onCreateVipOrder,
                             onRefreshVipOrder = onRefreshVipOrder,
                             onSubmitWithdrawal = onSubmitWithdrawal,
-                            onTransferPoints = onTransferPoints,
                             onChangePassword = onChangePassword,
                             onSubmitBankCard = onSubmitBankCard,
                             onLogout = onLogout,

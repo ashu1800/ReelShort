@@ -839,7 +839,6 @@ class AppStateController(private val dataSource: AppDataSource) {
         val wallet = loadOptionalAccountData(null) { dataSource.loadWallet() }
         val withdrawalSummary = loadOptionalAccountData(null) { dataSource.loadWithdrawalSummary() }
         val withdrawals = loadOptionalAccountData(emptyList()) { dataSource.loadWithdrawals() }
-        val pointTransfers = loadOptionalAccountData(emptyList()) { dataSource.loadPointTransfers() }
         if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
             return
         }
@@ -860,7 +859,6 @@ class AppStateController(private val dataSource: AppDataSource) {
                 vipCollectionAddress = wallet?.vipCollectionAddress ?: it.vipCollectionAddress,
                 withdrawalSummary = withdrawalSummary,
                 withdrawals = withdrawals,
-                pointTransfers = pointTransfers,
                 isLoading = false,
             )
         }
@@ -892,7 +890,6 @@ class AppStateController(private val dataSource: AppDataSource) {
             if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
                 return
             }
-            val pointTransfers = loadOptionalAccountData(emptyList()) { dataSource.loadPointTransfers() }
             if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
                 return
             }
@@ -912,7 +909,6 @@ class AppStateController(private val dataSource: AppDataSource) {
                     vipPriceUsdt = wallet?.vipPriceUsdt ?: it.vipPriceUsdt,
                     withdrawalSummary = withdrawalSummary,
                     withdrawals = withdrawals,
-                    pointTransfers = pointTransfers,
                 )
             }
         } catch (error: CancellationException) {
@@ -958,12 +954,6 @@ class AppStateController(private val dataSource: AppDataSource) {
         reloadAccountSnapshotAfterAction(withdrawalSubmittedMessage(), withdrawalSubmitted = true)
     }
 
-    suspend fun transferPoints(recipientAccount: String, pointAmount: Int) = runAccountOperation(AccountOperation.POINT_TRANSFER) {
-        requireAuthenticatedAccount()
-        dataSource.transferPoints(recipientAccount, pointAmount)
-        reloadAccountSnapshotAfterAction(transferSubmittedMessage())
-    }
-
     suspend fun changePassword(oldPassword: String, newPassword: String) =
         runAccountOperation(AccountOperation.PASSWORD_CHANGE) {
             requireAuthenticatedAccount()
@@ -980,7 +970,6 @@ class AppStateController(private val dataSource: AppDataSource) {
                     wallet = null,
                     withdrawalSummary = null,
                     withdrawals = emptyList(),
-                    pointTransfers = emptyList(),
                     watchHistory = emptyList(),
                     continueWatchingBooks = emptyMap(),
                     errorMessage = passwordChangedMessage(),
@@ -1310,12 +1299,6 @@ class AppStateController(private val dataSource: AppDataSource) {
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Withdrawal submitted."
             AppLanguage.TRADITIONAL_CHINESE -> "提現申請已提交。"
-        }
-
-    private fun transferSubmittedMessage(): String =
-        when (state.value.language) {
-            AppLanguage.ENGLISH -> "Transfer submitted."
-            AppLanguage.TRADITIONAL_CHINESE -> "積分交易已提交。"
         }
 
     private enum class ErrorContext {

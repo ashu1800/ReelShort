@@ -69,10 +69,6 @@ interface AppDataSource {
 
     suspend fun submitWithdrawal(pointAmount: Int): WithdrawalRecord
 
-    suspend fun loadPointTransfers(): List<PointTransferRecord>
-
-    suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord
-
     suspend fun toggleLike(book: BookSummary): SocialToggleResult
 
     suspend fun loadLikeStatus(book: BookSummary): SocialToggleResult

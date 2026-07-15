@@ -68,7 +68,6 @@ import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.PointRecord
-import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.VipOrder
 import com.reelshort.app.data.WatchRecord
@@ -144,7 +143,6 @@ internal fun AccountScreen(
     accountOperation: AccountOperation?,
     withdrawalSummary: WithdrawalSummary?,
     withdrawals: List<WithdrawalRecord>,
-    pointTransfers: List<PointTransferRecord>,
     appVersionLabel: String,
     isCheckingForUpdate: Boolean,
     onCheckForUpdate: () -> Unit,
@@ -157,7 +155,6 @@ internal fun AccountScreen(
     onCreateVipOrder: () -> Unit,
     onRefreshVipOrder: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
-    onTransferPoints: (String, Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
     onSubmitBankCard: (String, String, String, String, String) -> Unit,
     onLogout: () -> Unit,
@@ -169,7 +166,6 @@ internal fun AccountScreen(
     var walletSheetVisible by remember { mutableStateOf(false) }
     var lastHandledWalletMutationVersion by remember { mutableStateOf(walletMutationVersion) }
     var lastHandledWithdrawalSubmissionVersion by remember { mutableStateOf(withdrawalSubmissionVersion) }
-    var transferSheetVisible by remember { mutableStateOf(false) }
     var passwordSheetVisible by remember { mutableStateOf(false) }
     var bankCardSheetVisible by remember { mutableStateOf(false) }
     var vipSheetVisible by remember { mutableStateOf(false) }
@@ -270,20 +266,6 @@ internal fun AccountScreen(
                     )
                     AccountMenuDivider()
                     AccountMenuRow(
-                        icon = Icons.Rounded.MonetizationOn,
-                        title = copy.accountTransferTitle,
-                        subtitle = copy.accountTransferRecordsTitle,
-                        onClick = { transferSheetVisible = true },
-                    )
-                    AccountMenuDivider()
-                    AccountMenuRow(
-                        icon = Icons.Rounded.History,
-                        title = copy.accountTransferRecordsTitle,
-                        subtitle = "${pointTransfers.size}",
-                        onClick = { detailSheet = AccountDetailSheet.TRANSFERS },
-                    )
-                    AccountMenuDivider()
-                    AccountMenuRow(
                         icon = Icons.Rounded.Settings,
                         title = copy.accountChangePasswordTitle,
                         subtitle = copy.accountPasswordNewLabel,
@@ -345,7 +327,6 @@ internal fun AccountScreen(
             pointRecords = pointRecords,
             orders = orders,
             withdrawals = withdrawals,
-            pointTransfers = pointTransfers,
             language = language,
             onDismiss = { detailSheet = null },
             onOpenWatchRecord = {
@@ -377,14 +358,6 @@ internal fun AccountScreen(
         )
     }
 
-    if (transferSheetVisible) {
-        TransferBottomSheet(
-            language = language,
-            onDismiss = { transferSheetVisible = false },
-            onTransferPoints = { recipient, points -> pendingConfirmation = PendingAccountConfirmation.Transfer(recipient, points) },
-            isSubmitting = accountOperation != null,
-        )
-    }
 
     if (passwordSheetVisible) {
         PasswordBottomSheet(
@@ -459,7 +432,6 @@ internal fun AccountScreen(
                         when (confirmation) {
                             is PendingAccountConfirmation.WalletUnbind -> onUnbindWallet()
                             is PendingAccountConfirmation.Withdrawal -> onSubmitWithdrawal(confirmation.points)
-                            is PendingAccountConfirmation.Transfer -> onTransferPoints(confirmation.recipient, confirmation.points)
                         }
                     },
                 ) { Text(accountConfirmationConfirm(language), color = DangerText) }
@@ -872,7 +844,6 @@ private fun AccountDetailBottomSheet(
     pointRecords: List<PointRecord>,
     orders: List<RechargeOrderSummary>,
     withdrawals: List<WithdrawalRecord>,
-    pointTransfers: List<PointTransferRecord>,
     language: AppLanguage,
     onDismiss: () -> Unit,
     onOpenWatchRecord: (WatchRecord) -> Unit,
@@ -923,13 +894,6 @@ private fun AccountDetailBottomSheet(
                         items(withdrawals, key = { it.id }) { WithdrawalRow(it, language) }
                     }
                 }
-                AccountDetailSheet.TRANSFERS -> {
-                    if (pointTransfers.isEmpty()) {
-                        item { AccountEmptyDetail(copy.accountTransferRecordsTitle) }
-                    } else {
-                        items(pointTransfers, key = { it.id }) { TransferRow(it, language) }
-                    }
-                }
             }
         }
     }
@@ -944,22 +908,6 @@ private fun WithdrawalRow(record: WithdrawalRecord, language: AppLanguage) {
         subtitle = listOfNotNull("${record.network} · ${record.walletAddress}", detail).joinToString("\n"),
         trailing = withdrawalStatusLabel(record.status, language),
         highlight = record.status == "APPROVED",
-    )
-}
-
-@Composable
-private fun TransferRow(record: PointTransferRecord, language: AppLanguage) {
-    val copy = strings(language)
-    val title = if (record.direction == "IN") {
-        "${copy.accountTransferInLabel} · ${record.senderAccount}"
-    } else {
-        "${copy.accountTransferOutLabel} · ${record.recipientAccount}"
-    }
-    ListRow(
-        title = title,
-        subtitle = record.createdAt,
-        trailing = if (record.direction == "IN") "+${record.pointAmount}" else "-${record.pointAmount}",
-        highlight = record.direction == "IN",
     )
 }
 
@@ -1051,37 +999,6 @@ private fun WithdrawalBottomSheet(
                 },
             )
             withdrawals.take(3).forEach { WithdrawalRow(it, language) }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TransferBottomSheet(
-    language: AppLanguage,
-    onDismiss: () -> Unit,
-    onTransferPoints: (String, Int) -> Unit,
-    isSubmitting: Boolean,
-) {
-    val copy = strings(language)
-    var recipient by remember { mutableStateOf("") }
-    var points by remember { mutableStateOf("") }
-    val amount = points.toIntOrNull() ?: 0
-    AccountFormBottomSheet(onDismiss = onDismiss) {
-        SheetForm(title = copy.accountTransferTitle) {
-            Text(copy.accountTransferHelp, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            LoginTextField(recipient, { recipient = it.trim() }, copy.accountTransferRecipientLabel, enabled = true)
-            LoginTextField(points, { points = it.filter(Char::isDigit) }, copy.accountTransferPointsLabel, enabled = true, kind = TextFieldKind.POINT_AMOUNT)
-            PrimaryActionButton(
-                text = copy.accountTransferTitle,
-                enabled = !isSubmitting && recipient.isNotBlank() && amount > 0,
-                onClick = {
-                    onTransferPoints(recipient, amount)
-                    if (commercialSheetAutoDismissesAfterSubmit()) {
-                        onDismiss()
-                    }
-                },
-            )
         }
     }
 }
@@ -1185,8 +1102,6 @@ private sealed interface PendingAccountConfirmation {
     data object WalletUnbind : PendingAccountConfirmation
 
     data class Withdrawal(val points: Int) : PendingAccountConfirmation
-
-    data class Transfer(val recipient: String, val points: Int) : PendingAccountConfirmation
 }
 
 private fun PendingAccountConfirmation.summary(language: AppLanguage): String =
@@ -1195,8 +1110,6 @@ private fun PendingAccountConfirmation.summary(language: AppLanguage): String =
             if (language == AppLanguage.TRADITIONAL_CHINESE) "解除 TRC20 錢包綁定" else "unbind the TRC20 wallet"
         is PendingAccountConfirmation.Withdrawal ->
             if (language == AppLanguage.TRADITIONAL_CHINESE) "提領 $points 積分" else "withdraw $points points"
-        is PendingAccountConfirmation.Transfer ->
-            if (language == AppLanguage.TRADITIONAL_CHINESE) "轉出 $points 積分至 $recipient" else "transfer $points points to $recipient"
     }
 
 @Composable

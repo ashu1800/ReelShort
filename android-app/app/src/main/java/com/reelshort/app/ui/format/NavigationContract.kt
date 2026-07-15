@@ -57,7 +57,6 @@ internal enum class AccountDetailSheet {
     WATCH_HISTORY,
     ORDERS,
     WITHDRAWALS,
-    TRANSFERS,
 }
 
 internal fun accountDashboardSections(): List<AccountDashboardSection> =
@@ -91,7 +90,6 @@ internal fun accountPrimaryActionSheet(label: String, language: AppLanguage = Ap
         copy.accountWatchHistoryTitle -> AccountDetailSheet.WATCH_HISTORY
         copy.accountOrdersTitle -> AccountDetailSheet.ORDERS
         copy.accountWithdrawTitle -> AccountDetailSheet.WITHDRAWALS
-        copy.accountTransferRecordsTitle -> AccountDetailSheet.TRANSFERS
         else -> null
     }
 }
@@ -106,7 +104,6 @@ internal fun accountDetailSheetTitle(
         AccountDetailSheet.WATCH_HISTORY -> copy.accountWatchHistoryTitle
         AccountDetailSheet.ORDERS -> copy.accountOrdersTitle
         AccountDetailSheet.WITHDRAWALS -> copy.accountWithdrawalsTitle
-        AccountDetailSheet.TRANSFERS -> copy.accountTransferRecordsTitle
     }
 }
 

@@ -146,10 +146,6 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.submitWithdrawal(pointAmount) }
     }
 
-    fun transferPoints(recipientAccount: String, pointAmount: Int) {
-        viewModelScope.launch { controller.transferPoints(recipientAccount, pointAmount) }
-    }
-
     fun changePassword(oldPassword: String, newPassword: String) {
         viewModelScope.launch { controller.changePassword(oldPassword, newPassword) }
     }

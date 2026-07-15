@@ -8,7 +8,6 @@ import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
-import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.SavedCredentials
 import com.reelshort.app.data.VipOrder
@@ -88,7 +87,6 @@ data class AppUiState(
     val accountOperation: AccountOperation? = null,
     val withdrawalSummary: WithdrawalSummary? = null,
     val withdrawals: List<WithdrawalRecord> = emptyList(),
-    val pointTransfers: List<PointTransferRecord> = emptyList(),
     val interaction: BookInteractionState = BookInteractionState(),
     val comments: List<Comment> = emptyList(),
     val favorites: List<BookSummary> = emptyList(),

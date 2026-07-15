@@ -207,22 +207,6 @@ data class WithdrawalCreateRequestDto(
 )
 
 @Serializable
-data class PointTransferDto(
-    val id: String,
-    val direction: String,
-    val senderAccount: String,
-    val recipientAccount: String,
-    val pointAmount: Int,
-    val createdAt: String,
-)
-
-@Serializable
-data class PointTransferRequestDto(
-    val recipientAccount: String,
-    val pointAmount: Int,
-)
-
-@Serializable
 data class SocialToggleDto(
     val active: Boolean,
     val count: Int,

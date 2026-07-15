@@ -187,15 +187,6 @@ data class WithdrawalRecord(
     val reviewedAt: String?,
 )
 
-data class PointTransferRecord(
-    val id: String,
-    val direction: String,
-    val senderAccount: String,
-    val recipientAccount: String,
-    val pointAmount: Int,
-    val createdAt: String,
-)
-
 /** 单级文字评论。 */
 data class Comment(
     val id: String,
