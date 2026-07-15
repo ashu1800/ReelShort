@@ -14,6 +14,8 @@ import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.network.ApiClientException
 import com.reelshort.app.network.GeoIpClient
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -832,20 +834,29 @@ class AppStateController(private val dataSource: AppDataSource) {
         loadAccountSnapshotForAuthenticatedUser(requestVersion)
     }
 
-    private suspend fun loadAccountSnapshotForAuthenticatedUser(requestVersion: Long) {
-        val history = dataSource.loadWatchHistory()
-        val points = dataSource.loadPointAccount()
-        val orders = dataSource.loadOrders()
-        val wallet = loadOptionalAccountData(null) { dataSource.loadWallet() }
-        val vipOrders = loadOptionalAccountData(emptyList()) { dataSource.loadVipOrders() }
-        val withdrawalSummary = loadOptionalAccountData(null) { dataSource.loadWithdrawalSummary() }
-        val withdrawals = loadOptionalAccountData(emptyList()) { dataSource.loadWithdrawals() }
+    private suspend fun loadAccountSnapshotForAuthenticatedUser(requestVersion: Long) = coroutineScope {
+        // Parallelize all network requests to avoid 5+ second sequential loading
+        val historyAsync = async { dataSource.loadWatchHistory() }
+        val pointsAsync = async { dataSource.loadPointAccount() }
+        val ordersAsync = async { dataSource.loadOrders() }
+        val walletAsync = async { loadOptionalAccountData(null) { dataSource.loadWallet() } }
+        val vipOrdersAsync = async { loadOptionalAccountData(emptyList()) { dataSource.loadVipOrders() } }
+        val withdrawalSummaryAsync = async { loadOptionalAccountData(null) { dataSource.loadWithdrawalSummary() } }
+        val withdrawalsAsync = async { loadOptionalAccountData(emptyList()) { dataSource.loadWithdrawals() } }
+
+        val history = historyAsync.await()
+        val points = pointsAsync.await()
+        val orders = ordersAsync.await()
+        val wallet = walletAsync.await()
+        val vipOrders = vipOrdersAsync.await()
+        val withdrawalSummary = withdrawalSummaryAsync.await()
+        val withdrawals = withdrawalsAsync.await()
         if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
-            return
+            return@coroutineScope
         }
         val continueWatchingBooks = loadContinueWatchingBooks(history, requestVersion)
         if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
-            return
+            return@coroutineScope
         }
         mutableState.update {
             it.copy(
