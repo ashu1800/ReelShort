@@ -211,6 +211,9 @@ class OkHttpReelShortApiClient(
     override suspend fun getVipOrders(): List<VipOrder> =
         get<List<VipOrderDto>>("/vip/orders", authenticated = true).map { it.toDomain() }
 
+    override suspend fun getLatestVipOrder(): VipOrder? =
+        get<VipOrderDto?>("/vip/orders/latest", authenticated = true)?.toDomain()
+
     override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
         post<BankCardBindRequestDto, Unit>(
             "/wallet/bank-card",
@@ -420,7 +423,7 @@ class OkHttpReelShortApiClient(
         RechargeOrderSummary(orderNo, amountCents, pointAmount, status)
 
     private fun WalletResponseDto.toDomain(): WalletInfo =
-        WalletInfo(network, walletAddress, updatedAt, vipUntil, vipPriceUsdt)
+        WalletInfo(network, walletAddress, updatedAt, vipUntil, vipPriceUsdt, vipCollectionAddress)
 
     private fun VipOrderDto.toDomain(): VipOrder =
         VipOrder(

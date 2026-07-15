@@ -115,6 +115,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onBindWallet = remember(viewModel) { viewModel::bindWallet }
     val onUnbindWallet = remember(viewModel) { viewModel::unbindWallet }
     val onCreateVipOrder = remember(viewModel) { viewModel::createVipOrder }
+    val onRefreshVipOrder = remember(viewModel) { viewModel::refreshLatestVipOrder }
     val onSubmitWithdrawal = remember(viewModel) { viewModel::submitWithdrawal }
     val onTransferPoints = remember(viewModel) { viewModel::transferPoints }
     val onChangePassword = remember(viewModel) { viewModel::changePassword }
@@ -172,6 +173,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onBindWallet = onBindWallet,
                 onUnbindWallet = onUnbindWallet,
                 onCreateVipOrder = onCreateVipOrder,
+                onRefreshVipOrder = onRefreshVipOrder,
                 onSubmitWithdrawal = onSubmitWithdrawal,
                 onTransferPoints = onTransferPoints,
                 onChangePassword = onChangePassword,

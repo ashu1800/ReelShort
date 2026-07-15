@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.reelshort.backend.admin.AdminException;
+import com.reelshort.backend.system.config.SystemConfigRegistry;
+import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
@@ -28,17 +30,24 @@ public class WalletService {
 	private final UserWalletRepository userWalletRepository;
 	private final UserAccountRepository userAccountRepository;
 	private final BankCardAttemptRepository bankCardAttemptRepository;
+	private final SystemConfigService systemConfigService;
 
 	public WalletService(UserWalletRepository userWalletRepository, UserAccountRepository userAccountRepository,
-			BankCardAttemptRepository bankCardAttemptRepository) {
+			BankCardAttemptRepository bankCardAttemptRepository, SystemConfigService systemConfigService) {
 		this.userWalletRepository = userWalletRepository;
 		this.userAccountRepository = userAccountRepository;
 		this.bankCardAttemptRepository = bankCardAttemptRepository;
+		this.systemConfigService = systemConfigService;
 	}
 
 	@Transactional(readOnly = true)
 	public WalletResponse wallet(UUID userId) {
-		return WalletResponse.from(userWalletRepository.findByUserId(userId).orElse(null));
+		UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
+		UserAccount user = userAccountRepository.findById(userId).orElse(null);
+		String vipUntil = (user != null && user.vipUntil() != null) ? user.vipUntil().toString() : null;
+		String vipPrice = safeConfigValue(SystemConfigRegistry.VIP_PRICE_USDT);
+		String collectionAddress = safeConfigValue(SystemConfigRegistry.VIP_COLLECTION_ADDRESS);
+		return WalletResponse.withVip(wallet, vipUntil, vipPrice, collectionAddress);
 	}
 
 	@Transactional
@@ -59,7 +68,7 @@ public class WalletService {
 	public WalletResponse unbind(UUID userId) {
 		activeUser(userId);
 		userWalletRepository.findByUserId(userId).ifPresent(userWalletRepository::delete);
-		return new WalletResponse("TRC20", null, null);
+		return WalletResponse.from(null);
 	}
 
 	/**
@@ -203,6 +212,16 @@ public class WalletService {
 		}
 		catch (NoSuchAlgorithmException exception) {
 			throw new IllegalStateException("SHA-256 not available", exception);
+		}
+	}
+
+	private String safeConfigValue(String key) {
+		try {
+			String value = systemConfigService.stringValue(key);
+			return value == null ? "" : value;
+		}
+		catch (Exception exception) {
+			return "";
 		}
 	}
 }

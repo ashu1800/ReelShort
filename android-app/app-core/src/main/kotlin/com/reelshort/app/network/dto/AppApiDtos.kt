@@ -143,6 +143,7 @@ data class WalletResponseDto(
     val updatedAt: String? = null,
     val vipUntil: String? = null,
     val vipPriceUsdt: String? = null,
+    val vipCollectionAddress: String? = null,
 )
 
 @Serializable

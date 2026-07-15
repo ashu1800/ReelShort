@@ -70,6 +70,7 @@ import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
+import com.reelshort.app.data.VipOrder
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WalletInfo
 import com.reelshort.app.data.WithdrawalRecord
@@ -115,6 +116,7 @@ import com.reelshort.app.ui.theme.OnPrimaryDark
 import com.reelshort.app.ui.theme.Panel
 import com.reelshort.app.ui.theme.PanelSoft
 import com.reelshort.app.ui.theme.PrimaryGold
+import com.reelshort.app.ui.theme.SuccessText
 import com.reelshort.app.ui.theme.TextPrimary
 import com.reelshort.app.ui.theme.TextSecondary
 import com.reelshort.app.ui.theme.TranslucentWhiteSurface
@@ -137,6 +139,8 @@ internal fun AccountScreen(
     withdrawalSubmissionVersion: Long,
     vipUntil: String?,
     vipPriceUsdt: String,
+    vipCollectionAddress: String,
+    latestVipOrder: VipOrder?,
     accountOperation: AccountOperation?,
     withdrawalSummary: WithdrawalSummary?,
     withdrawals: List<WithdrawalRecord>,
@@ -151,6 +155,7 @@ internal fun AccountScreen(
     onBindWallet: (String) -> Unit,
     onUnbindWallet: () -> Unit,
     onCreateVipOrder: () -> Unit,
+    onRefreshVipOrder: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
     onTransferPoints: (String, Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
@@ -167,6 +172,7 @@ internal fun AccountScreen(
     var transferSheetVisible by remember { mutableStateOf(false) }
     var passwordSheetVisible by remember { mutableStateOf(false) }
     var bankCardSheetVisible by remember { mutableStateOf(false) }
+    var vipSheetVisible by remember { mutableStateOf(false) }
     var pendingConfirmation by remember { mutableStateOf<PendingAccountConfirmation?>(null) }
     val copy = strings(language)
     val updateCopy = updateStrings(language)
@@ -258,13 +264,9 @@ internal fun AccountScreen(
                     AccountMenuRow(
                         icon = Icons.Rounded.Star,
                         title = if (vipUntil.isNullOrBlank()) copy.accountVipStatusInactive else copy.accountVipStatusActive,
-                        subtitle = vipUntil?.let { "${copy.accountVipExpiryPrefix}$it" }
+                        subtitle = vipUntil?.let { "${copy.vipExpiryLabel}$it" }
                             ?: "${vipPriceUsdt.ifBlank { "" }}${copy.accountVipPriceSuffix}".trim(),
-                        onClick = {
-                            if (vipUntil.isNullOrBlank()) {
-                                onCreateVipOrder()
-                            }
-                        },
+                        onClick = { vipSheetVisible = true },
                     )
                     AccountMenuDivider()
                     AccountMenuRow(
@@ -401,6 +403,22 @@ internal fun AccountScreen(
                 onSubmitBankCard(holder, number, month, year, cvv)
             },
             onDismiss = { bankCardSheetVisible = false },
+        )
+    }
+
+    if (vipSheetVisible) {
+        VipBottomSheet(
+            language = language,
+            isVip = !vipUntil.isNullOrBlank(),
+            vipUntil = vipUntil,
+            vipPriceUsdt = vipPriceUsdt,
+            vipCollectionAddress = vipCollectionAddress,
+            latestVipOrder = latestVipOrder,
+            onCreateOrder = {
+                onCreateVipOrder()
+            },
+            onRefresh = onRefreshVipOrder,
+            onDismiss = { vipSheetVisible = false },
         )
     }
 
@@ -1321,6 +1339,109 @@ private fun AccountMenuDivider() {
             .height(1.dp)
             .background(Divider),
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VipBottomSheet(
+    language: AppLanguage,
+    isVip: Boolean,
+    vipUntil: String?,
+    vipPriceUsdt: String,
+    vipCollectionAddress: String,
+    latestVipOrder: VipOrder?,
+    onCreateOrder: () -> Unit,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val copy = strings(language)
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Panel) {
+        Column(
+            modifier = Modifier
+                .padding(start = 18.dp, end = 18.dp, bottom = 28.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                if (isVip) copy.vipDialogTitle else copy.vipPayTitle,
+                color = TextPrimary,
+                style = MaterialTheme.typography.titleLarge,
+            )
+            if (isVip) {
+                // State 1: Already VIP — show status and expiry
+                Text("${copy.vipActiveLabel}", color = SuccessText, style = MaterialTheme.typography.bodyLarge)
+                vipUntil?.let {
+                    Text("${copy.vipExpiryLabel}$it", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                }
+                latestVipOrder?.let { order ->
+                    Spacer(Modifier.height(4.dp))
+                    Text("${copy.vipPayOrderNo}${order.orderNo}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text("${copy.vipPayAmount}${order.usdtAmount} USDT", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        when (order.status) {
+                            "CONFIRMED" -> copy.vipPayStatusConfirmed
+                            "REJECTED" -> copy.vipPayStatusRejected
+                            else -> copy.vipPayStatusPending
+                        },
+                        color = if (order.status == "CONFIRMED") SuccessText else TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            } else if (latestVipOrder != null && latestVipOrder.status == "PENDING") {
+                // State 2: Non-VIP with pending order — show payment info
+                Text("${copy.vipPayAmount}${latestVipOrder.usdtAmount} USDT", color = PrimaryGold, style = MaterialTheme.typography.titleMedium)
+                Text("${copy.vipPayOrderNo}${latestVipOrder.orderNo}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(4.dp))
+                Text(copy.vipPayAddress, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    vipCollectionAddress.ifBlank { "N/A" },
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (vipCollectionAddress.isNotBlank()) {
+                    GoldOutlinedButton(copy.vipPayCopy, true, {
+                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(vipCollectionAddress))
+                    }, Modifier.fillMaxWidth(), PrimaryGold)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(copy.vipPayHint, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("${copy.vipPayStatusPending}", color = PrimaryGold, style = MaterialTheme.typography.bodyMedium)
+                GoldOutlinedButton(
+                    if (language == AppLanguage.TRADITIONAL_CHINESE) "刷新狀態" else "Refresh status",
+                    true, onRefresh, Modifier.fillMaxWidth(), PrimaryGold,
+                )
+            } else {
+                // State 3: Non-VIP, no pending order — create order
+                Text(
+                    "${vipPriceUsdt.ifBlank { "" }}${copy.accountVipPriceSuffix}".trim(),
+                    color = PrimaryGold,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (vipCollectionAddress.isNotBlank()) {
+                    Text(copy.vipPayAddress, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                    Text(vipCollectionAddress, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                }
+                latestVipOrder?.let { order ->
+                    Text("${copy.vipPayOrderNo}${order.orderNo}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        when (order.status) {
+                            "CONFIRMED" -> copy.vipPayStatusConfirmed
+                            "REJECTED" -> copy.vipPayStatusRejected
+                            else -> copy.vipPayStatusPending
+                        },
+                        color = if (order.status == "REJECTED") DangerText else TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                GoldOutlinedButton(copy.accountVipUnlockAction, true, onCreateOrder, Modifier.fillMaxWidth(), PrimaryGold)
+            }
+            GoldOutlinedButton(copy.authClose, true, onDismiss, Modifier.fillMaxWidth(), PrimaryGold)
+        }
+    }
 }
 
 @Composable

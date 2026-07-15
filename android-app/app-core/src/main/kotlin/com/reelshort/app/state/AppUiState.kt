@@ -11,6 +11,7 @@ import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.SavedCredentials
+import com.reelshort.app.data.VipOrder
 import com.reelshort.app.data.VideoUrl
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WalletInfo
@@ -81,6 +82,8 @@ data class AppUiState(
     val walletMutationVersion: Long = 0,
     val vipUntil: String? = null,
     val vipPriceUsdt: String = "",
+    val vipCollectionAddress: String = "",
+    val latestVipOrder: VipOrder? = null,
     val withdrawalSubmissionVersion: Long = 0,
     val accountOperation: AccountOperation? = null,
     val withdrawalSummary: WithdrawalSummary? = null,

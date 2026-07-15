@@ -71,6 +71,7 @@ public record SystemConfigDefinition(
 	public enum ValueType {
 		INTEGER,
 		DECIMAL,
-		ENUM
+		ENUM,
+		STRING
 	}
 }

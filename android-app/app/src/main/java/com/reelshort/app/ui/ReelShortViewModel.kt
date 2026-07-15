@@ -134,6 +134,10 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.createVipOrder() }
     }
 
+    fun refreshLatestVipOrder() {
+        viewModelScope.launch { controller.refreshLatestVipOrder() }
+    }
+
     fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
         viewModelScope.launch { controller.submitBankCard(holderName, cardNumber, expiryMonth, expiryYear, cvv) }
     }

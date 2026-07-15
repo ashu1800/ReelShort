@@ -857,6 +857,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 wallet = wallet,
                 vipUntil = wallet?.vipUntil ?: it.vipUntil,
                 vipPriceUsdt = wallet?.vipPriceUsdt ?: it.vipPriceUsdt,
+                vipCollectionAddress = wallet?.vipCollectionAddress ?: it.vipCollectionAddress,
                 withdrawalSummary = withdrawalSummary,
                 withdrawals = withdrawals,
                 pointTransfers = pointTransfers,
@@ -935,7 +936,15 @@ class AppStateController(private val dataSource: AppDataSource) {
     suspend fun createVipOrder() = runAccountOperation(AccountOperation.WALLET_MUTATION) {
         requireAuthenticatedAccount()
         dataSource.createVipOrder()
+        val latest = dataSource.loadLatestVipOrder()
+        mutableState.update { it.copy(latestVipOrder = latest) }
         reloadAccountSnapshotAfterAction(vipOrderCreatedMessage())
+    }
+
+    suspend fun refreshLatestVipOrder() = runWithLoading(ErrorContext.ACCOUNT) {
+        requireAuthenticatedAccount()
+        val latest = dataSource.loadLatestVipOrder()
+        mutableState.update { it.copy(latestVipOrder = latest, isLoading = false) }
     }
 
     suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) = runWithLoading(ErrorContext.ACCOUNT) {

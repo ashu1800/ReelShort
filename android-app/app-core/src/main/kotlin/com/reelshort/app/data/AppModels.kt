@@ -146,6 +146,7 @@ data class WalletInfo(
     val updatedAt: String?,
     val vipUntil: String? = null,
     val vipPriceUsdt: String? = null,
+    val vipCollectionAddress: String? = null,
 )
 
 data class VipOrder(

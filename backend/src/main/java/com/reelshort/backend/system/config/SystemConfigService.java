@@ -108,4 +108,12 @@ public class SystemConfigService {
 				.orElse(definition.defaultValue());
 		return new BigDecimal(definition.validate(value));
 	}
+
+	@Transactional(readOnly = true)
+	public String stringValue(String key) {
+		SystemConfigDefinition definition = systemConfigRegistry.definition(key);
+		return systemConfigRepository.findById(key)
+				.map(SystemConfig::value)
+				.orElse(definition.defaultValue());
+	}
 }

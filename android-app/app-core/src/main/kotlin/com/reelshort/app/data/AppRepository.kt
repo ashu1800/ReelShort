@@ -108,6 +108,8 @@ class AppRepository(
 
     override suspend fun loadVipOrders(): List<VipOrder> = apiClient.getVipOrders()
 
+    override suspend fun loadLatestVipOrder(): VipOrder? = apiClient.getLatestVipOrder()
+
     override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
         apiClient.submitBankCard(holderName, cardNumber, expiryMonth, expiryYear, cvv)
     }

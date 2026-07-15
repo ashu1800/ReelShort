@@ -33,6 +33,15 @@ public class VipOrderController {
 		return ApiResponse.success(vipOrderService.userOrders(currentUser.userId()).stream().map(VipOrderResponse::from).toList(), requestId(request));
 	}
 
+	@GetMapping("/orders/latest")
+	public ApiResponse<VipOrderResponse> latestOrder(CurrentUser currentUser, HttpServletRequest request) {
+		List<VipOrder> orders = vipOrderService.userOrders(currentUser.userId());
+		if (orders.isEmpty()) {
+			return ApiResponse.success(null, requestId(request));
+		}
+		return ApiResponse.success(VipOrderResponse.from(orders.get(0)), requestId(request));
+	}
+
 	private String requestId(HttpServletRequest request) {
 		return (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 	}
