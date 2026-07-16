@@ -44,7 +44,10 @@ public class WalletService {
 	public WalletResponse wallet(UUID userId) {
 		UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
 		UserAccount user = userAccountRepository.findById(userId).orElse(null);
-		String vipUntil = (user != null && user.vipUntil() != null) ? user.vipUntil().toString() : null;
+		String vipUntil = (user != null && user.vipUntil() != null)
+				? java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+						.withZone(java.time.ZoneId.systemDefault()).format(user.vipUntil())
+				: null;
 		String vipPrice = safeConfigValue(SystemConfigRegistry.VIP_PRICE_USDT);
 		String collectionAddress = safeConfigValue(SystemConfigRegistry.VIP_COLLECTION_ADDRESS);
 		return WalletResponse.withVip(wallet, vipUntil, vipPrice, collectionAddress);

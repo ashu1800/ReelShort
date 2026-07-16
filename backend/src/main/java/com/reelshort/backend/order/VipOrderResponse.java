@@ -1,8 +1,12 @@
 package com.reelshort.backend.order;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+
 /**
  * Response DTO for VIP orders. All numeric fields serialized as String to match Android client's
- * kotlinx.serialization expectations.
+ * kotlinx.serialization expectations. Timestamps formatted as yyyy-MM-dd HH:mm:ss.
  */
 public record VipOrderResponse(
 		String id,
@@ -16,6 +20,9 @@ public record VipOrderResponse(
 		String expiresAt,
 		String confirmedAt) {
 
+	private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+			.withZone(ZoneId.systemDefault());
+
 	public static VipOrderResponse from(VipOrder order) {
 		return new VipOrderResponse(
 				order.id().toString(),
@@ -25,8 +32,12 @@ public record VipOrderResponse(
 				order.status(),
 				order.paymentMethod(),
 				order.txHash(),
-				order.createdAt().toString(),
-				order.expiresAt() == null ? null : order.expiresAt().toString(),
-				order.confirmedAt() == null ? null : order.confirmedAt().toString());
+				fmt(order.createdAt()),
+				fmt(order.expiresAt()),
+				fmt(order.confirmedAt()));
+	}
+
+	private static String fmt(OffsetDateTime time) {
+		return time == null ? null : FMT.format(time);
 	}
 }

@@ -45,7 +45,10 @@ public class PointsService {
 			UserAccount user = userAccountRepository.findById(userId).orElse(null);
 			UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
 			boolean vip = user != null && user.isVip();
-			String vipUntil = (user != null && user.vipUntil() != null) ? user.vipUntil().toString() : null;
+			String vipUntil = (user != null && user.vipUntil() != null)
+					? java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+							.withZone(java.time.ZoneId.systemDefault()).format(user.vipUntil())
+					: null;
 			String walletAddress = wallet != null ? wallet.walletAddress() : null;
 			return PointAccountResponse.withVipAndWallet(account, vip, vipUntil, walletAddress);
 		});
