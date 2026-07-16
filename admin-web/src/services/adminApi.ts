@@ -200,17 +200,7 @@ export type AdminDashboardSummary = {
     total: number
     disabled: number
   }
-  orders: {
-    total: number
-    created: number
-    paid: number
-    totalAmountCents: number
-  }
-  payments: {
-    total: number
-    processed: number
-    rejected: number
-  }
+  vipOrders: { total: number; totalUsdt: string }
   content: {
     bookCount: number
     episodeCacheCount: number

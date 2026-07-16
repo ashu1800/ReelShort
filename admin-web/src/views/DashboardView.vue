@@ -8,18 +8,11 @@ const error = ref('')
 const summary = ref<AdminDashboardSummary | null>(null)
 const auditLogs = ref<AdminAuditLog[]>([])
 
-function formatMoney(cents: number) {
-  return `¥${(cents / 100).toFixed(2)}`
-}
-
 const metrics = computed(() => [
   { label: '用户总数', value: summary.value?.users.total ?? 0 },
   { label: '禁用用户', value: summary.value?.users.disabled ?? 0 },
-  { label: '充值订单', value: summary.value?.orders.total ?? 0 },
-  { label: '已支付订单', value: summary.value?.orders.paid ?? 0 },
-  { label: '充值金额', value: formatMoney(summary.value?.orders.totalAmountCents ?? 0) },
-  { label: '支付事件', value: summary.value?.payments.total ?? 0 },
-  { label: '拒绝支付', value: summary.value?.payments.rejected ?? 0 },
+  { label: 'VIP 充值订单数', value: summary.value?.vipOrders.total ?? 0 },
+  { label: 'VIP 总充值金额', value: `${summary.value?.vipOrders.totalUsdt ?? '0'} USDT` },
   { label: '剧集缓存', value: summary.value?.content.bookCount ?? 0 },
   { label: '分集缓存', value: summary.value?.content.episodeCacheCount ?? 0 },
 ])

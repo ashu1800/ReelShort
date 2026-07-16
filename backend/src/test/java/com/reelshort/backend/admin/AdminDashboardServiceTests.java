@@ -1,8 +1,8 @@
 package com.reelshort.backend.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -17,10 +17,8 @@ import com.reelshort.backend.content.ContentEpisodeCacheRepository;
 import com.reelshort.backend.content.ContentShelfCache;
 import com.reelshort.backend.content.ContentShelfCacheRepository;
 import com.reelshort.backend.content.ContentShelfType;
-import com.reelshort.backend.order.CreateRechargeOrderRequest;
-import com.reelshort.backend.order.RechargeOrderService;
-import com.reelshort.backend.payment.PaymentCallbackRequest;
-import com.reelshort.backend.payment.PaymentCallbackService;
+import com.reelshort.backend.order.VipOrder;
+import com.reelshort.backend.order.VipOrderRepository;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
@@ -35,10 +33,7 @@ class AdminDashboardServiceTests {
 	private UserAccountRepository userAccountRepository;
 
 	@Autowired
-	private RechargeOrderService rechargeOrderService;
-
-	@Autowired
-	private PaymentCallbackService paymentCallbackService;
+	private VipOrderRepository vipOrderRepository;
 
 	@Autowired
 	private ContentBookCacheRepository contentBookCacheRepository;
@@ -53,17 +48,13 @@ class AdminDashboardServiceTests {
 	private AdminAuditService adminAuditService;
 
 	@Test
-	void summaryAggregatesUsersOrdersPaymentsContentAndLatestAuditLogs() {
+	void summaryAggregatesUsersVipOrdersContentAndLatestAuditLogs() {
 		userAccountRepository.save(UserAccount.create("dashboard-active", "hash", UserStatus.ACTIVE));
 		userAccountRepository.save(UserAccount.create("dashboard-disabled", "hash", UserStatus.DISABLED));
-		UUID paidUserId = UUID.randomUUID();
-		UUID createdUserId = UUID.randomUUID();
-		var paidOrder = rechargeOrderService.create(paidUserId, new CreateRechargeOrderRequest(990, 99));
-		rechargeOrderService.create(createdUserId, new CreateRechargeOrderRequest(1990, 199));
-		paymentCallbackService.handle(new PaymentCallbackRequest("dashboard-paid-event", paidOrder.orderNo(),
-				"mock-pay", 990));
-		assertThatThrownBy(() -> paymentCallbackService.handle(new PaymentCallbackRequest("dashboard-rejected-event",
-				"missing-order", "mock-pay", 990)));
+		UUID firstVipUserId = UUID.randomUUID();
+		UUID secondVipUserId = UUID.randomUUID();
+		vipOrderRepository.save(confirmedVipOrder(firstVipUserId, new BigDecimal("9.99")));
+		vipOrderRepository.save(confirmedVipOrder(secondVipUserId, new BigDecimal("19.99")));
 		contentBookCacheRepository.save(ContentBookCache.from(
 				new ContentBook("dashboard-book", "Dashboard", "dashboard", "https://example.com/cover.jpg", "", 2)));
 		contentEpisodeCacheRepository.save(ContentEpisodeCache.create("dashboard-book", "dashboard", "[]", 2));
@@ -77,17 +68,20 @@ class AdminDashboardServiceTests {
 
 		assertThat(summary.users().total()).isGreaterThanOrEqualTo(2);
 		assertThat(summary.users().disabled()).isGreaterThanOrEqualTo(1);
-		assertThat(summary.orders().total()).isGreaterThanOrEqualTo(2);
-		assertThat(summary.orders().created()).isGreaterThanOrEqualTo(1);
-		assertThat(summary.orders().paid()).isGreaterThanOrEqualTo(1);
-		assertThat(summary.orders().totalAmountCents()).isGreaterThanOrEqualTo(2980);
-		assertThat(summary.payments().total()).isGreaterThanOrEqualTo(2);
-		assertThat(summary.payments().processed()).isGreaterThanOrEqualTo(1);
-		assertThat(summary.payments().rejected()).isGreaterThanOrEqualTo(1);
+		assertThat(summary.vipOrders().total()).isGreaterThanOrEqualTo(2);
+		assertThat(new BigDecimal(summary.vipOrders().totalUsdt())).isGreaterThanOrEqualTo(new BigDecimal("29.98"));
 		assertThat(summary.content().bookCount()).isGreaterThanOrEqualTo(1);
 		assertThat(summary.content().episodeCacheCount()).isGreaterThanOrEqualTo(1);
 		assertThat(summary.content().shelfCount()).isGreaterThanOrEqualTo(1);
 		assertThat(summary.auditLogs().latest()).hasSize(5);
 		assertThat(summary.auditLogs().latest().get(0).action()).isEqualTo("DASHBOARD_ACTION_5");
 	}
+
+	private static VipOrder confirmedVipOrder(UUID userId, BigDecimal usdtAmount) {
+		VipOrder order = VipOrder.create(userId,
+				"VIP" + UUID.randomUUID().toString().replace("-", "").substring(0, 16), usdtAmount, 1, 0);
+		order.confirm("dashboard-tx-" + UUID.randomUUID(), "admin");
+		return order;
+	}
 }
+

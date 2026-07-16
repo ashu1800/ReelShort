@@ -5,16 +5,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.reelshort.backend.admin.AdminDashboardSummaryResponse.AuditLogMetrics;
 import com.reelshort.backend.admin.AdminDashboardSummaryResponse.ContentMetrics;
-import com.reelshort.backend.admin.AdminDashboardSummaryResponse.OrderMetrics;
-import com.reelshort.backend.admin.AdminDashboardSummaryResponse.PaymentMetrics;
 import com.reelshort.backend.admin.AdminDashboardSummaryResponse.UserMetrics;
+import com.reelshort.backend.admin.AdminDashboardSummaryResponse.VipMetrics;
 import com.reelshort.backend.content.ContentBookCacheRepository;
 import com.reelshort.backend.content.ContentEpisodeCacheRepository;
 import com.reelshort.backend.content.ContentShelfCacheRepository;
-import com.reelshort.backend.order.RechargeOrderRepository;
-import com.reelshort.backend.order.RechargeOrderStatus;
-import com.reelshort.backend.payment.PaymentEventRepository;
-import com.reelshort.backend.payment.PaymentEventStatus;
+import com.reelshort.backend.order.VipOrderRepository;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
 
@@ -22,21 +18,18 @@ import com.reelshort.backend.user.UserStatus;
 public class AdminDashboardService {
 
 	private final UserAccountRepository userAccountRepository;
-	private final RechargeOrderRepository rechargeOrderRepository;
-	private final PaymentEventRepository paymentEventRepository;
+	private final VipOrderRepository vipOrderRepository;
 	private final ContentBookCacheRepository contentBookCacheRepository;
 	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 	private final ContentShelfCacheRepository contentShelfCacheRepository;
 	private final AdminAuditLogRepository adminAuditLogRepository;
 
 	public AdminDashboardService(UserAccountRepository userAccountRepository,
-			RechargeOrderRepository rechargeOrderRepository, PaymentEventRepository paymentEventRepository,
-			ContentBookCacheRepository contentBookCacheRepository,
+			VipOrderRepository vipOrderRepository, ContentBookCacheRepository contentBookCacheRepository,
 			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
 			ContentShelfCacheRepository contentShelfCacheRepository, AdminAuditLogRepository adminAuditLogRepository) {
 		this.userAccountRepository = userAccountRepository;
-		this.rechargeOrderRepository = rechargeOrderRepository;
-		this.paymentEventRepository = paymentEventRepository;
+		this.vipOrderRepository = vipOrderRepository;
 		this.contentBookCacheRepository = contentBookCacheRepository;
 		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
 		this.contentShelfCacheRepository = contentShelfCacheRepository;
@@ -48,15 +41,9 @@ public class AdminDashboardService {
 		UserMetrics userMetrics = new UserMetrics(
 				userAccountRepository.count(),
 				userAccountRepository.countByStatus(UserStatus.DISABLED));
-		OrderMetrics orderMetrics = new OrderMetrics(
-				rechargeOrderRepository.count(),
-				rechargeOrderRepository.countByStatus(RechargeOrderStatus.CREATED),
-				rechargeOrderRepository.countByStatus(RechargeOrderStatus.PAID),
-				rechargeOrderRepository.sumAmountCents());
-		PaymentMetrics paymentMetrics = new PaymentMetrics(
-				paymentEventRepository.count(),
-				paymentEventRepository.countByStatus(PaymentEventStatus.PROCESSED),
-				paymentEventRepository.countByStatus(PaymentEventStatus.REJECTED));
+		long totalVip = vipOrderRepository.count();
+		String totalUsdt = vipOrderRepository.sumConfirmedUsdtAmount().stripTrailingZeros().toPlainString();
+		VipMetrics vipMetrics = new VipMetrics(totalVip, totalUsdt);
 		ContentMetrics contentMetrics = new ContentMetrics(
 				contentBookCacheRepository.count(),
 				contentEpisodeCacheRepository.count(),
@@ -65,7 +52,6 @@ public class AdminDashboardService {
 				.stream()
 				.map(AdminAuditLogResponse::from)
 				.toList());
-		return new AdminDashboardSummaryResponse(userMetrics, orderMetrics, paymentMetrics, contentMetrics,
-				auditLogMetrics);
+		return new AdminDashboardSummaryResponse(userMetrics, vipMetrics, contentMetrics, auditLogMetrics);
 	}
 }

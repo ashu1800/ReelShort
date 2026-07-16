@@ -4,18 +4,14 @@ import java.util.List;
 
 public record AdminDashboardSummaryResponse(
 		UserMetrics users,
-		OrderMetrics orders,
-		PaymentMetrics payments,
+		VipMetrics vipOrders,
 		ContentMetrics content,
 		AuditLogMetrics auditLogs) {
 
 	public record UserMetrics(long total, long disabled) {
 	}
 
-	public record OrderMetrics(long total, long created, long paid, long totalAmountCents) {
-	}
-
-	public record PaymentMetrics(long total, long processed, long rejected) {
+	public record VipMetrics(long total, String totalUsdt) {
 	}
 
 	public record ContentMetrics(long bookCount, long episodeCacheCount, long shelfCount) {

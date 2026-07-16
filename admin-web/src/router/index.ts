@@ -4,8 +4,6 @@ import AuditLogsView from '../views/AuditLogsView.vue'
 import ContentCacheView from '../views/ContentCacheView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import LoginView from '../views/LoginView.vue'
-import OrdersView from '../views/OrdersView.vue'
-import PaymentEventsView from '../views/PaymentEventsView.vue'
 import SystemAlertsView from '../views/SystemAlertsView.vue'
 import SystemConfigsView from '../views/SystemConfigsView.vue'
 import SystemLogsView from '../views/SystemLogsView.vue'
@@ -33,16 +31,6 @@ export const router = createRouter({
       path: '/users',
       name: 'users',
       component: UsersView,
-    },
-    {
-      path: '/orders',
-      name: 'orders',
-      component: OrdersView,
-    },
-    {
-      path: '/payments/events',
-      name: 'payment-events',
-      component: PaymentEventsView,
     },
     {
       path: '/withdrawals',

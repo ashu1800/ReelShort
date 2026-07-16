@@ -6,11 +6,9 @@ import {
   FolderOpened,
   GoldMedal,
   Lock,
-  Money,
   Monitor,
   Notebook,
   Warning,
-  Tickets,
   Setting,
   SwitchButton,
   User,
@@ -51,14 +49,6 @@ async function logout() {
         <el-menu-item index="/users">
           <el-icon><User /></el-icon>
           <span>用户管理</span>
-        </el-menu-item>
-        <el-menu-item index="/orders">
-          <el-icon><Tickets /></el-icon>
-          <span>订单管理</span>
-        </el-menu-item>
-        <el-menu-item index="/payments/events">
-          <el-icon><Money /></el-icon>
-          <span>支付事件</span>
         </el-menu-item>
         <el-menu-item index="/withdrawals">
           <el-icon><Coin /></el-icon>

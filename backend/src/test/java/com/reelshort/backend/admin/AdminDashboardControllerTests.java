@@ -54,8 +54,7 @@ class AdminDashboardControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value(0))
 				.andExpect(jsonPath("$.data.users.total").isNumber())
-				.andExpect(jsonPath("$.data.orders.total").isNumber())
-				.andExpect(jsonPath("$.data.payments.total").isNumber())
+				.andExpect(jsonPath("$.data.vipOrders.total").isNumber())
 				.andExpect(jsonPath("$.data.content.bookCount").isNumber())
 				.andExpect(jsonPath("$.data.auditLogs.latest").isArray());
 	}
