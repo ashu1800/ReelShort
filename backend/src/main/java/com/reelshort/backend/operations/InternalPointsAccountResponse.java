@@ -12,10 +12,14 @@ public record InternalPointsAccountResponse(
 		UserStatus status,
 		int balance,
 		int frozenPoints,
-		int availablePoints) {
+		int availablePoints,
+		boolean vip,
+		String vipUntil,
+		String walletAddress) {
 
 	static InternalPointsAccountResponse from(UserAccount user, PointAccountResponse account) {
 		return new InternalPointsAccountResponse(user.id(), user.username(), user.status(), account.balance(),
-				account.frozenPoints(), account.availablePoints());
+				account.frozenPoints(), account.availablePoints(), account.vip(), account.vipUntil(),
+				account.walletAddress());
 	}
 }
