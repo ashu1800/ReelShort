@@ -1279,6 +1279,13 @@ private fun VipBottomSheet(
             remainingSeconds--
         }
     }
+    // Auto-refresh order status every 10 seconds while sheet is open and order is pending
+    LaunchedEffect(pendingOrder?.id) {
+        while (pendingOrder != null && remainingSeconds > 0) {
+            delay(10_000)
+            onRefresh()
+        }
+    }
     val orderExpired = !isVip && latestVipOrder?.status == "EXPIRED"
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Panel) {
         Column(

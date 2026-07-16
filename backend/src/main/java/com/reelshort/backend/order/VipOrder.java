@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 @Table(name = "vip_orders")
 public class VipOrder {
 
-	private static final BigDecimal SUFFIX_DIVISOR = new BigDecimal("10000");
+	private static final BigDecimal SUFFIX_DIVISOR = new BigDecimal("100");
 
 	@Id
 	@Column(nullable = false)

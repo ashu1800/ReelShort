@@ -18,7 +18,7 @@ import com.reelshort.backend.user.UserAccountRepository;
 public class VipOrderService {
 
 	private static final int VIP_DURATION_DAYS = 30;
-	private static final int SUFFIX_MAX = 9999;
+	private static final int SUFFIX_MAX = 99;
 
 	private final VipOrderRepository vipOrderRepository;
 	private final UserAccountRepository userAccountRepository;
