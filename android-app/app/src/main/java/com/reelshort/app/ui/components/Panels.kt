@@ -88,7 +88,7 @@ internal fun SectionHeader(title: String, subtitle: String) {
 }
 
 @Composable
-internal fun EmptyState(state: ContentEmptyState) {
+internal fun EmptyState(state: ContentEmptyState, onAction: (() -> Unit)? = null) {
     SurfacePanel {
         Column(
             modifier = Modifier
@@ -102,7 +102,11 @@ internal fun EmptyState(state: ContentEmptyState) {
             Text(state.message, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
             if (state.actionLabel != null) {
                 Spacer(Modifier.height(12.dp))
-                MetaPill(state.actionLabel)
+                if (onAction != null) {
+                    PrimaryActionButton(state.actionLabel, true, onAction, Modifier.fillMaxWidth(0.6f))
+                } else {
+                    MetaPill(state.actionLabel)
+                }
             }
         }
     }

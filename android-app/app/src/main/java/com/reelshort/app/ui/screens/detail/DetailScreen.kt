@@ -71,8 +71,8 @@ private fun BookHero(book: BookSummary) {
             PosterBlock(book.title, book.coverUrl, Modifier.size(width = 92.dp, height = 124.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(book.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(book.description.ifBlank { "${book.chapterCount} 集短剧" }, color = TextSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                MetaPill("${book.chapterCount} 集")
+                    Text(book.description.ifBlank { "${book.chapterCount} short dramas" }, color = TextSecondary, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    MetaPill("${book.chapterCount} eps")
             }
         }
     }

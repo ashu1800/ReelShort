@@ -165,6 +165,7 @@ internal fun PlayerScreen(
             language = state.language,
             initialPositionSeconds = playback.positionSeconds,
             fallbackDurationSeconds = playback.durationSeconds,
+            rewardClaimed = playback.rewardClaimed,
             onProgress = onUpdatePlaybackPosition,
             onAutoReportProgress = onAutoReportProgress,
             onRetryPlayback = {
@@ -317,6 +318,7 @@ private fun BoxScope.MediaPlayerSurface(
     language: AppLanguage,
     initialPositionSeconds: Int,
     fallbackDurationSeconds: Int,
+    rewardClaimed: Boolean,
     onProgress: (Int, Int) -> Unit,
     onAutoReportProgress: (Int, Int) -> Unit,
     onRetryPlayback: () -> Unit,
@@ -392,7 +394,8 @@ private fun BoxScope.MediaPlayerSurface(
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
-        LaunchedEffect(player, fallbackDurationSeconds) {
+        LaunchedEffect(player, fallbackDurationSeconds, rewardClaimed) {
+            if (rewardClaimed) return@LaunchedEffect
             while (true) {
                 kotlinx.coroutines.delay(1000)
                 val positionMs = player.currentPosition
@@ -809,11 +812,12 @@ private fun RailAction(
     }
 }
 
-private fun formatCount(count: Int): String = when {
-    count >= 10000 -> "${count / 10000}w"
-    count > 0 -> count.toString()
-    else -> ""
-}
+    private fun formatCount(count: Int): String = when {
+        count >= 1000000 -> "${"%.1f".format(count / 1000000.0)}M"
+        count >= 1000 -> "${count / 1000}k"
+        count > 0 -> count.toString()
+        else -> ""
+    }
 
 @Composable
 private fun BottomInfo(

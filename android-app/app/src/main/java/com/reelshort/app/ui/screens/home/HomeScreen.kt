@@ -27,6 +27,7 @@ internal fun HomeScreen(
     language: AppLanguage,
     onOpenBook: (BookSummary) -> Unit,
     onRefresh: () -> Unit,
+    onGoToSearch: () -> Unit = {},
 ) {
     val copy = strings(language)
     PullToRefreshBox(
@@ -43,7 +44,7 @@ internal fun HomeScreen(
                 SectionHeader(copy.homeHeaderTitle, "${books.size} ${copy.homeHeaderSubtitleSuffix}")
             }
             if (books.isEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) { EmptyState(homeEmptyState(language)) }
+                item(span = { GridItemSpan(maxLineSpan) }) { EmptyState(homeEmptyState(language), onAction = onGoToSearch) }
             }
             items(books, key = { it.id }) { book ->
                 PosterCard(book = book, onClick = { onOpenBook(book) }, language = language)

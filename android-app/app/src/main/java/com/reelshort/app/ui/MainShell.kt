@@ -128,6 +128,7 @@ internal fun MainShell(
                             language = state.language,
                             onOpenBook = onOpenBook,
                             onRefresh = onRefreshHome,
+                            onGoToSearch = { onScreenSelected(AppScreen.SEARCH) },
                         )
                         AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
                         AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, state.language, state.vipUntil, onOpenPlayer)

@@ -335,13 +335,6 @@ private fun CaptchaImage(
             )
         }
     }
-    GoldOutlinedButton(
-        text = refreshLabel,
-        enabled = enabled,
-        onClick = onRefresh,
-        modifier = Modifier.height(52.dp),
-        contentColor = PrimaryGold,
-    )
 }
 
 internal fun authFormControls(mode: AuthMode, language: AppLanguage): List<String> {

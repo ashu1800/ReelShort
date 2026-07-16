@@ -1070,6 +1070,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                     session = if (blockedAccount) null else it.session,
                     isLoading = false,
                     errorMessage = userFacingErrorMessage(error, errorContext),
+                    messageTrigger = it.messageTrigger + 1,
                     messageType = UiMessageType.ERROR,
                     authPromptVisible = if (blockedAccount) {
                         false

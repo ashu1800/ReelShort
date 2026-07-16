@@ -54,6 +54,7 @@ data class AppUiState(
     val isLoading: Boolean = false,
     val geoBlocked: Boolean = false,
     val errorMessage: String? = null,
+    val messageTrigger: Long = 0,
     val messageType: UiMessageType? = null,
     val apiBaseUrl: String = "",
     val apiHealthStatus: ApiHealthStatus? = null,

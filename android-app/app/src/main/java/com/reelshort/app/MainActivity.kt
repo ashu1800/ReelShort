@@ -64,7 +64,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     LaunchedEffect(viewModel) {
         viewModel.bootstrap()
     }
-    LaunchedEffect(state.errorMessage) {
+    LaunchedEffect(state.errorMessage, state.messageTrigger) {
         if (state.errorMessage != null) {
             delay(4_000)
             viewModel.clearError()
