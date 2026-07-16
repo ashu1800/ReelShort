@@ -9,5 +9,6 @@ public record WithdrawalSummaryResponse(
 		String cnyPerPoint,
 		String cnyPerUsd,
 		String minimumUsd,
-		String walletAddress) {
+		String walletAddress,
+		int feePercent) {
 }

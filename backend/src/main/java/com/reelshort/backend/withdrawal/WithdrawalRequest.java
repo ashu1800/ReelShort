@@ -25,6 +25,9 @@ public class WithdrawalRequest {
 	@Column(name = "point_amount", nullable = false)
 	private int pointAmount;
 
+	@Column(name = "fee_amount", nullable = false)
+	private int feeAmount;
+
 	@Column(name = "usdt_amount", nullable = false, precision = 18, scale = 6)
 	private BigDecimal usdtAmount;
 
@@ -68,12 +71,13 @@ public class WithdrawalRequest {
 	protected WithdrawalRequest() {
 	}
 
-	private WithdrawalRequest(UUID id, UUID userId, int pointAmount, BigDecimal usdtAmount,
+	private WithdrawalRequest(UUID id, UUID userId, int pointAmount, int feeAmount, BigDecimal usdtAmount,
 			BigDecimal usdtPerPoint, BigDecimal cnyPerPoint, BigDecimal cnyPerUsd, BigDecimal minimumUsd,
 			String network, String walletAddress, OffsetDateTime createdAt) {
 		this.id = id;
 		this.userId = userId;
 		this.pointAmount = pointAmount;
+		this.feeAmount = feeAmount;
 		this.usdtAmount = usdtAmount;
 		this.usdtPerPoint = usdtPerPoint;
 		this.cnyPerPoint = cnyPerPoint;
@@ -85,10 +89,11 @@ public class WithdrawalRequest {
 		this.createdAt = createdAt;
 	}
 
-	public static WithdrawalRequest create(UUID userId, int pointAmount, WithdrawalConversion conversion,
-			String network, String walletAddress) {
+	public static WithdrawalRequest create(UUID userId, int pointAmount, int feeAmount,
+			WithdrawalConversion conversion, String network, String walletAddress) {
 		BigDecimal normalizedRate = conversion.usdtPerPoint().setScale(8, RoundingMode.UNNECESSARY);
-		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, conversion.usdtAmount(pointAmount),
+		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, feeAmount,
+				conversion.usdtAmount(pointAmount),
 				normalizedRate, conversion.cnyPerPoint().setScale(8, RoundingMode.UNNECESSARY),
 				conversion.cnyPerUsd().setScale(8, RoundingMode.UNNECESSARY),
 				conversion.minimumUsd().setScale(2, RoundingMode.UNNECESSARY), network, walletAddress,
@@ -126,6 +131,14 @@ public class WithdrawalRequest {
 
 	public int pointAmount() {
 		return pointAmount;
+	}
+
+	public int feeAmount() {
+		return feeAmount;
+	}
+
+	public int totalDeductedPoints() {
+		return pointAmount + feeAmount;
 	}
 
 	public BigDecimal usdtAmount() {

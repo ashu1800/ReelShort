@@ -22,6 +22,7 @@ public class SystemConfigRegistry {
 	public static final String WITHDRAW_CNY_PER_POINT = "withdraw.cny-per-point";
 	public static final String WITHDRAW_CNY_PER_USD = "withdraw.cny-per-usd";
 	public static final String WITHDRAW_MINIMUM_USD = "withdraw.minimum-usd";
+	public static final String WITHDRAW_FEE_PERCENT = "withdraw.fee-percent";
 	public static final String VIP_PRICE_USDT = "vip.price-usdt";
 	public static final String VIP_FREE_EPISODES = "vip.free-episodes";
 	public static final String VIP_COLLECTION_ADDRESS = "vip.collection-address";
@@ -46,6 +47,8 @@ public class SystemConfigRegistry {
 					"CNY value of one USD for withdrawal conversion.", ValueType.DECIMAL, 0, 0, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_MINIMUM_USD, "10",
 					"Minimum USD value required for withdrawal.", ValueType.DECIMAL, 0, 0, Set.of()),
+			new SystemConfigDefinition(WITHDRAW_FEE_PERCENT, "10",
+					"Withdrawal fee percentage deducted from points.", ValueType.INTEGER, 0, 100, Set.of()),
 			new SystemConfigDefinition(VIP_PRICE_USDT, "15",
 					"VIP monthly subscription price in USDT.", ValueType.DECIMAL, 0, 0, Set.of()),
 			new SystemConfigDefinition(VIP_FREE_EPISODES, "7",

@@ -48,7 +48,7 @@ class InternalWithdrawalControllerTests {
 	@Test
 	void thresholdsReturnsSnapshotWithSuperToken() throws Exception {
 		when(withdrawalService.thresholds()).thenReturn(new WithdrawalConversion.Snapshot(
-				3600, "0.0027", "0.02", "7.2", "10"));
+				3600, "0.0027", "0.02", "7.2", "10", 10));
 
 		mockMvc.perform(get("/api/internal/withdrawal/thresholds")
 				.header("X-Internal-Super-Token", TOKEN))

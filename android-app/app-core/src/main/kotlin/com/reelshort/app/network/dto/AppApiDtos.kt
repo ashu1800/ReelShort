@@ -185,6 +185,7 @@ data class WithdrawalSummaryDto(
     val cnyPerPoint: String? = null,
     val cnyPerUsd: String? = null,
     val minimumUsd: String? = null,
+    val feePercent: Int? = null,
 )
 
 @Serializable

@@ -65,12 +65,13 @@ final class WithdrawalConversion {
 			String usdtPerPoint,
 			String cnyPerPoint,
 			String cnyPerUsd,
-			String minimumUsd) {
+			String minimumUsd,
+			int feePercent) {
 	}
 
-	Snapshot toSnapshot() {
+	Snapshot toSnapshot(int feePercent) {
 		return new Snapshot(minimumPoints(), strip(usdtPerPoint()), strip(cnyPerPoint), strip(cnyPerUsd),
-				strip(minimumUsd));
+				strip(minimumUsd), feePercent);
 	}
 
 	private static String strip(BigDecimal value) {

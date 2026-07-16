@@ -132,8 +132,8 @@ class WalletWithdrawalTransferControllerTests {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.balance").value(4000))
-				.andExpect(jsonPath("$.data.frozenPoints").value(3600))
-				.andExpect(jsonPath("$.data.availablePoints").value(400));
+				.andExpect(jsonPath("$.data.frozenPoints").value(3960))
+				.andExpect(jsonPath("$.data.availablePoints").value(40));
 
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", UUID.fromString(withdrawalId))
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
@@ -163,9 +163,9 @@ class WalletWithdrawalTransferControllerTests {
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(400))
+				.andExpect(jsonPath("$.data.balance").value(40))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
-				.andExpect(jsonPath("$.data.availablePoints").value(400));
+				.andExpect(jsonPath("$.data.availablePoints").value(40));
 
 		mockMvc.perform(get("/api/app/points/records")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))

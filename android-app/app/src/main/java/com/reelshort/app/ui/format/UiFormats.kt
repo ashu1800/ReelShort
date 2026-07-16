@@ -277,6 +277,11 @@ internal fun withdrawalConversionLines(
         val estimateLabel = "Estimated"
         lines += "$estimateLabel ${cnyAmount.toUiDecimal()} CNY ≈ ${usdtAmount.toUiDecimal()} USDT"
     }
+    if (pointAmount > 0 && summary.feePercent > 0) {
+        val fee = pointAmount * summary.feePercent / 100
+        val total = pointAmount + fee
+        lines += "Fee: ${summary.feePercent}% ($fee pts) · Total: $total pts"
+    }
     return lines
 }
 

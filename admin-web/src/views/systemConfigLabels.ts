@@ -32,6 +32,10 @@ export const systemConfigLabels: Record<string, { name: string; description: str
     name: '提现 · 最低 USD',
     description: '申请提现所需的最低 USD 金额。',
   },
+  'withdraw.fee-percent': {
+    name: '提现手续费（%）',
+    description: '提现时扣除的积分手续费百分比。',
+  },
   'content.recommendation.strategy': {
     name: '推荐策略',
     description: '默认内容推荐策略（最新 / 热门）。',

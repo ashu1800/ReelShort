@@ -64,10 +64,11 @@ public class WithdrawalService {
 		int balance = account == null ? 0 : account.balance();
 		int frozenPoints = account == null ? 0 : account.frozenPoints();
 		int availablePoints = account == null ? 0 : account.availablePoints();
+		int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
 		return new WithdrawalSummaryResponse(balance, frozenPoints, availablePoints,
 				conversion.minimumPoints(), decimal(conversion.usdtPerPoint()), decimal(conversion.cnyPerPoint()),
 				decimal(conversion.cnyPerUsd()), decimal(conversion.minimumUsd()),
-				wallet == null ? null : wallet.walletAddress());
+				wallet == null ? null : wallet.walletAddress(), feePercent);
 	}
 
 	/**
@@ -75,7 +76,8 @@ public class WithdrawalService {
 	 */
 	@Transactional(readOnly = true)
 	public WithdrawalConversion.Snapshot thresholds() {
-		return conversion().toSnapshot();
+		int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
+		return conversion().toSnapshot(feePercent);
 	}
 
 	@Transactional(readOnly = true)
@@ -100,23 +102,26 @@ public class WithdrawalService {
 			int scale = fairMode ? 10 : 1;
 			int internalAmount = pointAmount * scale;
 			int minimum = conversion.minimumPointsScaled(fairMode);
-			if (internalAmount < minimum) {
+			int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
+			int feeAmount = internalAmount * feePercent / 100;
+			int totalDeduct = internalAmount + feeAmount;
+			if (totalDeduct < minimum) {
 				throw new AdminException(400, "withdrawal amount below minimum");
 			}
 			UserWallet wallet = userWalletRepository.findByUserId(userId)
 					.orElseThrow(() -> new AdminException(400, "wallet required"));
 				PointAccount account = accountEntityForUpdate(userId);
-			if (!account.canUseAvailable(internalAmount)) {
+			if (!account.canUseAvailable(totalDeduct)) {
 				throw new AdminException(400, "insufficient available point balance");
 			}
 			try {
-				account.freeze(internalAmount);
+				account.freeze(totalDeduct);
 			}
 			catch (IllegalStateException exception) {
 				throw new AdminException(400, exception.getMessage());
 			}
 			pointAccountRepository.save(account);
-			WithdrawalRequest request = WithdrawalRequest.create(userId, internalAmount, conversion,
+			WithdrawalRequest request = WithdrawalRequest.create(userId, internalAmount, feeAmount, conversion,
 					wallet.network(), wallet.walletAddress());
 			return WithdrawalResponse.from(withdrawalRequestRepository.save(request));
 		});
@@ -147,13 +152,13 @@ public class WithdrawalService {
 			}
 			PointAccount account = accountEntityForUpdate(request.userId());
 			try {
-				account.deductFrozen(request.pointAmount());
+				account.deductFrozen(request.totalDeductedPoints());
 			}
 			catch (IllegalStateException exception) {
 				throw new AdminException(400, exception.getMessage());
 			}
 			pointAccountRepository.save(account);
-			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(), request.pointAmount(),
+			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(), request.totalDeductedPoints(),
 					account.balance(), request.id().toString()));
 			try {
 				request.approve(txHash.trim(), note == null ? "" : note.trim(), adminUsername);
@@ -174,7 +179,7 @@ public class WithdrawalService {
 			}
 			PointAccount account = accountEntityForUpdate(request.userId());
 			try {
-				account.releaseFrozen(request.pointAmount());
+				account.releaseFrozen(request.totalDeductedPoints());
 			}
 			catch (IllegalStateException exception) {
 				throw new AdminException(400, exception.getMessage());
@@ -264,13 +269,13 @@ public class WithdrawalService {
 			String txHash = tronClient.transferUSDT(hotWalletPrivateKey, request.walletAddress(), request.usdtAmount());
 			PointAccount account = accountEntityForUpdate(request.userId());
 			try {
-				account.deductFrozen(request.pointAmount());
+				account.deductFrozen(request.totalDeductedPoints());
 			}
 			catch (IllegalStateException exception) {
 				throw new AdminException(400, exception.getMessage());
 			}
 			pointAccountRepository.save(account);
-			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(), request.pointAmount(),
+			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(), request.totalDeductedPoints(),
 					account.balance(), request.id().toString()));
 			request.approve(txHash, "auto TRC20 transfer", adminUsername);
 			withdrawalRequestRepository.save(request);

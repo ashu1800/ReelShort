@@ -437,6 +437,7 @@ class OkHttpReelShortApiClient(
             cnyPerPoint = cnyPerPoint,
             cnyPerUsd = cnyPerUsd,
             minimumUsd = minimumUsd,
+            feePercent = feePercent ?: 0,
         )
 
     private fun WithdrawalDto.toDomain(): WithdrawalRecord =

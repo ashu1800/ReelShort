@@ -172,6 +172,7 @@ data class WithdrawalSummary(
     val cnyPerPoint: String? = null,
     val cnyPerUsd: String? = null,
     val minimumUsd: String? = null,
+    val feePercent: Int = 0,
 )
 
 data class WithdrawalRecord(
