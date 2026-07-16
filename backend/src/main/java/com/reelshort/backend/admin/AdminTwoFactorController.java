@@ -64,6 +64,30 @@ public class AdminTwoFactorController {
 		return ApiResponse.success(new TwoFactorStatusResponse(true), requestId(request));
 	}
 
+	/**
+	 * Rebind 2FA: verify old code, then verify new code, then replace the secret.
+	 */
+	@PostMapping("/rebind")
+	public ApiResponse<TwoFactorSetupResponse> rebind(CurrentAdmin currentAdmin,
+			@Valid @RequestBody TwoFactorRebindRequest rebindRequest, HttpServletRequest request) {
+		AdminUser admin = loadAdmin(currentAdmin);
+		if (!admin.totpEnabled()) {
+			throw new AdminException(400, "2FA is not enabled");
+		}
+		// Step 1: verify old code
+		if (!totpService.verify(admin.totpSecret(), rebindRequest.oldCode())) {
+			throw new AdminException(403, "old verification code is invalid");
+		}
+		// Step 2: verify new code
+		if (!totpService.verify(rebindRequest.newSecret(), rebindRequest.newCode())) {
+			throw new AdminException(400, "new verification code is invalid");
+		}
+		// Step 3: replace
+		admin.rebindTotp(rebindRequest.newSecret());
+		adminUserRepository.save(admin);
+		return ApiResponse.success(new TwoFactorSetupResponse(rebindRequest.newSecret(), null), requestId(request));
+	}
+
 	private AdminUser loadAdmin(CurrentAdmin currentAdmin) {
 		return adminUserRepository.findById(currentAdmin.adminUserId())
 				.orElseThrow(() -> new AdminException(404, "admin not found"));
@@ -82,5 +106,11 @@ public class AdminTwoFactorController {
 	public record TwoFactorEnableRequest(
 			@NotBlank @Size(max = 64) String secret,
 			@NotBlank @Size(max = 6) String code) {
+	}
+
+	public record TwoFactorRebindRequest(
+			@NotBlank @Size(max = 6) String oldCode,
+			@NotBlank @Size(max = 64) String newSecret,
+			@NotBlank @Size(max = 6) String newCode) {
 	}
 }

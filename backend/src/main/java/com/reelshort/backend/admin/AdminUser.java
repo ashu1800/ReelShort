@@ -71,6 +71,10 @@ public class AdminUser {
 		this.totpEnabled = true;
 	}
 
+	public void rebindTotp(String newSecret) {
+		this.totpSecret = newSecret;
+	}
+
 	public UUID id() {
 		return id;
 	}
