@@ -115,6 +115,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onUnbindWallet = remember(viewModel) { viewModel::unbindWallet }
     val onCreateVipOrder = remember(viewModel) { viewModel::createVipOrder }
     val onRefreshVipOrder = remember(viewModel) { viewModel::refreshLatestVipOrder }
+    val onRefreshAccount = remember(viewModel) { viewModel::refreshAccount }
     val onSubmitWithdrawal = remember(viewModel) { viewModel::submitWithdrawal }
     val onChangePassword = remember(viewModel) { viewModel::changePassword }
     val onSubmitBankCard = remember(viewModel) { viewModel::submitBankCard }
@@ -165,6 +166,7 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onSubmitWithdrawal = onSubmitWithdrawal,
                 onChangePassword = onChangePassword,
                 onSubmitBankCard = onSubmitBankCard,
+                onRefreshAccount = onRefreshAccount,
             )
             AuthBottomSheet(
                 visible = state.authPromptVisible,

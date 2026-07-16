@@ -70,6 +70,7 @@ internal fun MainShell(
     onSubmitWithdrawal: (Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
     onSubmitBankCard: (String, String, String, String, String) -> Unit,
+    onRefreshAccount: () -> Unit,
 ) {
     // 播放器全屏渲染：跳出底部导航与状态栏占位，沉浸式短剧播放
     if (state.screen == AppScreen.PLAYER) {
@@ -166,6 +167,7 @@ internal fun MainShell(
                             onUnbindWallet = onUnbindWallet,
                             onCreateVipOrder = onCreateVipOrder,
                             onRefreshVipOrder = onRefreshVipOrder,
+                            onRefreshAccount = onRefreshAccount,
                             onSubmitWithdrawal = onSubmitWithdrawal,
                             onChangePassword = onChangePassword,
                             onSubmitBankCard = onSubmitBankCard,

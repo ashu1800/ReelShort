@@ -154,6 +154,7 @@ internal fun AccountScreen(
     onUnbindWallet: () -> Unit,
     onCreateVipOrder: () -> Unit,
     onRefreshVipOrder: () -> Unit,
+    onRefreshAccount: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
     onSubmitBankCard: (String, String, String, String, String) -> Unit,
@@ -260,7 +261,7 @@ internal fun AccountScreen(
                         title = if (vipUntil.isNullOrBlank()) copy.accountVipStatusInactive else copy.accountVipStatusActive,
                         subtitle = vipUntil?.let { "${copy.vipExpiryLabel}$it" }
                             ?: "${vipPriceUsdt.ifBlank { "" }}${copy.accountVipPriceSuffix}".trim(),
-                        onClick = { vipSheetVisible = true },
+                        onClick = { onRefreshAccount(); vipSheetVisible = true },
                     )
                     AccountMenuDivider()
                     AccountMenuRow(
