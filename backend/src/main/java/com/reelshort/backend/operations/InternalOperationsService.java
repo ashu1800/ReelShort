@@ -73,6 +73,9 @@ public class InternalOperationsService {
 	@Transactional
 	public InternalWatchRewardTaskResponse watchRewardTask(UUID userId) {
 		UserAccount user = activeUser(userId);
+		if (!user.isVip()) {
+			throw new AuthException(403, "non-VIP users cannot earn watch rewards");
+		}
 		for (WatchRecord record : watchRecordRepository.findByUserIdOrderByUpdatedAtDesc(user.id())) {
 			InternalWatchRewardTaskResponse task = taskFromRecord(user.id(), record);
 			if (task != null && task.canReport()) {
