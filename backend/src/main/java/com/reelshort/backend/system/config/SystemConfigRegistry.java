@@ -24,6 +24,7 @@ public class SystemConfigRegistry {
 	public static final String VIP_PRICE_USDT = "vip.price-usdt";
 	public static final String VIP_FREE_EPISODES = "vip.free-episodes";
 	public static final String VIP_COLLECTION_ADDRESS = "vip.collection-address";
+	public static final String VIP_ORDER_TIMEOUT_MINUTES = "vip.order-timeout-minutes";
 
 	private final List<SystemConfigDefinition> definitions = List.of(
 			new SystemConfigDefinition(POINTS_WATCH_SECONDS_PER_POINT, "60",
@@ -47,6 +48,8 @@ public class SystemConfigRegistry {
 					"Number of free episodes viewable without VIP.", ValueType.INTEGER, 1, 100, Set.of()),
 			new SystemConfigDefinition(VIP_COLLECTION_ADDRESS, "",
 					"TRC20 USDT collection wallet address for VIP payments.", ValueType.STRING, 0, 0, Set.of()),
+			new SystemConfigDefinition(VIP_ORDER_TIMEOUT_MINUTES, "20",
+					"VIP order payment timeout in minutes.", ValueType.INTEGER, 1, 10_000, Set.of()),
 			new SystemConfigDefinition(CONTENT_RECOMMENDATION_STRATEGY, "LATEST", "Default content recommendation strategy.",
 					ValueType.ENUM, 0, 0, Set.of("LATEST", "POPULAR")));
 

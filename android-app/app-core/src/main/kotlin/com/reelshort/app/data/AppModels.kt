@@ -159,6 +159,7 @@ data class VipOrder(
     val txHash: String?,
     val createdAt: String,
     val confirmedAt: String?,
+    val expiresAt: String? = null,
 )
 
 data class WithdrawalSummary(

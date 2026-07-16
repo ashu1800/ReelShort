@@ -3,8 +3,6 @@ package com.reelshort.backend.order;
 /**
  * Response DTO for VIP orders. All numeric fields serialized as String to match Android client's
  * kotlinx.serialization expectations.
- *
- * @param payableAmount the exact USDT amount the user must transfer (includes unique suffix)
  */
 public record VipOrderResponse(
 		String id,
@@ -15,6 +13,7 @@ public record VipOrderResponse(
 		String paymentMethod,
 		String txHash,
 		String createdAt,
+		String expiresAt,
 		String confirmedAt) {
 
 	public static VipOrderResponse from(VipOrder order) {
@@ -27,6 +26,7 @@ public record VipOrderResponse(
 				order.paymentMethod(),
 				order.txHash(),
 				order.createdAt().toString(),
+				order.expiresAt() == null ? null : order.expiresAt().toString(),
 				order.confirmedAt() == null ? null : order.confirmedAt().toString());
 	}
 }

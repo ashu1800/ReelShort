@@ -162,6 +162,7 @@ data class VipOrderDto(
     val txHash: String? = null,
     val createdAt: String,
     val confirmedAt: String? = null,
+    val expiresAt: String? = null,
 )
 
 @Serializable

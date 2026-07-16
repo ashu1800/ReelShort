@@ -53,7 +53,6 @@ class SystemConfigControllerTests {
 		systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT, "0.02");
 		systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_USD, "7.2");
 		systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, "10");
-		systemConfigService.update(SystemConfigRegistry.POINTS_TRANSFER_MINIMUM_POINTS, "1");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 		jdbcTemplate.update("delete from point_daily_earning_quotas");
 		jdbcTemplate.update("delete from point_daily_earning_rules");
@@ -73,10 +72,11 @@ class SystemConfigControllerTests {
 				.andExpect(jsonPath("$.data[*].key", hasItem("content.recommendation.strategy")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.cny-per-point")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.cny-per-usd")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.minimum-usd")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("points.transfer.minimum-points")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("vip.price-usdt")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("vip.free-episodes")));
+			.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.minimum-usd")))
+			.andExpect(jsonPath("$.data[*].key", hasItem("vip.price-usdt")))
+			.andExpect(jsonPath("$.data[*].key", hasItem("vip.free-episodes")))
+			.andExpect(jsonPath("$.data[*].key", hasItem("vip.collection-address")))
+			.andExpect(jsonPath("$.data[*].key", hasItem("vip.order-timeout-minutes")));
 	}
 
 	@Test

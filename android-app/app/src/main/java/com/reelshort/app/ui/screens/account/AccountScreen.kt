@@ -64,7 +64,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.reelshort.app.data.AppLanguage
+import kotlinx.coroutines.delay
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
@@ -1267,12 +1269,24 @@ private fun VipBottomSheet(
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val pendingOrder = if (!isVip && latestVipOrder?.status == "PENDING") latestVipOrder else null
+    var remainingSeconds by remember(pendingOrder?.expiresAt) {
+        mutableStateOf(computeRemaining(pendingOrder?.expiresAt))
+    }
+    LaunchedEffect(pendingOrder?.expiresAt) {
+        while (remainingSeconds > 0) {
+            delay(1000)
+            remainingSeconds--
+        }
+    }
+    val orderExpired = !isVip && latestVipOrder?.status == "EXPIRED"
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Panel) {
         Column(
             modifier = Modifier
                 .padding(start = 18.dp, end = 18.dp, bottom = 28.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 if (isVip) copy.vipDialogTitle else copy.vipPayTitle,
@@ -1311,7 +1325,23 @@ private fun VipBottomSheet(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (latestVipOrder.expiresAt != null) {
+                    if (remainingSeconds > 0) {
+                        Text(
+                            "${copy.vipPayExpiresIn} ${remainingSeconds / 60}:${(remainingSeconds % 60).toString().padStart(2, '0')}",
+                            color = PrimaryGold,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    } else {
+                        Text(copy.vipPayExpired, color = DangerText, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
                 if (vipCollectionAddress.isNotBlank()) {
+                    AsyncImage(
+                        model = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$vipCollectionAddress",
+                        contentDescription = copy.vipPayQrHint,
+                        modifier = Modifier.size(200.dp),
+                    )
                     GoldOutlinedButton(copy.vipPayCopy, true, {
                         clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(vipCollectionAddress))
                     }, Modifier.fillMaxWidth(), PrimaryGold)
@@ -1319,12 +1349,19 @@ private fun VipBottomSheet(
                 Spacer(Modifier.height(4.dp))
                 Text(copy.vipPayHint, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Text("${copy.vipPayStatusPending}", color = PrimaryGold, style = MaterialTheme.typography.bodyMedium)
-                GoldOutlinedButton(
-                    "Refresh status",
-                    true, onRefresh, Modifier.fillMaxWidth(), PrimaryGold,
-                )
+                if (remainingSeconds <= 0 && latestVipOrder.expiresAt != null) {
+                    GoldOutlinedButton(copy.accountVipUnlockAction, true, onCreateOrder, Modifier.fillMaxWidth(), PrimaryGold)
+                } else {
+                    GoldOutlinedButton(
+                        "Refresh status",
+                        true, onRefresh, Modifier.fillMaxWidth(), PrimaryGold,
+                    )
+                }
             } else {
-                // State 3: Non-VIP, no pending order — create order
+                // State 3: Non-VIP, no pending order (or expired) — create order
+                if (orderExpired) {
+                    Text(copy.vipPayExpired, color = DangerText, style = MaterialTheme.typography.bodyMedium)
+                }
                 Text(
                     "${vipPriceUsdt.ifBlank { "" }}${copy.accountVipPriceSuffix}".trim(),
                     color = PrimaryGold,
@@ -1333,6 +1370,11 @@ private fun VipBottomSheet(
                 if (vipCollectionAddress.isNotBlank()) {
                     Text(copy.vipPayAddress, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
                     Text(vipCollectionAddress, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
+                    AsyncImage(
+                        model = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$vipCollectionAddress",
+                        contentDescription = copy.vipPayQrHint,
+                        modifier = Modifier.size(200.dp),
+                    )
                 }
                 latestVipOrder?.let { order ->
                     Text("${copy.vipPayOrderNo}${order.orderNo}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
@@ -1369,5 +1411,17 @@ private fun LabeledField(
             modifier = Modifier.fillMaxWidth(),
             textStyle = MaterialTheme.typography.bodyMedium,
         )
+    }
+}
+
+private fun computeRemaining(expiresAt: String?): Int {
+    if (expiresAt == null) return 0
+    return try {
+        val expiry = java.time.OffsetDateTime.parse(expiresAt)
+        val now = java.time.OffsetDateTime.now()
+        val diff = java.time.Duration.between(now, expiry).seconds.toInt()
+        maxOf(0, diff)
+    } catch (_: Exception) {
+        0
     }
 }

@@ -48,6 +48,8 @@ public class VipAutoConfirmService {
 		if (collectionAddress == null || collectionAddress.isBlank()) {
 			return;
 		}
+		// Expire overdue orders first, then get remaining pending
+		vipOrderService.expireOverdueOrders();
 		List<VipOrder> pendingOrders = vipOrderService.pendingOrders();
 		if (pendingOrders.isEmpty()) {
 			return;

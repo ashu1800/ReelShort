@@ -44,6 +44,10 @@ export const systemConfigLabels: Record<string, { name: string; description: str
     name: 'VIP 收款地址',
     description: 'VIP 充值的 TRC20 USDT 收款钱包地址。',
   },
+  'vip.order-timeout-minutes': {
+    name: 'VIP 订单有效期（分钟）',
+    description: 'VIP 订单的支付有效期，超时自动过期。',
+  },
 }
 
 export function configDisplayName(key: string): string {

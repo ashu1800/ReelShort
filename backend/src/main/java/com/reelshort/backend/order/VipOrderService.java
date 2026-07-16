@@ -34,9 +34,10 @@ public class VipOrderService {
 	@Transactional
 	public VipOrder create(UUID userId) {
 		BigDecimal price = systemConfigService.decimalValue(SystemConfigRegistry.VIP_PRICE_USDT);
+		int timeoutMinutes = systemConfigService.intValue(SystemConfigRegistry.VIP_ORDER_TIMEOUT_MINUTES);
 		String orderNo = "VIP" + System.currentTimeMillis() + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
 		int suffix = allocateUniqueSuffix();
-		return vipOrderRepository.save(VipOrder.create(userId, orderNo, price, suffix));
+		return vipOrderRepository.save(VipOrder.create(userId, orderNo, price, suffix, timeoutMinutes));
 	}
 
 	private int allocateUniqueSuffix() {
@@ -62,6 +63,20 @@ public class VipOrderService {
 	@Transactional(readOnly = true)
 	public List<VipOrder> pendingOrders() {
 		return vipOrderRepository.findByStatusOrderByCreatedAtAsc("PENDING");
+	}
+
+	@Transactional
+	public int expireOverdueOrders() {
+		List<VipOrder> pending = vipOrderRepository.findByStatusOrderByCreatedAtAsc("PENDING");
+		int expired = 0;
+		for (VipOrder order : pending) {
+			if (order.isExpired()) {
+				order.expire();
+				vipOrderRepository.save(order);
+				expired++;
+			}
+		}
+		return expired;
 	}
 
 	@Transactional

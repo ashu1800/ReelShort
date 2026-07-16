@@ -423,6 +423,7 @@ class OkHttpReelShortApiClient(
             txHash = txHash,
             createdAt = createdAt,
             confirmedAt = confirmedAt,
+            expiresAt = expiresAt,
         )
 
     private fun WithdrawalSummaryDto.toDomain(): WithdrawalSummary =
