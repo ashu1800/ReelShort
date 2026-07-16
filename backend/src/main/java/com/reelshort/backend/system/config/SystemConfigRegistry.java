@@ -17,6 +17,7 @@ public class SystemConfigRegistry {
 	public static final String POINTS_WATCH_SECONDS_PER_POINT = "points.watch.seconds-per-point";
 	public static final String POINTS_DAILY_EARNED_MAXIMUM = "points.daily-earned.maximum";
 	public static final String POINTS_DAILY_EARNED_FLUCTUATION_PERCENT = "points.daily-earned.fluctuation-percent";
+	public static final String POINTS_FAIR_MODE_ENABLED = "points.fair-mode.enabled";
 	public static final String CONTENT_RECOMMENDATION_STRATEGY = "content.recommendation.strategy";
 	public static final String WITHDRAW_CNY_PER_POINT = "withdraw.cny-per-point";
 	public static final String WITHDRAW_CNY_PER_USD = "withdraw.cny-per-usd";
@@ -36,6 +37,9 @@ public class SystemConfigRegistry {
 			new SystemConfigDefinition(POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "35",
 					"Maximum random downward fluctuation percentage applied per account and server day.",
 					ValueType.INTEGER, 0, 100, Set.of()),
+			new SystemConfigDefinition(POINTS_FAIR_MODE_ENABLED, "0",
+					"Fair mode: points calculated with 1 decimal precision (1=on, 0=off).",
+					ValueType.INTEGER, 0, 1, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_CNY_PER_POINT, "0.02",
 					"CNY value of one point for withdrawals.", ValueType.DECIMAL, 0, 0, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_CNY_PER_USD, "7.2",

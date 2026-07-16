@@ -50,8 +50,17 @@ public class PointsService {
 							.withZone(java.time.ZoneId.systemDefault()).format(user.vipUntil())
 					: null;
 			String walletAddress = wallet != null ? wallet.walletAddress() : null;
-			return PointAccountResponse.withVipAndWallet(account, vip, vipUntil, walletAddress);
+			boolean fairMode = isFairMode();
+			return new PointAccountResponse(
+					WatchRewardCalculation.toDisplay(account.balance(), fairMode),
+					WatchRewardCalculation.toDisplay(account.frozenPoints(), fairMode),
+					WatchRewardCalculation.toDisplay(account.availablePoints(), fairMode),
+					vip, vipUntil, walletAddress);
 		});
+	}
+
+	private boolean isFairMode() {
+		return systemConfigService.intValue(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED) == 1;
 	}
 
 	@Transactional(readOnly = true)
@@ -91,8 +100,12 @@ public class PointsService {
 	}
 
 	public int estimatedWatchRewardPoints(int authoritativeDurationSeconds) {
-		return WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds,
-				systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT));
+		int secondsPerPoint = systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT);
+		boolean fairMode = isFairMode();
+		int raw = fairMode
+				? WatchRewardCalculation.pointsForDurationFair(authoritativeDurationSeconds, secondsPerPoint)
+				: WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds, secondsPerPoint);
+		return WatchRewardCalculation.toDisplay(raw, fairMode);
 	}
 
 	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason) {

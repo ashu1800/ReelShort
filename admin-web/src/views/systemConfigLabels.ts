@@ -16,6 +16,10 @@ export const systemConfigLabels: Record<string, { name: string; description: str
     name: '每日积分随机下浮百分比',
     description: '每个账号每天自动获取积分的随机向下浮动百分比上限。',
   },
+  'points.fair-mode.enabled': {
+    name: '公平模式',
+    description: '开启后积分按小数精确计算（1=开启，0=关闭），前端仍显示整数。',
+  },
   'withdraw.cny-per-point': {
     name: '提现 · 每积分人民币',
     description: '提现时每个积分折合的人民币价值。',

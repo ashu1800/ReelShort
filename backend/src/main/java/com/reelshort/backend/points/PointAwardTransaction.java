@@ -14,6 +14,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.reelshort.backend.admin.AdminException;
+import com.reelshort.backend.system.config.SystemConfigRegistry;
+import com.reelshort.backend.system.config.SystemConfigService;
 
 @Service
 class PointAwardTransaction {
@@ -24,6 +26,7 @@ class PointAwardTransaction {
 	private final WatchEpisodeRewardClaimRepository watchEpisodeRewardClaimRepository;
 	private final DailyEarningRuleRepository dailyEarningRuleRepository;
 	private final DailyEarningQuotaRepository dailyEarningQuotaRepository;
+	private final SystemConfigService systemConfigService;
 	private final Clock clock;
 	private final SecureRandom secureRandom = new SecureRandom();
 
@@ -32,13 +35,19 @@ class PointAwardTransaction {
 			WatchEpisodeRewardClaimRepository watchEpisodeRewardClaimRepository,
 			DailyEarningRuleRepository dailyEarningRuleRepository,
 			DailyEarningQuotaRepository dailyEarningQuotaRepository,
+			SystemConfigService systemConfigService,
 			Clock clock) {
 		this.pointAccountRepository = pointAccountRepository;
 		this.pointTransactionRepository = pointTransactionRepository;
 		this.watchEpisodeRewardClaimRepository = watchEpisodeRewardClaimRepository;
 		this.dailyEarningRuleRepository = dailyEarningRuleRepository;
 		this.dailyEarningQuotaRepository = dailyEarningQuotaRepository;
+		this.systemConfigService = systemConfigService;
 		this.clock = clock;
+	}
+
+	private boolean isFairMode() {
+		return systemConfigService.intValue(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED) == 1;
 	}
 
 	@Transactional
@@ -55,9 +64,14 @@ class PointAwardTransaction {
 			return new WatchRewardResult(List.of(), 0, true, WatchRewardStatus.ALREADY_CLAIMED);
 		}
 
-		int calculatedPoints = WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds, secondsPerPoint);
+		boolean fairMode = isFairMode();
+		int calculatedPoints = fairMode
+				? WatchRewardCalculation.pointsForDurationFair(authoritativeDurationSeconds, secondsPerPoint)
+				: WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds, secondsPerPoint);
+		// In fair mode, daily limit is also scaled by 10
+		int effectiveDailyMax = fairMode ? dailyEarnedMaximum * WatchRewardCalculation.FAIR_MODE_SCALE : dailyEarnedMaximum;
 		OffsetDateTime now = OffsetDateTime.now(clock);
-		int awardedPoints = allocateDailyPoints(userId, calculatedPoints, dailyEarnedMaximum,
+		int awardedPoints = allocateDailyPoints(userId, calculatedPoints, effectiveDailyMax,
 				fluctuationMaximumPercent, now);
 		PointAccount account = accountEntity(userId);
 		if (awardedPoints > 0) {
@@ -68,10 +82,12 @@ class PointAwardTransaction {
 		watchEpisodeRewardClaimRepository.save(WatchEpisodeRewardClaim.create(userId, bookId, episodeNum,
 				authoritativeDurationSeconds, calculatedPoints, awardedPoints, now));
 		pointAccountRepository.save(account);
+		// Convert awarded points to display value for the result
+		int displayAwarded = WatchRewardCalculation.toDisplay(awardedPoints, fairMode);
 		WatchRewardStatus status = awardedPoints == 0
 				? WatchRewardStatus.DAILY_LIMIT_REACHED
 				: awardedPoints < calculatedPoints ? WatchRewardStatus.AWARDED_PARTIAL : WatchRewardStatus.AWARDED;
-		return new WatchRewardResult(List.of(), awardedPoints, true, status);
+		return new WatchRewardResult(List.of(), displayAwarded, true, status);
 	}
 
 	@Transactional

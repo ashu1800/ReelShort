@@ -96,24 +96,27 @@ public class WithdrawalService {
 	public WithdrawalResponse create(UUID userId, int pointAmount) {
 		return userActionLocks.withUserLock(userId, () -> {
 			WithdrawalConversion conversion = conversion();
-			int minimum = conversion.minimumPoints();
-			if (pointAmount < minimum) {
+			boolean fairMode = systemConfigService.intValue(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED) == 1;
+			int scale = fairMode ? 10 : 1;
+			int internalAmount = pointAmount * scale;
+			int minimum = conversion.minimumPointsScaled(fairMode);
+			if (internalAmount < minimum) {
 				throw new AdminException(400, "withdrawal amount below minimum");
 			}
 			UserWallet wallet = userWalletRepository.findByUserId(userId)
 					.orElseThrow(() -> new AdminException(400, "wallet required"));
-			PointAccount account = accountEntityForUpdate(userId);
-			if (!account.canUseAvailable(pointAmount)) {
+				PointAccount account = accountEntityForUpdate(userId);
+			if (!account.canUseAvailable(internalAmount)) {
 				throw new AdminException(400, "insufficient available point balance");
 			}
 			try {
-				account.freeze(pointAmount);
+				account.freeze(internalAmount);
 			}
 			catch (IllegalStateException exception) {
 				throw new AdminException(400, exception.getMessage());
 			}
 			pointAccountRepository.save(account);
-			WithdrawalRequest request = WithdrawalRequest.create(userId, pointAmount, conversion,
+			WithdrawalRequest request = WithdrawalRequest.create(userId, internalAmount, conversion,
 					wallet.network(), wallet.walletAddress());
 			return WithdrawalResponse.from(withdrawalRequestRepository.save(request));
 		});

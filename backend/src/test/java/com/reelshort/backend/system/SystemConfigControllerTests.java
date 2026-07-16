@@ -65,7 +65,7 @@ class SystemConfigControllerTests {
 		mockMvc.perform(get("/api/admin/system/configs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data", hasSize(11)))
+				.andExpect(jsonPath("$.data", hasSize(12)))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.watch.seconds-per-point")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.maximum")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.fluctuation-percent")))
