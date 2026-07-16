@@ -107,6 +107,15 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
+    /**
+     * Force-set geo-blocked state (used when local device checks indicate China).
+     */
+    fun setGeoBlocked() {
+        if (geoChecked) return
+        geoChecked = true
+        mutableState.update { it.copy(geoBlocked = true) }
+    }
+
     suspend fun loadSavedCredentials() = runWithLoading(ErrorContext.DIAGNOSTIC) {
         val savedCredentials = dataSource.loadSavedCredentials()
         mutableState.update {
