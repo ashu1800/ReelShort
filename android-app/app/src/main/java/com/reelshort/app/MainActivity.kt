@@ -136,15 +136,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
 
     ReelShortTheme {
         Box(modifier = Modifier.fillMaxSize()) {
-            if (state.geoBlocked) {
-                val copy = strings(state.language)
-                GeoBlockedScreen(
-                    title = copy.geoBlockedTitle,
-                    message = copy.geoBlockedMessage,
-                    onExit = { android.os.Process.killProcess(android.os.Process.myPid()) },
-                )
-                return@Box
-            }
             MainShell(
                 state = state,
                 onScreenSelected = onScreenSelected,

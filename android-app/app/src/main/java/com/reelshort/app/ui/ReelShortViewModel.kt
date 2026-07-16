@@ -49,17 +49,6 @@ class ReelShortViewModel(
     private var downloadJob: Job? = null
 
     fun bootstrap() {
-        viewModelScope.launch {
-            // Local device-based China detection (no network needed, works when geo-IP API is blocked by GFW)
-            val tz = java.util.TimeZone.getDefault().id
-            val locale = java.util.Locale.getDefault().country
-            val isChinaDevice = tz in setOf("Asia/Shanghai", "Asia/Chongqing", "Asia/Harbin", "Asia/Urumqi") || locale.equals("CN", true)
-            if (isChinaDevice) {
-                controller.setGeoBlocked()
-            } else {
-                controller.checkGeoRestriction()
-            }
-        }
         viewModelScope.launch { controller.restoreSession() }
         if (!startupUpdateCheckStarted) {
             startupUpdateCheckStarted = true
