@@ -21,7 +21,6 @@ public class SystemConfigRegistry {
 	public static final String WITHDRAW_CNY_PER_POINT = "withdraw.cny-per-point";
 	public static final String WITHDRAW_CNY_PER_USD = "withdraw.cny-per-usd";
 	public static final String WITHDRAW_MINIMUM_USD = "withdraw.minimum-usd";
-	public static final String POINTS_TRANSFER_MINIMUM_POINTS = "points.transfer.minimum-points";
 	public static final String VIP_PRICE_USDT = "vip.price-usdt";
 	public static final String VIP_FREE_EPISODES = "vip.free-episodes";
 	public static final String VIP_COLLECTION_ADDRESS = "vip.collection-address";
@@ -48,8 +47,6 @@ public class SystemConfigRegistry {
 					"Number of free episodes viewable without VIP.", ValueType.INTEGER, 1, 100, Set.of()),
 			new SystemConfigDefinition(VIP_COLLECTION_ADDRESS, "",
 					"TRC20 USDT collection wallet address for VIP payments.", ValueType.STRING, 0, 0, Set.of()),
-			new SystemConfigDefinition(POINTS_TRANSFER_MINIMUM_POINTS, "1", "Minimum points required for point transfer.",
-					ValueType.INTEGER, 1, 1_000_000, Set.of()),
 			new SystemConfigDefinition(CONTENT_RECOMMENDATION_STRATEGY, "LATEST", "Default content recommendation strategy.",
 					ValueType.ENUM, 0, 0, Set.of("LATEST", "POPULAR")));
 
