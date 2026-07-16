@@ -47,6 +47,9 @@ public record SystemConfigDefinition(
 				throw new AdminException(400, "bad request");
 			}
 		}
+		if (valueType == ValueType.STRING) {
+			return trimmed;
+		}
 		String normalized = trimmed.toUpperCase(Locale.ROOT);
 		if (!allowedValues.contains(normalized)) {
 			throw new AdminException(400, "bad request");
