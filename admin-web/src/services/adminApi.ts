@@ -489,6 +489,15 @@ export async function enable2fa(secret: string, code: string) {
   return response.data.data
 }
 
+export async function rebind2fa(oldCode: string, newSecret: string, newCode: string) {
+  const response = await http.post<ApiResponse<{ secret: string; otpauthUri: string | null }>>('/2fa/rebind', {
+    oldCode,
+    newSecret,
+    newCode,
+  })
+  return response.data.data
+}
+
 export async function fetchPaymentEvents(filters: PaymentEventFilters = {}) {
   const response = await http.get<ApiResponse<PaymentEvent[]>>('/payments/events', {
     params: filters,
