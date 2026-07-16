@@ -10,7 +10,10 @@ import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.system.concurrency.UserActionLocks;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
+import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
+import com.reelshort.backend.wallet.UserWallet;
+import com.reelshort.backend.wallet.UserWalletRepository;
 
 @Service
 public class PointsService {
@@ -18,24 +21,34 @@ public class PointsService {
 	private final PointTransactionRepository pointTransactionRepository;
 	private final PointAccountRepository pointAccountRepository;
 	private final UserAccountRepository userAccountRepository;
+	private final UserWalletRepository userWalletRepository;
 	private final UserActionLocks userActionLocks;
 	private final PointAwardTransaction pointAwardTransaction;
 	private final SystemConfigService systemConfigService;
 
 	public PointsService(PointTransactionRepository pointTransactionRepository,
 			PointAccountRepository pointAccountRepository, UserAccountRepository userAccountRepository,
-			UserActionLocks userActionLocks, PointAwardTransaction pointAwardTransaction,
-			SystemConfigService systemConfigService) {
+			UserWalletRepository userWalletRepository, UserActionLocks userActionLocks,
+			PointAwardTransaction pointAwardTransaction, SystemConfigService systemConfigService) {
 		this.pointTransactionRepository = pointTransactionRepository;
 		this.pointAccountRepository = pointAccountRepository;
 		this.userAccountRepository = userAccountRepository;
+		this.userWalletRepository = userWalletRepository;
 		this.userActionLocks = userActionLocks;
 		this.pointAwardTransaction = pointAwardTransaction;
 		this.systemConfigService = systemConfigService;
 	}
 
 	public PointAccountResponse account(UUID userId) {
-		return userActionLocks.withUserLock(userId, () -> PointAccountResponse.from(pointAwardTransaction.accountEntity(userId)));
+		return userActionLocks.withUserLock(userId, () -> {
+			PointAccount account = pointAwardTransaction.accountEntity(userId);
+			UserAccount user = userAccountRepository.findById(userId).orElse(null);
+			UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
+			boolean vip = user != null && user.isVip();
+			String vipUntil = (user != null && user.vipUntil() != null) ? user.vipUntil().toString() : null;
+			String walletAddress = wallet != null ? wallet.walletAddress() : null;
+			return PointAccountResponse.withVipAndWallet(account, vip, vipUntil, walletAddress);
+		});
 	}
 
 	@Transactional(readOnly = true)
