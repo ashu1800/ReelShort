@@ -37,12 +37,12 @@ CREATE TABLE withdrawal_payout_attempts (
     constraint ck_withdrawal_payout_attempt_confirmations check (confirmation_count >= 0),
     constraint ck_withdrawal_payout_attempt_active_slot check (
         (
-            status IN ('PREPARED', 'BROADCASTED', 'FAILED_RETRYABLE', 'MANUAL_REVIEW')
+            status IN ('PREPARED', 'BROADCASTED', 'MANUAL_REVIEW')
             AND active_slot IS NOT NULL
             AND active_slot = 'ACTIVE'
         )
         OR
-        (status NOT IN ('PREPARED', 'BROADCASTED', 'FAILED_RETRYABLE', 'MANUAL_REVIEW') AND active_slot IS NULL)
+        (status NOT IN ('PREPARED', 'BROADCASTED', 'MANUAL_REVIEW') AND active_slot IS NULL)
     )
 );
 

@@ -200,6 +200,22 @@ class FinancialMigrationTests {
 		insertPayoutAttempt(jdbc, thirdWithdrawalId, 1, "CONFIRMED", null);
 	}
 
+	@Test
+	void retryablePayoutReleasesSlotWhileManualReviewRetainsIt() {
+		JdbcTemplate jdbc = migratedDatabase("financial-migration-payout-retry-slot");
+		UUID userId = insertUser(jdbc, "payout-retry-user");
+		UUID retryableWithdrawalId = insertWithdrawal(jdbc, userId);
+		UUID manualReviewWithdrawalId = insertWithdrawal(jdbc, userId);
+
+		insertPayoutAttempt(jdbc, retryableWithdrawalId, 1, "FAILED_RETRYABLE", null);
+		insertPayoutAttempt(jdbc, retryableWithdrawalId, 2, "PREPARED", "ACTIVE");
+
+		insertPayoutAttempt(jdbc, manualReviewWithdrawalId, 1, "MANUAL_REVIEW", "ACTIVE");
+		assertThatThrownBy(() -> insertPayoutAttempt(
+				jdbc, manualReviewWithdrawalId, 2, "PREPARED", "ACTIVE"))
+				.hasMessageContaining("uk_withdrawal_payout_attempt_active");
+	}
+
 	private JdbcTemplate migratedDatabase(String databaseName) {
 		DataSource dataSource = dataSource(databaseName);
 		Flyway.configure()
