@@ -16,8 +16,6 @@ import com.reelshort.backend.admin.AdminUser;
 import com.reelshort.backend.admin.AdminUserRepository;
 import com.reelshort.backend.points.PointAccount;
 import com.reelshort.backend.points.PointAccountRepository;
-import com.reelshort.backend.points.PointTransaction;
-import com.reelshort.backend.points.PointTransactionRepository;
 import com.reelshort.backend.system.concurrency.UserActionLocks;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
@@ -35,7 +33,6 @@ public class WithdrawalService {
 	private final WithdrawalRequestRepository withdrawalRequestRepository;
 	private final UserWalletRepository userWalletRepository;
 	private final PointAccountRepository pointAccountRepository;
-	private final PointTransactionRepository pointTransactionRepository;
 	private final SystemConfigService systemConfigService;
 	private final UserActionLocks userActionLocks;
 	private final UserAccountRepository userAccountRepository;
@@ -43,17 +40,19 @@ public class WithdrawalService {
 	private final TronClient tronClient;
 	private final TotpService totpService;
 	private final AdminUserRepository adminUserRepository;
+	private final WithdrawalPayoutCoordinator payoutCoordinator;
+	private final WithdrawalPayoutAttemptRepository payoutAttemptRepository;
 
 	public WithdrawalService(WithdrawalRequestRepository withdrawalRequestRepository,
 			UserWalletRepository userWalletRepository, PointAccountRepository pointAccountRepository,
-			PointTransactionRepository pointTransactionRepository, SystemConfigService systemConfigService,
+			SystemConfigService systemConfigService,
 			UserActionLocks userActionLocks, UserAccountRepository userAccountRepository,
 			EthereumClient ethereumClient, TronClient tronClient, TotpService totpService,
-			AdminUserRepository adminUserRepository) {
+			AdminUserRepository adminUserRepository, WithdrawalPayoutCoordinator payoutCoordinator,
+			WithdrawalPayoutAttemptRepository payoutAttemptRepository) {
 		this.withdrawalRequestRepository = withdrawalRequestRepository;
 		this.userWalletRepository = userWalletRepository;
 		this.pointAccountRepository = pointAccountRepository;
-		this.pointTransactionRepository = pointTransactionRepository;
 		this.systemConfigService = systemConfigService;
 		this.userActionLocks = userActionLocks;
 		this.userAccountRepository = userAccountRepository;
@@ -61,6 +60,8 @@ public class WithdrawalService {
 		this.tronClient = tronClient;
 		this.totpService = totpService;
 		this.adminUserRepository = adminUserRepository;
+		this.payoutCoordinator = payoutCoordinator;
+		this.payoutAttemptRepository = payoutAttemptRepository;
 	}
 
 	@Transactional(readOnly = true)
@@ -167,7 +168,9 @@ public class WithdrawalService {
 		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
 			throw new AdminException(403, "2FA verification failed");
 		}
-		approveWithTransfer(withdrawalId, tronPrivateKey, ethPrivateKey, adminUsername);
+		WithdrawalRequest request = withdrawal(withdrawalId);
+		String privateKey = "TRC20".equals(request.network()) ? tronPrivateKey : ethPrivateKey;
+		payoutCoordinator.prepareAndBroadcast(withdrawalId, privateKey, adminUsername);
 		return adminResponse(withdrawalRequestRepository.findById(withdrawalId).orElseThrow());
 	}
 
@@ -177,6 +180,9 @@ public class WithdrawalService {
 		return userActionLocks.withUserLock(request.userId(), () -> {
 			if (request.status() != WithdrawalStatus.PENDING) {
 				throw new AdminException(400, "withdrawal is not pending");
+			}
+			if (payoutAttemptRepository.findByWithdrawalRequestIdAndActiveSlot(withdrawalId, "ACTIVE").isPresent()) {
+				throw new AdminException(409, "withdrawal payout is active");
 			}
 			PointAccount account = accountEntityForUpdate(request.userId());
 			try {
@@ -273,9 +279,12 @@ public class WithdrawalService {
 		int index = 0;
 		for (UUID withdrawalId : withdrawalIds) {
 			try {
-				String txHash = approveWithTransfer(withdrawalId, tronPrivateKey, ethPrivateKey, admin.username());
+				WithdrawalRequest request = withdrawal(withdrawalId);
+				String privateKey = "TRC20".equals(request.network()) ? tronPrivateKey : ethPrivateKey;
+				WithdrawalPayoutAttempt attempt = payoutCoordinator.prepareAndBroadcast(
+						withdrawalId, privateKey, admin.username());
 				results.add(new BatchWithdrawalResponse.ItemResult(
-						withdrawalId.toString(), "APPROVED", txHash, null));
+						withdrawalId.toString(), attempt.status().name(), attempt.txHash(), null));
 				succeeded++;
 			}
 			catch (Exception exception) {
@@ -290,101 +299,6 @@ public class WithdrawalService {
 			index++;
 		}
 		return new BatchWithdrawalResponse(succeeded, firstFailureIndex, firstFailureMessage, results);
-	}
-
-	/**
-	 * Lock the withdrawal, deduct frozen points and mark BROADCASTING in a DB transaction, then
-	 * broadcast TRC20 USDT transfer outside the transaction. If broadcast succeeds, mark APPROVED
-	 * in a separate transaction. If broadcast fails, mark BROADCAST_FAILED (points already deducted,
-	 * requires manual refund or retry).
-	 *
-	 * <p>H2 fix: previously broadcast happened INSIDE the DB transaction — if DB write failed after
-	 * broadcast, points were NOT deducted but USDT was already on-chain (platform loses real money).
-	 * Now points are deducted first (transactionally), broadcast happens after commit, and any
-	 * broadcast failure leaves the order in BROADCAST_FAILED state for manual reconciliation.
-	 */
-	/**
-	 * H2: 两阶段提现——先在事务内扣减积分并标记 BROADCAST_FAILED（兜底状态），事务提交后再广播。
-	 * 广播成功则另起事务标记 APPROVED+txHash；广播失败则保持 BROADCAST_FAILED（积分已扣，需人工对账）。
-	 * 这样避免了"广播成功但 DB 失败导致平台损失真实 USDT"的旧风险。
-	 *
-	 * <p>Phase 1: {@link #deductAndMarkForBroadcast} — 事务内扣减积分，标记 BROADCAST_FAILED。
-	 * <br>Phase 2: 事务外广播 TRC20 转账。
-	 * <br>Phase 3: {@link #markApprovedAfterBroadcast} — 广播成功后新事务标记 APPROVED。
-	 */
-	public String approveWithTransfer(UUID withdrawalId, String tronPrivateKey, String ethPrivateKey,
-			String adminUsername) {
-		// Phase 1: 扣减积分 + 标记兜底状态（事务内）
-		UUID userId = deductAndMarkForBroadcast(withdrawalId, adminUsername);
-		// Phase 2: 读取已提交的 request，按 network 选择对应链客户端广播
-		WithdrawalRequest broadcasted = withdrawalRequestRepository.findById(withdrawalId).orElseThrow();
-		String network = broadcasted.network();
-		try {
-			String txHash;
-			if ("TRC20".equals(network)) {
-				if (tronPrivateKey == null || tronPrivateKey.isBlank()) {
-					throw new AdminException(400, "TRC20 hot wallet private key required for this withdrawal");
-				}
-				txHash = tronClient.transferUSDT(tronPrivateKey, broadcasted.walletAddress(), broadcasted.usdtAmount());
-			}
-			else {
-				if (ethPrivateKey == null || ethPrivateKey.isBlank()) {
-					throw new AdminException(400, "ERC20 hot wallet private key required for this withdrawal");
-				}
-				txHash = ethereumClient.transferUSDT(ethPrivateKey, broadcasted.walletAddress(), broadcasted.usdtAmount());
-			}
-			// Phase 3: 广播成功，标记 APPROVED（新事务）
-			// C2 fix: 若 markApprovedAfterBroadcast 失败（DB 写入异常），USDT 已在链上但订单仍是 BROADCAST_FAILED。
-			// 此时用 ERROR 级别记录 txHash 供人工对账，禁止自动重试（避免重复打款）。
-			try {
-				markApprovedAfterBroadcast(withdrawalId, txHash, adminUsername);
-			}
-			catch (RuntimeException dbException) {
-				log.error("CRITICAL: USDT already broadcast (txHash={}) for withdrawal {} but DB update failed. "
-						+ "Manual reconciliation required. Error: {}",
-						txHash, withdrawalId, dbException.getMessage());
-				throw dbException;
-			}
-			return txHash;
-		}
-		catch (RuntimeException exception) {
-			log.error("{} broadcast failed for withdrawal {} (points already deducted): {}",
-					network, withdrawalId, exception.getMessage());
-			throw exception;
-		}
-	}
-
-	@Transactional
-	UUID deductAndMarkForBroadcast(UUID withdrawalId, String adminUsername) {
-		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
-		return userActionLocks.withUserLock(request.userId(), () -> {
-			if (request.status() != WithdrawalStatus.PENDING) {
-				throw new AdminException(400, "withdrawal is not pending");
-			}
-			PointAccount account = accountEntityForUpdate(request.userId());
-			try {
-				account.deductFrozen(request.totalDeductedPoints());
-			}
-			catch (IllegalStateException exception) {
-				throw new AdminException(400, exception.getMessage());
-			}
-			pointAccountRepository.save(account);
-			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(), request.totalDeductedPoints(),
-					account.balance(), request.id().toString()));
-			// 先标记 BROADCAST_FAILED 作为兜底：若后续广播失败/进程崩溃，状态正确反映"积分已扣但未上链"
-			request.markBroadcastFailed("broadcast pending", adminUsername);
-			withdrawalRequestRepository.save(request);
-			return request.userId();
-		});
-	}
-
-	@Transactional
-	void markApprovedAfterBroadcast(UUID withdrawalId, String txHash, String adminUsername) {
-		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
-		if (request.status() == WithdrawalStatus.BROADCAST_FAILED) {
-			request.markApprovedFromBroadcast(txHash, "auto " + request.network() + " transfer", adminUsername);
-			withdrawalRequestRepository.save(request);
-		}
 	}
 
 	private WithdrawalResponse adminResponse(WithdrawalRequest request) {

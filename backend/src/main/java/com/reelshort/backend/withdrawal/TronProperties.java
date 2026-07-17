@@ -19,6 +19,8 @@ public class TronProperties {
 	/** Max TRX fee (sun) per transaction. 100 TRX = 100_000_000 sun. */
 	private long feeLimit = 100_000_000L;
 
+	private int requiredConfirmations = 20;
+
 	public String getNodeUrl() {
 		return nodeUrl;
 	}
@@ -49,5 +51,13 @@ public class TronProperties {
 
 	public void setFeeLimit(long feeLimit) {
 		this.feeLimit = feeLimit;
+	}
+
+	public int getRequiredConfirmations() {
+		return requiredConfirmations;
+	}
+
+	public void setRequiredConfirmations(int requiredConfirmations) {
+		this.requiredConfirmations = requiredConfirmations;
 	}
 }

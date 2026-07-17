@@ -24,6 +24,8 @@ import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * TronGrid HTTP client for TRC20 USDT transfer and balance queries. Signs transactions in-memory
@@ -110,7 +112,7 @@ public class TronClient {
 	 * @param usdtAmount    amount in USDT (e.g. "10.5")
 	 * @return on-chain transaction hash (64 hex chars)
 	 */
-	public String transferUSDT(String hexPrivateKey, String toAddress, BigDecimal usdtAmount) {
+	public PreparedPayoutTransaction prepareTransfer(String hexPrivateKey, String toAddress, BigDecimal usdtAmount) {
 		String ownerAddress = addressFromPrivateKey(hexPrivateKey);
 		BigDecimal rawAmount = usdtAmount.multiply(USDT_DECIMALS).setScale(0, RoundingMode.DOWN);
 		String parameter = encodeTransferParams(toAddress, rawAmount.toBigInteger());
@@ -141,14 +143,22 @@ public class TronClient {
 		// 2. Sign the transaction
 		byte[] rawBytes = hexStringToBytes(rawDataHex);
 		byte[] hash = sha256(rawBytes);
-		String[] signature = sign(hash, hexPrivateKey);
-
-		// 3. Broadcast
-		String broadcastResult = broadcast(rawDataHex, txid, signature);
-		if (!"true".equals(broadcastResult)) {
-			throw new WithdrawalException(502, "TRC20 broadcast failed: " + broadcastResult);
+		String computedTxId = bytesToHex(hash);
+		if (!txid.isBlank() && !txid.equalsIgnoreCase(computedTxId)) {
+			throw new WithdrawalException(502, "TronGrid returned a mismatched transaction id");
 		}
-		return txid;
+		ObjectNode signedTransaction = transaction.deepCopy();
+		signedTransaction.put("txID", computedTxId);
+		ArrayNode signatures = objectMapper.createArrayNode();
+		signatures.add(sign(hash, hexPrivateKey));
+		signedTransaction.set("signature", signatures);
+		try {
+			return new PreparedPayoutTransaction("TRC20", ownerAddress, properties.getUsdtContract(), 0L,
+					BigInteger.ZERO, objectMapper.writeValueAsString(signedTransaction), computedTxId);
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(500, "failed to serialize signed TRON transaction");
+		}
 	}
 
 	private JsonNode triggersmartcontract(String ownerAddress, String parameter) {
@@ -162,14 +172,58 @@ public class TronClient {
 		return postJson(properties.getNodeUrl() + "/wallet/triggersmartcontract", body);
 	}
 
-	private String broadcast(String rawDataHex, String txid, String[] signature) {
-		Map<String, Object> transaction = Map.of(
-				"raw_data_hex", rawDataHex,
-				"txid", txid,
-				"signature", List.of(signature));
-		JsonNode result = postJson(properties.getNodeUrl() + "/wallet/broadcasthex",
-				Map.of("transaction", transaction));
-		return result.path("result").asText("false");
+	public PayoutBroadcastResult broadcastSignedTransaction(String signedRawTransaction, String expectedTxHash) {
+		try {
+			JsonNode transaction = objectMapper.readTree(signedRawTransaction);
+			if (!expectedTxHash.equalsIgnoreCase(transaction.path("txID").asText())) {
+				return PayoutBroadcastResult.unknown("signed transaction hash mismatch");
+			}
+			JsonNode result = postJson(properties.getNodeUrl() + "/wallet/broadcasttransaction", transaction);
+			if (result.path("result").asBoolean(false)) {
+				return PayoutBroadcastResult.accepted();
+			}
+			String code = result.path("code").asText("");
+			String message = result.path("message").asText(code);
+			if ("DUP_TRANSACTION_ERROR".equals(code)) {
+				return PayoutBroadcastResult.accepted();
+			}
+			if ("SIGERROR".equals(code) || "CONTRACT_VALIDATE_ERROR".equals(code)
+					|| "TRANSACTION_EXPIRATION_ERROR".equals(code)) {
+				return PayoutBroadcastResult.rejected(message);
+			}
+			return PayoutBroadcastResult.unknown(message);
+		}
+		catch (Exception exception) {
+			return PayoutBroadcastResult.unknown(exception.getMessage());
+		}
+	}
+
+	public PayoutChainStatus queryTransactionStatus(String txHash) {
+		try {
+			JsonNode transactionInfo = postJson(properties.getNodeUrl() + "/wallet/gettransactioninfobyid",
+					Map.of("value", txHash));
+			if (transactionInfo == null || transactionInfo.isEmpty()) {
+				return PayoutChainStatus.of(PayoutChainState.NOT_FOUND, 0);
+			}
+			String receiptResult = transactionInfo.path("receipt").path("result").asText("SUCCESS");
+			String result = transactionInfo.path("result").asText("SUCCESS");
+			if (!"SUCCESS".equalsIgnoreCase(receiptResult) || !"SUCCESS".equalsIgnoreCase(result)) {
+				return new PayoutChainStatus(PayoutChainState.FAILED, 0,
+						transactionInfo.path("resMessage").asText(receiptResult));
+			}
+			long blockNumber = transactionInfo.path("blockNumber").asLong(-1);
+			if (blockNumber < 0) {
+				return PayoutChainStatus.of(PayoutChainState.PENDING, 0);
+			}
+			JsonNode currentBlock = postJson(properties.getNodeUrl() + "/wallet/getnowblock", Map.of());
+			long latestBlock = currentBlock.path("block_header").path("raw_data").path("number").asLong(blockNumber);
+			long depth = Math.max(0, latestBlock - blockNumber + 1);
+			int confirmations = (int) Math.min(Integer.MAX_VALUE, depth);
+			return PayoutChainStatus.of(PayoutChainState.CONFIRMED, confirmations);
+		}
+		catch (Exception exception) {
+			return PayoutChainStatus.unknown(exception.getMessage());
+		}
 	}
 
 	private JsonNode getAccount(String address) {
@@ -236,7 +290,7 @@ public class TronClient {
 		return bytesToHex(paddedAddr) + bytesToHex(paddedAmount);
 	}
 
-	private String[] sign(byte[] hash, String hexPrivateKey) {
+	private String sign(byte[] hash, String hexPrivateKey) {
 		BigInteger privateKey = new BigInteger(1, hexStringToBytes(hexPrivateKey));
 		ECDSASigner signer = new ECDSASigner();
 		signer.init(true, new ECPrivateKeyParameters(privateKey, DOMAIN));
@@ -245,10 +299,17 @@ public class TronClient {
 		BigInteger otherS = DOMAIN.getN().subtract(rs[1]);
 		BigInteger s = rs[1].compareTo(otherS) <= 0 ? rs[1] : otherS;
 		int recId = findRecoveryId(hashPadded, privateKey, rs[0], s);
-		int headerByte = recId + 27;
-		return new String[]{
-				String.format("%02x", headerByte) + String.format("%064x", rs[0]) + String.format("%064x", s)
-		};
+		return String.format("%064x", rs[0]) + String.format("%064x", s) + String.format("%02x", recId);
+	}
+
+	@Deprecated
+	public String transferUSDT(String hexPrivateKey, String toAddress, BigDecimal usdtAmount) {
+		PreparedPayoutTransaction prepared = prepareTransfer(hexPrivateKey, toAddress, usdtAmount);
+		PayoutBroadcastResult result = broadcastSignedTransaction(prepared.signedRawTransaction(), prepared.txHash());
+		if (result.disposition() != PayoutBroadcastDisposition.ACCEPTED) {
+			throw new WithdrawalException(502, "TRC20 broadcast failed: " + result.detail());
+		}
+		return prepared.txHash();
 	}
 
 	private static byte[] padTo32(byte[] hash) {

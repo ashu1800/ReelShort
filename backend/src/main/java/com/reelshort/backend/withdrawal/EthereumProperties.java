@@ -24,6 +24,8 @@ public class EthereumProperties {
 	/** ERC-20 transfer 默认 gas limit（USDT transfer 实际约 60k）。 */
 	private long gasLimit = 100_000L;
 
+	private int requiredConfirmations = 12;
+
 	public String getNodeUrl() {
 		return nodeUrl;
 	}
@@ -67,5 +69,13 @@ public class EthereumProperties {
 
 	public void setGasLimit(long gasLimit) {
 		this.gasLimit = gasLimit;
+	}
+
+	public int getRequiredConfirmations() {
+		return requiredConfirmations;
+	}
+
+	public void setRequiredConfirmations(int requiredConfirmations) {
+		this.requiredConfirmations = requiredConfirmations;
 	}
 }
