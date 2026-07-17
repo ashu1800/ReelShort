@@ -58,6 +58,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -340,10 +341,12 @@ private fun BoxScope.MediaPlayerSurface(
         }
         val context = LocalContext.current
         val lifecycleOwner = LocalLifecycleOwner.current
-        var playbackState by remember(playableUrl) { mutableStateOf(Player.STATE_IDLE) }
-        var hasFirstReady by remember(playableUrl) { mutableStateOf(false) }
-        var playerError by remember(playableUrl) { mutableStateOf(false) }
-        val player = remember(playableUrl) {
+        // M3: 增加 retryTrigger 作为 remember key，重试时递增触发 player 重建
+        var retryTrigger by remember(playableUrl) { mutableIntStateOf(0) }
+        var playbackState by remember(playableUrl, retryTrigger) { mutableStateOf(Player.STATE_IDLE) }
+        var hasFirstReady by remember(playableUrl, retryTrigger) { mutableStateOf(false) }
+        var playerError by remember(playableUrl, retryTrigger) { mutableStateOf(false) }
+        val player = remember(playableUrl, retryTrigger) {
             ExoPlayer.Builder(context).build().apply {
                 setMediaItem(MediaItem.fromUri(playableUrl))
                 playWhenReady = playerStartsAutomatically()
@@ -447,7 +450,12 @@ private fun BoxScope.MediaPlayerSurface(
                 PlayerOverlayMode.ERROR -> PlayerErrorOverlay(
                     language = language,
                     nextEpisode = playerErrorNextEpisode(currentEpisode, episodes),
-                    onRetry = onRetryPlayback,
+                    // M3: 重试时递增 retryTrigger 强制重建 player（而非调用 onOpenPlayer 导致同 URL 不刷新）
+                    onRetry = {
+                        playerError = false
+                        playbackState = Player.STATE_IDLE
+                        retryTrigger++
+                    },
                     onNext = onOpenNextEpisode,
                     onBack = onBack,
                 )

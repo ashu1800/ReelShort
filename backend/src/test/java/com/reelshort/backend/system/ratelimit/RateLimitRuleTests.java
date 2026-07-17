@@ -37,19 +37,21 @@ class RateLimitRuleTests {
 
 	@Test
 	void keyResolverUsesFirstForwardedIpWhenNoPrincipalExists() {
-		RateLimitKeyResolver resolver = new RateLimitKeyResolver();
+		// H3: trusted-proxies 白名单为空时仅信任 loopback；10.0.0.2 不再被自动信任
+		RateLimitKeyResolver resolver = new RateLimitKeyResolver("");
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/app/auth/login");
 		request.addHeader("X-Forwarded-For", "203.0.113.1, 10.0.0.2");
 		request.setRemoteAddr("127.0.0.1");
 
 		String key = resolver.resolveKey("app-login", request);
 
-		assertThat(key).isEqualTo("app-login:IP:203.0.113.1");
+		// 10.0.0.2 不在白名单 → 返回最近的不可信 IP（即 10.0.0.2）
+		assertThat(key).isEqualTo("app-login:IP:10.0.0.2");
 	}
 
 	@Test
 	void keyResolverIgnoresForwardedIpFromUntrustedRemoteAddress() {
-		RateLimitKeyResolver resolver = new RateLimitKeyResolver();
+		RateLimitKeyResolver resolver = new RateLimitKeyResolver("");
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/app/auth/login");
 		request.addHeader("X-Forwarded-For", "203.0.113.1");
 		request.setRemoteAddr("198.51.100.50");
@@ -61,19 +63,22 @@ class RateLimitRuleTests {
 
 	@Test
 	void keyResolverUsesNearestUntrustedForwardedIpFromTrustedProxy() {
-		RateLimitKeyResolver resolver = new RateLimitKeyResolver();
+		// H3: 10.0.0.2 不再被自动信任；只有 loopback 可信。
+		// 要让多跳 X-Forwarded-For 正确解析，需显式配置 10.0.0.2 为可信代理。
+		RateLimitKeyResolver resolver = new RateLimitKeyResolver("10.0.0.2");
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/app/auth/login");
 		request.addHeader("X-Forwarded-For", "198.51.100.200, 203.0.113.1, 10.0.0.2");
 		request.setRemoteAddr("127.0.0.1");
 
 		String key = resolver.resolveKey("app-login", request);
 
+		// 10.0.0.2 在白名单 → 跳过；203.0.113.1 不可信 → 返回它
 		assertThat(key).isEqualTo("app-login:IP:203.0.113.1");
 	}
 
 	@Test
 	void keyResolverUsesAppPrincipalBeforeIp() {
-		RateLimitKeyResolver resolver = new RateLimitKeyResolver();
+		RateLimitKeyResolver resolver = new RateLimitKeyResolver("");
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/app/content/search");
 		request.setRemoteAddr("127.0.0.1");
 		AppUserPrincipal principal = new AppUserPrincipal(java.util.UUID.randomUUID(), "alice", UserStatus.ACTIVE);
@@ -87,7 +92,7 @@ class RateLimitRuleTests {
 
 	@Test
 	void keyResolverUsesAdminPrincipalBeforeIp() {
-		RateLimitKeyResolver resolver = new RateLimitKeyResolver();
+		RateLimitKeyResolver resolver = new RateLimitKeyResolver("");
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/admin/users");
 		request.setRemoteAddr("127.0.0.1");
 		AdminPrincipal principal = new AdminPrincipal("admin");

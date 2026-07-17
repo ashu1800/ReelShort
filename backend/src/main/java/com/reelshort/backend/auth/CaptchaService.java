@@ -58,7 +58,8 @@ public class CaptchaService {
 		catch (IllegalArgumentException exception) {
 			throw new AuthException(400, "captcha verification failed");
 		}
-		CaptchaChallenge challenge = captchaRepository.findById(id)
+		// M5: 使用悲观锁读取，防止并发双花（两个请求同时读到 usedAt=null 都通过验证）
+		CaptchaChallenge challenge = captchaRepository.findByIdForUpdate(id)
 				.orElseThrow(() -> new AuthException(400, "captcha verification failed"));
 		if (challenge.isUsed() || challenge.isExpired()) {
 			throw new AuthException(400, "captcha expired");

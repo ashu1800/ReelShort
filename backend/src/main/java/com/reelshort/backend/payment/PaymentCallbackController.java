@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.reelshort.backend.system.api.ApiResponse;
+import com.reelshort.backend.system.security.SecureTokenComparator;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,7 +33,7 @@ public class PaymentCallbackController {
 	public ApiResponse<PaymentCallbackResponse> callback(
 			@RequestHeader(name = CALLBACK_SECRET_HEADER, required = false) String secret,
 			@Valid @RequestBody PaymentCallbackRequest request, HttpServletRequest httpRequest) {
-		if (!paymentProperties.callbackSecret().equals(secret)) {
+		if (!SecureTokenComparator.equals(paymentProperties.callbackSecret(), secret)) {
 			throw new PaymentException(401, "unauthorized");
 		}
 		return ApiResponse.success(paymentCallbackService.handle(request), requestId(httpRequest));

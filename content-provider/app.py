@@ -51,6 +51,7 @@ DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 DEFAULT_MAX_REDIRECTS = 3
 RESPONSE_CHUNK_SIZE = 64 * 1024
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+UPSTREAM_USER_AGENT = "ShortLinkContentProvider/1.0"
 
 
 class UpstreamError(Exception):
@@ -323,11 +324,13 @@ class ReelShortClient:
         return self.build_id
 
     def _request(self, url: str, params=None):
-        self._validate_url(url, "upstream_url_blocked", "upstream returned unsafe upstream URL")
+        # M11: _validate_url 现在返回 (pinned_url, original_hostname) 用于 DNS pinning
+        pinned_url, original_host = self._validate_url(url, "upstream_url_blocked", "upstream returned unsafe upstream URL")
         deadline = self.monotonic() + self.timeout_seconds
-        current_url = url
+        current_url = pinned_url
         current_params = params
-        visited = {current_url}
+        visited = {url}
+        headers = {"Host": original_host, "User-Agent": UPSTREAM_USER_AGENT}
 
         for redirect_count in range(self.max_redirects + 1):
             remaining = self.timeout_seconds if redirect_count == 0 else deadline - self.monotonic()
@@ -341,6 +344,7 @@ class ReelShortClient:
                     timeout=remaining,
                     allow_redirects=False,
                     stream=True,
+                    headers=headers,
                 )
             except requests.RequestException as exception:
                 raise UpstreamError(502, "upstream request failed") from exception
@@ -358,12 +362,14 @@ class ReelShortClient:
                 raise UpstreamError(502, "upstream returned too many redirects")
 
             redirect_url = urljoin(current_url, location)
-            self._validate_redirect_url(redirect_url)
+            # M11: _validate_redirect_url 也返回 pinned URL
+            pinned_redirect, redirect_host = self._validate_redirect_url(redirect_url)
             if redirect_url in visited:
                 self.diagnostics.record("upstream_redirect_loop", url=redirect_url)
                 raise UpstreamError(502, "upstream redirect loop")
             visited.add(redirect_url)
-            current_url = redirect_url
+            current_url = pinned_redirect
+            headers["Host"] = redirect_host
             current_params = None
 
         raise UpstreamError(502, "upstream returned too many redirects")
@@ -415,16 +421,19 @@ class ReelShortClient:
             self._close_response(response)
 
     def _validate_redirect_url(self, url: str):
-        self._validate_url(url, "upstream_redirect_blocked", "upstream returned unsafe redirect")
+        return self._validate_and_pin_url(url, "upstream_redirect_blocked", "upstream returned unsafe redirect")
 
     def _validate_url(self, url: str, event_type: str, message: str):
+        # M11: 返回 pinning 后的 URL（用解析到的 IP 直连，避免 TOCTOU DNS rebinding）
+        return self._validate_and_pin_url(url, event_type, message)
+
+    def _validate_and_pin_url(self, url: str, event_type: str, message: str) -> str:
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             self.diagnostics.record(event_type, url=url)
             raise UpstreamError(502, message)
         try:
-            # This blocks configured and redirect URLs resolving to non-public networks.
-            # Requests performs its own connection lookup; DNS pinning is outside this boundary.
+            # M11: DNS pinning —— 解析后直接用 IP 连接，避免 requests 二次解析导致的 TOCTOU
             addresses = self.resolver(parsed.hostname)
             safe = addresses and all(ipaddress.ip_address(address).is_global for address in addresses)
         except (OSError, ValueError):
@@ -432,6 +441,12 @@ class ReelShortClient:
         if not safe:
             self.diagnostics.record(event_type, url=url)
             raise UpstreamError(502, message)
+        # 用第一个公网 IP 替换 hostname 实现 pinning，保留原 Host header
+        pinned_ip = sorted(addresses)[0]
+        port = f":{parsed.port}" if parsed.port else ""
+        pinned_url = url.replace(f"{parsed.hostname}{port}", pinned_ip, 1) if port else \
+            parsed._replace(netloc=pinned_ip).geturl()
+        return pinned_url, parsed.hostname
 
     @staticmethod
     def _resolve_addresses(hostname: str):

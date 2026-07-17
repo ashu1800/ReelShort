@@ -412,10 +412,11 @@ export async function fetchWithdrawals() {
   return response.data.data
 }
 
-export async function approveWithdrawal(withdrawalId: string, txHash: string, note: string) {
+export async function approveWithdrawal(withdrawalId: string, txHash: string, note: string, totpCode: string) {
   const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/approve`, {
     txHash,
     note,
+    totpCode,
   })
   return response.data.data
 }

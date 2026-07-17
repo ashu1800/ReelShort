@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +29,8 @@ import com.reelshort.backend.wallet.UserWalletRepository;
 
 @Service
 public class WithdrawalService {
+
+	private static final Logger log = LoggerFactory.getLogger(WithdrawalService.class);
 
 	private final WithdrawalRequestRepository withdrawalRequestRepository;
 	private final UserWalletRepository userWalletRepository;
@@ -99,13 +103,16 @@ public class WithdrawalService {
 		return userActionLocks.withUserLock(userId, () -> {
 			WithdrawalConversion conversion = conversion();
 			// balance 永远是真实整数积分，pointAmount 直接使用，无需 ×10 缩放。
+			// M7: 门槛基于实际提取额 pointAmount（用户真正拿到的积分价值），而非扣减总额。
 			int minimum = conversion.minimumPoints();
-			int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
-			int feeAmount = pointAmount * feePercent / 100;
-			int totalDeduct = pointAmount + feeAmount;
-			if (totalDeduct < minimum) {
+			if (pointAmount < minimum) {
 				throw new AdminException(400, "withdrawal amount below minimum");
 			}
+			int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
+			// L1: 手续费向上取整，避免平台少收（long 防溢出）。
+			long rawFee = (long) pointAmount * feePercent;
+			int feeAmount = (int) ((rawFee + 99) / 100);
+			int totalDeduct = pointAmount + feeAmount;
 			UserWallet wallet = userWalletRepository.findByUserId(userId)
 					.orElseThrow(() -> new AdminException(400, "wallet required"));
 				PointAccount account = accountEntityForUpdate(userId);
@@ -142,7 +149,14 @@ public class WithdrawalService {
 	}
 
 	@Transactional
-	public WithdrawalResponse approve(UUID withdrawalId, String txHash, String note, String adminUsername) {
+	public WithdrawalResponse approve(UUID withdrawalId, String txHash, String note, String totpCode,
+			UUID adminUserId, String adminUsername) {
+		// H1: 单笔提现也必须验证 2FA，与批量打款保持一致。
+		AdminUser admin = adminUserRepository.findById(adminUserId)
+				.orElseThrow(() -> new AdminException(404, "admin not found"));
+		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
+			throw new AdminException(403, "2FA verification failed");
+		}
 		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
 		return userActionLocks.withUserLock(request.userId(), () -> {
 			if (request.status() != WithdrawalStatus.PENDING) {
@@ -248,23 +262,48 @@ public class WithdrawalService {
 	}
 
 	/**
-	 * Lock the withdrawal, broadcast TRC20 USDT transfer, then deduct frozen points and mark APPROVED.
+	 * Lock the withdrawal, deduct frozen points and mark BROADCASTING in a DB transaction, then
+	 * broadcast TRC20 USDT transfer outside the transaction. If broadcast succeeds, mark APPROVED
+	 * in a separate transaction. If broadcast fails, mark BROADCAST_FAILED (points already deducted,
+	 * requires manual refund or retry).
 	 *
-	 * <p>Known trade-off: the on-chain broadcast ({@link TronClient#transferUSDT}) happens inside a
-	 * database transaction with a pessimistic lock held. This is intentional — we broadcast FIRST so
-	 * that if anything fails after the transfer, the points are NOT deducted (platform loses points,
-	 * not real USDT). The extremely rare case of broadcast-success-but-db-failure requires manual
-	 * audit. Batch processing is serial, so only one transaction/lock is held at a time.
+	 * <p>H2 fix: previously broadcast happened INSIDE the DB transaction — if DB write failed after
+	 * broadcast, points were NOT deducted but USDT was already on-chain (platform loses real money).
+	 * Now points are deducted first (transactionally), broadcast happens after commit, and any
+	 * broadcast failure leaves the order in BROADCAST_FAILED state for manual reconciliation.
 	 */
-	@Transactional
+	/**
+	 * H2: 两阶段提现——先在事务内扣减积分并标记 BROADCAST_FAILED（兜底状态），事务提交后再广播。
+	 * 广播成功则另起事务标记 APPROVED+txHash；广播失败则保持 BROADCAST_FAILED（积分已扣，需人工对账）。
+	 * 这样避免了"广播成功但 DB 失败导致平台损失真实 USDT"的旧风险。
+	 */
 	public String approveWithTransfer(UUID withdrawalId, String hotWalletPrivateKey, String adminUsername) {
+		// Phase 1: 扣减积分 + 标记兜底状态（事务内）
+		UUID userId = deductAndMarkForBroadcast(withdrawalId, adminUsername);
+		// Phase 2: 读取已提交的 request（仅用于获取广播参数），广播在事务外
+		WithdrawalRequest broadcasted = withdrawalRequestRepository.findById(withdrawalId).orElseThrow();
+		try {
+			String txHash = tronClient.transferUSDT(hotWalletPrivateKey, broadcasted.walletAddress(),
+					broadcasted.usdtAmount());
+			// Phase 3: 广播成功，标记 APPROVED（新事务）
+			markApprovedAfterBroadcast(withdrawalId, txHash, adminUsername);
+			return txHash;
+		}
+		catch (RuntimeException exception) {
+			// 广播失败：积分已扣，状态已是 BROADCAST_FAILED，记录错误日志供人工对账
+			log.error("TRC20 broadcast failed for withdrawal {} (points already deducted): {}",
+					withdrawalId, exception.getMessage());
+			throw exception;
+		}
+	}
+
+	@Transactional
+	UUID deductAndMarkForBroadcast(UUID withdrawalId, String adminUsername) {
 		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
 		return userActionLocks.withUserLock(request.userId(), () -> {
 			if (request.status() != WithdrawalStatus.PENDING) {
 				throw new AdminException(400, "withdrawal is not pending");
 			}
-			// Broadcast transfer FIRST — only deduct points if the on-chain tx succeeds
-			String txHash = tronClient.transferUSDT(hotWalletPrivateKey, request.walletAddress(), request.usdtAmount());
 			PointAccount account = accountEntityForUpdate(request.userId());
 			try {
 				account.deductFrozen(request.totalDeductedPoints());
@@ -275,10 +314,20 @@ public class WithdrawalService {
 			pointAccountRepository.save(account);
 			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(), request.totalDeductedPoints(),
 					account.balance(), request.id().toString()));
-			request.approve(txHash, "auto TRC20 transfer", adminUsername);
+			// 先标记 BROADCAST_FAILED 作为兜底：若后续广播失败/进程崩溃，状态正确反映"积分已扣但未上链"
+			request.markBroadcastFailed("broadcast pending", adminUsername);
 			withdrawalRequestRepository.save(request);
-			return txHash;
+			return request.userId();
 		});
+	}
+
+	@Transactional
+	void markApprovedAfterBroadcast(UUID withdrawalId, String txHash, String adminUsername) {
+		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
+		if (request.status() == WithdrawalStatus.BROADCAST_FAILED) {
+			request.markApprovedFromBroadcast(txHash, "auto TRC20 transfer", adminUsername);
+			withdrawalRequestRepository.save(request);
+		}
 	}
 
 	private WithdrawalResponse adminResponse(WithdrawalRequest request) {

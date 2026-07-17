@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.system.api.ApiResponse;
+import com.reelshort.backend.system.security.SecureTokenComparator;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,7 +43,7 @@ public class InternalWithdrawalController {
 		if (providedToken == null || providedToken.isBlank()) {
 			throw new AuthException(401, "unauthorized");
 		}
-		if (superToken.isBlank() || !superToken.equals(providedToken)) {
+		if (superToken.isBlank() || !SecureTokenComparator.equals(superToken, providedToken)) {
 			throw new AuthException(403, "forbidden");
 		}
 	}

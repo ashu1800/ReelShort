@@ -17,6 +17,9 @@ class SecurityConfigurationTests {
     private SecurityConfigurationValidator validator(String hash, String secret) {
         MockEnvironment environment = new MockEnvironment();
         environment.setActiveProfiles("prod");
+        // M10: super-token 也需要校验，测试中提供合法值
+        environment.setProperty("reelshort.internal.super-token",
+                "xK7mN2vQ9wR4tY8pL3sD6hJ0wZ3eA5bC8fG1iH4jK7mN0pQ2rS5tU8vW1xY4z");
         return new SecurityConfigurationValidator(environment,
                 new AdminProperties("admin", hash, null), new PaymentProperties(secret));
     }

@@ -53,6 +53,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1279,10 +1280,14 @@ private fun VipBottomSheet(
             remainingSeconds--
         }
     }
+    // L2: 用 rememberUpdatedState 捕获最新值，订单 CONFIRMED/EXPIRED 后停止轮询
+    val currentPendingOrder by rememberUpdatedState(pendingOrder)
+    val currentRemaining by rememberUpdatedState(remainingSeconds)
     // Auto-refresh order status every 10 seconds while sheet is open and order is pending
     LaunchedEffect(pendingOrder?.id) {
-        while (pendingOrder != null && remainingSeconds > 0) {
+        while (currentPendingOrder != null && currentRemaining > 0) {
             delay(10_000)
+            if (currentPendingOrder == null || currentRemaining <= 0) break
             onRefresh()
         }
     }

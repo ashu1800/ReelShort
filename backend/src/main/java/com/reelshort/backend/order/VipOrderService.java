@@ -41,7 +41,10 @@ public class VipOrderService {
 	}
 
 	private int allocateUniqueSuffix() {
-		List<Integer> usedSuffixes = vipOrderRepository.findPendingSuffixes();
+		// M4: 使用悲观锁读取 PENDING 订单的 suffix，防止并发分配到同一 suffix
+		List<Integer> usedSuffixes = vipOrderRepository.findPendingForUpdate().stream()
+				.map(VipOrder::uniqueSuffix)
+				.toList();
 		for (int s = 1; s <= SUFFIX_MAX; s++) {
 			if (!usedSuffixes.contains(s)) {
 				return s;
@@ -67,7 +70,8 @@ public class VipOrderService {
 
 	@Transactional
 	public int expireOverdueOrders() {
-		List<VipOrder> pending = vipOrderRepository.findByStatusOrderByCreatedAtAsc("PENDING");
+		// M6: 使用悲观锁读取，防止过期与自动确认并发
+		List<VipOrder> pending = vipOrderRepository.findPendingForUpdate();
 		int expired = 0;
 		for (VipOrder order : pending) {
 			if (order.isExpired()) {
@@ -81,7 +85,8 @@ public class VipOrderService {
 
 	@Transactional
 	public VipOrder confirm(UUID orderId, String txHash, String adminUsername) {
-		VipOrder order = vipOrderRepository.findById(orderId)
+		// M6: 悲观锁防止与 autoConfirm/expire 并发
+		VipOrder order = vipOrderRepository.findByIdForUpdate(orderId)
 				.orElseThrow(() -> new AdminException(404, "VIP order not found"));
 		order.confirm(txHash, adminUsername);
 		grantVip(order.userId());
@@ -90,7 +95,8 @@ public class VipOrderService {
 
 	@Transactional
 	public VipOrder autoConfirm(UUID orderId, String txHash) {
-		VipOrder order = vipOrderRepository.findById(orderId)
+		// M6: 悲观锁防止与手动 confirm/reject/expire 并发
+		VipOrder order = vipOrderRepository.findByIdForUpdate(orderId)
 				.orElseThrow(() -> new AdminException(404, "VIP order not found"));
 		if (!"PENDING".equals(order.status())) {
 			return order;
@@ -102,7 +108,7 @@ public class VipOrderService {
 
 	@Transactional
 	public VipOrder reject(UUID orderId, String adminUsername) {
-		VipOrder order = vipOrderRepository.findById(orderId)
+		VipOrder order = vipOrderRepository.findByIdForUpdate(orderId)
 				.orElseThrow(() -> new AdminException(404, "VIP order not found"));
 		order.reject(adminUsername);
 		return vipOrderRepository.save(order);

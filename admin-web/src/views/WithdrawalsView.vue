@@ -144,23 +144,31 @@ function closeBatchDialog() {
   totpCode.value = ''
 }
 
-// Legacy manual txHash approval (fallback)
+// Manual txHash approval — requires 2FA (H1 fix: single approval also needs TOTP)
 async function approve(row: WithdrawalRequest) {
   let txHash = ''
+  let totpCode = ''
   try {
-    const result = await ElMessageBox.prompt('请输入 TRC 链上转账 tx hash（手动模式）', '通过提现申请', {
-      confirmButtonText: '通过',
+    const hashResult = await ElMessageBox.prompt('请输入 TRC 链上转账 tx hash（手动模式）', '通过提现申请', {
+      confirmButtonText: '下一步',
       cancelButtonText: '取消',
       inputPattern: /\S{6,}/,
       inputErrorMessage: 'tx hash 不能为空',
     })
-    txHash = result.value.trim()
+    txHash = hashResult.value.trim()
+    const totpResult = await ElMessageBox.prompt('请输入 2FA 验证码', '安全验证', {
+      confirmButtonText: '确认通过',
+      cancelButtonText: '取消',
+      inputPattern: /^\d{6}$/,
+      inputErrorMessage: '请输入 6 位数字验证码',
+    })
+    totpCode = totpResult.value.trim()
   } catch {
     return
   }
   operationLoading.value = true
   try {
-    await approveWithdrawal(row.id, txHash, 'manual TRC transfer confirmed')
+    await approveWithdrawal(row.id, txHash, 'manual TRC transfer confirmed', totpCode)
     ElMessage.success('提现申请已通过')
     await loadWithdrawals()
   } catch (error) {
@@ -344,7 +352,7 @@ onMounted(() => {
         </div>
         <div v-else>
           <el-alert
-            :type="batchResult.succeeded > 0 && batchResult.stoppedAtIndex < 0 ? 'success' : 'warning'"
+            :type="batchResult.succeeded > 0 && batchResult.stoppedAtIndex < 0 ? 'success' : 'error'"
             show-icon
             :closable="false"
             style="margin-bottom: 12px"

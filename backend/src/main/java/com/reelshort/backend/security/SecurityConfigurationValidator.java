@@ -49,6 +49,16 @@ public final class SecurityConfigurationValidator {
                 || isLowEntropy(callbackSecret)) {
             throw new IllegalStateException("REELSHORT_PAYMENT_CALLBACK_SECRET must be strong");
         }
+
+        // M10: super-token 也需 fail-closed 校验，防止忘改默认值导致任意发布 APK 更新
+        String superToken = environment.getProperty("reelshort.internal.super-token");
+        if (superToken == null || superToken.isBlank()
+                || superToken.equals("change-me-internal-user-registration-token")
+                || superToken.length() < 32
+                || superToken.chars().distinct().count() < 8
+                || isLowEntropy(superToken)) {
+            throw new IllegalStateException("REELSHORT_INTERNAL_SUPER_TOKEN must be a strong non-default token");
+        }
     }
 
     private static boolean isLowEntropy(String value) {

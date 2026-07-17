@@ -40,7 +40,8 @@ public class AdminWithdrawalController {
 	public ApiResponse<WithdrawalResponse> approve(CurrentAdmin currentAdmin, @PathVariable UUID withdrawalId,
 			@Valid @RequestBody WithdrawalApprovalRequest approvalRequest, HttpServletRequest request) {
 		return ApiResponse.success(withdrawalService.approve(withdrawalId, approvalRequest.txHash(),
-				approvalRequest.note(), currentAdmin.username()), requestId(request));
+				approvalRequest.note(), approvalRequest.totpCode(), currentAdmin.adminUserId(),
+				currentAdmin.username()), requestId(request));
 	}
 
 	@PostMapping("/{withdrawalId}/reject")

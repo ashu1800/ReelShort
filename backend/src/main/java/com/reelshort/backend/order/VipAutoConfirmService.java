@@ -1,9 +1,10 @@
 package com.reelshort.backend.order;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,19 +57,24 @@ public class VipAutoConfirmService {
 		}
 		try {
 			List<TronClient.IncomingTransfer> transfers = tronClient.fetchIncomingUsdtTransfers(collectionAddress, POLL_LIMIT);
-			// Build a map of payable amount → order for fast lookup
-			Map<String, VipOrder> amountToOrder = pendingOrders.stream()
-					.collect(Collectors.toMap(
-							o -> o.payableAmount().stripTrailingZeros().toPlainString(),
-							o -> o,
-							(a, b) -> a));
+			// H4: 金额可能重复（多个订单 suffix 相同或恰好金额一致），用 List 避免静默丢弃。
+			// 按订单创建时间排序，先创建的先匹配。
+			Map<String, List<VipOrder>> amountToOrders = new HashMap<>();
+			for (VipOrder order : pendingOrders) {
+				String key = order.payableAmount().stripTrailingZeros().toPlainString();
+				amountToOrders.computeIfAbsent(key, k -> new ArrayList<>()).add(order);
+			}
 			for (TronClient.IncomingTransfer transfer : transfers) {
 				String amountKey = transfer.amount().stripTrailingZeros().toPlainString();
-				VipOrder matched = amountToOrder.get(amountKey);
-				if (matched != null && matched.txHash() == null) {
+				List<VipOrder> candidates = amountToOrders.get(amountKey);
+				if (candidates == null || candidates.isEmpty()) {
+					continue;
+				}
+				// 取最早创建的候选订单匹配（FIFO）
+				VipOrder matched = candidates.remove(0);
+				if (matched.txHash() == null) {
 					log.info("Auto-confirming VIP order {} with tx {} amount {}", matched.orderNo(), transfer.txHash(), amountKey);
 					vipOrderService.autoConfirm(matched.id(), transfer.txHash());
-					amountToOrder.remove(amountKey);
 				}
 			}
 		}

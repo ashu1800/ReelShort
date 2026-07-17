@@ -706,8 +706,12 @@ class AppStateController(private val dataSource: AppDataSource) {
             rewardReportInFlight = false
             val pending = pendingCompletionReport
             pendingCompletionReport = null
+            // M2: 用 NonCancellable 包裹，防止 finally 内的 suspend 调用在协程取消时
+            // 再次抛出 CancellationException 覆盖原始异常。限制递归深度为 1 次。
             if (pending != null && isActivePlaybackRequest(pending.requestVersion)) {
-                reportProgressSilently(pending.positionSeconds, pending.durationSeconds)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    reportProgressSilently(pending.positionSeconds, pending.durationSeconds)
+                }
             }
         }
     }
@@ -1276,44 +1280,53 @@ class AppStateController(private val dataSource: AppDataSource) {
         return rawMessage.ifBlank { error::class.simpleName ?: "请求失败" }
     }
 
+    // M1: 所有 when(language) 加 else 分支，防止新增语言枚举时崩溃
     private fun invalidCaptchaMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Captcha answer is incorrect."
+            else -> "Captcha answer is incorrect."
         }
 
     private fun registerBadRequestMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Check username, password, and captcha answer."
+            else -> "Check username, password, and captcha answer."
         }
 
     private fun credentialErrorMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Invalid username or password."
+            else -> "Invalid username or password."
         }
 
     private fun usernameExistsMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Username already exists."
+            else -> "Username already exists."
         }
 
     private fun vipOrderCreatedMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "VIP order created. Submit payment to activate VIP."
+            else -> "VIP order created. Submit payment to activate VIP."
         }
 
     private fun passwordChangedMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Password changed. Sign in again with the new password."
+            else -> "Password changed. Sign in again with the new password."
         }
 
     private fun walletUpdatedMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Wallet updated."
+            else -> "Wallet updated."
         }
 
     private fun withdrawalSubmittedMessage(): String =
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Withdrawal submitted."
+            else -> "Withdrawal submitted."
         }
 
     private enum class ErrorContext {

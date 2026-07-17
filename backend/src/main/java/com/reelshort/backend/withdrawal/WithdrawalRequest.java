@@ -121,6 +121,33 @@ public class WithdrawalRequest {
 		this.reviewedAt = OffsetDateTime.now();
 	}
 
+	/**
+	 * H2: 广播失败时标记为 BROADCAST_FAILED。积分已扣减，需人工对账（退款或重试）。
+	 */
+	public void markBroadcastFailed(String reason, String reviewedBy) {
+		if (status != WithdrawalStatus.PENDING) {
+			throw new IllegalStateException("withdrawal is not pending for broadcast");
+		}
+		this.status = WithdrawalStatus.BROADCAST_FAILED;
+		this.adminNote = reason;
+		this.reviewedBy = reviewedBy;
+		this.reviewedAt = OffsetDateTime.now();
+	}
+
+	/**
+	 * H2: 广播成功后从 BROADCAST_FAILED 恢复为 APPROVED（人工补登记 txHash）。
+	 */
+	public void markApprovedFromBroadcast(String txHash, String note, String reviewedBy) {
+		if (status != WithdrawalStatus.BROADCAST_FAILED) {
+			throw new IllegalStateException("withdrawal is not in broadcast-failed state");
+		}
+		this.status = WithdrawalStatus.APPROVED;
+		this.txHash = txHash;
+		this.adminNote = note;
+		this.reviewedBy = reviewedBy;
+		this.reviewedAt = OffsetDateTime.now();
+	}
+
 	public UUID id() {
 		return id;
 	}

@@ -20,8 +20,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import com.reelshort.backend.TestAppUsers;
+import com.reelshort.backend.admin.AdminUser;
+import com.reelshort.backend.admin.AdminUserRepository;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
+import com.reelshort.backend.system.security.TotpService;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -38,6 +41,14 @@ class WalletWithdrawalTransferControllerTests {
 
 	@Autowired
 	private SystemConfigService systemConfigService;
+
+	@Autowired
+	private AdminUserRepository adminUserRepository;
+
+	@Autowired
+	private TotpService totpService;
+
+	private static final String TEST_TOTP_SECRET = "JBSWY3DPEHPK3PXP";
 
 	@Test
 	void withdrawalSummaryReturnsZeroBalanceBeforePointAccountExists() throws Exception {
@@ -141,9 +152,10 @@ class WalletWithdrawalTransferControllerTests {
 				.content("""
 						{
 						  "txHash": "trc-tx-123",
-						  "note": "paid manually"
+						  "note": "paid manually",
+						  "totpCode": "%s"
 						}
-						"""))
+						""".formatted(validTotpCode())))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("APPROVED"))
 				.andExpect(jsonPath("$.data.txHash").value("trc-tx-123"));
@@ -154,9 +166,10 @@ class WalletWithdrawalTransferControllerTests {
 				.content("""
 						{
 						  "txHash": "trc-tx-duplicate",
-						  "note": "duplicate"
+						  "note": "duplicate",
+						  "totpCode": "%s"
 						}
-						"""))
+						""".formatted(validTotpCode())))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("withdrawal is not pending"));
 
@@ -270,6 +283,16 @@ class WalletWithdrawalTransferControllerTests {
 				.andReturn()
 				.getResponse()
 				.getContentAsString(), "$.data.token");
+	}
+
+	/** H1: 单笔提现现在需要 2FA，测试中为 admin 启用 TOTP 并生成验证码 */
+	private String validTotpCode() {
+		AdminUser admin = adminUserRepository.findByUsername("admin").orElseThrow();
+		if (!admin.totpEnabled()) {
+			admin.enableTotp(TEST_TOTP_SECRET);
+			adminUserRepository.save(admin);
+		}
+		return totpService.generateCurrentCode(TEST_TOTP_SECRET);
 	}
 
 	private void adjustPoints(String adminToken, UUID userId, int amount, String reason) throws Exception {

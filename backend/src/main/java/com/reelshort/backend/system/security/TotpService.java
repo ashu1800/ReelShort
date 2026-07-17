@@ -50,6 +50,14 @@ public class TotpService {
 		return false;
 	}
 
+	/**
+	 * Generate the current TOTP code for the given secret. Used by tests to produce valid codes.
+	 */
+	public String generateCurrentCode(String secret) {
+		long currentStep = System.currentTimeMillis() / 1000 / TIME_STEP_SECONDS;
+		return generateCode(secret, currentStep);
+	}
+
 	private String generateCode(String secret, long timeStep) {
 		byte[] key = BASE32.decode(secret);
 		byte[] timeBytes = ByteBuffer.allocate(8).putLong(timeStep).array();
