@@ -14,8 +14,8 @@ import jakarta.validation.constraints.Size;
  * to the appropriate chain client based on its network.
  */
 public record BatchWithdrawalRequest(
-		@NotEmpty @Size(max = 100) List<UUID> withdrawalIds,
-		@Size(max = 128) String tronPrivateKey,
-		@Size(max = 128) String ethPrivateKey,
+		@NotEmpty @Size(max = 10) List<UUID> withdrawalIds,
+		@Size(max = 66) @Pattern(regexp = "(?i)^(?:|[0-9a-f]{64}|0x[0-9a-f]{64})$") String tronPrivateKey,
+		@Size(max = 66) @Pattern(regexp = "(?i)^(?:|[0-9a-f]{64}|0x[0-9a-f]{64})$") String ethPrivateKey,
 		@NotBlank @Pattern(regexp = "\\d{6}") String totpCode) {
 }

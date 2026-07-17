@@ -30,12 +30,19 @@ public class AdminPermissionInterceptor implements HandlerInterceptor {
 			return true;
 		}
 		RequireAdminPermission permission = permission(handlerMethod);
-		if (permission == null) {
+		RequireAdminPermissions permissions = permissions(handlerMethod);
+		if (permission == null && permissions == null) {
 			return true;
 		}
 		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-		if (authentication == null || !(authentication.getPrincipal() instanceof AdminPrincipal principal)
-				|| !principal.permissions().contains(permission.value())) {
+		if (authentication == null || !(authentication.getPrincipal() instanceof AdminPrincipal principal)) {
+			writeForbidden(request, response);
+			return false;
+		}
+		boolean allowed = permissions != null
+				? principal.permissions().containsAll(java.util.List.of(permissions.value()))
+				: principal.permissions().contains(permission.value());
+		if (!allowed) {
 			writeForbidden(request, response);
 			return false;
 		}
@@ -49,6 +56,15 @@ public class AdminPermissionInterceptor implements HandlerInterceptor {
 			return methodPermission;
 		}
 		return AnnotatedElementUtils.findMergedAnnotation(handlerMethod.getBeanType(), RequireAdminPermission.class);
+	}
+
+	private RequireAdminPermissions permissions(HandlerMethod handlerMethod) {
+		RequireAdminPermissions methodPermissions = AnnotatedElementUtils.findMergedAnnotation(
+				handlerMethod.getMethod(), RequireAdminPermissions.class);
+		if (methodPermissions != null) {
+			return methodPermissions;
+		}
+		return AnnotatedElementUtils.findMergedAnnotation(handlerMethod.getBeanType(), RequireAdminPermissions.class);
 	}
 
 	private void writeForbidden(HttpServletRequest request, HttpServletResponse response) throws Exception {

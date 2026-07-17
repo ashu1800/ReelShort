@@ -3,7 +3,7 @@ import { useSessionStore } from '../stores/session'
 
 export const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api/admin',
-  timeout: 10000,
+  timeout: 120000,
 })
 
 http.interceptors.request.use((config) => {
@@ -34,4 +34,8 @@ export function backendErrorMessage(error: unknown, fallback: string) {
     }
   }
   return fallback
+}
+
+export function isRequestTimeout(error: unknown) {
+  return axios.isAxiosError(error) && (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT')
 }

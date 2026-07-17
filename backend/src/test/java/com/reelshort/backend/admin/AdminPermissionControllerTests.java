@@ -70,6 +70,23 @@ class AdminPermissionControllerTests {
 				.andExpect(jsonPath("$.message").value("forbidden"));
 	}
 
+	@Test
+	void withdrawalWriteOnlyAdminCannotPreviewWithdrawalDetails() throws Exception {
+		String adminToken = createAdminAndLogin("withdrawal-writer", "WITHDRAWAL_WRITER",
+				AdminPermissions.WITHDRAWAL_WRITE);
+
+		mockMvc.perform(post("/api/admin/withdrawals/batch-preview")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "withdrawalIds": ["%s"]
+						}
+						""".formatted(UUID.randomUUID())))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value("forbidden"));
+	}
+
 	private String createLimitedAdminAndLogin() throws Exception {
 		AdminPermission userRead = adminPermissionRepository.findByCode(AdminPermissions.USER_READ).orElseThrow();
 		AdminRole role = AdminRole.create("USER_READER", "User Reader");
@@ -92,6 +109,29 @@ class AdminPermissionControllerTests {
 				.andReturn();
 		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
 		return response.path("data").path("token").asText();
+	}
+
+	private String createAdminAndLogin(String username, String roleName, String permissionCode) throws Exception {
+		AdminPermission permission = adminPermissionRepository.findByCode(permissionCode).orElseThrow();
+		AdminRole role = AdminRole.create(roleName, roleName);
+		role.grant(permission);
+		adminRoleRepository.saveAndFlush(role);
+		String password = "LimitedAdmin123";
+		AdminUser admin = AdminUser.create(username, passwordHasher.hash(password), AdminUserStatus.ACTIVE);
+		admin.assignRole(role);
+		adminUserRepository.saveAndFlush(admin);
+
+		MvcResult result = mockMvc.perform(post("/api/admin/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "%s",
+						  "password": "%s"
+						}
+						""".formatted(username, password)))
+				.andExpect(status().isOk())
+				.andReturn();
+		return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("token").asText();
 	}
 
 	private RegisteredUser registerAppUser(String username) throws Exception {

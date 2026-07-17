@@ -478,6 +478,7 @@ export type BatchWithdrawalPreview = {
 export type BatchWithdrawalResult = {
   succeeded: number
   failed: number
+  pending: number
   stoppedAtIndex: number
   errorMessage: string | null
   items: {

@@ -10,5 +10,5 @@ import jakarta.validation.constraints.Size;
  * Preview request for batch withdrawal payout. Previewing must never receive signing material.
  */
 public record BatchWithdrawalPreviewRequest(
-		@NotEmpty @Size(max = 100) List<UUID> withdrawalIds) {
+		@NotEmpty @Size(max = 10) List<UUID> withdrawalIds) {
 }

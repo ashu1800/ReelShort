@@ -33,7 +33,7 @@
 ## 后台提现管理
 
 - `GET /api/admin/withdrawals` 返回提现单及最新 payout attempt 的 `payoutStatus`、`payoutTxHash`、`confirmationCount`、`failureReason` 和 `manualReview`。响应不会包含私钥、签名原文或 signing owner。
-- `POST /api/admin/withdrawals/batch-preview` 请求体仅包含 `withdrawalIds`。响应展示配置的热钱包公开地址、待打款总额、网络、目标地址和提现状态；预览不接收私钥，也不查询由私钥派生的钱包余额。
-- `POST /api/admin/withdrawals/{id}/approve` 请求按网络提交 `tronPrivateKey` 或 `ethPrivateKey`，并提交 6 位数字 `totpCode`。私钥只传入 payout coordinator，不持久化、不审计、不记录日志，也不进入响应。
-- `POST /api/admin/withdrawals/batch-approve` 使用相同的私钥与 TOTP 边界，逐笔执行并返回 `succeeded`、`failed` 和每笔 attempt 状态。只有 `PREPARED`、`BROADCASTED`、`CONFIRMED` 计为已提交；`FAILED_RETRYABLE` 和 `MANUAL_REVIEW` 均为非成功结果，后者要求人工核对且禁止重复生成交易。单笔失败不会阻止后续提现，也不会伪装成整批成功。
+- `POST /api/admin/withdrawals/batch-preview` 同时要求 `WITHDRAWAL_READ` 和 `WITHDRAWAL_WRITE`，请求体仅包含最多 10 个 `withdrawalIds`。响应展示配置的热钱包公开地址、待打款总额、网络、目标地址和提现状态；预览不接收私钥，也不查询由私钥派生的钱包余额。
+- `POST /api/admin/withdrawals/{id}/approve` 请求按网络提交 `tronPrivateKey` 或 `ethPrivateKey`，并提交 6 位数字 `totpCode`。私钥必须为空或 64 位 hex，可带 `0x` 前缀；非法格式统一返回 400。私钥只传入 payout coordinator，不持久化、不审计、不记录日志，也不进入响应。
+- `POST /api/admin/withdrawals/batch-approve` 使用相同的私钥与 TOTP 边界，最多逐笔执行 10 笔，并返回 `succeeded`、`pending`、`failed` 和每笔 attempt 状态。只有 `BROADCASTED`、`CONFIRMED` 计为已提交，`PREPARED` 单独计为待广播；`FAILED_RETRYABLE` 和 `MANUAL_REVIEW` 均为非成功结果，后者要求人工核对且禁止重复生成交易。单笔审计写入失败只记录 WARN，不改变该笔结果或阻断后续提现。
 - 执行、执行失败和拒绝操作均写管理员审计。失败审计使用独立事务，摘要只包含提现 ID、网络、金额、状态和可用的交易哈希，不记录异常请求体或签名材料。

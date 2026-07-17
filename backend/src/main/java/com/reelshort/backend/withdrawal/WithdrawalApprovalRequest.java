@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Size;
  * 私钥按需提供——根据提现单的 network 选择对应链的私钥。
  */
 public record WithdrawalApprovalRequest(
-		@Size(max = 128) String tronPrivateKey,
-		@Size(max = 128) String ethPrivateKey,
+		@Size(max = 66) @Pattern(regexp = "(?i)^(?:|[0-9a-f]{64}|0x[0-9a-f]{64})$") String tronPrivateKey,
+		@Size(max = 66) @Pattern(regexp = "(?i)^(?:|[0-9a-f]{64}|0x[0-9a-f]{64})$") String ethPrivateKey,
 		@NotBlank @Pattern(regexp = "\\d{6}") String totpCode) {
 }

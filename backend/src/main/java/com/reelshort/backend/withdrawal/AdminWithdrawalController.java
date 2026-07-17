@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.reelshort.backend.admin.AdminPermissions;
 import com.reelshort.backend.admin.CurrentAdmin;
 import com.reelshort.backend.admin.RequireAdminPermission;
+import com.reelshort.backend.admin.RequireAdminPermissions;
 import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
@@ -53,7 +54,7 @@ public class AdminWithdrawalController {
 	}
 
 	@PostMapping("/batch-preview")
-	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
+	@RequireAdminPermissions({ AdminPermissions.WITHDRAWAL_READ, AdminPermissions.WITHDRAWAL_WRITE })
 	public ApiResponse<BatchWithdrawalPreviewResponse> batchPreview(
 			@Valid @RequestBody BatchWithdrawalPreviewRequest previewRequest, HttpServletRequest request) {
 		return ApiResponse.success(withdrawalService.batchPreview(previewRequest.withdrawalIds()), requestId(request));

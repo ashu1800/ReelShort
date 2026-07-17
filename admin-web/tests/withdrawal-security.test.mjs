@@ -48,6 +48,7 @@ test('single payout result treats only submitted statuses as success', () => {
   assert.deepEqual(buildSinglePayoutResult(withdrawal), {
     succeeded: 0,
     failed: 1,
+    pending: 0,
     stoppedAtIndex: 0,
     errorMessage: 'node rejected transaction',
     items: [{
@@ -81,4 +82,43 @@ test('single manual-review result is visible and never successful', () => {
   assert.equal(result.succeeded, 0)
   assert.equal(result.failed, 1)
   assert.equal(result.items[0].manualReview, true)
+})
+
+test('prepared payout is pending rather than submitted or failed', () => {
+  const result = buildSinglePayoutResult({
+    id: 'withdrawal-3',
+    status: 'PENDING',
+    payoutStatus: 'PREPARED',
+    payoutTxHash: '0xprepared',
+    txHash: null,
+    confirmationCount: 0,
+    failureReason: null,
+    manualReview: false,
+  })
+
+  assert.equal(result.succeeded, 0)
+  assert.equal(result.failed, 0)
+  assert.equal(result.pending, 1)
+  assert.equal(result.items[0].errorMessage, null)
+})
+
+test('batch preview requires both withdrawal read and write permissions', () => {
+  const source = readFileSync(
+    new URL('../../backend/src/main/java/com/reelshort/backend/withdrawal/AdminWithdrawalController.java', import.meta.url),
+    'utf8',
+  )
+  const match = source.match(/@PostMapping\("\/batch-preview"\)[\s\S]*?public ApiResponse/)
+
+  assert.ok(match, 'batch preview endpoint must exist')
+  assert.match(match[0], /WITHDRAWAL_READ/)
+  assert.match(match[0], /WITHDRAWAL_WRITE/)
+})
+
+test('admin HTTP client allows long-running payout requests and handles timeout as uncertain', () => {
+  const httpSource = readFileSync(new URL('../src/services/http.ts', import.meta.url), 'utf8')
+  const viewSource = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
+
+  assert.match(httpSource, /timeout:\s*120000/)
+  assert.match(viewSource, /isRequestTimeout/)
+  assert.match(viewSource, /后台可能仍在处理/)
 })

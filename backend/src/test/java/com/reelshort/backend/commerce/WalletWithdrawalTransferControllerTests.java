@@ -310,6 +310,37 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(status().isBadRequest());
 	}
 
+	@Test
+	void adminPayoutExecutionRejectsMalformedPrivateKeysWithBadRequest() throws Exception {
+		String adminToken = adminLogin();
+		UUID withdrawalId = UUID.randomUUID();
+
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", withdrawalId)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "ethPrivateKey": "not-hex",
+						  "totpCode": "123456"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("bad request"));
+
+		mockMvc.perform(post("/api/admin/withdrawals/batch-approve")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "withdrawalIds": ["%s"],
+						  "ethPrivateKey": "%s",
+						  "totpCode": "123456"
+						}
+						""".formatted(withdrawalId, "a".repeat(67))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("bad request"));
+	}
+
 	private RegisteredUser createUser(String seed) throws Exception {
 		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, seed, "Password123");
 		return new RegisteredUser(user.userId(), user.token(), user.username());

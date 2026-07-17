@@ -11,7 +11,7 @@ import {
   rejectWithdrawal,
 } from '../services/adminApi'
 import type { BatchWithdrawalPreview, BatchWithdrawalResult, WithdrawalRequest, WithdrawalStatus } from '../services/adminApi'
-import { backendErrorMessage } from '../services/http'
+import { backendErrorMessage, isRequestTimeout } from '../services/http'
 import { buildSinglePayoutResult } from '../services/payoutOutcome.js'
 import { clearWithdrawalSecrets } from '../services/withdrawalSecrets.js'
 
@@ -155,13 +155,21 @@ async function doPayout() {
     }
     if (batchResult.value.items.some((item) => item.manualReview)) {
       ElMessage.warning('打款状态需要人工核对，请勿重复生成交易')
+    } else if (batchResult.value.pending > 0) {
+      ElMessage.warning(`${batchResult.value.pending} 笔已签名，等待广播确认，请刷新列表核对状态`)
     } else if (batchResult.value.failed > 0) {
       ElMessage.error(`${batchResult.value.failed} 笔提交失败，请查看逐笔结果`)
     }
     batchStep.value = 'result'
     await loadWithdrawals()
   } catch (error) {
-    ElMessage.error(backendErrorMessage(error, '打款提交失败'))
+    if (isRequestTimeout(error)) {
+      await loadWithdrawals()
+      batchDialogVisible.value = false
+      ElMessage.warning('请求超时，后台可能仍在处理，请刷新列表核对打款状态')
+    } else {
+      ElMessage.error(backendErrorMessage(error, '打款提交失败'))
+    }
   } finally {
     operationLoading.value = false
     clearSecrets()
@@ -206,6 +214,20 @@ function statusType(status: WithdrawalStatus) {
     REJECTED: 'danger',
   }
   return types[status]
+}
+
+function resultAlertType(result: BatchWithdrawalResult) {
+  if (result.items.some((item) => item.manualReview)) return 'warning'
+  if (result.failed > 0) return 'error'
+  if (result.pending > 0) return 'warning'
+  return 'success'
+}
+
+function resultSummary(result: BatchWithdrawalResult) {
+  const summary = `已提交 ${result.succeeded} 笔，待广播 ${result.pending} 笔，失败 ${result.failed} 笔`
+  return result.items.some((item) => item.manualReview)
+    ? `${summary}；含需人工核对项，请勿重复生成交易`
+    : summary
 }
 
 onMounted(() => {
@@ -350,6 +372,7 @@ onBeforeRouteLeave(() => clearSecrets())
           <el-input
             v-model="credentials.tronPrivateKey"
             type="password"
+            maxlength="66"
             placeholder="Tron 私钥（hex，不含 0x 前缀）"
             show-password
             autocomplete="off"
@@ -360,6 +383,7 @@ onBeforeRouteLeave(() => clearSecrets())
           <el-input
             v-model="credentials.ethPrivateKey"
             type="password"
+            maxlength="66"
             placeholder="Ethereum 私钥（hex，不含 0x 前缀）"
             show-password
             autocomplete="off"
@@ -384,16 +408,12 @@ onBeforeRouteLeave(() => clearSecrets())
 
       <div v-if="batchStep === 'result' && batchResult">
           <el-alert
-            :type="batchResult.items.some((item) => item.manualReview) ? 'warning' : batchResult.failed === 0 ? 'success' : 'error'"
+            :type="resultAlertType(batchResult)"
             show-icon
             :closable="false"
             style="margin-bottom: 12px"
           >
-            {{ batchResult.items.some((item) => item.manualReview)
-              ? '存在需要人工核对的打款，请勿重复生成交易'
-              : batchResult.failed === 0
-              ? `已提交全部 ${batchResult.succeeded} 笔打款，等待链上确认`
-              : `已提交 ${batchResult.succeeded} 笔，失败 ${batchResult.failed} 笔` }}
+            {{ resultSummary(batchResult) }}
           </el-alert>
           <el-table :data="batchResult.items" border size="small" max-height="250">
             <el-table-column label="打款状态" width="150">

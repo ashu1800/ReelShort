@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,6 +17,9 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 
 import com.reelshort.backend.admin.AdminAuditService;
 import com.reelshort.backend.admin.AdminUser;
@@ -238,6 +242,95 @@ class WithdrawalAdminServiceTests {
 				.isInstanceOf(IllegalStateException.class);
 		verify(auditService).recordIndependent("operator", "WITHDRAWAL_REJECT_FAILED", "WITHDRAWAL",
 				withdrawalId, "status=LOOKUP_FAILED");
+	}
+
+	@Test
+	void preparedAttemptIsPendingAndNotCountedAsSubmitted() {
+		UUID adminId = configuredAdmin();
+		UUID withdrawalId = UUID.randomUUID();
+		WithdrawalRequest withdrawal = payoutWithdrawal(withdrawalId);
+		WithdrawalPayoutAttempt attempt = preparedAttempt(withdrawalId);
+		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
+		when(payoutCoordinator.prepareAndBroadcast(withdrawalId, "eth-key", "operator")).thenReturn(attempt);
+
+		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key",
+				"123456", adminId);
+
+		assertThat(result.succeeded()).isZero();
+		assertThat(result.failed()).isZero();
+		assertThat(result.pending()).isEqualTo(1);
+		assertThat(result.items().get(0).payoutStatus()).isEqualTo("PREPARED");
+		verify(auditService).recordIndependent("operator", "WITHDRAWAL_PAYOUT_PENDING", "WITHDRAWAL",
+				withdrawalId, "network=ERC20,amount=12.5,status=PREPARED,txHash=0xpayout");
+	}
+
+	@Test
+	void payoutAuditFailureDoesNotChangeSingleOutcome() {
+		UUID adminId = configuredAdmin();
+		UUID withdrawalId = UUID.randomUUID();
+		WithdrawalRequest withdrawal = payoutWithdrawal(withdrawalId);
+		WithdrawalPayoutAttempt attempt = preparedAttempt(withdrawalId);
+		attempt.markBroadcasted();
+		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
+		when(payoutCoordinator.prepareAndBroadcast(withdrawalId, "eth-key", "operator")).thenReturn(attempt);
+		when(userRepository.findById(any())).thenReturn(Optional.empty());
+		doThrow(new IllegalStateException("audit store down")).when(auditService)
+				.recordIndependent(any(), any(), any(), any(), any());
+
+		WithdrawalResponse response = service.approve(withdrawalId, null, "eth-key", "123456", adminId,
+				"operator");
+
+		assertThat(response.payoutStatus()).isEqualTo("BROADCASTED");
+	}
+
+	@Test
+	void batchContinuesWhenOnePayoutAuditFails() {
+		UUID adminId = configuredAdmin();
+		UUID firstId = UUID.randomUUID();
+		UUID secondId = UUID.randomUUID();
+		WithdrawalRequest first = payoutWithdrawal(firstId);
+		WithdrawalRequest second = payoutWithdrawal(secondId);
+		WithdrawalPayoutAttempt firstAttempt = preparedAttempt(firstId);
+		firstAttempt.markBroadcasted();
+		WithdrawalPayoutAttempt secondAttempt = preparedAttempt(secondId);
+		secondAttempt.markBroadcasted();
+		when(withdrawalRepository.findById(firstId)).thenReturn(Optional.of(first));
+		when(withdrawalRepository.findById(secondId)).thenReturn(Optional.of(second));
+		when(payoutCoordinator.prepareAndBroadcast(firstId, "eth-key", "operator")).thenReturn(firstAttempt);
+		when(payoutCoordinator.prepareAndBroadcast(secondId, "eth-key", "operator")).thenReturn(secondAttempt);
+		doThrow(new IllegalStateException("audit store down")).when(auditService)
+				.recordIndependent(any(), any(), any(), any(), any());
+
+		BatchWithdrawalResponse result = service.batchApprove(List.of(firstId, secondId), null, "eth-key",
+				"123456", adminId);
+
+		assertThat(result.succeeded()).isEqualTo(2);
+		assertThat(result.failed()).isZero();
+		assertThat(result.pending()).isZero();
+		assertThat(result.items()).hasSize(2);
+	}
+
+	@Test
+	void batchRejectsMoreThanTenIds() {
+		List<UUID> ids = java.util.stream.IntStream.range(0, 11).mapToObj(index -> UUID.randomUUID()).toList();
+
+		assertThatThrownBy(() -> service.batchPreview(ids))
+				.isInstanceOf(com.reelshort.backend.admin.AdminException.class)
+				.hasMessage("maximum 10 withdrawal ids allowed");
+	}
+
+	@Test
+	void privateKeysMustBeOptionalBlankOrExactly64HexCharacters() {
+		Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+
+		assertThat(validator.validate(new WithdrawalApprovalRequest("not-hex", null, "123456")))
+				.isNotEmpty();
+		assertThat(validator.validate(new WithdrawalApprovalRequest("a".repeat(65), null, "123456")))
+				.isNotEmpty();
+		assertThat(validator.validate(new WithdrawalApprovalRequest("0x" + "a".repeat(64), null, "123456")))
+				.isEmpty();
+		assertThat(validator.validate(new WithdrawalApprovalRequest("", null, "123456")))
+				.isEmpty();
 	}
 
 	private UUID configuredAdmin() {

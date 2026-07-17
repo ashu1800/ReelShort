@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,8 @@ import com.reelshort.backend.wallet.UserWalletRepository;
 
 @Service
 public class WithdrawalService {
+
+	private static final Logger log = LoggerFactory.getLogger(WithdrawalService.class);
 
 	private final WithdrawalRequestRepository withdrawalRequestRepository;
 	private final UserWalletRepository userWalletRepository;
@@ -170,8 +174,8 @@ public class WithdrawalService {
 		AdminUser admin = adminUserRepository.findById(adminUserId)
 				.orElseThrow(() -> new AdminException(404, "admin not found"));
 		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
-			adminAuditService.recordIndependent(adminUsername, "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
-					withdrawalId, "status=TOTP_REJECTED");
+			recordAuditSafely(adminUsername, "WITHDRAWAL_PAYOUT_FAILED", withdrawalId,
+					"status=TOTP_REJECTED");
 			throw new AdminException(403, "2FA verification failed");
 		}
 		WithdrawalRequest request = null;
@@ -186,14 +190,13 @@ public class WithdrawalService {
 			String summary = request == null
 					? targetLookupFailureSummary(exception)
 					: payoutAuditSummary(request, "FAILED", null);
-			adminAuditService.recordIndependent(adminUsername, "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
-					withdrawalId, summary);
+			recordAuditSafely(adminUsername, "WITHDRAWAL_PAYOUT_FAILED", withdrawalId, summary);
 			throw exception;
 		}
 		String action = isSubmitted(attempt.status())
 				? "WITHDRAWAL_PAYOUT_EXECUTED"
-				: "WITHDRAWAL_PAYOUT_FAILED";
-		adminAuditService.recordIndependent(adminUsername, action, "WITHDRAWAL", withdrawalId,
+				: isPending(attempt.status()) ? "WITHDRAWAL_PAYOUT_PENDING" : "WITHDRAWAL_PAYOUT_FAILED";
+		recordAuditSafely(adminUsername, action, withdrawalId,
 				payoutAuditSummary(request, attempt.status().name(), attempt.txHash()));
 		return adminResponse(request, attempt);
 	}
@@ -227,7 +230,7 @@ public class WithdrawalService {
 				}
 				return adminResponse(withdrawalRequestRepository.save(lockedRequest));
 			});
-			adminAuditService.record(adminUsername, "WITHDRAWAL_REJECTED", "WITHDRAWAL", withdrawalId,
+			recordAuditSafely(adminUsername, "WITHDRAWAL_REJECTED", withdrawalId,
 					payoutAuditSummary(lockedRequest, WithdrawalStatus.REJECTED.name(), lockedRequest.txHash()));
 			return response;
 		}
@@ -235,8 +238,7 @@ public class WithdrawalService {
 			String summary = request == null
 					? targetLookupFailureSummary(exception)
 					: payoutAuditSummary(request, "FAILED", request.txHash());
-			adminAuditService.recordIndependent(adminUsername, "WITHDRAWAL_REJECT_FAILED", "WITHDRAWAL",
-					withdrawalId, summary);
+			recordAuditSafely(adminUsername, "WITHDRAWAL_REJECT_FAILED", withdrawalId, summary);
 			throw exception;
 		}
 	}
@@ -285,13 +287,14 @@ public class WithdrawalService {
 				.orElseThrow(() -> new AdminException(404, "admin not found"));
 		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
 			for (UUID withdrawalId : withdrawalIds) {
-				adminAuditService.recordIndependent(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
-						withdrawalId, "status=TOTP_REJECTED");
+				recordAuditSafely(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", withdrawalId,
+						"status=TOTP_REJECTED");
 			}
 			throw new AdminException(403, "2FA verification failed");
 		}
 		List<BatchWithdrawalResponse.ItemResult> results = new ArrayList<>();
 		int succeeded = 0;
+		int pendingCount = 0;
 		int firstFailureIndex = -1;
 		String firstFailureMessage = null;
 		int index = 0;
@@ -312,8 +315,7 @@ public class WithdrawalService {
 				String auditSummary = request == null
 						? "status=FAILED"
 						: payoutAuditSummary(request, "FAILED", null);
-				adminAuditService.recordIndependent(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
-						withdrawalId, auditSummary);
+				recordAuditSafely(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", withdrawalId, auditSummary);
 				if (firstFailureIndex < 0) {
 					firstFailureIndex = index;
 					firstFailureMessage = errorMessage;
@@ -322,10 +324,12 @@ public class WithdrawalService {
 				continue;
 			}
 			boolean submitted = isSubmitted(attempt.status());
-			String action = submitted ? "WITHDRAWAL_PAYOUT_EXECUTED" : "WITHDRAWAL_PAYOUT_FAILED";
-			adminAuditService.recordIndependent(admin.username(), action, "WITHDRAWAL", withdrawalId,
+			boolean pending = isPending(attempt.status());
+			String action = submitted ? "WITHDRAWAL_PAYOUT_EXECUTED"
+					: pending ? "WITHDRAWAL_PAYOUT_PENDING" : "WITHDRAWAL_PAYOUT_FAILED";
+			recordAuditSafely(admin.username(), action, withdrawalId,
 					payoutAuditSummary(request, attempt.status().name(), attempt.txHash()));
-			String failureReason = submitted ? attempt.failureReason() : attemptFailureReason(attempt);
+			String failureReason = submitted || pending ? attempt.failureReason() : attemptFailureReason(attempt);
 			results.add(new BatchWithdrawalResponse.ItemResult(
 					withdrawalId.toString(), attempt.status().name(), attempt.txHash(),
 					attempt.confirmationCount(), failureReason,
@@ -334,14 +338,17 @@ public class WithdrawalService {
 			if (submitted) {
 				succeeded++;
 			}
+			else if (pending) {
+				pendingCount++;
+			}
 			else if (firstFailureIndex < 0) {
 				firstFailureIndex = index;
 				firstFailureMessage = failureReason;
 			}
 			index++;
 		}
-		return new BatchWithdrawalResponse(succeeded, results.size() - succeeded, firstFailureIndex,
-				firstFailureMessage, results);
+		return new BatchWithdrawalResponse(succeeded, results.size() - succeeded - pendingCount, pendingCount,
+				firstFailureIndex, firstFailureMessage, results);
 	}
 
 	private String payoutAuditSummary(WithdrawalRequest request, String status, String txHash) {
@@ -351,9 +358,12 @@ public class WithdrawalService {
 	}
 
 	private boolean isSubmitted(WithdrawalPayoutStatus status) {
-		return status == WithdrawalPayoutStatus.PREPARED
-				|| status == WithdrawalPayoutStatus.BROADCASTED
+		return status == WithdrawalPayoutStatus.BROADCASTED
 				|| status == WithdrawalPayoutStatus.CONFIRMED;
+	}
+
+	private boolean isPending(WithdrawalPayoutStatus status) {
+		return status == WithdrawalPayoutStatus.PREPARED;
 	}
 
 	private String attemptFailureReason(WithdrawalPayoutAttempt attempt) {
@@ -376,7 +386,19 @@ public class WithdrawalService {
 		return "status=LOOKUP_FAILED";
 	}
 
+	private void recordAuditSafely(String adminUsername, String action, UUID withdrawalId, String summary) {
+		try {
+			adminAuditService.recordIndependent(adminUsername, action, "WITHDRAWAL", withdrawalId, summary);
+		}
+		catch (RuntimeException exception) {
+			log.warn("Payout audit unavailable; withdrawalId={} action={}", withdrawalId, action);
+		}
+	}
+
 	private void validateBatchIds(List<UUID> withdrawalIds) {
+		if (withdrawalIds.size() > 10) {
+			throw new AdminException(400, "maximum 10 withdrawal ids allowed");
+		}
 		if (new HashSet<>(withdrawalIds).size() != withdrawalIds.size()) {
 			throw new AdminException(400, "duplicate withdrawal ids are not allowed");
 		}
