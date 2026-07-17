@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { clearWithdrawalSecrets } from '../src/services/withdrawalSecrets.js'
@@ -119,6 +119,24 @@ test('admin HTTP client allows long-running payout requests and handles timeout 
   const viewSource = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
 
   assert.match(httpSource, /timeout:\s*120000/)
+  assert.match(httpSource, /502/)
+  assert.match(httpSource, /504/)
   assert.match(viewSource, /isRequestTimeout/)
   assert.match(viewSource, /后台可能仍在处理/)
+})
+
+test('compose and host nginx keep payout execution routes open for 150 seconds', () => {
+  const composeNginx = readFileSync(new URL('../nginx.conf', import.meta.url), 'utf8')
+  const hostTemplateUrl = new URL('../../infra/nginx/shortlink-payout-timeouts.conf.template', import.meta.url)
+  assert.ok(existsSync(hostTemplateUrl), 'host nginx payout timeout template must exist')
+  const hostNginx = readFileSync(hostTemplateUrl, 'utf8')
+
+  for (const source of [composeNginx, hostNginx]) {
+    const match = source.match(/location\s+~\s+[^\n]*withdrawals[^\{]*\{[\s\S]*?\n\s*}/)
+    assert.ok(match, 'payout-specific nginx location must exist')
+    assert.match(match[0], /batch-approve/)
+    assert.match(match[0], /approve/)
+    assert.match(match[0], /proxy_read_timeout\s+150s/)
+    assert.match(match[0], /proxy_send_timeout\s+150s/)
+  }
 })

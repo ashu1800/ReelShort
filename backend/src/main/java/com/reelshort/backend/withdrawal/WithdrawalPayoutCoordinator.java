@@ -28,6 +28,7 @@ public class WithdrawalPayoutCoordinator {
 	}
 
 	public WithdrawalPayoutAttempt prepareAndBroadcast(UUID withdrawalId, String privateKey, String createdBy) {
+		privateKey = PrivateKeyNormalizer.normalize(privateKey);
 		String signingOwner = UUID.randomUUID().toString();
 		Optional<WithdrawalPayoutAttempt> active = transactionService.findActive(withdrawalId);
 		if (active.isPresent()) {

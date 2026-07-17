@@ -37,5 +37,9 @@ export function backendErrorMessage(error: unknown, fallback: string) {
 }
 
 export function isRequestTimeout(error: unknown) {
-  return axios.isAxiosError(error) && (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT')
+  if (!axios.isAxiosError(error)) return false
+  return error.code === 'ECONNABORTED'
+    || error.code === 'ETIMEDOUT'
+    || error.response?.status === 502
+    || error.response?.status === 504
 }
