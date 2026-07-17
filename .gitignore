@@ -57,3 +57,4 @@ android-app/release-signing/
 !.env.example
 .zcode/
 .playwright-mcp/
+.worktrees/
