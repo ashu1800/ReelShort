@@ -452,7 +452,7 @@ export async function batchApproveWithdrawals(
 export type BatchWithdrawalPreview = {
   hotWalletAddress: string
   hotWalletUsdtBalance: string
-  hotWalletTrxBalance: string
+  hotWalletEthBalance: string
   totalUsdt: string
   itemCount: number
   items: { withdrawalId: string; userAccount: string; usdtAmount: string; walletAddress: string }[]

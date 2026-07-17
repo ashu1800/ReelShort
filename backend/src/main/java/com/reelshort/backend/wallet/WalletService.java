@@ -1,12 +1,8 @@
 package com.reelshort.backend.wallet;
 
-import java.math.BigInteger;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -21,11 +17,6 @@ import com.reelshort.backend.user.UserStatus;
 
 @Service
 public class WalletService {
-
-	private static final String BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-	private static final int TRON_ADDRESS_LENGTH = 34;
-	private static final int TRON_DECODED_LENGTH = 25;
-	private static final byte TRON_PREFIX = 0x41;
 
 	private final UserWalletRepository userWalletRepository;
 	private final UserAccountRepository userAccountRepository;
@@ -113,7 +104,7 @@ public class WalletService {
 
 	private String normalizeWalletAddress(String walletAddress) {
 		String trimmed = walletAddress == null ? "" : walletAddress.trim();
-		if (!isValidTronAddress(trimmed)) {
+		if (!isValidEthereumAddress(trimmed)) {
 			throw new AdminException(400, "invalid wallet address");
 		}
 		return trimmed;
@@ -172,51 +163,27 @@ public class WalletService {
 		}
 	}
 
-	private boolean isValidTronAddress(String walletAddress) {
-		if (!walletAddress.startsWith("T") || walletAddress.length() != TRON_ADDRESS_LENGTH) {
+	/**
+	 * 校验以太坊地址格式：0x 开头 + 40 个十六进制字符。
+	 * 不强制 EIP-55 大小写校验（兼容全小写/全大写输入）。
+	 */
+	private boolean isValidEthereumAddress(String walletAddress) {
+		if (walletAddress == null || walletAddress.length() != 42) {
 			return false;
 		}
-		byte[] decoded = decodeBase58(walletAddress);
-		if (decoded.length != TRON_DECODED_LENGTH || decoded[0] != TRON_PREFIX) {
+		if (!walletAddress.startsWith("0x") && !walletAddress.startsWith("0X")) {
 			return false;
 		}
-		byte[] payload = Arrays.copyOfRange(decoded, 0, 21);
-		byte[] expectedChecksum = Arrays.copyOfRange(doubleSha256(payload), 0, 4);
-		byte[] actualChecksum = Arrays.copyOfRange(decoded, 21, TRON_DECODED_LENGTH);
-		return Arrays.equals(expectedChecksum, actualChecksum);
-	}
-
-	private byte[] decodeBase58(String value) {
-		BigInteger number = BigInteger.ZERO;
-		for (int index = 0; index < value.length(); index++) {
-			int digit = BASE58_ALPHABET.indexOf(value.charAt(index));
-			if (digit < 0) {
-				return new byte[0];
+		for (int i = 2; i < 42; i++) {
+			char c = walletAddress.charAt(i);
+			boolean isHex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+			if (!isHex) {
+				return false;
 			}
-			number = number.multiply(BigInteger.valueOf(58)).add(BigInteger.valueOf(digit));
 		}
-		byte[] raw = number.toByteArray();
-		if (raw.length > 0 && raw[0] == 0) {
-			raw = Arrays.copyOfRange(raw, 1, raw.length);
-		}
-		int leadingZeroes = 0;
-		while (leadingZeroes < value.length() && value.charAt(leadingZeroes) == '1') {
-			leadingZeroes++;
-		}
-		byte[] decoded = new byte[leadingZeroes + raw.length];
-		System.arraycopy(raw, 0, decoded, leadingZeroes, raw.length);
-		return decoded;
+		return true;
 	}
 
-	private byte[] doubleSha256(byte[] value) {
-		try {
-			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-			return digest.digest(digest.digest(value));
-		}
-		catch (NoSuchAlgorithmException exception) {
-			throw new IllegalStateException("SHA-256 not available", exception);
-		}
-	}
 
 	private String safeConfigValue(String key) {
 		try {

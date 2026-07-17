@@ -30,8 +30,8 @@ import com.reelshort.backend.system.security.TotpService;
 @AutoConfigureMockMvc
 class WalletWithdrawalTransferControllerTests {
 
-	private static final String VALID_TRC_ADDRESS = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
-	private static final String INVALID_CHECKSUM_TRC_ADDRESS = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwc";
+	private static final String VALID_ETH_ADDRESS = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1";
+	private static final String INVALID_ETH_ADDRESS = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb";
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -74,10 +74,10 @@ class WalletWithdrawalTransferControllerTests {
 						{
 						  "walletAddress": "%s"
 						}
-						""".formatted(VALID_TRC_ADDRESS)))
+						""".formatted(VALID_ETH_ADDRESS)))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.network").value("TRC20"))
-				.andExpect(jsonPath("$.data.walletAddress").value(VALID_TRC_ADDRESS));
+				.andExpect(jsonPath("$.data.network").value("ERC20"))
+				.andExpect(jsonPath("$.data.walletAddress").value(VALID_ETH_ADDRESS));
 
 		mockMvc.perform(post("/api/app/wallet/bank-card")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
@@ -106,7 +106,7 @@ class WalletWithdrawalTransferControllerTests {
 						{
 						  "walletAddress": "%s"
 						}
-						""".formatted(INVALID_CHECKSUM_TRC_ADDRESS)))
+						""".formatted(INVALID_ETH_ADDRESS)))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("invalid wallet address"));
 	}
@@ -116,7 +116,7 @@ class WalletWithdrawalTransferControllerTests {
 		String adminToken = adminLogin();
 		RegisteredUser user = createUser("wallet-withdraw");
 		adjustPoints(adminToken, user.userId(), 4000, "seed withdrawal balance");
-		bindWallet(user.token(), VALID_TRC_ADDRESS);
+		bindWallet(user.token(), VALID_ETH_ADDRESS);
 
 		String withdrawalId = JsonPath.read(mockMvc.perform(post("/api/app/withdrawals")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
@@ -129,7 +129,7 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("PENDING"))
 				.andExpect(jsonPath("$.data.pointAmount").value(3600))
-				.andExpect(jsonPath("$.data.walletAddress").value(VALID_TRC_ADDRESS))
+				.andExpect(jsonPath("$.data.walletAddress").value(VALID_ETH_ADDRESS))
 				.andReturn()
 				.getResponse()
 				.getContentAsString(), "$.data.id");
@@ -191,7 +191,7 @@ class WalletWithdrawalTransferControllerTests {
 		String adminToken = adminLogin();
 		RegisteredUser user = createUser("wallet-reject");
 		adjustPoints(adminToken, user.userId(), 4000, "seed withdrawal balance");
-		bindWallet(user.token(), VALID_TRC_ADDRESS);
+		bindWallet(user.token(), VALID_ETH_ADDRESS);
 		String withdrawalId = JsonPath.read(mockMvc.perform(post("/api/app/withdrawals")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
 				.contentType(MediaType.APPLICATION_JSON)
@@ -244,7 +244,7 @@ class WalletWithdrawalTransferControllerTests {
 			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, "1");
 			RegisteredUser user = createUser("wallet-rounding");
 			adjustPoints(adminToken, user.userId(), 200, "seed withdrawal balance");
-			bindWallet(user.token(), VALID_TRC_ADDRESS);
+			bindWallet(user.token(), VALID_ETH_ADDRESS);
 
 			mockMvc.perform(post("/api/app/withdrawals")
 					.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())

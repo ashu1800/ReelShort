@@ -149,7 +149,7 @@ async function approve(row: WithdrawalRequest) {
   let txHash = ''
   let totpCode = ''
   try {
-    const hashResult = await ElMessageBox.prompt('请输入 TRC 链上转账 tx hash（手动模式）', '通过提现申请', {
+    const hashResult = await ElMessageBox.prompt('请输入以太坊链上转账 tx hash（手动模式）', '通过提现申请', {
       confirmButtonText: '下一步',
       cancelButtonText: '取消',
       inputPattern: /\S{6,}/,
@@ -168,7 +168,7 @@ async function approve(row: WithdrawalRequest) {
   }
   operationLoading.value = true
   try {
-    await approveWithdrawal(row.id, txHash, 'manual TRC transfer confirmed', totpCode)
+    await approveWithdrawal(row.id, txHash, 'manual ERC-20 transfer confirmed', totpCode)
     ElMessage.success('提现申请已通过')
     await loadWithdrawals()
   } catch (error) {
@@ -224,7 +224,7 @@ onMounted(() => {
     <div class="page-header">
       <div>
         <h1>提现申请</h1>
-        <p>勾选待处理申请后批量自动打款（TRC20 USDT），需 2FA 确认。也可单笔手动录入 tx hash。</p>
+        <p>勾选待处理申请后批量自动打款（ERC-20 USDT），需 2FA 确认。也可单笔手动录入 tx hash。</p>
       </div>
       <div style="display: flex; gap: 8px">
         <el-button
@@ -318,7 +318,7 @@ onMounted(() => {
             <span class="mono">{{ preview.hotWalletAddress }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="热钱包 USDT 余额">{{ preview.hotWalletUsdtBalance }}</el-descriptions-item>
-          <el-descriptions-item label="热钱包 TRX 余额">{{ preview.hotWalletTrxBalance }}</el-descriptions-item>
+          <el-descriptions-item label="热钱包 ETH 余额">{{ preview.hotWalletEthBalance }}</el-descriptions-item>
           <el-descriptions-item label="本次提现总计 USDT">
             <strong>{{ preview.totalUsdt }}</strong>
           </el-descriptions-item>

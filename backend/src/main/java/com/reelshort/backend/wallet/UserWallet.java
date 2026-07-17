@@ -45,7 +45,7 @@ public class UserWallet {
 
 	public static UserWallet create(UUID userId, String walletAddress) {
 		OffsetDateTime now = OffsetDateTime.now();
-		return new UserWallet(UUID.randomUUID(), userId, "TRC20", walletAddress, now, now);
+		return new UserWallet(UUID.randomUUID(), userId, "ERC20", walletAddress, now, now);
 	}
 
 	public void replace(String walletAddress) {

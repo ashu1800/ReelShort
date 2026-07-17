@@ -39,7 +39,7 @@ public class WithdrawalService {
 	private final SystemConfigService systemConfigService;
 	private final UserActionLocks userActionLocks;
 	private final UserAccountRepository userAccountRepository;
-	private final TronClient tronClient;
+	private final EthereumClient ethereumClient;
 	private final TotpService totpService;
 	private final AdminUserRepository adminUserRepository;
 
@@ -47,7 +47,7 @@ public class WithdrawalService {
 			UserWalletRepository userWalletRepository, PointAccountRepository pointAccountRepository,
 			PointTransactionRepository pointTransactionRepository, SystemConfigService systemConfigService,
 			UserActionLocks userActionLocks, UserAccountRepository userAccountRepository,
-			TronClient tronClient, TotpService totpService, AdminUserRepository adminUserRepository) {
+			EthereumClient ethereumClient, TotpService totpService, AdminUserRepository adminUserRepository) {
 		this.withdrawalRequestRepository = withdrawalRequestRepository;
 		this.userWalletRepository = userWalletRepository;
 		this.pointAccountRepository = pointAccountRepository;
@@ -55,7 +55,7 @@ public class WithdrawalService {
 		this.systemConfigService = systemConfigService;
 		this.userActionLocks = userActionLocks;
 		this.userAccountRepository = userAccountRepository;
-		this.tronClient = tronClient;
+		this.ethereumClient = ethereumClient;
 		this.totpService = totpService;
 		this.adminUserRepository = adminUserRepository;
 	}
@@ -213,9 +213,9 @@ public class WithdrawalService {
 	 */
 	@Transactional(readOnly = true)
 	public BatchWithdrawalPreviewResponse batchPreview(List<UUID> withdrawalIds, String hotWalletPrivateKey) {
-		String hotWalletAddress = tronClient.addressFromPrivateKey(hotWalletPrivateKey);
-		BigDecimal usdtBalance = tronClient.getUsdtBalance(hotWalletAddress);
-		BigDecimal trxBalance = tronClient.getTrxBalance(hotWalletAddress);
+		String hotWalletAddress = ethereumClient.addressFromPrivateKey(hotWalletPrivateKey);
+		BigDecimal usdtBalance = ethereumClient.getUsdtBalance(hotWalletAddress);
+		BigDecimal ethBalance = ethereumClient.getEthBalance(hotWalletAddress);
 		List<WithdrawalRequest> requests = withdrawalRequestRepository.findAllById(withdrawalIds);
 		BigDecimal total = BigDecimal.ZERO;
 		List<BatchWithdrawalPreviewResponse.PreviewItem> items = new ArrayList<>();
@@ -226,7 +226,7 @@ public class WithdrawalService {
 			items.add(new BatchWithdrawalPreviewResponse.PreviewItem(
 					req.id().toString(), userAccount(req.userId()), decimal(req.usdtAmount()), req.walletAddress()));
 		}
-		return new BatchWithdrawalPreviewResponse(hotWalletAddress, decimal(usdtBalance), decimal(trxBalance),
+		return new BatchWithdrawalPreviewResponse(hotWalletAddress, decimal(usdtBalance), decimal(ethBalance),
 				decimal(total), items.size(), items);
 	}
 
@@ -287,7 +287,7 @@ public class WithdrawalService {
 		// Phase 2: 读取已提交的 request（仅用于获取广播参数），广播在事务外
 		WithdrawalRequest broadcasted = withdrawalRequestRepository.findById(withdrawalId).orElseThrow();
 		try {
-			String txHash = tronClient.transferUSDT(hotWalletPrivateKey, broadcasted.walletAddress(),
+			String txHash = ethereumClient.transferUSDT(hotWalletPrivateKey, broadcasted.walletAddress(),
 					broadcasted.usdtAmount());
 			// Phase 3: 广播成功，标记 APPROVED（新事务）
 			markApprovedAfterBroadcast(withdrawalId, txHash, adminUsername);
@@ -295,7 +295,7 @@ public class WithdrawalService {
 		}
 		catch (RuntimeException exception) {
 			// 广播失败：积分已扣，状态已是 BROADCAST_FAILED，记录错误日志供人工对账
-			log.error("TRC20 broadcast failed for withdrawal {} (points already deducted): {}",
+			log.error("ERC-20 broadcast failed for withdrawal {} (points already deducted): {}",
 					withdrawalId, exception.getMessage());
 			throw exception;
 		}
@@ -329,7 +329,7 @@ public class WithdrawalService {
 	void markApprovedAfterBroadcast(UUID withdrawalId, String txHash, String adminUsername) {
 		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
 		if (request.status() == WithdrawalStatus.BROADCAST_FAILED) {
-			request.markApprovedFromBroadcast(txHash, "auto TRC20 transfer", adminUsername);
+			request.markApprovedFromBroadcast(txHash, "auto ERC-20 transfer", adminUsername);
 			withdrawalRequestRepository.save(request);
 		}
 	}

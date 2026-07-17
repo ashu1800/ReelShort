@@ -8,8 +8,8 @@ import java.util.List;
  *
  * @param hotWalletAddress      derived from the private key the admin will provide (shown for
  *                              verification — null if not provided in preview)
- * @param hotWalletUsdtBalance  current USDT balance of the hot wallet
- * @param hotWalletTrxBalance   current TRX balance (for energy/bandwidth fee estimation)
+ * @param hotWalletUsdtBalance  current ERC-20 USDT balance of the hot wallet
+ * @param hotWalletEthBalance   current ETH balance (for gas fee estimation)
  * @param totalUsdt             sum of all selected withdrawal amounts
  * @param itemCount             number of selected withdrawals
  * @param items                 individual withdrawal details
@@ -17,7 +17,7 @@ import java.util.List;
 public record BatchWithdrawalPreviewResponse(
 		String hotWalletAddress,
 		String hotWalletUsdtBalance,
-		String hotWalletTrxBalance,
+		String hotWalletEthBalance,
 		String totalUsdt,
 		int itemCount,
 		List<PreviewItem> items) {
