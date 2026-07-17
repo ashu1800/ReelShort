@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import {
   approveWithdrawal,
   batchApproveWithdrawals,
@@ -11,25 +12,29 @@ import {
 } from '../services/adminApi'
 import type { BatchWithdrawalPreview, BatchWithdrawalResult, WithdrawalRequest, WithdrawalStatus } from '../services/adminApi'
 import { backendErrorMessage } from '../services/http'
+import { clearWithdrawalSecrets } from '../services/withdrawalSecrets.js'
 
 const loading = ref(false)
 const operationLoading = ref(false)
 const error = ref('')
 const withdrawals = ref<WithdrawalRequest[]>([])
 const selectedRows = ref<WithdrawalRequest[]>([])
+const activePayoutIds = ref<string[]>([])
 
-// Batch payout dialog state
 const batchDialogVisible = ref(false)
-const batchStep = ref<'input-key' | 'preview' | 'totp'>('input-key')
-const tronPrivateKey = ref('')
-const ethPrivateKey = ref('')
+const batchStep = ref<'preview' | 'credentials' | 'result'>('preview')
+const credentials = reactive({ tronPrivateKey: '', ethPrivateKey: '', totpCode: '' })
 const preview = ref<BatchWithdrawalPreview | null>(null)
-const totpCode = ref('')
 const batchResult = ref<BatchWithdrawalResult | null>(null)
 const totpEnabled = ref(false)
 
 const selectedPendingIds = computed(() =>
   selectedRows.value.filter((w) => w.status === 'PENDING').map((w) => w.id),
+)
+const needsTronKey = computed(() => preview.value?.items.some((item) => item.network === 'TRC20') ?? false)
+const needsEthKey = computed(() => preview.value?.items.some((item) => item.network === 'ERC20') ?? false)
+const payoutDialogTitle = computed(() =>
+  activePayoutIds.value.length === 1 ? '执行提现打款' : `批量执行 ${activePayoutIds.value.length} 笔提现`,
 )
 
 const pendingCount = computed(() =>
@@ -76,8 +81,13 @@ function handleSelectionChange(rows: WithdrawalRequest[]) {
   selectedRows.value = rows
 }
 
-async function openBatchDialog() {
-  if (selectedPendingIds.value.length === 0) {
+function clearSecrets() {
+  clearWithdrawalSecrets(credentials)
+}
+
+async function openPayoutDialog(row?: WithdrawalRequest) {
+  activePayoutIds.value = row ? [row.id] : [...selectedPendingIds.value]
+  if (activePayoutIds.value.length === 0) {
     ElMessage.warning('请先勾选待处理的提现申请')
     return
   }
@@ -85,106 +95,93 @@ async function openBatchDialog() {
     ElMessage.warning('请先在「两步验证」页面绑定 2FA')
     return
   }
-  tronPrivateKey.value = ''
-  ethPrivateKey.value = ''
+  clearSecrets()
   preview.value = null
-  totpCode.value = ''
   batchResult.value = null
-  batchStep.value = 'input-key'
+  batchStep.value = 'preview'
   batchDialogVisible.value = true
+  await doPreview()
 }
 
 async function doPreview() {
-  if (!tronPrivateKey.value.trim() && !ethPrivateKey.value.trim()) {
-    ElMessage.warning('请至少输入一条链的热钱包私钥')
-    return
-  }
   operationLoading.value = true
   try {
-    preview.value = await batchPreviewWithdrawals(
-      selectedPendingIds.value,
-      tronPrivateKey.value.trim() || undefined,
-      ethPrivateKey.value.trim() || undefined,
-    )
+    preview.value = await batchPreviewWithdrawals(activePayoutIds.value)
     batchStep.value = 'preview'
   } catch (error) {
-    ElMessage.error(backendErrorMessage(error, '预览失败，请检查私钥'))
+    ElMessage.error(backendErrorMessage(error, '提现预览失败'))
+    batchDialogVisible.value = false
   } finally {
     operationLoading.value = false
   }
 }
 
-async function doBatchApprove() {
-  if (totpCode.value.length !== 6) {
+async function doPayout() {
+  if (needsTronKey.value && !credentials.tronPrivateKey.trim()) {
+    ElMessage.warning('请输入 TRC20 热钱包私钥')
+    return
+  }
+  if (needsEthKey.value && !credentials.ethPrivateKey.trim()) {
+    ElMessage.warning('请输入 ERC20 热钱包私钥')
+    return
+  }
+  if (!/^\d{6}$/.test(credentials.totpCode)) {
     ElMessage.warning('请输入 6 位 2FA 验证码')
     return
   }
   operationLoading.value = true
   try {
-    batchResult.value = await batchApproveWithdrawals(
-      selectedPendingIds.value,
-      tronPrivateKey.value.trim() || undefined,
-      ethPrivateKey.value.trim() || undefined,
-      totpCode.value.trim(),
-    )
+    const tronKey = credentials.tronPrivateKey.trim() || undefined
+    const ethKey = credentials.ethPrivateKey.trim() || undefined
+    if (activePayoutIds.value.length === 1) {
+      const withdrawal = await approveWithdrawal(
+        activePayoutIds.value[0],
+        tronKey,
+        ethKey,
+        credentials.totpCode,
+      )
+      batchResult.value = {
+        succeeded: 1,
+        failed: 0,
+        stoppedAtIndex: -1,
+        errorMessage: null,
+        items: [{
+          withdrawalId: withdrawal.id,
+          payoutStatus: withdrawal.payoutStatus ?? withdrawal.status,
+          txHash: withdrawal.payoutTxHash ?? withdrawal.txHash,
+          confirmationCount: withdrawal.confirmationCount,
+          failureReason: withdrawal.failureReason,
+          manualReview: withdrawal.manualReview,
+          errorMessage: null,
+        }],
+      }
+    } else {
+      batchResult.value = await batchApproveWithdrawals(
+        activePayoutIds.value,
+        tronKey,
+        ethKey,
+        credentials.totpCode,
+      )
+    }
     if (batchResult.value.succeeded > 0) {
-      ElMessage.success(`成功打款 ${batchResult.value.succeeded} 笔`)
+      ElMessage.success(`已提交 ${batchResult.value.succeeded} 笔打款`)
     }
-    if (batchResult.value.stoppedAtIndex >= 0) {
-      ElMessage.error(`第 ${batchResult.value.stoppedAtIndex + 1} 笔失败：${batchResult.value.errorMessage}`)
+    if (batchResult.value.failed > 0) {
+      ElMessage.error(`${batchResult.value.failed} 笔提交失败，请查看逐笔结果`)
     }
-    batchStep.value = 'totp'
+    batchStep.value = 'result'
     await loadWithdrawals()
   } catch (error) {
-    ElMessage.error(backendErrorMessage(error, '批量打款失败'))
+    ElMessage.error(backendErrorMessage(error, '打款提交失败'))
   } finally {
     operationLoading.value = false
-    // M7: 无论成功失败都在 finally 清私钥，避免失败路径残留
-    tronPrivateKey.value = ''
-    ethPrivateKey.value = ''
+    clearSecrets()
   }
 }
 
 function closeBatchDialog() {
   batchDialogVisible.value = false
-  // Clear sensitive data from memory
-  tronPrivateKey.value = ''
-  ethPrivateKey.value = ''
-  totpCode.value = ''
-}
-
-// Manual txHash approval — requires 2FA (H1 fix: single approval also needs TOTP)
-async function approve(row: WithdrawalRequest) {
-  let txHash = ''
-  let totpCode = ''
-  try {
-    const hashResult = await ElMessageBox.prompt('请输入以太坊链上转账 tx hash（手动模式）', '通过提现申请', {
-      confirmButtonText: '下一步',
-      cancelButtonText: '取消',
-      inputPattern: /\S{6,}/,
-      inputErrorMessage: 'tx hash 不能为空',
-    })
-    txHash = hashResult.value.trim()
-    const totpResult = await ElMessageBox.prompt('请输入 2FA 验证码', '安全验证', {
-      confirmButtonText: '确认通过',
-      cancelButtonText: '取消',
-      inputPattern: /^\d{6}$/,
-      inputErrorMessage: '请输入 6 位数字验证码',
-    })
-    totpCode = totpResult.value.trim()
-  } catch {
-    return
-  }
-  operationLoading.value = true
-  try {
-    await approveWithdrawal(row.id, txHash, 'manual ERC-20 transfer confirmed', totpCode)
-    ElMessage.success('提现申请已通过')
-    await loadWithdrawals()
-  } catch (error) {
-    ElMessage.error(backendErrorMessage(error, '提现审批失败'))
-  } finally {
-    operationLoading.value = false
-  }
+  clearSecrets()
 }
 
 async function reject(row: WithdrawalRequest) {
@@ -226,6 +223,9 @@ onMounted(() => {
   loadWithdrawals()
   loadTotpStatus()
 })
+
+onUnmounted(clearSecrets)
+onBeforeRouteLeave(() => clearSecrets())
 </script>
 
 <template>
@@ -233,13 +233,13 @@ onMounted(() => {
     <div class="page-header">
       <div>
         <h1>提现申请</h1>
-        <p>勾选待处理申请后批量自动打款（TRC20 + ERC20 双链），需 2FA 确认。也可单笔手动录入 tx hash。</p>
+        <p>预览收款地址和金额后，由本次请求提交对应链私钥与 2FA，链上确认进度会持续回写。</p>
       </div>
       <div style="display: flex; gap: 8px">
         <el-button
           type="primary"
           :disabled="selectedPendingIds.length === 0"
-          @click="openBatchDialog"
+          @click="openPayoutDialog()"
         >
           批量打款 ({{ selectedPendingIds.length }})
         </el-button>
@@ -282,17 +282,35 @@ onMounted(() => {
           <el-tag :type="statusType(row.status)" effect="plain">{{ row.status }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="tx hash" min-width="180">
+      <el-table-column label="打款状态" width="150">
         <template #default="{ row }">
-          <span v-if="row.txHash" class="mono">{{ row.txHash }}</span>
-          <span v-else class="muted">未录入</span>
+          <el-tag v-if="row.payoutStatus" :type="row.manualReview ? 'danger' : 'info'" effect="plain">
+            {{ row.payoutStatus }}
+          </el-tag>
+          <span v-else class="muted">尚未执行</span>
+        </template>
+      </el-table-column>
+      <el-table-column align="right" label="确认数" width="90">
+        <template #default="{ row }">{{ row.confirmationCount }}</template>
+      </el-table-column>
+      <el-table-column label="链上 tx hash" min-width="210">
+        <template #default="{ row }">
+          <span v-if="row.payoutTxHash || row.txHash" class="mono">{{ row.payoutTxHash || row.txHash }}</span>
+          <span v-else class="muted">尚未生成</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="失败 / 人工核对" min-width="190">
+        <template #default="{ row }">
+          <span v-if="row.manualReview" class="muted">需要人工核对</span>
+          <span v-else-if="row.failureReason">{{ row.failureReason }}</span>
+          <span v-else class="muted">-</span>
         </template>
       </el-table-column>
       <el-table-column label="申请时间" min-width="220" prop="createdAt" />
       <el-table-column align="right" fixed="right" label="操作" width="150">
         <template #default="{ row }">
           <template v-if="row.status === 'PENDING'">
-            <el-button :loading="operationLoading" type="primary" text @click="approve(row)">手动通过</el-button>
+            <el-button :loading="operationLoading" type="primary" text @click="openPayoutDialog(row)">执行打款</el-button>
             <el-button :loading="operationLoading" type="danger" text @click="reject(row)">拒绝</el-button>
           </template>
           <span v-else class="muted">已处理</span>
@@ -300,41 +318,22 @@ onMounted(() => {
       </el-table-column>
     </el-table>
 
-    <!-- Batch payout dialog -->
-    <el-dialog v-model="batchDialogVisible" title="批量自动打款" width="600px" :close-on-click-modal="false" @close="closeBatchDialog">
-      <!-- Step 1: input private keys (dual chain) -->
-      <div v-if="batchStep === 'input-key'">
-        <el-alert type="warning" show-icon :closable="false" style="margin-bottom: 16px">
-          私钥仅用于本次签名，不会存储在服务器。按需输入对应链的热钱包私钥（TRC20 和/或 ERC20）。
-        </el-alert>
-        <p>已选 {{ selectedPendingIds.length }} 笔待处理提现申请。</p>
-        <div style="margin-bottom: 12px">
-          <div style="margin-bottom: 4px; font-weight: 600">TRC20 热钱包私钥（Tron 链提现需要）</div>
-          <el-input v-model="tronPrivateKey" type="password" placeholder="Tron 私钥（hex，不含 0x 前缀）" show-password />
-        </div>
-        <div style="margin-bottom: 12px">
-          <div style="margin-bottom: 4px; font-weight: 600">ERC20 热钱包私钥（以太坊链提现需要）</div>
-          <el-input v-model="ethPrivateKey" type="password" placeholder="以太坊私钥（hex，不含 0x 前缀）" show-password />
-        </div>
-        <div style="margin-top: 16px; text-align: right">
-          <el-button @click="closeBatchDialog">取消</el-button>
-          <el-button type="primary" :loading="operationLoading" @click="doPreview">下一步：预览</el-button>
-        </div>
-      </div>
-
-      <!-- Step 2: preview balances + items (dual chain) -->
+    <el-dialog
+      v-model="batchDialogVisible"
+      v-loading="operationLoading"
+      :title="payoutDialogTitle"
+      width="640px"
+      :close-on-click-modal="false"
+      @close="closeBatchDialog"
+    >
       <div v-if="batchStep === 'preview' && preview">
         <el-descriptions :column="1" border>
           <el-descriptions-item v-if="preview.tronHotWalletAddress" label="TRC20 热钱包地址">
             <span class="mono">{{ preview.tronHotWalletAddress }}</span>
           </el-descriptions-item>
-          <el-descriptions-item v-if="preview.tronHotWalletAddress" label="TRC20 USDT 余额">{{ preview.tronUsdtBalance }}</el-descriptions-item>
-          <el-descriptions-item v-if="preview.tronHotWalletAddress" label="TRX 余额">{{ preview.tronTrxBalance }}</el-descriptions-item>
           <el-descriptions-item v-if="preview.ethHotWalletAddress" label="ERC20 热钱包地址">
             <span class="mono">{{ preview.ethHotWalletAddress }}</span>
           </el-descriptions-item>
-          <el-descriptions-item v-if="preview.ethHotWalletAddress" label="ERC20 USDT 余额">{{ preview.ethUsdtBalance }}</el-descriptions-item>
-          <el-descriptions-item v-if="preview.ethHotWalletAddress" label="ETH 余额">{{ preview.ethEthBalance }}</el-descriptions-item>
           <el-descriptions-item label="本次提现总计 USDT">
             <strong>{{ preview.totalUsdt }}</strong>
           </el-descriptions-item>
@@ -345,52 +344,85 @@ onMounted(() => {
           <el-table-column label="USDT" prop="usdtAmount" width="100" />
           <el-table-column label="钱包地址" prop="walletAddress" min-width="240" />
           <el-table-column label="账号" prop="userAccount" min-width="140" />
+          <el-table-column label="状态" prop="status" width="100" />
         </el-table>
         <div style="margin-top: 16px; text-align: right">
-          <el-button @click="batchStep = 'input-key'">上一步</el-button>
-          <el-button type="primary" @click="batchStep = 'totp'">下一步：2FA 确认</el-button>
+          <el-button @click="closeBatchDialog">取消</el-button>
+          <el-button type="primary" @click="batchStep = 'credentials'">下一步：安全确认</el-button>
         </div>
       </div>
 
-      <!-- Step 3: 2FA + result -->
-      <div v-if="batchStep === 'totp'">
-        <div v-if="!batchResult">
-          <p>请输入 Google Authenticator 上的 6 位验证码以确认打款。</p>
+      <div v-if="batchStep === 'credentials'">
+        <el-alert type="warning" show-icon :closable="false" style="margin-bottom: 16px">
+          私钥只随本次执行请求发送，不用于预览，不会出现在响应或审计日志中。
+        </el-alert>
+        <div v-if="needsTronKey" style="margin-bottom: 12px">
+          <div style="margin-bottom: 4px; font-weight: 600">TRC20 热钱包私钥</div>
           <el-input
-            v-model="totpCode"
+            v-model="credentials.tronPrivateKey"
+            type="password"
+            placeholder="Tron 私钥（hex，不含 0x 前缀）"
+            show-password
+            autocomplete="off"
+          />
+        </div>
+        <div v-if="needsEthKey" style="margin-bottom: 12px">
+          <div style="margin-bottom: 4px; font-weight: 600">ERC20 热钱包私钥</div>
+          <el-input
+            v-model="credentials.ethPrivateKey"
+            type="password"
+            placeholder="Ethereum 私钥（hex，不含 0x 前缀）"
+            show-password
+            autocomplete="off"
+          />
+        </div>
+        <div style="margin-bottom: 12px">
+          <div style="margin-bottom: 4px; font-weight: 600">2FA 验证码</div>
+          <el-input
+            v-model="credentials.totpCode"
             placeholder="6 位 2FA 验证码"
             maxlength="6"
+            inputmode="numeric"
+            autocomplete="one-time-code"
             style="max-width: 200px"
           />
-          <div style="margin-top: 16px; text-align: right">
-            <el-button @click="batchStep = 'preview'">上一步</el-button>
-            <el-button type="danger" :loading="operationLoading" @click="doBatchApprove">确认打款</el-button>
-          </div>
         </div>
-        <div v-else>
+        <div style="margin-top: 16px; text-align: right">
+          <el-button @click="batchStep = 'preview'">上一步</el-button>
+          <el-button type="danger" :loading="operationLoading" @click="doPayout">确认并签名打款</el-button>
+        </div>
+      </div>
+
+      <div v-if="batchStep === 'result' && batchResult">
           <el-alert
-            :type="batchResult.succeeded > 0 && batchResult.stoppedAtIndex < 0 ? 'success' : 'error'"
+            :type="batchResult.failed === 0 ? 'success' : 'error'"
             show-icon
             :closable="false"
             style="margin-bottom: 12px"
           >
-            {{ batchResult.succeeded > 0 && batchResult.stoppedAtIndex < 0
-              ? `全部 ${batchResult.succeeded} 笔打款成功`
-              : `成功 ${batchResult.succeeded} 笔，第 ${batchResult.stoppedAtIndex + 1} 笔失败：${batchResult.errorMessage}` }}
+            {{ batchResult.failed === 0
+              ? `已提交全部 ${batchResult.succeeded} 笔打款，等待链上确认`
+              : `已提交 ${batchResult.succeeded} 笔，失败 ${batchResult.failed} 笔` }}
           </el-alert>
           <el-table :data="batchResult.items" border size="small" max-height="250">
-            <el-table-column label="状态" width="100">
+            <el-table-column label="打款状态" width="150">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'APPROVED' ? 'success' : row.status === 'PENDING' ? 'info' : 'danger'" effect="plain">{{ row.status }}</el-tag>
+                <el-tag :type="row.manualReview || row.payoutStatus === 'FAILED' ? 'danger' : 'info'" effect="plain">
+                  {{ row.payoutStatus }}
+                </el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="确认数" prop="confirmationCount" width="80" />
             <el-table-column label="tx hash" prop="txHash" min-width="200" />
-            <el-table-column label="错误" prop="errorMessage" min-width="200" />
+            <el-table-column label="失败 / 人工核对" min-width="220">
+              <template #default="{ row }">
+                {{ row.manualReview ? '需要人工核对' : row.failureReason || row.errorMessage || '-' }}
+              </template>
+            </el-table-column>
           </el-table>
           <div style="margin-top: 16px; text-align: right">
             <el-button type="primary" @click="closeBatchDialog">完成</el-button>
           </div>
-        </div>
       </div>
     </el-dialog>
   </section>

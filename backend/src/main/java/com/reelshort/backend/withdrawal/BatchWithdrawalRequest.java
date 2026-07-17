@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -13,8 +14,8 @@ import jakarta.validation.constraints.Size;
  * to the appropriate chain client based on its network.
  */
 public record BatchWithdrawalRequest(
-		@NotEmpty List<UUID> withdrawalIds,
+		@NotEmpty @Size(max = 100) List<UUID> withdrawalIds,
 		@Size(max = 128) String tronPrivateKey,
 		@Size(max = 128) String ethPrivateKey,
-		@NotBlank @Size(max = 6) String totpCode) {
+		@NotBlank @Pattern(regexp = "\\d{6}") String totpCode) {
 }

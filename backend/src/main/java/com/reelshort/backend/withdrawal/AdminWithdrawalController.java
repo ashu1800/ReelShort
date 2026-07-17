@@ -56,8 +56,7 @@ public class AdminWithdrawalController {
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
 	public ApiResponse<BatchWithdrawalPreviewResponse> batchPreview(
 			@Valid @RequestBody BatchWithdrawalPreviewRequest previewRequest, HttpServletRequest request) {
-		return ApiResponse.success(withdrawalService.batchPreview(previewRequest.withdrawalIds(),
-				previewRequest.tronPrivateKey(), previewRequest.ethPrivateKey()), requestId(request));
+		return ApiResponse.success(withdrawalService.batchPreview(previewRequest.withdrawalIds()), requestId(request));
 	}
 
 	@PostMapping("/batch-approve")

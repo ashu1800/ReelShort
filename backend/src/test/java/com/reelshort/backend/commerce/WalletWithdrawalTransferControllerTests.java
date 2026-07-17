@@ -22,6 +22,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.admin.AdminUser;
 import com.reelshort.backend.admin.AdminUserRepository;
+import com.reelshort.backend.admin.AdminAuditLogRepository;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.system.security.TotpService;
@@ -47,6 +48,9 @@ class WalletWithdrawalTransferControllerTests {
 
 	@Autowired
 	private TotpService totpService;
+
+	@Autowired
+	private AdminAuditLogRepository adminAuditLogRepository;
 
 	private static final String TEST_TOTP_SECRET = "JBSWY3DPEHPK3PXP";
 
@@ -174,6 +178,15 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("REJECTED"));
 
+		org.assertj.core.api.Assertions.assertThat(adminAuditLogRepository.findAll())
+				.anySatisfy(audit -> {
+					org.assertj.core.api.Assertions.assertThat(audit.action()).isEqualTo("WITHDRAWAL_REJECTED");
+					org.assertj.core.api.Assertions.assertThat(audit.targetId()).isEqualTo(UUID.fromString(withdrawalId));
+					org.assertj.core.api.Assertions.assertThat(audit.summary())
+							.contains("network=ERC20", "status=REJECTED")
+							.doesNotContain("private", "secret");
+				});
+
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
@@ -266,6 +279,35 @@ class WalletWithdrawalTransferControllerTests {
 			systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_USD, "7.2");
 			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, "10");
 		}
+	}
+
+	@Test
+	void adminPayoutExecutionRejectsNonNumericTotpBeforeServiceInvocation() throws Exception {
+		String adminToken = adminLogin();
+		UUID withdrawalId = UUID.randomUUID();
+
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", withdrawalId)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "ethPrivateKey": "request-only-key",
+						  "totpCode": "abcdef"
+						}
+						"""))
+				.andExpect(status().isBadRequest());
+
+		mockMvc.perform(post("/api/admin/withdrawals/batch-approve")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "withdrawalIds": ["%s"],
+						  "ethPrivateKey": "request-only-key",
+						  "totpCode": "abcdef"
+						}
+						""".formatted(withdrawalId)))
+				.andExpect(status().isBadRequest());
 	}
 
 	private RegisteredUser createUser(String seed) throws Exception {

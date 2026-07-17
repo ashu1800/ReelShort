@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -17,6 +18,12 @@ public class AdminAuditService {
 
 	@Transactional
 	public void record(String adminUsername, String action, String targetType, UUID targetId, String summary) {
+		adminAuditLogRepository.save(AdminAuditLog.create(adminUsername, action, targetType, targetId, summary));
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void recordIndependent(String adminUsername, String action, String targetType, UUID targetId,
+			String summary) {
 		adminAuditLogRepository.save(AdminAuditLog.create(adminUsername, action, targetType, targetId, summary));
 	}
 

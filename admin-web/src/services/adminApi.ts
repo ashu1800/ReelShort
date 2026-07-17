@@ -94,6 +94,11 @@ export type WithdrawalRequest = {
   adminNote: string | null
   createdAt: string
   reviewedAt: string | null
+  payoutStatus: string | null
+  payoutTxHash: string | null
+  confirmationCount: number
+  failureReason: string | null
+  manualReview: boolean
 }
 
 export type ContentCacheStatus = {
@@ -412,10 +417,15 @@ export async function fetchWithdrawals() {
   return response.data.data
 }
 
-export async function approveWithdrawal(withdrawalId: string, txHash: string, note: string, totpCode: string) {
+export async function approveWithdrawal(
+  withdrawalId: string,
+  tronPrivateKey: string | undefined,
+  ethPrivateKey: string | undefined,
+  totpCode: string,
+) {
   const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/approve`, {
-    txHash,
-    note,
+    tronPrivateKey,
+    ethPrivateKey,
     totpCode,
   })
   return response.data.data
@@ -428,20 +438,18 @@ export async function rejectWithdrawal(withdrawalId: string, reason: string) {
   return response.data.data
 }
 
-export async function batchPreviewWithdrawals(withdrawalIds: string[], tronPrivateKey?: string, ethPrivateKey?: string) {
+export async function batchPreviewWithdrawals(withdrawalIds: string[]) {
   const response = await http.post<ApiResponse<BatchWithdrawalPreview>>('/withdrawals/batch-preview', {
     withdrawalIds,
-    tronPrivateKey,
-    ethPrivateKey,
   })
   return response.data.data
 }
 
 export async function batchApproveWithdrawals(
   withdrawalIds: string[],
-  tronPrivateKey?: string,
-  ethPrivateKey?: string,
-  totpCode?: string,
+  tronPrivateKey: string | undefined,
+  ethPrivateKey: string | undefined,
+  totpCode: string,
 ) {
   const response = await http.post<ApiResponse<BatchWithdrawalResult>>('/withdrawals/batch-approve', {
     withdrawalIds,
@@ -454,21 +462,33 @@ export async function batchApproveWithdrawals(
 
 export type BatchWithdrawalPreview = {
   tronHotWalletAddress: string | null
-  tronUsdtBalance: string
-  tronTrxBalance: string
   ethHotWalletAddress: string | null
-  ethUsdtBalance: string
-  ethEthBalance: string
   totalUsdt: string
   itemCount: number
-  items: { withdrawalId: string; userAccount: string; usdtAmount: string; network: string; walletAddress: string }[]
+  items: {
+    withdrawalId: string
+    userAccount: string
+    usdtAmount: string
+    network: string
+    walletAddress: string
+    status: WithdrawalStatus
+  }[]
 }
 
 export type BatchWithdrawalResult = {
   succeeded: number
+  failed: number
   stoppedAtIndex: number
   errorMessage: string | null
-  items: { withdrawalId: string; status: string; txHash: string | null; errorMessage: string | null }[]
+  items: {
+    withdrawalId: string
+    payoutStatus: string
+    txHash: string | null
+    confirmationCount: number
+    failureReason: string | null
+    manualReview: boolean
+    errorMessage: string | null
+  }[]
 }
 
 export async function get2faStatus() {

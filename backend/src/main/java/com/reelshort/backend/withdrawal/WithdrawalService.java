@@ -3,15 +3,17 @@ package com.reelshort.backend.withdrawal;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.reelshort.backend.admin.AdminException;
+import com.reelshort.backend.admin.AdminAuditService;
 import com.reelshort.backend.admin.AdminUser;
 import com.reelshort.backend.admin.AdminUserRepository;
 import com.reelshort.backend.points.PointAccount;
@@ -28,40 +30,42 @@ import com.reelshort.backend.wallet.UserWalletRepository;
 @Service
 public class WithdrawalService {
 
-	private static final Logger log = LoggerFactory.getLogger(WithdrawalService.class);
-
 	private final WithdrawalRequestRepository withdrawalRequestRepository;
 	private final UserWalletRepository userWalletRepository;
 	private final PointAccountRepository pointAccountRepository;
 	private final SystemConfigService systemConfigService;
 	private final UserActionLocks userActionLocks;
 	private final UserAccountRepository userAccountRepository;
-	private final EthereumClient ethereumClient;
-	private final TronClient tronClient;
 	private final TotpService totpService;
 	private final AdminUserRepository adminUserRepository;
 	private final WithdrawalPayoutCoordinator payoutCoordinator;
 	private final WithdrawalPayoutAttemptRepository payoutAttemptRepository;
+	private final EthereumProperties ethereumProperties;
+	private final TronProperties tronProperties;
+	private final AdminAuditService adminAuditService;
 
 	public WithdrawalService(WithdrawalRequestRepository withdrawalRequestRepository,
 			UserWalletRepository userWalletRepository, PointAccountRepository pointAccountRepository,
 			SystemConfigService systemConfigService,
 			UserActionLocks userActionLocks, UserAccountRepository userAccountRepository,
-			EthereumClient ethereumClient, TronClient tronClient, TotpService totpService,
+			TotpService totpService,
 			AdminUserRepository adminUserRepository, WithdrawalPayoutCoordinator payoutCoordinator,
-			WithdrawalPayoutAttemptRepository payoutAttemptRepository) {
+			WithdrawalPayoutAttemptRepository payoutAttemptRepository,
+			EthereumProperties ethereumProperties, TronProperties tronProperties,
+			AdminAuditService adminAuditService) {
 		this.withdrawalRequestRepository = withdrawalRequestRepository;
 		this.userWalletRepository = userWalletRepository;
 		this.pointAccountRepository = pointAccountRepository;
 		this.systemConfigService = systemConfigService;
 		this.userActionLocks = userActionLocks;
 		this.userAccountRepository = userAccountRepository;
-		this.ethereumClient = ethereumClient;
-		this.tronClient = tronClient;
 		this.totpService = totpService;
 		this.adminUserRepository = adminUserRepository;
 		this.payoutCoordinator = payoutCoordinator;
 		this.payoutAttemptRepository = payoutAttemptRepository;
+		this.ethereumProperties = ethereumProperties;
+		this.tronProperties = tronProperties;
+		this.adminAuditService = adminAuditService;
 	}
 
 	@Transactional(readOnly = true)
@@ -166,97 +170,94 @@ public class WithdrawalService {
 		AdminUser admin = adminUserRepository.findById(adminUserId)
 				.orElseThrow(() -> new AdminException(404, "admin not found"));
 		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
+			adminAuditService.recordIndependent(adminUsername, "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
+					withdrawalId, "status=TOTP_REJECTED");
 			throw new AdminException(403, "2FA verification failed");
 		}
 		WithdrawalRequest request = withdrawal(withdrawalId);
 		String privateKey = "TRC20".equals(request.network()) ? tronPrivateKey : ethPrivateKey;
-		payoutCoordinator.prepareAndBroadcast(withdrawalId, privateKey, adminUsername);
+		WithdrawalPayoutAttempt attempt;
+		try {
+			attempt = payoutCoordinator.prepareAndBroadcast(withdrawalId, privateKey,
+					adminUsername);
+		}
+		catch (RuntimeException exception) {
+			adminAuditService.recordIndependent(adminUsername, "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
+					withdrawalId, payoutAuditSummary(request, "FAILED", null));
+			throw exception;
+		}
+		adminAuditService.recordIndependent(adminUsername, "WITHDRAWAL_PAYOUT_EXECUTED", "WITHDRAWAL",
+				withdrawalId, payoutAuditSummary(request, attempt.status().name(), attempt.txHash()));
 		return adminResponse(withdrawalRequestRepository.findById(withdrawalId).orElseThrow());
 	}
 
 	@Transactional
 	public WithdrawalResponse reject(UUID withdrawalId, String reason, String adminUsername) {
 		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
-		return userActionLocks.withUserLock(request.userId(), () -> {
-			if (request.status() != WithdrawalStatus.PENDING) {
-				throw new AdminException(400, "withdrawal is not pending");
-			}
-			if (payoutAttemptRepository.findByWithdrawalRequestIdAndActiveSlot(withdrawalId, "ACTIVE").isPresent()) {
-				throw new AdminException(409, "withdrawal payout is active");
-			}
-			PointAccount account = accountEntityForUpdate(request.userId());
-			try {
-				account.releaseFrozen(request.totalDeductedPoints());
-			}
-			catch (IllegalStateException exception) {
-				throw new AdminException(400, exception.getMessage());
-			}
-			pointAccountRepository.save(account);
-			try {
-				request.reject(reason.trim(), adminUsername);
-			}
-			catch (IllegalStateException exception) {
-				throw new AdminException(400, exception.getMessage());
-			}
-			return adminResponse(withdrawalRequestRepository.save(request));
-		});
+		try {
+			WithdrawalResponse response = userActionLocks.withUserLock(request.userId(), () -> {
+				if (request.status() != WithdrawalStatus.PENDING) {
+					throw new AdminException(400, "withdrawal is not pending");
+				}
+				if (payoutAttemptRepository.findByWithdrawalRequestIdAndActiveSlot(withdrawalId, "ACTIVE").isPresent()) {
+					throw new AdminException(409, "withdrawal payout is active");
+				}
+				PointAccount account = accountEntityForUpdate(request.userId());
+				try {
+					account.releaseFrozen(request.totalDeductedPoints());
+				}
+				catch (IllegalStateException exception) {
+					throw new AdminException(400, exception.getMessage());
+				}
+				pointAccountRepository.save(account);
+				try {
+					request.reject(reason.trim(), adminUsername);
+				}
+				catch (IllegalStateException exception) {
+					throw new AdminException(400, exception.getMessage());
+				}
+				return adminResponse(withdrawalRequestRepository.save(request));
+			});
+			adminAuditService.record(adminUsername, "WITHDRAWAL_REJECTED", "WITHDRAWAL", withdrawalId,
+					payoutAuditSummary(request, WithdrawalStatus.REJECTED.name(), request.txHash()));
+			return response;
+		}
+		catch (RuntimeException exception) {
+			adminAuditService.recordIndependent(adminUsername, "WITHDRAWAL_REJECT_FAILED", "WITHDRAWAL",
+					withdrawalId, payoutAuditSummary(request, "FAILED", request.txHash()));
+			throw exception;
+		}
 	}
 
 	/**
-	 * Preview a batch payout: shows total USDT, hot wallet balances, and per-item details.
-	 * The hot wallet private key is provided by the admin to query balances; it is not stored.
+	 * Preview a batch payout without accepting or deriving any signing material.
 	 */
 	@Transactional(readOnly = true)
-	public BatchWithdrawalPreviewResponse batchPreview(List<UUID> withdrawalIds, String tronPrivateKey,
-			String ethPrivateKey) {
-		// 分别查询两条链的热钱包余额（如果对应私钥提供了）
-		String tronAddress = null;
-		BigDecimal tronUsdt = BigDecimal.ZERO;
-		BigDecimal tronTrx = BigDecimal.ZERO;
-		if (tronPrivateKey != null && !tronPrivateKey.isBlank()) {
-			tronAddress = tronClient.addressFromPrivateKey(tronPrivateKey);
-			tronUsdt = tronClient.getUsdtBalance(tronAddress);
-			tronTrx = tronClient.getTrxBalance(tronAddress);
-		}
-		String ethAddress = null;
-		BigDecimal ethUsdt = BigDecimal.ZERO;
-		BigDecimal ethEth = BigDecimal.ZERO;
-		if (ethPrivateKey != null && !ethPrivateKey.isBlank()) {
-			ethAddress = ethereumClient.addressFromPrivateKey(ethPrivateKey);
-			ethUsdt = ethereumClient.getUsdtBalance(ethAddress);
-			ethEth = ethereumClient.getEthBalance(ethAddress);
-		}
+	public BatchWithdrawalPreviewResponse batchPreview(List<UUID> withdrawalIds) {
+		validateBatchIds(withdrawalIds);
+		String tronAddress = configuredAddress(tronProperties.getHotWalletAddress());
+		String ethAddress = configuredAddress(ethereumProperties.getHotWalletAddress());
 		List<WithdrawalRequest> requests = withdrawalRequestRepository.findAllById(withdrawalIds);
+		Map<UUID, WithdrawalRequest> requestsById = new HashMap<>();
+		for (WithdrawalRequest request : requests) {
+			requestsById.put(request.id(), request);
+		}
 		BigDecimal total = BigDecimal.ZERO;
-		BigDecimal tronPendingTotal = BigDecimal.ZERO;
-		BigDecimal ethPendingTotal = BigDecimal.ZERO;
 		List<BatchWithdrawalPreviewResponse.PreviewItem> items = new ArrayList<>();
-		for (WithdrawalRequest req : requests) {
+		for (UUID withdrawalId : withdrawalIds) {
+			WithdrawalRequest req = requestsById.get(withdrawalId);
+			if (req == null) {
+				throw new AdminException(404, "withdrawal not found");
+			}
 			if (req.status() == WithdrawalStatus.PENDING) {
 				total = total.add(req.usdtAmount());
-				if ("TRC20".equals(req.network())) {
-					tronPendingTotal = tronPendingTotal.add(req.usdtAmount());
-				}
-				else {
-					ethPendingTotal = ethPendingTotal.add(req.usdtAmount());
-				}
 			}
 			items.add(new BatchWithdrawalPreviewResponse.PreviewItem(
 					req.id().toString(), userAccount(req.userId()), decimal(req.usdtAmount()),
-					req.network(), req.walletAddress()));
-		}
-		// M3: 余额不足预警（不阻断，由管理员决定是否继续）
-		if (tronAddress != null && tronUsdt.compareTo(tronPendingTotal) < 0) {
-			log.warn("TRC20 hot wallet USDT balance {} insufficient for pending total {}",
-					tronUsdt, tronPendingTotal);
-		}
-		if (ethAddress != null && ethUsdt.compareTo(ethPendingTotal) < 0) {
-			log.warn("ERC20 hot wallet USDT balance {} insufficient for pending total {}",
-					ethUsdt, ethPendingTotal);
+					req.network(), req.walletAddress(), req.status()));
 		}
 		return new BatchWithdrawalPreviewResponse(
-				tronAddress, decimal(tronUsdt), decimal(tronTrx),
-				ethAddress, decimal(ethUsdt), decimal(ethEth),
+				tronAddress, ethAddress,
 				decimal(total), items.size(), items);
 	}
 
@@ -267,9 +268,14 @@ public class WithdrawalService {
 	 */
 	public BatchWithdrawalResponse batchApprove(List<UUID> withdrawalIds, String tronPrivateKey,
 			String ethPrivateKey, String totpCode, UUID adminUserId) {
+		validateBatchIds(withdrawalIds);
 		AdminUser admin = adminUserRepository.findById(adminUserId)
 				.orElseThrow(() -> new AdminException(404, "admin not found"));
 		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
+			for (UUID withdrawalId : withdrawalIds) {
+				adminAuditService.recordIndependent(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
+						withdrawalId, "status=TOTP_REJECTED");
+			}
 			throw new AdminException(403, "2FA verification failed");
 		}
 		List<BatchWithdrawalResponse.ItemResult> results = new ArrayList<>();
@@ -278,34 +284,72 @@ public class WithdrawalService {
 		String firstFailureMessage = null;
 		int index = 0;
 		for (UUID withdrawalId : withdrawalIds) {
+			WithdrawalRequest request = null;
+			WithdrawalPayoutAttempt attempt;
 			try {
-				WithdrawalRequest request = withdrawal(withdrawalId);
+				request = withdrawal(withdrawalId);
 				String privateKey = "TRC20".equals(request.network()) ? tronPrivateKey : ethPrivateKey;
-				WithdrawalPayoutAttempt attempt = payoutCoordinator.prepareAndBroadcast(
+				attempt = payoutCoordinator.prepareAndBroadcast(
 						withdrawalId, privateKey, admin.username());
-				String resultStatus = attempt.status() == WithdrawalPayoutStatus.CONFIRMED
-						? WithdrawalStatus.APPROVED.name()
-						: attempt.status().name();
-				results.add(new BatchWithdrawalResponse.ItemResult(
-						withdrawalId.toString(), resultStatus, attempt.txHash(), null));
-				succeeded++;
 			}
 			catch (Exception exception) {
+				String errorMessage = payoutErrorMessage(exception);
 				results.add(new BatchWithdrawalResponse.ItemResult(
-						withdrawalId.toString(), "FAILED", null, exception.getMessage()));
+						withdrawalId.toString(), "FAILED", null, 0, errorMessage, false,
+						errorMessage));
+				String auditSummary = request == null
+						? "status=FAILED"
+						: payoutAuditSummary(request, "FAILED", null);
+				adminAuditService.recordIndependent(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
+						withdrawalId, auditSummary);
 				if (firstFailureIndex < 0) {
 					firstFailureIndex = index;
-					firstFailureMessage = exception.getMessage();
+					firstFailureMessage = errorMessage;
 				}
-				// H2: 继续处理剩余提现而非中断
+				index++;
+				continue;
 			}
+			adminAuditService.recordIndependent(admin.username(), "WITHDRAWAL_PAYOUT_EXECUTED", "WITHDRAWAL",
+					withdrawalId, payoutAuditSummary(request, attempt.status().name(), attempt.txHash()));
+			results.add(new BatchWithdrawalResponse.ItemResult(
+					withdrawalId.toString(), attempt.status().name(), attempt.txHash(),
+					attempt.confirmationCount(), attempt.failureReason(),
+					attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW, null));
+			succeeded++;
 			index++;
 		}
-		return new BatchWithdrawalResponse(succeeded, firstFailureIndex, firstFailureMessage, results);
+		return new BatchWithdrawalResponse(succeeded, results.size() - succeeded, firstFailureIndex,
+				firstFailureMessage, results);
+	}
+
+	private String payoutAuditSummary(WithdrawalRequest request, String status, String txHash) {
+		String summary = "network=" + request.network() + ",amount=" + decimal(request.usdtAmount())
+				+ ",status=" + status;
+		return txHash == null || txHash.isBlank() ? summary : summary + ",txHash=" + txHash;
+	}
+
+	private void validateBatchIds(List<UUID> withdrawalIds) {
+		if (new HashSet<>(withdrawalIds).size() != withdrawalIds.size()) {
+			throw new AdminException(400, "duplicate withdrawal ids are not allowed");
+		}
+	}
+
+	private String payoutErrorMessage(Exception exception) {
+		if (exception instanceof WithdrawalException || exception instanceof AdminException) {
+			return exception.getMessage();
+		}
+		return "payout processing failed";
 	}
 
 	private WithdrawalResponse adminResponse(WithdrawalRequest request) {
-		return WithdrawalResponse.from(request, userAccount(request.userId()));
+		WithdrawalPayoutAttempt attempt = payoutAttemptRepository
+				.findFirstByWithdrawalRequestIdOrderByAttemptNumberDesc(request.id())
+				.orElse(null);
+		return WithdrawalResponse.from(request, userAccount(request.userId()), attempt);
+	}
+
+	private String configuredAddress(String address) {
+		return address == null || address.isBlank() ? null : address.trim();
 	}
 
 	private String userAccount(UUID userId) {

@@ -1,6 +1,7 @@
 package com.reelshort.backend.withdrawal;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -10,5 +11,5 @@ import jakarta.validation.constraints.Size;
 public record WithdrawalApprovalRequest(
 		@Size(max = 128) String tronPrivateKey,
 		@Size(max = 128) String ethPrivateKey,
-		@NotBlank @Size(min = 6, max = 6) String totpCode) {
+		@NotBlank @Pattern(regexp = "\\d{6}") String totpCode) {
 }

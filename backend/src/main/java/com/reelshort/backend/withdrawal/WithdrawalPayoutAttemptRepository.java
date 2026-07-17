@@ -19,6 +19,8 @@ public interface WithdrawalPayoutAttemptRepository extends JpaRepository<Withdra
 	Optional<WithdrawalPayoutAttempt> findFirstByWithdrawalRequestIdAndStatusOrderByAttemptNumberDesc(
 			UUID withdrawalRequestId, WithdrawalPayoutStatus status);
 
+	Optional<WithdrawalPayoutAttempt> findFirstByWithdrawalRequestIdOrderByAttemptNumberDesc(UUID withdrawalRequestId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select attempt from WithdrawalPayoutAttempt attempt where attempt.id = :attemptId")
 	Optional<WithdrawalPayoutAttempt> findByIdForUpdate(UUID attemptId);
