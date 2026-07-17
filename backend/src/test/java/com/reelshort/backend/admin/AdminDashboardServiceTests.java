@@ -69,7 +69,7 @@ class AdminDashboardServiceTests {
 		assertThat(summary.users().total()).isGreaterThanOrEqualTo(2);
 		assertThat(summary.users().disabled()).isGreaterThanOrEqualTo(1);
 		assertThat(summary.vipOrders().total()).isGreaterThanOrEqualTo(2);
-		assertThat(new BigDecimal(summary.vipOrders().totalUsdt())).isGreaterThanOrEqualTo(new BigDecimal("29.98"));
+		assertThat(new BigDecimal(summary.vipOrders().totalUsdt())).isGreaterThanOrEqualTo(new BigDecimal("30.00"));
 		assertThat(summary.content().bookCount()).isGreaterThanOrEqualTo(1);
 		assertThat(summary.content().episodeCacheCount()).isGreaterThanOrEqualTo(1);
 		assertThat(summary.content().shelfCount()).isGreaterThanOrEqualTo(1);
@@ -79,7 +79,8 @@ class AdminDashboardServiceTests {
 
 	private static VipOrder confirmedVipOrder(UUID userId, BigDecimal usdtAmount) {
 		VipOrder order = VipOrder.create(userId,
-				"VIP" + UUID.randomUUID().toString().replace("-", "").substring(0, 16), usdtAmount, 1, 0);
+				"VIP" + UUID.randomUUID().toString().replace("-", "").substring(0, 16), usdtAmount, 1, 0,
+				"TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");
 		order.confirm("dashboard-tx-" + UUID.randomUUID(), "admin");
 		return order;
 	}

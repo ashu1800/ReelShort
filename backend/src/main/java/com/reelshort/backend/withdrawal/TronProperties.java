@@ -23,6 +23,8 @@ public class TronProperties {
 
 	private String hotWalletAddress = "";
 
+	private int incomingTransferMaxPages = 50;
+
 	public String getNodeUrl() {
 		return nodeUrl;
 	}
@@ -69,5 +71,13 @@ public class TronProperties {
 
 	public void setHotWalletAddress(String hotWalletAddress) {
 		this.hotWalletAddress = hotWalletAddress;
+	}
+
+	public int getIncomingTransferMaxPages() {
+		return incomingTransferMaxPages;
+	}
+
+	public void setIncomingTransferMaxPages(int incomingTransferMaxPages) {
+		this.incomingTransferMaxPages = incomingTransferMaxPages;
 	}
 }

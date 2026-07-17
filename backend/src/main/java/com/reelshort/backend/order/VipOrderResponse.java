@@ -10,12 +10,19 @@ import java.time.format.DateTimeFormatter;
  */
 public record VipOrderResponse(
 		String id,
+		String userId,
 		String orderNo,
 		String usdtAmount,
 		String payableAmount,
+		String receivingNetwork,
+		String receivingAddress,
+		String tokenContract,
 		String status,
 		String paymentMethod,
 		String txHash,
+		String confirmedBy,
+		int confirmationCount,
+		String paymentObservedAt,
 		String createdAt,
 		String expiresAt,
 		String confirmedAt) {
@@ -26,12 +33,19 @@ public record VipOrderResponse(
 	public static VipOrderResponse from(VipOrder order) {
 		return new VipOrderResponse(
 				order.id().toString(),
+				order.userId().toString(),
 				order.orderNo(),
-				order.usdtAmount().stripTrailingZeros().toPlainString(),
+				order.baseUsdtAmount().stripTrailingZeros().toPlainString(),
 				order.payableAmount().stripTrailingZeros().toPlainString(),
+				order.receivingNetwork(),
+				order.receivingWalletAddress(),
+				order.tokenContractAddress(),
 				order.status(),
 				order.paymentMethod(),
 				order.txHash(),
+				order.confirmedBy(),
+				order.confirmationCount(),
+				fmt(order.paymentObservedAt()),
 				fmt(order.createdAt()),
 				fmt(order.expiresAt()),
 				fmt(order.confirmedAt()));

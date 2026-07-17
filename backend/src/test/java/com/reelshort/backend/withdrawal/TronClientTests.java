@@ -12,6 +12,7 @@ import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.concurrent.atomic.AtomicReference;
+import java.time.OffsetDateTime;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -133,6 +134,84 @@ class TronClientTests {
 		assertThatThrownBy(() -> client.prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
 				.isInstanceOf(WithdrawalException.class)
 				.hasMessageContaining("raw transaction does not match payout intent");
+	}
+
+	@Test
+	void parsesCompleteIncomingTransferEvidenceFromTronGridResponse() throws Exception {
+		long blockTimestamp = System.currentTimeMillis() - 30_000;
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/v1/accounts/", exchange -> respond(exchange, """
+				{
+				  "data": [{
+				    "transaction_id": "%s",
+				    "token_info": {"address": "%s"},
+				    "block_timestamp": %d,
+				    "to": "%s",
+				    "value": "1250000",
+				    "type": "Transfer"
+				  }]
+				}
+				""".formatted("d".repeat(64), "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+				blockTimestamp, DESTINATION)));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+
+		TronClient.IncomingTransfer transfer = client.fetchIncomingUsdtTransfers(DESTINATION, 10).get(0);
+
+		assertThat(transfer.txHash()).isEqualTo("d".repeat(64));
+		assertThat(transfer.amount()).isEqualByComparingTo("1.250000");
+		assertThat(transfer.recipient()).isEqualTo(DESTINATION);
+		assertThat(transfer.contract()).isEqualTo(properties.getUsdtContract());
+		assertThat(transfer.blockTimestamp()).isEqualTo(
+				OffsetDateTime.ofInstant(java.time.Instant.ofEpochMilli(blockTimestamp), java.time.ZoneOffset.UTC));
+		assertThat(transfer.confirmationCount()).isZero();
+		assertThat(transfer.successful()).isTrue();
+	}
+
+	@Test
+	void followsTronGridFingerprintPagination() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/v1/accounts/", exchange -> {
+			boolean secondPage = exchange.getRequestURI().getQuery().contains("fingerprint=next-page");
+			String txHash = secondPage ? "f".repeat(64) : "e".repeat(64);
+			String meta = secondPage ? "{}" : "{\"fingerprint\":\"next-page\"}";
+			respond(exchange, """
+					{"data":[{"transaction_id":"%s","token_info":{"address":"%s"},
+					"block_timestamp":%d,"to":"%s","value":"1000000","type":"Transfer"}],
+					"meta":%s}
+					""".formatted(txHash, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+					System.currentTimeMillis(), DESTINATION, meta));
+		});
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+
+		assertThat(client.fetchIncomingUsdtTransfers(DESTINATION, 200))
+				.extracting(TronClient.IncomingTransfer::txHash)
+				.containsExactly("e".repeat(64), "f".repeat(64));
+	}
+
+	@Test
+	void verifiesIncomingTransferFromReceiptAndCurrentBlock() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/gettransactioninfobyid", exchange -> respond(exchange,
+				"{\"receipt\":{\"result\":\"SUCCESS\"},\"result\":\"SUCCESS\",\"blockNumber\":100}"));
+		server.createContext("/wallet/getnowblock", exchange -> respond(exchange,
+				"{\"block_header\":{\"raw_data\":{\"number\":119}}}"));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+		TronClient.IncomingTransfer raw = new TronClient.IncomingTransfer("1".repeat(64), AMOUNT,
+				DESTINATION, properties.getUsdtContract(), OffsetDateTime.now(), 0, true);
+
+		TronClient.IncomingTransfer verified = client.verifyIncomingTransfer(raw);
+
+		assertThat(verified.successful()).isTrue();
+		assertThat(verified.confirmationCount()).isEqualTo(20);
 	}
 
 	private ClientFixture client(AtomicReference<String> broadcastBody, String rawDestination,

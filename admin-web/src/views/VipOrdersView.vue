@@ -19,12 +19,16 @@ const confirmedCount = computed(
 const rejectedCount = computed(
   () => orders.value.filter((order) => order.status === 'REJECTED').length,
 )
+const expiredCount = computed(
+  () => orders.value.filter((order) => order.status === 'EXPIRED').length,
+)
 
 const metrics = computed(() => [
   { label: '订单总数', value: orders.value.length },
   { label: '待处理', value: pendingCount.value },
   { label: '已确认', value: confirmedCount.value },
   { label: '已拒绝', value: rejectedCount.value },
+  { label: '已过期', value: expiredCount.value },
 ])
 
 async function loadOrders() {
@@ -41,20 +45,28 @@ async function loadOrders() {
 
 async function confirm(row: VipOrder) {
   let txHash = ''
+  let totpCode = ''
   try {
     const result = await ElMessageBox.prompt('请输入链上转账 tx hash', '确认 VIP 订单', {
       confirmButtonText: '确认',
       cancelButtonText: '取消',
-      inputPattern: /\S{6,}/,
-      inputErrorMessage: 'tx hash 不能为空',
+      inputPattern: /^[0-9a-fA-F]{64}$/,
+      inputErrorMessage: '请输入 64 位十六进制 tx hash',
     })
     txHash = result.value.trim()
+    const totpResult = await ElMessageBox.prompt('请输入管理员 6 位动态验证码', '二次验证', {
+      confirmButtonText: '验证并确认',
+      cancelButtonText: '取消',
+      inputPattern: /^\d{6}$/,
+      inputErrorMessage: '请输入 6 位数字验证码',
+    })
+    totpCode = totpResult.value.trim()
   } catch {
     return
   }
   operationLoading.value = true
   try {
-    await confirmVipOrder(row.id, txHash)
+    await confirmVipOrder(row.id, txHash, totpCode)
     ElMessage.success('VIP 订单已确认')
     await loadOrders()
   } catch (error) {
@@ -91,6 +103,7 @@ function statusType(status: VipOrderStatus) {
     PENDING: 'warning',
     CONFIRMED: 'success',
     REJECTED: 'danger',
+    EXPIRED: 'info',
   }
   return types[status]
 }
@@ -128,8 +141,8 @@ onMounted(loadOrders)
           <span class="mono">{{ row.userId }}</span>
         </template>
       </el-table-column>
-      <el-table-column align="right" label="USDT 金额" width="120">
-        <template #default="{ row }">{{ row.usdtAmount }}</template>
+      <el-table-column align="right" label="应付 USDT" width="130">
+        <template #default="{ row }">{{ row.payableAmount }}</template>
       </el-table-column>
       <el-table-column label="支付方式" min-width="140">
         <template #default="{ row }">{{ row.paymentMethod || '-' }}</template>
@@ -147,6 +160,13 @@ onMounted(loadOrders)
       </el-table-column>
       <el-table-column label="确认人" width="140">
         <template #default="{ row }">{{ row.confirmedBy || '-' }}</template>
+      </el-table-column>
+      <el-table-column align="right" label="确认数" width="90" prop="confirmationCount" />
+      <el-table-column label="收款地址" min-width="220">
+        <template #default="{ row }">
+          <span v-if="row.receivingAddress" class="mono">{{ row.receivingAddress }}</span>
+          <span v-else class="muted">旧订单无快照</span>
+        </template>
       </el-table-column>
       <el-table-column label="创建时间" min-width="220" prop="createdAt" />
       <el-table-column label="确认时间" min-width="220">

@@ -23,8 +23,16 @@ public interface VipOrderRepository extends JpaRepository<VipOrder, UUID> {
 	@Query("SELECT COALESCE(SUM(o.usdtAmount), 0) FROM VipOrder o WHERE o.status = 'CONFIRMED'")
 	BigDecimal sumConfirmedUsdtAmount();
 
+	@Query("SELECT COALESCE(SUM(o.payableUsdtAmount), 0) FROM VipOrder o WHERE o.status = 'CONFIRMED'")
+	BigDecimal sumConfirmedPayableUsdtAmount();
+
 	@Query("SELECT o.uniqueSuffix FROM VipOrder o WHERE o.status = 'PENDING'")
 	List<Integer> findPendingSuffixes();
+
+	boolean existsByTxHash(String txHash);
+
+	@Query(value = "SELECT id FROM vip_order_allocation_lock WHERE id = 1 FOR UPDATE", nativeQuery = true)
+	Integer lockAllocation();
 
 	/**
 	 * M6: 悲观锁读取单个订单，防止 confirm/autoConfirm/reject/expire 并发 TOCTOU。

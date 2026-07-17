@@ -42,7 +42,7 @@ public class AdminDashboardService {
 				userAccountRepository.count(),
 				userAccountRepository.countByStatus(UserStatus.DISABLED));
 		long totalVip = vipOrderRepository.countByStatus("CONFIRMED");
-		String totalUsdt = vipOrderRepository.sumConfirmedUsdtAmount().stripTrailingZeros().toPlainString();
+		String totalUsdt = vipOrderRepository.sumConfirmedPayableUsdtAmount().stripTrailingZeros().toPlainString();
 		VipMetrics vipMetrics = new VipMetrics(totalVip, totalUsdt);
 		ContentMetrics contentMetrics = new ContentMetrics(
 				contentBookCacheRepository.count(),

@@ -4,11 +4,16 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -22,6 +27,8 @@ import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
 import org.bouncycastle.crypto.signers.ECDSASigner;
 import org.bouncycastle.math.ec.ECPoint;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,6 +47,7 @@ import org.tron.trident.proto.Contract;
  */
 @Service
 public class TronClient {
+	private static final Logger log = LoggerFactory.getLogger(TronClient.class);
 
 	private static final X9ECParameters SECP256K1 = SECNamedCurves.getByName("secp256k1");
 	private static final ECDomainParameters DOMAIN =
@@ -314,17 +322,57 @@ public class TronClient {
 	 * pairs for matching against pending VIP orders.
 	 */
 	public List<IncomingTransfer> fetchIncomingUsdtTransfers(String address, int limit) {
+		return fetchIncomingUsdtTransfers(address, limit, null);
+	}
+
+	public List<IncomingTransfer> fetchIncomingUsdtTransfers(String address, int limit, OffsetDateTime earliest) {
 		try {
+			List<IncomingTransfer> transfers = new ArrayList<>();
+			String fingerprint = null;
+			int pages = 0;
+			do {
+				TransferPage page = fetchIncomingTransferPage(address, limit, fingerprint);
+				transfers.addAll(page.transfers().stream()
+						.filter(transfer -> earliest == null || transfer.blockTimestamp() == null
+								|| !transfer.blockTimestamp().isBefore(earliest))
+						.toList());
+				pages++;
+				boolean reachedEarliest = earliest != null && page.transfers().stream()
+						.map(IncomingTransfer::blockTimestamp)
+						.filter(java.util.Objects::nonNull)
+						.anyMatch(timestamp -> timestamp.isBefore(earliest));
+				fingerprint = reachedEarliest ? null : page.nextFingerprint();
+			} while (fingerprint != null && !fingerprint.isBlank()
+					&& pages < properties.getIncomingTransferMaxPages());
+			if (fingerprint != null && !fingerprint.isBlank()) {
+				log.warn("TRON incoming transfer pagination reached configured page limit {} for address {}",
+						properties.getIncomingTransferMaxPages(), address);
+			}
+			return transfers;
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "failed to fetch TRC20 transfers: " + exception.getMessage());
+		}
+	}
+
+	private TransferPage fetchIncomingTransferPage(String address, int limit, String fingerprint) {
+		try {
+			String cursor = fingerprint == null || fingerprint.isBlank() ? ""
+					: "&fingerprint=" + URLEncoder.encode(fingerprint, StandardCharsets.UTF_8);
 			HttpRequest.Builder builder = HttpRequest.newBuilder()
 					.uri(URI.create(String.format("%s/v1/accounts/%s/transactions/trc20"
-							+ "?limit=%d&contract_address=%s&only_to=true&order_by=block_timestamp,desc",
-							properties.getNodeUrl(), address, limit, properties.getUsdtContract())))
+							+ "?limit=%d&contract_address=%s&only_to=true&only_confirmed=true"
+							+ "&order_by=block_timestamp,desc%s",
+							properties.getNodeUrl(), address, limit, properties.getUsdtContract(), cursor)))
 					.timeout(Duration.ofSeconds(15))
 					.header("Accept", "application/json");
 			if (!properties.getApiKey().isBlank()) {
 				builder.header("TRON-PRO-API-KEY", properties.getApiKey());
 			}
 			HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+			if (response.statusCode() < 200 || response.statusCode() >= 300) {
+				throw new WithdrawalException(503, "TronGrid transfer query failed with HTTP " + response.statusCode());
+			}
 			JsonNode root = objectMapper.readTree(response.body());
 			JsonNode data = root.path("data");
 			List<IncomingTransfer> transfers = new ArrayList<>();
@@ -335,19 +383,37 @@ public class TronClient {
 						continue;
 					}
 					String txHash = tx.path("transaction_id").asText("");
+					String contract = tx.path("token_info").path("address").asText("");
 					BigDecimal rawAmount = new BigDecimal(tx.path("value").asText("0"));
 					BigDecimal amount = rawAmount.divide(USDT_DECIMALS, 6, RoundingMode.DOWN);
-					transfers.add(new IncomingTransfer(txHash, amount));
+					long timestampMillis = tx.path("block_timestamp").asLong(0);
+					OffsetDateTime blockTimestamp = timestampMillis > 0
+							? OffsetDateTime.ofInstant(Instant.ofEpochMilli(timestampMillis), ZoneOffset.UTC)
+							: null;
+					boolean successful = "Transfer".equalsIgnoreCase(tx.path("type").asText("Transfer"));
+					transfers.add(new IncomingTransfer(txHash, amount, toAddress, contract, blockTimestamp,
+							0, successful));
 				}
 			}
-			return transfers;
+			return new TransferPage(transfers, root.path("meta").path("fingerprint").asText(null));
 		}
 		catch (Exception exception) {
 			throw new WithdrawalException(503, "failed to fetch TRC20 transfers: " + exception.getMessage());
 		}
 	}
 
-	public record IncomingTransfer(String txHash, BigDecimal amount) {
+	public record IncomingTransfer(String txHash, BigDecimal amount, String recipient, String contract,
+			OffsetDateTime blockTimestamp, int confirmationCount, boolean successful) {
+	}
+
+	public IncomingTransfer verifyIncomingTransfer(IncomingTransfer transfer) {
+		PayoutChainStatus status = queryTransactionStatus(transfer.txHash());
+		boolean successful = transfer.successful() && status.state() == PayoutChainState.CONFIRMED;
+		return new IncomingTransfer(transfer.txHash(), transfer.amount(), transfer.recipient(), transfer.contract(),
+				transfer.blockTimestamp(), status.confirmations(), successful);
+	}
+
+	private record TransferPage(List<IncomingTransfer> transfers, String nextFingerprint) {
 	}
 
 

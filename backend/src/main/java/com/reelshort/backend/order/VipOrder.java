@@ -3,6 +3,7 @@ package com.reelshort.backend.order;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
+import java.time.Duration;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -53,6 +54,30 @@ public class VipOrder {
 	@Column(name = "confirmed_at")
 	private OffsetDateTime confirmedAt;
 
+	@Column(name = "receiving_network", length = 16)
+	private String receivingNetwork;
+
+	@Column(name = "receiving_wallet_address", length = 128)
+	private String receivingWalletAddress;
+
+	@Column(name = "token_contract_address", length = 128)
+	private String tokenContractAddress;
+
+	@Column(name = "base_usdt_amount", precision = 18, scale = 6)
+	private BigDecimal baseUsdtAmount;
+
+	@Column(name = "payable_usdt_amount", precision = 18, scale = 6)
+	private BigDecimal payableUsdtAmount;
+
+	@Column(name = "pending_slot", length = 24)
+	private String pendingSlot;
+
+	@Column(name = "payment_observed_at")
+	private OffsetDateTime paymentObservedAt;
+
+	@Column(name = "confirmation_count", nullable = false)
+	private int confirmationCount;
+
 	protected VipOrder() {
 	}
 
@@ -76,15 +101,38 @@ public class VipOrder {
 				now, timeoutMinutes > 0 ? now.plusMinutes(timeoutMinutes) : null);
 	}
 
+	public static VipOrder create(UUID userId, String orderNo, BigDecimal baseUsdtAmount, int uniqueSuffix,
+			int timeoutMinutes, String receivingWalletAddress, String tokenContractAddress) {
+		VipOrder order = create(userId, orderNo, baseUsdtAmount, uniqueSuffix, timeoutMinutes);
+		order.receivingNetwork = "TRC20";
+		order.receivingWalletAddress = receivingWalletAddress;
+		order.tokenContractAddress = tokenContractAddress;
+		order.baseUsdtAmount = baseUsdtAmount.setScale(6, RoundingMode.UNNECESSARY);
+		order.payableUsdtAmount = order.baseUsdtAmount.add(
+				BigDecimal.valueOf(uniqueSuffix).divide(SUFFIX_DIVISOR, 6, RoundingMode.UNNECESSARY));
+		order.pendingSlot = "PENDING";
+		return order;
+	}
+
 	public BigDecimal payableAmount() {
-		return usdtAmount.add(BigDecimal.valueOf(uniqueSuffix).divide(SUFFIX_DIVISOR, 6, RoundingMode.DOWN));
+		return payableUsdtAmount != null ? payableUsdtAmount
+				: usdtAmount.add(BigDecimal.valueOf(uniqueSuffix).divide(SUFFIX_DIVISOR, 6, RoundingMode.DOWN));
 	}
 
 	public boolean isExpired() {
-		return expiresAt != null && expiresAt.isBefore(OffsetDateTime.now()) && "PENDING".equals(status);
+		return isExpired(Duration.ZERO);
+	}
+
+	public boolean isExpired(Duration confirmationGrace) {
+		return expiresAt != null && expiresAt.plus(confirmationGrace).isBefore(OffsetDateTime.now())
+				&& "PENDING".equals(status);
 	}
 
 	public void confirm(String txHash, String confirmedBy) {
+		confirm(txHash, confirmedBy, OffsetDateTime.now(), 0);
+	}
+
+	public void confirm(String txHash, String confirmedBy, OffsetDateTime paymentObservedAt, int confirmationCount) {
 		if (!"PENDING".equals(this.status)) {
 			throw new IllegalStateException("order is not pending");
 		}
@@ -92,6 +140,9 @@ public class VipOrder {
 		this.confirmedBy = confirmedBy;
 		this.status = "CONFIRMED";
 		this.confirmedAt = OffsetDateTime.now();
+		this.paymentObservedAt = paymentObservedAt;
+		this.confirmationCount = confirmationCount;
+		this.pendingSlot = null;
 	}
 
 	public void reject(String confirmedBy) {
@@ -101,6 +152,7 @@ public class VipOrder {
 		this.confirmedBy = confirmedBy;
 		this.status = "REJECTED";
 		this.confirmedAt = OffsetDateTime.now();
+		this.pendingSlot = null;
 	}
 
 	public void expire() {
@@ -108,6 +160,7 @@ public class VipOrder {
 			return;
 		}
 		this.status = "EXPIRED";
+		this.pendingSlot = null;
 	}
 
 	public UUID id() { return id; }
@@ -122,4 +175,11 @@ public class VipOrder {
 	public OffsetDateTime createdAt() { return createdAt; }
 	public OffsetDateTime expiresAt() { return expiresAt; }
 	public OffsetDateTime confirmedAt() { return confirmedAt; }
+	public String receivingNetwork() { return receivingNetwork; }
+	public String receivingWalletAddress() { return receivingWalletAddress; }
+	public String tokenContractAddress() { return tokenContractAddress; }
+	public BigDecimal baseUsdtAmount() { return baseUsdtAmount != null ? baseUsdtAmount : usdtAmount; }
+	public String pendingSlot() { return pendingSlot; }
+	public OffsetDateTime paymentObservedAt() { return paymentObservedAt; }
+	public int confirmationCount() { return confirmationCount; }
 }

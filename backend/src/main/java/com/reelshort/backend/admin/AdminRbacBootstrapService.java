@@ -71,6 +71,7 @@ public class AdminRbacBootstrapService implements ApplicationRunner {
 		descriptions.put(AdminPermissions.SYSTEM_ALERT_READ, "Read system alerts");
 		descriptions.put(AdminPermissions.SYSTEM_ALERT_WRITE, "Acknowledge system alerts");
 		descriptions.put(AdminPermissions.ORDER_READ, "Read recharge orders");
+		descriptions.put(AdminPermissions.ORDER_WRITE, "Confirm or reject VIP orders");
 		descriptions.put(AdminPermissions.PAYMENT_EVENT_READ, "Read payment callback events");
 		descriptions.put(AdminPermissions.WITHDRAWAL_READ, "Read withdrawal requests");
 		descriptions.put(AdminPermissions.WITHDRAWAL_WRITE, "Approve or reject withdrawal requests");
