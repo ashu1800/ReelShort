@@ -428,34 +428,40 @@ export async function rejectWithdrawal(withdrawalId: string, reason: string) {
   return response.data.data
 }
 
-export async function batchPreviewWithdrawals(withdrawalIds: string[], hotWalletPrivateKey: string) {
+export async function batchPreviewWithdrawals(withdrawalIds: string[], tronPrivateKey?: string, ethPrivateKey?: string) {
   const response = await http.post<ApiResponse<BatchWithdrawalPreview>>('/withdrawals/batch-preview', {
     withdrawalIds,
-    hotWalletPrivateKey,
+    tronPrivateKey,
+    ethPrivateKey,
   })
   return response.data.data
 }
 
 export async function batchApproveWithdrawals(
   withdrawalIds: string[],
-  hotWalletPrivateKey: string,
-  totpCode: string,
+  tronPrivateKey?: string,
+  ethPrivateKey?: string,
+  totpCode?: string,
 ) {
   const response = await http.post<ApiResponse<BatchWithdrawalResult>>('/withdrawals/batch-approve', {
     withdrawalIds,
-    hotWalletPrivateKey,
+    tronPrivateKey,
+    ethPrivateKey,
     totpCode,
   })
   return response.data.data
 }
 
 export type BatchWithdrawalPreview = {
-  hotWalletAddress: string
-  hotWalletUsdtBalance: string
-  hotWalletEthBalance: string
+  tronHotWalletAddress: string | null
+  tronUsdtBalance: string
+  tronTrxBalance: string
+  ethHotWalletAddress: string | null
+  ethUsdtBalance: string
+  ethEthBalance: string
   totalUsdt: string
   itemCount: number
-  items: { withdrawalId: string; userAccount: string; usdtAmount: string; walletAddress: string }[]
+  items: { withdrawalId: string; userAccount: string; usdtAmount: string; network: string; walletAddress: string }[]
 }
 
 export type BatchWithdrawalResult = {

@@ -119,8 +119,8 @@ class FakeReelShortApiClient : ReelShortApiClient {
     override suspend fun getWallet(): WalletInfo =
         WalletInfo("TRC20", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "2026-07-07T00:00:00Z", vipUntil = null, vipPriceUsdt = "15")
 
-    override suspend fun bindWallet(walletAddress: String): WalletInfo =
-        WalletInfo("TRC20", walletAddress, "2026-07-07T00:00:00Z")
+    override suspend fun bindWallet(network: String, walletAddress: String): WalletInfo =
+        WalletInfo(network, walletAddress, "2026-07-07T00:00:00Z")
 
     override suspend fun unbindWallet(): WalletInfo =
         WalletInfo("TRC20", null, null)

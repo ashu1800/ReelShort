@@ -943,9 +943,9 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun bindWallet(walletAddress: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
+    suspend fun bindWallet(network: String, walletAddress: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
         requireAuthenticatedAccount()
-        dataSource.bindWallet(walletAddress)
+        dataSource.bindWallet(network, walletAddress)
         reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
     }
 

@@ -21,7 +21,8 @@ const selectedRows = ref<WithdrawalRequest[]>([])
 // Batch payout dialog state
 const batchDialogVisible = ref(false)
 const batchStep = ref<'input-key' | 'preview' | 'totp'>('input-key')
-const hotWalletPrivateKey = ref('')
+const tronPrivateKey = ref('')
+const ethPrivateKey = ref('')
 const preview = ref<BatchWithdrawalPreview | null>(null)
 const totpCode = ref('')
 const batchResult = ref<BatchWithdrawalResult | null>(null)
@@ -84,7 +85,8 @@ async function openBatchDialog() {
     ElMessage.warning('请先在「两步验证」页面绑定 2FA')
     return
   }
-  hotWalletPrivateKey.value = ''
+  tronPrivateKey.value = ''
+  ethPrivateKey.value = ''
   preview.value = null
   totpCode.value = ''
   batchResult.value = null
@@ -93,13 +95,17 @@ async function openBatchDialog() {
 }
 
 async function doPreview() {
-  if (!hotWalletPrivateKey.value.trim()) {
-    ElMessage.warning('请输入热钱包私钥')
+  if (!tronPrivateKey.value.trim() && !ethPrivateKey.value.trim()) {
+    ElMessage.warning('请至少输入一条链的热钱包私钥')
     return
   }
   operationLoading.value = true
   try {
-    preview.value = await batchPreviewWithdrawals(selectedPendingIds.value, hotWalletPrivateKey.value.trim())
+    preview.value = await batchPreviewWithdrawals(
+      selectedPendingIds.value,
+      tronPrivateKey.value.trim() || undefined,
+      ethPrivateKey.value.trim() || undefined,
+    )
     batchStep.value = 'preview'
   } catch (error) {
     ElMessage.error(backendErrorMessage(error, '预览失败，请检查私钥'))
@@ -117,7 +123,8 @@ async function doBatchApprove() {
   try {
     batchResult.value = await batchApproveWithdrawals(
       selectedPendingIds.value,
-      hotWalletPrivateKey.value.trim(),
+      tronPrivateKey.value.trim() || undefined,
+      ethPrivateKey.value.trim() || undefined,
       totpCode.value.trim(),
     )
     if (batchResult.value.succeeded > 0) {
@@ -128,8 +135,9 @@ async function doBatchApprove() {
     }
     batchStep.value = 'totp'
     await loadWithdrawals()
-    // Clear private key from memory immediately after use
-    hotWalletPrivateKey.value = ''
+    // Clear private keys from memory immediately after use
+    tronPrivateKey.value = ''
+    ethPrivateKey.value = ''
   } catch (error) {
     ElMessage.error(backendErrorMessage(error, '批量打款失败'))
   } finally {
@@ -140,7 +148,8 @@ async function doBatchApprove() {
 function closeBatchDialog() {
   batchDialogVisible.value = false
   // Clear sensitive data from memory
-  hotWalletPrivateKey.value = ''
+  tronPrivateKey.value = ''
+  ethPrivateKey.value = ''
   totpCode.value = ''
 }
 
@@ -224,7 +233,7 @@ onMounted(() => {
     <div class="page-header">
       <div>
         <h1>提现申请</h1>
-        <p>勾选待处理申请后批量自动打款（ERC-20 USDT），需 2FA 确认。也可单笔手动录入 tx hash。</p>
+        <p>勾选待处理申请后批量自动打款（TRC20 + ERC20 双链），需 2FA 确认。也可单笔手动录入 tx hash。</p>
       </div>
       <div style="display: flex; gap: 8px">
         <el-button
@@ -293,38 +302,46 @@ onMounted(() => {
 
     <!-- Batch payout dialog -->
     <el-dialog v-model="batchDialogVisible" title="批量自动打款" width="600px" :close-on-click-modal="false">
-      <!-- Step 1: input private key -->
+      <!-- Step 1: input private keys (dual chain) -->
       <div v-if="batchStep === 'input-key'">
         <el-alert type="warning" show-icon :closable="false" style="margin-bottom: 16px">
-          私钥仅用于本次签名，不会存储在服务器。请确保在安全环境下操作。
+          私钥仅用于本次签名，不会存储在服务器。按需输入对应链的热钱包私钥（TRC20 和/或 ERC20）。
         </el-alert>
         <p>已选 {{ selectedPendingIds.length }} 笔待处理提现申请。</p>
-        <el-input
-          v-model="hotWalletPrivateKey"
-          type="password"
-          placeholder="热钱包私钥（hex，不含 0x 前缀）"
-          show-password
-        />
+        <div style="margin-bottom: 12px">
+          <div style="margin-bottom: 4px; font-weight: 600">TRC20 热钱包私钥（Tron 链提现需要）</div>
+          <el-input v-model="tronPrivateKey" type="password" placeholder="Tron 私钥（hex，不含 0x 前缀）" show-password />
+        </div>
+        <div style="margin-bottom: 12px">
+          <div style="margin-bottom: 4px; font-weight: 600">ERC20 热钱包私钥（以太坊链提现需要）</div>
+          <el-input v-model="ethPrivateKey" type="password" placeholder="以太坊私钥（hex，不含 0x 前缀）" show-password />
+        </div>
         <div style="margin-top: 16px; text-align: right">
           <el-button @click="closeBatchDialog">取消</el-button>
           <el-button type="primary" :loading="operationLoading" @click="doPreview">下一步：预览</el-button>
         </div>
       </div>
 
-      <!-- Step 2: preview balances + items -->
+      <!-- Step 2: preview balances + items (dual chain) -->
       <div v-if="batchStep === 'preview' && preview">
         <el-descriptions :column="1" border>
-          <el-descriptions-item label="热钱包地址">
-            <span class="mono">{{ preview.hotWalletAddress }}</span>
+          <el-descriptions-item v-if="preview.tronHotWalletAddress" label="TRC20 热钱包地址">
+            <span class="mono">{{ preview.tronHotWalletAddress }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="热钱包 USDT 余额">{{ preview.hotWalletUsdtBalance }}</el-descriptions-item>
-          <el-descriptions-item label="热钱包 ETH 余额">{{ preview.hotWalletEthBalance }}</el-descriptions-item>
+          <el-descriptions-item v-if="preview.tronHotWalletAddress" label="TRC20 USDT 余额">{{ preview.tronUsdtBalance }}</el-descriptions-item>
+          <el-descriptions-item v-if="preview.tronHotWalletAddress" label="TRX 余额">{{ preview.tronTrxBalance }}</el-descriptions-item>
+          <el-descriptions-item v-if="preview.ethHotWalletAddress" label="ERC20 热钱包地址">
+            <span class="mono">{{ preview.ethHotWalletAddress }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="preview.ethHotWalletAddress" label="ERC20 USDT 余额">{{ preview.ethUsdtBalance }}</el-descriptions-item>
+          <el-descriptions-item v-if="preview.ethHotWalletAddress" label="ETH 余额">{{ preview.ethEthBalance }}</el-descriptions-item>
           <el-descriptions-item label="本次提现总计 USDT">
             <strong>{{ preview.totalUsdt }}</strong>
           </el-descriptions-item>
           <el-descriptions-item label="提现笔数">{{ preview.itemCount }}</el-descriptions-item>
         </el-descriptions>
         <el-table :data="preview.items" border size="small" style="margin-top: 12px" max-height="200">
+          <el-table-column label="链" prop="network" width="70" />
           <el-table-column label="USDT" prop="usdtAmount" width="100" />
           <el-table-column label="钱包地址" prop="walletAddress" min-width="240" />
           <el-table-column label="账号" prop="userAccount" min-width="140" />

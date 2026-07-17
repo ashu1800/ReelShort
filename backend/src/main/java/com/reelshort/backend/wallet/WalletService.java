@@ -1,8 +1,12 @@
 package com.reelshort.backend.wallet;
 
+import java.math.BigInteger;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -17,6 +21,11 @@ import com.reelshort.backend.user.UserStatus;
 
 @Service
 public class WalletService {
+
+	private static final String BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+	private static final int TRON_ADDRESS_LENGTH = 34;
+	private static final int TRON_DECODED_LENGTH = 25;
+	private static final byte TRON_PREFIX = 0x41;
 
 	private final UserWalletRepository userWalletRepository;
 	private final UserAccountRepository userAccountRepository;
@@ -45,15 +54,15 @@ public class WalletService {
 	}
 
 	@Transactional
-	public WalletResponse bindOrReplace(UUID userId, String walletAddress) {
-		String normalizedWalletAddress = normalizeWalletAddress(walletAddress);
+	public WalletResponse bindOrReplace(UUID userId, String network, String walletAddress) {
+		String normalizedWalletAddress = normalizeWalletAddress(network, walletAddress);
 		activeUser(userId);
 		UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
 		if (wallet == null) {
-			wallet = UserWallet.create(userId, normalizedWalletAddress);
+			wallet = UserWallet.create(userId, network, normalizedWalletAddress);
 		}
 		else {
-			wallet.replace(normalizedWalletAddress);
+			wallet.replace(network, normalizedWalletAddress);
 		}
 		return WalletResponse.from(userWalletRepository.save(wallet));
 	}
@@ -102,10 +111,12 @@ public class WalletService {
 		return user.username();
 	}
 
-	private String normalizeWalletAddress(String walletAddress) {
+	private String normalizeWalletAddress(String network, String walletAddress) {
 		String trimmed = walletAddress == null ? "" : walletAddress.trim();
-		if (!isValidEthereumAddress(trimmed)) {
-			throw new AdminException(400, "invalid wallet address");
+		boolean valid = "TRC20".equals(network) ? isValidTronAddress(trimmed)
+				: "ERC20".equals(network) ? isValidEthereumAddress(trimmed) : false;
+		if (!valid) {
+			throw new AdminException(400, "invalid wallet address for " + network);
 		}
 		return trimmed;
 	}
@@ -182,6 +193,55 @@ public class WalletService {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * 校验 Tron 地址格式：T 开头 + 34 字符 Base58 + Base58Check 校验和。
+	 */
+	private boolean isValidTronAddress(String walletAddress) {
+		if (!walletAddress.startsWith("T") || walletAddress.length() != TRON_ADDRESS_LENGTH) {
+			return false;
+		}
+		byte[] decoded = decodeBase58(walletAddress);
+		if (decoded.length != TRON_DECODED_LENGTH || decoded[0] != TRON_PREFIX) {
+			return false;
+		}
+		byte[] payload = Arrays.copyOfRange(decoded, 0, 21);
+		byte[] expectedChecksum = Arrays.copyOfRange(doubleSha256(payload), 0, 4);
+		byte[] actualChecksum = Arrays.copyOfRange(decoded, 21, TRON_DECODED_LENGTH);
+		return Arrays.equals(expectedChecksum, actualChecksum);
+	}
+
+	private byte[] decodeBase58(String value) {
+		BigInteger number = BigInteger.ZERO;
+		for (int index = 0; index < value.length(); index++) {
+			int digit = BASE58_ALPHABET.indexOf(value.charAt(index));
+			if (digit < 0) {
+				return new byte[0];
+			}
+			number = number.multiply(BigInteger.valueOf(58)).add(BigInteger.valueOf(digit));
+		}
+		byte[] raw = number.toByteArray();
+		if (raw.length > 0 && raw[0] == 0) {
+			raw = Arrays.copyOfRange(raw, 1, raw.length);
+		}
+		int leadingZeroes = 0;
+		while (leadingZeroes < value.length() && value.charAt(leadingZeroes) == '1') {
+			leadingZeroes++;
+		}
+		byte[] decoded = new byte[leadingZeroes + raw.length];
+		System.arraycopy(raw, 0, decoded, leadingZeroes, raw.length);
+		return decoded;
+	}
+
+	private byte[] doubleSha256(byte[] value) {
+		try {
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+			return digest.digest(digest.digest(value));
+		}
+		catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 not available", exception);
+		}
 	}
 
 

@@ -63,7 +63,7 @@ internal fun MainShell(
     onShowAuthPrompt: () -> Unit,
     onShowRegisterAuthPrompt: () -> Unit,
     onRefreshHome: () -> Unit,
-    onBindWallet: (String) -> Unit,
+    onBindWallet: (String, String) -> Unit,
     onUnbindWallet: () -> Unit,
     onCreateVipOrder: () -> Unit,
     onRefreshVipOrder: () -> Unit,

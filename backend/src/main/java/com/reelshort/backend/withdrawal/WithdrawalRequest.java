@@ -92,8 +92,11 @@ public class WithdrawalRequest {
 	public static WithdrawalRequest create(UUID userId, int pointAmount, int feeAmount,
 			WithdrawalConversion conversion, String network, String walletAddress) {
 		BigDecimal normalizedRate = conversion.usdtPerPoint().setScale(8, RoundingMode.UNNECESSARY);
+		// 需求2: pointAmount 是用户输入的扣除总额，实际提取 = pointAmount - feeAmount
+		// USDT 按实际可提取积分换算
+		int withdrawable = pointAmount - feeAmount;
 		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, feeAmount,
-				conversion.usdtAmount(pointAmount),
+				conversion.usdtAmount(withdrawable),
 				normalizedRate, conversion.cnyPerPoint().setScale(8, RoundingMode.UNNECESSARY),
 				conversion.cnyPerUsd().setScale(8, RoundingMode.UNNECESSARY),
 				conversion.minimumUsd().setScale(2, RoundingMode.UNNECESSARY), network, walletAddress,
@@ -164,8 +167,19 @@ public class WithdrawalRequest {
 		return feeAmount;
 	}
 
+	/**
+	 * 需求2: 用户输入的总额即为扣减总额（手续费从总额中扣除，不再额外扣）。
+	 * 例如用户提现 1000 积分，手续费 10%，则扣减 1000 积分，实际提取 900。
+	 */
 	public int totalDeductedPoints() {
-		return pointAmount + feeAmount;
+		return pointAmount;
+	}
+
+	/**
+	 * 实际可提取积分 = 扣减总额 - 手续费。USDT 按此值换算。
+	 */
+	public int withdrawablePoints() {
+		return pointAmount - feeAmount;
 	}
 
 	public BigDecimal usdtAmount() {

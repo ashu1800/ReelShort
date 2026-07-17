@@ -33,7 +33,8 @@ public class WalletController {
 	public ApiResponse<WalletResponse> bindOrReplace(CurrentUser currentUser,
 			@Valid @RequestBody WalletBindRequest bindRequest,
 			HttpServletRequest request) {
-		return ApiResponse.success(walletService.bindOrReplace(currentUser.userId(), bindRequest.walletAddress()),
+		return ApiResponse.success(
+				walletService.bindOrReplace(currentUser.userId(), bindRequest.network(), bindRequest.walletAddress()),
 				requestId(request));
 	}
 

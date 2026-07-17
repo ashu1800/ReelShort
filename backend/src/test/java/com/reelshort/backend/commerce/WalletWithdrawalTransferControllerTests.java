@@ -72,6 +72,7 @@ class WalletWithdrawalTransferControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
+						  "network": "ERC20",
 						  "walletAddress": "%s"
 						}
 						""".formatted(VALID_ETH_ADDRESS)))
@@ -104,11 +105,12 @@ class WalletWithdrawalTransferControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
+						  "network": "ERC20",
 						  "walletAddress": "%s"
 						}
 						""".formatted(INVALID_ETH_ADDRESS)))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("invalid wallet address"));
+				.andExpect(jsonPath("$.message").value("invalid wallet address for ERC20"));
 	}
 
 	@Test
@@ -143,8 +145,8 @@ class WalletWithdrawalTransferControllerTests {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.balance").value(4000))
-				.andExpect(jsonPath("$.data.frozenPoints").value(3960))
-				.andExpect(jsonPath("$.data.availablePoints").value(40));
+				.andExpect(jsonPath("$.data.frozenPoints").value(3600))
+				.andExpect(jsonPath("$.data.availablePoints").value(400));
 
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", UUID.fromString(withdrawalId))
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
@@ -176,9 +178,9 @@ class WalletWithdrawalTransferControllerTests {
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(40))
+				.andExpect(jsonPath("$.data.balance").value(400))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
-				.andExpect(jsonPath("$.data.availablePoints").value(40));
+				.andExpect(jsonPath("$.data.availablePoints").value(400));
 
 		mockMvc.perform(get("/api/app/points/records")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
@@ -255,7 +257,9 @@ class WalletWithdrawalTransferControllerTests {
 							}
 							"""))
 					.andExpect(status().isOk())
-					.andExpect(jsonPath("$.data.usdtAmount").value("12.469135"))
+				// pointAmount=101, fee=ceil(101*10/100)=11, withdrawable=90
+				// usdt = 90 * 0.12345678 / 1 = 11.111110 → stripTrailingZeros → 11.11111
+				.andExpect(jsonPath("$.data.usdtAmount").value("11.11111"))
 					.andExpect(jsonPath("$.data.usdtPerPoint").value("0.12345678"));
 		}
 		finally {
@@ -309,14 +313,19 @@ class WalletWithdrawalTransferControllerTests {
 	}
 
 	private void bindWallet(String token, String walletAddress) throws Exception {
+		bindWallet(token, "ERC20", walletAddress);
+	}
+
+	private void bindWallet(String token, String network, String walletAddress) throws Exception {
 		mockMvc.perform(put("/api/app/wallet")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
+						  "network": "%s",
 						  "walletAddress": "%s"
 						}
-						""".formatted(walletAddress)))
+						""".formatted(network, walletAddress)))
 				.andExpect(status().isOk());
 	}
 

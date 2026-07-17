@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
@@ -153,7 +154,7 @@ internal fun AccountScreen(
     onShowRegisterAuthPrompt: () -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenWatchRecord: (WatchRecord) -> Unit,
-    onBindWallet: (String) -> Unit,
+    onBindWallet: (String, String) -> Unit,
     onUnbindWallet: () -> Unit,
     onCreateVipOrder: () -> Unit,
     onRefreshVipOrder: () -> Unit,
@@ -255,7 +256,7 @@ internal fun AccountScreen(
                     AccountMenuRow(
                         icon = Icons.Rounded.MonetizationOn,
                         title = copy.accountWalletTitle,
-                        subtitle = wallet?.walletAddress ?: "TRC20",
+                        subtitle = wallet?.let { "${it.network} · ${it.walletAddress}" } ?: "ERC20 / TRC20",
                         onClick = { walletSheetVisible = true },
                     )
                     AccountMenuDivider()
@@ -345,6 +346,7 @@ internal fun AccountScreen(
         WithdrawalBottomSheet(
             summary = withdrawalSummary,
             withdrawals = withdrawals,
+            walletNetwork = wallet?.network,
             language = language,
             onDismiss = { detailSheet = null },
             onSubmitWithdrawal = { pendingConfirmation = PendingAccountConfirmation.Withdrawal(it) },
@@ -935,21 +937,35 @@ private fun WalletBottomSheet(
     wallet: WalletInfo?,
     language: AppLanguage,
     onDismiss: () -> Unit,
-    onBindWallet: (String) -> Unit,
+    onBindWallet: (String, String) -> Unit,
     onUnbindWallet: () -> Unit,
     isSubmitting: Boolean,
 ) {
     val copy = strings(language)
     var walletAddress by remember(wallet) { mutableStateOf(wallet?.walletAddress.orEmpty()) }
+    var selectedNetwork by remember(wallet) { mutableStateOf(wallet?.network ?: "ERC20") }
     AccountFormBottomSheet(onDismiss = onDismiss) {
         SheetForm(title = copy.accountWalletTitle) {
             Text(wallet?.walletAddress ?: copy.accountWalletNoBound, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            LoginTextField(walletAddress, { walletAddress = it.trim() }, copy.accountWalletAddressLabel, enabled = true)
+            // 网络类型选择器（TRC20 / ERC20）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf("TRC20", "ERC20").forEach { network ->
+                    FilterChip(
+                        selected = selectedNetwork == network,
+                        onClick = { selectedNetwork = network },
+                        label = { Text(network) },
+                    )
+                }
+            }
+            LoginTextField(walletAddress, { walletAddress = it.trim() }, "$selectedNetwork wallet address", enabled = true)
             PrimaryWalletActionRow(
                 primary = if (wallet?.walletAddress.isNullOrBlank()) copy.accountWalletBindAction else copy.accountWalletReplaceAction,
                 primaryEnabled = walletAddress.isNotBlank() && !isSubmitting,
                 onPrimary = {
-                    onBindWallet(walletAddress)
+                    onBindWallet(selectedNetwork, walletAddress)
                 },
                 secondary = copy.accountWalletUnbindAction,
                 secondaryEnabled = !wallet?.walletAddress.isNullOrBlank() && !isSubmitting,
@@ -964,6 +980,7 @@ private fun WalletBottomSheet(
 private fun WithdrawalBottomSheet(
     summary: WithdrawalSummary?,
     withdrawals: List<WithdrawalRecord>,
+    walletNetwork: String?,
     language: AppLanguage,
     onDismiss: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
@@ -984,7 +1001,10 @@ private fun WithdrawalBottomSheet(
                 )
             }
             Text(
-                summary?.walletAddress?.let { "TRC20 · $it" } ?: copy.accountWithdrawWalletRequired,
+                summary?.walletAddress?.let { addr ->
+                    val net = walletNetwork ?: "ERC20"
+                    "$net · $addr"
+                } ?: copy.accountWithdrawWalletRequired,
                 color = if (summary?.walletAddress == null) DangerText else TextSecondary,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -1107,7 +1127,7 @@ private sealed interface PendingAccountConfirmation {
 
 private fun PendingAccountConfirmation.summary(language: AppLanguage): String =
     when (this) {
-        is PendingAccountConfirmation.WalletUnbind -> "unbind the TRC20 wallet"
+        is PendingAccountConfirmation.WalletUnbind -> "unbind the wallet"
         is PendingAccountConfirmation.Withdrawal -> "withdraw $points points"
     }
 

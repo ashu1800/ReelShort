@@ -51,7 +51,7 @@ interface AppDataSource {
 
     suspend fun loadWallet(): WalletInfo
 
-    suspend fun bindWallet(walletAddress: String): WalletInfo
+    suspend fun bindWallet(network: String, walletAddress: String): WalletInfo
 
     suspend fun unbindWallet(): WalletInfo
 

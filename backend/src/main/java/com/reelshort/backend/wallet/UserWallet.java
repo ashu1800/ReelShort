@@ -43,12 +43,13 @@ public class UserWallet {
 		this.updatedAt = updatedAt;
 	}
 
-	public static UserWallet create(UUID userId, String walletAddress) {
+	public static UserWallet create(UUID userId, String network, String walletAddress) {
 		OffsetDateTime now = OffsetDateTime.now();
-		return new UserWallet(UUID.randomUUID(), userId, "ERC20", walletAddress, now, now);
+		return new UserWallet(UUID.randomUUID(), userId, network, walletAddress, now, now);
 	}
 
-	public void replace(String walletAddress) {
+	public void replace(String network, String walletAddress) {
+		this.network = network;
 		this.walletAddress = walletAddress;
 		this.updatedAt = OffsetDateTime.now();
 	}

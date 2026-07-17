@@ -8,11 +8,13 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 
 /**
- * Batch withdrawal payout request. The admin provides the hot wallet private key per-call (never
- * persisted server-side) plus a TOTP verification code.
+ * Batch withdrawal payout request. The admin provides hot wallet private keys per-chain
+ * (never persisted server-side) plus a TOTP verification code. Each withdrawal is dispatched
+ * to the appropriate chain client based on its network.
  */
 public record BatchWithdrawalRequest(
 		@NotEmpty List<UUID> withdrawalIds,
-		@NotBlank @Size(max = 64) String hotWalletPrivateKey,
+		@Size(max = 128) String tronPrivateKey,
+		@Size(max = 128) String ethPrivateKey,
 		@NotBlank @Size(max = 6) String totpCode) {
 }

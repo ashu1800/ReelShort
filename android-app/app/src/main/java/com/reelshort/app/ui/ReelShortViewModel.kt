@@ -120,8 +120,8 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.fetchCaptcha() }
     }
 
-    fun bindWallet(walletAddress: String) {
-        viewModelScope.launch { controller.bindWallet(walletAddress) }
+    fun bindWallet(network: String, walletAddress: String) {
+        viewModelScope.launch { controller.bindWallet(network, walletAddress) }
     }
 
     fun unbindWallet() {

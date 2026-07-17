@@ -57,7 +57,7 @@ public class AdminWithdrawalController {
 	public ApiResponse<BatchWithdrawalPreviewResponse> batchPreview(
 			@Valid @RequestBody BatchWithdrawalPreviewRequest previewRequest, HttpServletRequest request) {
 		return ApiResponse.success(withdrawalService.batchPreview(previewRequest.withdrawalIds(),
-				previewRequest.hotWalletPrivateKey()), requestId(request));
+				previewRequest.tronPrivateKey(), previewRequest.ethPrivateKey()), requestId(request));
 	}
 
 	@PostMapping("/batch-approve")
@@ -65,8 +65,8 @@ public class AdminWithdrawalController {
 	public ApiResponse<BatchWithdrawalResponse> batchApprove(CurrentAdmin currentAdmin,
 			@Valid @RequestBody BatchWithdrawalRequest batchRequest, HttpServletRequest request) {
 		return ApiResponse.success(withdrawalService.batchApprove(batchRequest.withdrawalIds(),
-				batchRequest.hotWalletPrivateKey(), batchRequest.totpCode(), currentAdmin.adminUserId()),
-				requestId(request));
+				batchRequest.tronPrivateKey(), batchRequest.ethPrivateKey(), batchRequest.totpCode(),
+				currentAdmin.adminUserId()), requestId(request));
 	}
 
 	private String requestId(HttpServletRequest request) {

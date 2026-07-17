@@ -40,6 +40,7 @@ public class WithdrawalService {
 	private final UserActionLocks userActionLocks;
 	private final UserAccountRepository userAccountRepository;
 	private final EthereumClient ethereumClient;
+	private final TronClient tronClient;
 	private final TotpService totpService;
 	private final AdminUserRepository adminUserRepository;
 
@@ -47,7 +48,8 @@ public class WithdrawalService {
 			UserWalletRepository userWalletRepository, PointAccountRepository pointAccountRepository,
 			PointTransactionRepository pointTransactionRepository, SystemConfigService systemConfigService,
 			UserActionLocks userActionLocks, UserAccountRepository userAccountRepository,
-			EthereumClient ethereumClient, TotpService totpService, AdminUserRepository adminUserRepository) {
+			EthereumClient ethereumClient, TronClient tronClient, TotpService totpService,
+			AdminUserRepository adminUserRepository) {
 		this.withdrawalRequestRepository = withdrawalRequestRepository;
 		this.userWalletRepository = userWalletRepository;
 		this.pointAccountRepository = pointAccountRepository;
@@ -56,6 +58,7 @@ public class WithdrawalService {
 		this.userActionLocks = userActionLocks;
 		this.userAccountRepository = userAccountRepository;
 		this.ethereumClient = ethereumClient;
+		this.tronClient = tronClient;
 		this.totpService = totpService;
 		this.adminUserRepository = adminUserRepository;
 	}
@@ -102,25 +105,25 @@ public class WithdrawalService {
 	public WithdrawalResponse create(UUID userId, int pointAmount) {
 		return userActionLocks.withUserLock(userId, () -> {
 			WithdrawalConversion conversion = conversion();
-			// balance 永远是真实整数积分，pointAmount 直接使用，无需 ×10 缩放。
-			// M7: 门槛基于实际提取额 pointAmount（用户真正拿到的积分价值），而非扣减总额。
+			// 需求2: pointAmount 是用户输入的扣除总额。手续费从中扣除，不再额外扣。
+			// 例如输入 1000、手续费 10%，则扣减 1000，实际提取 900。
 			int minimum = conversion.minimumPoints();
 			if (pointAmount < minimum) {
 				throw new AdminException(400, "withdrawal amount below minimum");
 			}
 			int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
-			// L1: 手续费向上取整，避免平台少收（long 防溢出）。
+			// 手续费向上取整（long 防溢出）
 			long rawFee = (long) pointAmount * feePercent;
 			int feeAmount = (int) ((rawFee + 99) / 100);
-			int totalDeduct = pointAmount + feeAmount;
 			UserWallet wallet = userWalletRepository.findByUserId(userId)
 					.orElseThrow(() -> new AdminException(400, "wallet required"));
-				PointAccount account = accountEntityForUpdate(userId);
-			if (!account.canUseAvailable(totalDeduct)) {
+			PointAccount account = accountEntityForUpdate(userId);
+			// 扣减总额 = pointAmount（手续费含在其中）
+			if (!account.canUseAvailable(pointAmount)) {
 				throw new AdminException(400, "insufficient available point balance");
 			}
 			try {
-				account.freeze(totalDeduct);
+				account.freeze(pointAmount);
 			}
 			catch (IllegalStateException exception) {
 				throw new AdminException(400, exception.getMessage());
@@ -212,10 +215,25 @@ public class WithdrawalService {
 	 * The hot wallet private key is provided by the admin to query balances; it is not stored.
 	 */
 	@Transactional(readOnly = true)
-	public BatchWithdrawalPreviewResponse batchPreview(List<UUID> withdrawalIds, String hotWalletPrivateKey) {
-		String hotWalletAddress = ethereumClient.addressFromPrivateKey(hotWalletPrivateKey);
-		BigDecimal usdtBalance = ethereumClient.getUsdtBalance(hotWalletAddress);
-		BigDecimal ethBalance = ethereumClient.getEthBalance(hotWalletAddress);
+	public BatchWithdrawalPreviewResponse batchPreview(List<UUID> withdrawalIds, String tronPrivateKey,
+			String ethPrivateKey) {
+		// 分别查询两条链的热钱包余额（如果对应私钥提供了）
+		String tronAddress = null;
+		BigDecimal tronUsdt = BigDecimal.ZERO;
+		BigDecimal tronTrx = BigDecimal.ZERO;
+		if (tronPrivateKey != null && !tronPrivateKey.isBlank()) {
+			tronAddress = tronClient.addressFromPrivateKey(tronPrivateKey);
+			tronUsdt = tronClient.getUsdtBalance(tronAddress);
+			tronTrx = tronClient.getTrxBalance(tronAddress);
+		}
+		String ethAddress = null;
+		BigDecimal ethUsdt = BigDecimal.ZERO;
+		BigDecimal ethEth = BigDecimal.ZERO;
+		if (ethPrivateKey != null && !ethPrivateKey.isBlank()) {
+			ethAddress = ethereumClient.addressFromPrivateKey(ethPrivateKey);
+			ethUsdt = ethereumClient.getUsdtBalance(ethAddress);
+			ethEth = ethereumClient.getEthBalance(ethAddress);
+		}
 		List<WithdrawalRequest> requests = withdrawalRequestRepository.findAllById(withdrawalIds);
 		BigDecimal total = BigDecimal.ZERO;
 		List<BatchWithdrawalPreviewResponse.PreviewItem> items = new ArrayList<>();
@@ -224,18 +242,21 @@ public class WithdrawalService {
 				total = total.add(req.usdtAmount());
 			}
 			items.add(new BatchWithdrawalPreviewResponse.PreviewItem(
-					req.id().toString(), userAccount(req.userId()), decimal(req.usdtAmount()), req.walletAddress()));
+					req.id().toString(), userAccount(req.userId()), decimal(req.usdtAmount()),
+					req.network(), req.walletAddress()));
 		}
-		return new BatchWithdrawalPreviewResponse(hotWalletAddress, decimal(usdtBalance), decimal(ethBalance),
+		return new BatchWithdrawalPreviewResponse(
+				tronAddress, decimal(tronUsdt), decimal(tronTrx),
+				ethAddress, decimal(ethUsdt), decimal(ethEth),
 				decimal(total), items.size(), items);
 	}
 
 	/**
 	 * Execute a batch payout: verify 2FA, then transfer USDT sequentially for each withdrawal.
-	 * Stops on first failure. The hot wallet private key is used in-memory only.
+	 * Stops on first failure. Private keys are used in-memory only, dispatched by withdrawal network.
 	 */
-	public BatchWithdrawalResponse batchApprove(List<UUID> withdrawalIds, String hotWalletPrivateKey,
-			String totpCode, UUID adminUserId) {
+	public BatchWithdrawalResponse batchApprove(List<UUID> withdrawalIds, String tronPrivateKey,
+			String ethPrivateKey, String totpCode, UUID adminUserId) {
 		AdminUser admin = adminUserRepository.findById(adminUserId)
 				.orElseThrow(() -> new AdminException(404, "admin not found"));
 		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
@@ -246,7 +267,7 @@ public class WithdrawalService {
 		int index = 0;
 		for (UUID withdrawalId : withdrawalIds) {
 			try {
-				String txHash = approveWithTransfer(withdrawalId, hotWalletPrivateKey, admin.username());
+				String txHash = approveWithTransfer(withdrawalId, tronPrivateKey, ethPrivateKey, admin.username());
 				results.add(new BatchWithdrawalResponse.ItemResult(
 						withdrawalId.toString(), "APPROVED", txHash, null));
 				succeeded++;
@@ -281,22 +302,34 @@ public class WithdrawalService {
 	 * <br>Phase 2: 事务外广播 TRC20 转账。
 	 * <br>Phase 3: {@link #markApprovedAfterBroadcast} — 广播成功后新事务标记 APPROVED。
 	 */
-	public String approveWithTransfer(UUID withdrawalId, String hotWalletPrivateKey, String adminUsername) {
+	public String approveWithTransfer(UUID withdrawalId, String tronPrivateKey, String ethPrivateKey,
+			String adminUsername) {
 		// Phase 1: 扣减积分 + 标记兜底状态（事务内）
 		UUID userId = deductAndMarkForBroadcast(withdrawalId, adminUsername);
-		// Phase 2: 读取已提交的 request（仅用于获取广播参数），广播在事务外
+		// Phase 2: 读取已提交的 request，按 network 选择对应链客户端广播
 		WithdrawalRequest broadcasted = withdrawalRequestRepository.findById(withdrawalId).orElseThrow();
+		String network = broadcasted.network();
 		try {
-			String txHash = ethereumClient.transferUSDT(hotWalletPrivateKey, broadcasted.walletAddress(),
-					broadcasted.usdtAmount());
+			String txHash;
+			if ("TRC20".equals(network)) {
+				if (tronPrivateKey == null || tronPrivateKey.isBlank()) {
+					throw new AdminException(400, "TRC20 hot wallet private key required for this withdrawal");
+				}
+				txHash = tronClient.transferUSDT(tronPrivateKey, broadcasted.walletAddress(), broadcasted.usdtAmount());
+			}
+			else {
+				if (ethPrivateKey == null || ethPrivateKey.isBlank()) {
+					throw new AdminException(400, "ERC20 hot wallet private key required for this withdrawal");
+				}
+				txHash = ethereumClient.transferUSDT(ethPrivateKey, broadcasted.walletAddress(), broadcasted.usdtAmount());
+			}
 			// Phase 3: 广播成功，标记 APPROVED（新事务）
 			markApprovedAfterBroadcast(withdrawalId, txHash, adminUsername);
 			return txHash;
 		}
 		catch (RuntimeException exception) {
-			// 广播失败：积分已扣，状态已是 BROADCAST_FAILED，记录错误日志供人工对账
-			log.error("ERC-20 broadcast failed for withdrawal {} (points already deducted): {}",
-					withdrawalId, exception.getMessage());
+			log.error("{} broadcast failed for withdrawal {} (points already deducted): {}",
+					network, withdrawalId, exception.getMessage());
 			throw exception;
 		}
 	}
@@ -329,7 +362,7 @@ public class WithdrawalService {
 	void markApprovedAfterBroadcast(UUID withdrawalId, String txHash, String adminUsername) {
 		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
 		if (request.status() == WithdrawalStatus.BROADCAST_FAILED) {
-			request.markApprovedFromBroadcast(txHash, "auto ERC-20 transfer", adminUsername);
+			request.markApprovedFromBroadcast(txHash, "auto " + request.network() + " transfer", adminUsername);
 			withdrawalRequestRepository.save(request);
 		}
 	}

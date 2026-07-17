@@ -99,8 +99,8 @@ class AppRepository(
 
     override suspend fun loadWallet(): WalletInfo = apiClient.getWallet()
 
-    override suspend fun bindWallet(walletAddress: String): WalletInfo =
-        apiClient.bindWallet(walletAddress)
+    override suspend fun bindWallet(network: String, walletAddress: String): WalletInfo =
+        apiClient.bindWallet(network, walletAddress)
 
     override suspend fun unbindWallet(): WalletInfo = apiClient.unbindWallet()
 

@@ -148,6 +148,7 @@ data class WalletResponseDto(
 
 @Serializable
 data class WalletBindRequestDto(
+    val network: String,
     val walletAddress: String,
 )
 

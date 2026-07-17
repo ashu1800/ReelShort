@@ -185,10 +185,10 @@ class OkHttpReelShortApiClient(
     override suspend fun getWallet(): WalletInfo =
         get<WalletResponseDto>("/wallet", authenticated = true).toDomain()
 
-    override suspend fun bindWallet(walletAddress: String): WalletInfo =
+    override suspend fun bindWallet(network: String, walletAddress: String): WalletInfo =
         postWithMethod<WalletBindRequestDto, WalletResponseDto>(
             path = "/wallet",
-            requestDto = WalletBindRequestDto(walletAddress),
+            requestDto = WalletBindRequestDto(network, walletAddress),
             method = "PUT",
             authenticated = true,
         ).toDomain()

@@ -5,7 +5,7 @@ public record WalletResponse(String network, String walletAddress, String update
 
 	public static WalletResponse from(UserWallet wallet) {
 		return new WalletResponse(
-				wallet == null ? "TRC20" : wallet.network(),
+				wallet == null ? null : wallet.network(),
 				wallet == null ? null : wallet.walletAddress(),
 				wallet == null ? null : wallet.updatedAt().toString(),
 				null, null, null);
@@ -14,7 +14,7 @@ public record WalletResponse(String network, String walletAddress, String update
 	public static WalletResponse withVip(UserWallet wallet, String vipUntil, String vipPriceUsdt,
 			String vipCollectionAddress) {
 		return new WalletResponse(
-				wallet == null ? "TRC20" : wallet.network(),
+				wallet == null ? null : wallet.network(),
 				wallet == null ? null : wallet.walletAddress(),
 				wallet == null ? null : wallet.updatedAt().toString(),
 				vipUntil, vipPriceUsdt, vipCollectionAddress);

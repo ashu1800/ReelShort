@@ -271,16 +271,16 @@ internal fun withdrawalConversionLines(
             "1 USD = ${cnyPerUsd.toUiDecimal()} CNY",
     )
     if (pointAmount > 0) {
-        val points = pointAmount.toBigDecimal()
+        val fee = if (summary.feePercent > 0) (pointAmount * summary.feePercent + 99) / 100 else 0
+        val withdrawable = pointAmount - fee
+        val points = withdrawable.toBigDecimal()
         val cnyAmount = points.multiply(cnyPerPoint)
         val usdtAmount = points.multiply(cnyPerPoint).divide(cnyPerUsd, 6, RoundingMode.HALF_UP)
         val estimateLabel = "Estimated"
         lines += "$estimateLabel ${cnyAmount.toUiDecimal()} CNY ≈ ${usdtAmount.toUiDecimal()} USDT"
-    }
-    if (pointAmount > 0 && summary.feePercent > 0) {
-        val fee = pointAmount * summary.feePercent / 100
-        val total = pointAmount + fee
-        lines += "Fee: ${summary.feePercent}% ($fee pts) · Total: $total pts"
+        if (fee > 0) {
+            lines += "Fee: ${summary.feePercent}% ($fee pts) · You receive: $withdrawable pts · Total deduct: $pointAmount pts"
+        }
     }
     return lines
 }
