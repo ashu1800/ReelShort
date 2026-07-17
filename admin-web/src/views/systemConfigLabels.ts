@@ -18,7 +18,7 @@ export const systemConfigLabels: Record<string, { name: string; description: str
   },
   'points.fair-mode.enabled': {
     name: '公平模式',
-    description: '开启后积分按小数精确计算（1=开启，0=关闭），前端仍显示整数。',
+    description: '开启后观看奖励按秒精确累积小数十分位（1=开启，0=关闭）。余额始终为真实整数，切换零风险。',
   },
   'withdraw.cny-per-point': {
     name: '提现 · 每积分人民币',

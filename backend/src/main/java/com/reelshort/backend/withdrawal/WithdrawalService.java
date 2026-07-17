@@ -98,13 +98,11 @@ public class WithdrawalService {
 	public WithdrawalResponse create(UUID userId, int pointAmount) {
 		return userActionLocks.withUserLock(userId, () -> {
 			WithdrawalConversion conversion = conversion();
-			boolean fairMode = systemConfigService.intValue(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED) == 1;
-			int scale = fairMode ? 10 : 1;
-			int internalAmount = pointAmount * scale;
-			int minimum = conversion.minimumPointsScaled(fairMode);
+			// balance 永远是真实整数积分，pointAmount 直接使用，无需 ×10 缩放。
+			int minimum = conversion.minimumPoints();
 			int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
-			int feeAmount = internalAmount * feePercent / 100;
-			int totalDeduct = internalAmount + feeAmount;
+			int feeAmount = pointAmount * feePercent / 100;
+			int totalDeduct = pointAmount + feeAmount;
 			if (totalDeduct < minimum) {
 				throw new AdminException(400, "withdrawal amount below minimum");
 			}
@@ -121,7 +119,7 @@ public class WithdrawalService {
 				throw new AdminException(400, exception.getMessage());
 			}
 			pointAccountRepository.save(account);
-			WithdrawalRequest request = WithdrawalRequest.create(userId, internalAmount, feeAmount, conversion,
+			WithdrawalRequest request = WithdrawalRequest.create(userId, pointAmount, feeAmount, conversion,
 					wallet.network(), wallet.walletAddress());
 			return WithdrawalResponse.from(withdrawalRequestRepository.save(request));
 		});

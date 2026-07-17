@@ -28,10 +28,6 @@ final class WithdrawalConversion {
 		return points.intValueExact();
 	}
 
-	int minimumPointsScaled(boolean fairMode) {
-		return fairMode ? minimumPoints() * 10 : minimumPoints();
-	}
-
 	BigDecimal usdtPerPoint() {
 		return cnyPerPoint.divide(cnyPerUsd, 8, RoundingMode.HALF_UP);
 	}

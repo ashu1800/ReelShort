@@ -64,30 +64,41 @@ class PointAwardTransaction {
 			return new WatchRewardResult(List.of(), 0, true, WatchRewardStatus.ALREADY_CLAIMED);
 		}
 
+		// 统一以"十分位"单位计算奖励：公平模式按秒精确（带小数），普通模式取整后 ×10。
+		// balance 永远存真实整数，小数部分由 PointAccount.fractionalPart 累积。
 		boolean fairMode = isFairMode();
-		int calculatedPoints = fairMode
-				? WatchRewardCalculation.pointsForDurationFair(authoritativeDurationSeconds, secondsPerPoint)
-				: WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds, secondsPerPoint);
-		// In fair mode, daily limit is also scaled by 10
-		int effectiveDailyMax = fairMode ? dailyEarnedMaximum * WatchRewardCalculation.FAIR_MODE_SCALE : dailyEarnedMaximum;
+		int requestedTenths = fairMode
+				? WatchRewardCalculation.pointsForDurationTenths(authoritativeDurationSeconds, secondsPerPoint)
+				: WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds, secondsPerPoint)
+						* WatchRewardCalculation.FAIR_MODE_SCALE;
+		// 每日上限配置值是真实整数分（如 1000）。
 		OffsetDateTime now = OffsetDateTime.now(clock);
-		int awardedPoints = allocateDailyPoints(userId, calculatedPoints, effectiveDailyMax,
+		int grantedTenths = allocateDailyPointsTenths(userId, requestedTenths, dailyEarnedMaximum,
 				fluctuationMaximumPercent, now);
+
 		PointAccount account = accountEntity(userId);
-		if (awardedPoints > 0) {
-			addPoints(account, awardedPoints);
-			pointTransactionRepository.save(PointTransaction.watchReward(userId, awardedPoints, account.balance(), bookId,
-					episodeNum, now));
+		int awardedDisplayPoints;
+		if (grantedTenths > 0) {
+			int prevBalance = account.balance();
+			account.addTenths(grantedTenths);
+			int awardedInteger = account.balance() - prevBalance; // 本次实际进入 balance 整数部分
+			if (awardedInteger > 0) {
+				pointTransactionRepository.save(PointTransaction.watchReward(userId, awardedInteger, account.balance(),
+						bookId, episodeNum, now));
+			}
+			awardedDisplayPoints = grantedTenths / WatchRewardCalculation.FAIR_MODE_SCALE; // 返回整数部分（向下取整）
+		}
+		else {
+			awardedDisplayPoints = 0;
 		}
 		watchEpisodeRewardClaimRepository.save(WatchEpisodeRewardClaim.create(userId, bookId, episodeNum,
-				authoritativeDurationSeconds, calculatedPoints, awardedPoints, now));
+				authoritativeDurationSeconds, grantedTenths / WatchRewardCalculation.FAIR_MODE_SCALE,
+				grantedTenths / WatchRewardCalculation.FAIR_MODE_SCALE, now));
 		pointAccountRepository.save(account);
-		// Convert awarded points to display value for the result
-		int displayAwarded = WatchRewardCalculation.toDisplay(awardedPoints, fairMode);
-		WatchRewardStatus status = awardedPoints == 0
+		WatchRewardStatus status = grantedTenths == 0
 				? WatchRewardStatus.DAILY_LIMIT_REACHED
-				: awardedPoints < calculatedPoints ? WatchRewardStatus.AWARDED_PARTIAL : WatchRewardStatus.AWARDED;
-		return new WatchRewardResult(List.of(), displayAwarded, true, status);
+				: grantedTenths < requestedTenths ? WatchRewardStatus.AWARDED_PARTIAL : WatchRewardStatus.AWARDED;
+		return new WatchRewardResult(List.of(), awardedDisplayPoints, true, status);
 	}
 
 	@Transactional
@@ -107,14 +118,14 @@ class PointAwardTransaction {
 		dailyRule(LocalDate.now(clock), dailyEarnedMaximum, fluctuationMaximumPercent);
 	}
 
-	private int allocateDailyPoints(UUID userId, int requestedPoints, int dailyEarnedMaximum,
+	private int allocateDailyPointsTenths(UUID userId, int requestedTenths, int dailyEarnedMaximum,
 			int fluctuationMaximumPercent, OffsetDateTime now) {
 		DailyEarningRule rule = dailyRule(LocalDate.now(clock), dailyEarnedMaximum, fluctuationMaximumPercent);
 		if (rule.baseMaximum() <= 0) {
-			return requestedPoints;
+			return requestedTenths;
 		}
 		DailyEarningQuota quota = dailyQuota(userId, rule, now);
-		int granted = quota.allocate(requestedPoints, now);
+		int granted = quota.allocateTenths(requestedTenths, now);
 		dailyEarningQuotaRepository.save(quota);
 		return granted;
 	}

@@ -39,7 +39,7 @@ public class SystemConfigRegistry {
 					"Maximum random downward fluctuation percentage applied per account and server day.",
 					ValueType.INTEGER, 0, 100, Set.of()),
 			new SystemConfigDefinition(POINTS_FAIR_MODE_ENABLED, "0",
-					"Fair mode: points calculated with 1 decimal precision (1=on, 0=off).",
+					"Fair mode: watch rewards accumulate fractional tenths for precise per-second calculation (1=on, 0=off). Balance is always real integer; toggling is risk-free.",
 					ValueType.INTEGER, 0, 1, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_CNY_PER_POINT, "0.02",
 					"CNY value of one point for withdrawals.", ValueType.DECIMAL, 0, 0, Set.of()),

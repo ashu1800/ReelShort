@@ -34,6 +34,10 @@ class DailyEarningQuota {
 	@Column(name = "earned_points", nullable = false)
 	private int earnedPoints;
 
+	// 十分位小数部分（0-9）。earnedPoints 存真实整数，fractionalEarned 累积观看奖励的小数尾数。
+	@Column(name = "fractional_earned", nullable = false)
+	private int fractionalEarned;
+
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
 
@@ -51,6 +55,7 @@ class DailyEarningQuota {
 		this.fluctuationPercent = fluctuationPercent;
 		this.effectiveMaximum = effectiveMaximum;
 		this.earnedPoints = 0;
+		this.fractionalEarned = 0;
 		this.createdAt = now;
 		this.updatedAt = now;
 	}
@@ -60,11 +65,23 @@ class DailyEarningQuota {
 				WatchRewardCalculation.effectiveDailyLimit(rule.baseMaximum(), fluctuationPercent), now);
 	}
 
-	int allocate(int requestedPoints, OffsetDateTime now) {
-		int granted = Math.min(Math.max(0, requestedPoints), remainingPoints());
-		this.earnedPoints += granted;
+	/**
+	 * 以"十分位"为单位分配每日奖励配额，自动处理小数进位。
+	 * 返回实际分配的十分位数（例如返回 13 表示分配了 1.3 分）。
+	 */
+	int allocateTenths(int requestedTenths, OffsetDateTime now) {
+		int maxTenths = effectiveMaximum * 10;
+		long currentTenths = (long) this.earnedPoints * 10 + this.fractionalEarned;
+		long remaining = maxTenths - currentTenths;
+		if (remaining <= 0 || requestedTenths <= 0) {
+			return 0;
+		}
+		long grantedTenths = Math.min((long) requestedTenths, remaining);
+		long newTotal = currentTenths + grantedTenths;
+		this.earnedPoints = (int) (newTotal / 10);
+		this.fractionalEarned = (int) (newTotal % 10);
 		this.updatedAt = now;
-		return granted;
+		return (int) grantedTenths;
 	}
 
 	int remainingPoints() {
@@ -81,6 +98,10 @@ class DailyEarningQuota {
 
 	int earnedPoints() {
 		return earnedPoints;
+	}
+
+	int fractionalEarned() {
+		return fractionalEarned;
 	}
 
 	LocalDate earningDate() {

@@ -2,11 +2,15 @@ package com.reelshort.backend.points;
 
 final class WatchRewardCalculation {
 
+	/** 十分位基数（1 分 = 10 个十分位）。用于观看奖励的定点小数累积。 */
 	static final int FAIR_MODE_SCALE = 10;
 
 	private WatchRewardCalculation() {
 	}
 
+	/**
+	 * 普通模式：返回整数积分（向下取整，最少 1）。
+	 */
 	static int pointsForDuration(int durationSeconds, int secondsPerPoint) {
 		if (durationSeconds <= 0 || secondsPerPoint <= 0) {
 			throw new IllegalArgumentException("duration and seconds per point must be positive");
@@ -15,20 +19,14 @@ final class WatchRewardCalculation {
 	}
 
 	/**
-	 * Fair mode: returns points scaled by 10 (e.g. 1.3 points → 13). The minimum is 10 (=1.0 points).
+	 * 公平模式：返回"十分位"单位的整数（1.3 分 → 13），最少 10（=1.0 分）。
+	 * 该值可直接传给 PointAccount.addTenths() 和 DailyEarningQuota.allocateTenths()。
 	 */
-	static int pointsForDurationFair(int durationSeconds, int secondsPerPoint) {
+	static int pointsForDurationTenths(int durationSeconds, int secondsPerPoint) {
 		if (durationSeconds <= 0 || secondsPerPoint <= 0) {
 			throw new IllegalArgumentException("duration and seconds per point must be positive");
 		}
 		return Math.max(FAIR_MODE_SCALE, (int) Math.round((double) durationSeconds / secondsPerPoint * FAIR_MODE_SCALE));
-	}
-
-	/**
-	 * Converts a fair-mode internal value to display value (divide by 10, floor).
-	 */
-	static int toDisplay(int internalValue, boolean fairMode) {
-		return fairMode ? internalValue / FAIR_MODE_SCALE : internalValue;
 	}
 
 	static int effectiveDailyLimit(int baseMaximum, int fluctuationPercent) {

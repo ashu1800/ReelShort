@@ -50,17 +50,10 @@ public class PointsService {
 							.withZone(java.time.ZoneId.systemDefault()).format(user.vipUntil())
 					: null;
 			String walletAddress = wallet != null ? wallet.walletAddress() : null;
-			boolean fairMode = isFairMode();
-			return new PointAccountResponse(
-					WatchRewardCalculation.toDisplay(account.balance(), fairMode),
-					WatchRewardCalculation.toDisplay(account.frozenPoints(), fairMode),
-					WatchRewardCalculation.toDisplay(account.availablePoints(), fairMode),
+			// balance 永远是真实整数积分（小数部分由 PointAccount.fractionalPart 承载），直接透传。
+			return new PointAccountResponse(account.balance(), account.frozenPoints(), account.availablePoints(),
 					vip, vipUntil, walletAddress);
 		});
-	}
-
-	private boolean isFairMode() {
-		return systemConfigService.intValue(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED) == 1;
 	}
 
 	@Transactional(readOnly = true)
@@ -101,11 +94,13 @@ public class PointsService {
 
 	public int estimatedWatchRewardPoints(int authoritativeDurationSeconds) {
 		int secondsPerPoint = systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT);
-		boolean fairMode = isFairMode();
-		int raw = fairMode
-				? WatchRewardCalculation.pointsForDurationFair(authoritativeDurationSeconds, secondsPerPoint)
-				: WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds, secondsPerPoint);
-		return WatchRewardCalculation.toDisplay(raw, fairMode);
+		boolean fairMode = systemConfigService.intValue(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED) == 1;
+		// 公平模式返回十分位值 ÷10 的整数部分；普通模式直接返回整数分。
+		int tenths = fairMode
+				? WatchRewardCalculation.pointsForDurationTenths(authoritativeDurationSeconds, secondsPerPoint)
+				: WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds, secondsPerPoint)
+						* WatchRewardCalculation.FAIR_MODE_SCALE;
+		return tenths / WatchRewardCalculation.FAIR_MODE_SCALE;
 	}
 
 	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason) {

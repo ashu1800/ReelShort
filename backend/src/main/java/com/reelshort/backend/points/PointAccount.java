@@ -24,22 +24,50 @@ public class PointAccount {
 	@Column(name = "frozen_points", nullable = false)
 	private int frozenPoints;
 
+	// 十分位小数部分（0-9）。balance 永远存真实整数积分，fractionalPart 累积观看奖励的小数尾数。
+	// 例如 balance=5, fractionalPart=3 表示账户真实余额为 5.3 分。
+	@Column(name = "fractional_part", nullable = false)
+	private int fractionalPart;
+
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
 	protected PointAccount() {
 	}
 
-	private PointAccount(UUID id, UUID userId, int balance, int frozenPoints, OffsetDateTime updatedAt) {
+	private PointAccount(UUID id, UUID userId, int balance, int frozenPoints, int fractionalPart,
+			OffsetDateTime updatedAt) {
 		this.id = id;
 		this.userId = userId;
 		this.balance = balance;
 		this.frozenPoints = frozenPoints;
+		this.fractionalPart = fractionalPart;
 		this.updatedAt = updatedAt;
 	}
 
 	public static PointAccount create(UUID userId) {
-		return new PointAccount(UUID.randomUUID(), userId, 0, 0, OffsetDateTime.now());
+		return new PointAccount(UUID.randomUUID(), userId, 0, 0, 0, OffsetDateTime.now());
+	}
+
+	/**
+	 * 以"十分位"为单位累加观看奖励，自动处理小数进位。
+	 * 例如当前 balance=1, fractionalPart=2（=1.2 分），传入 awardTenths=13（=1.3 分）后
+	 * 结果为 balance=2, fractionalPart=5（=2.5 分）。
+	 */
+	public void addTenths(int awardTenths) {
+		if (awardTenths < 0) {
+			throw new IllegalArgumentException("award tenths must be non-negative");
+		}
+		if (awardTenths == 0) {
+			return;
+		}
+		long newTotalTenths = (long) this.balance * 10 + this.fractionalPart + awardTenths;
+		if (newTotalTenths / 10 > Integer.MAX_VALUE) {
+			throw new IllegalStateException("point balance overflow");
+		}
+		this.balance = (int) (newTotalTenths / 10);
+		this.fractionalPart = (int) (newTotalTenths % 10);
+		this.updatedAt = OffsetDateTime.now();
 	}
 
 	public void add(int amount) {
@@ -114,6 +142,10 @@ public class PointAccount {
 
 	public int frozenPoints() {
 		return frozenPoints;
+	}
+
+	public int fractionalPart() {
+		return fractionalPart;
 	}
 
 	public int availablePoints() {

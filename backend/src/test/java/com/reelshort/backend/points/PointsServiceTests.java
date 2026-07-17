@@ -71,6 +71,7 @@ class PointsServiceTests {
 		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "0");
 		dailyEarningQuotaRepository.deleteAll();
 		dailyEarningRuleRepository.deleteAll();
 	}
@@ -360,6 +361,74 @@ class PointsServiceTests {
 
 		assertThat(pointsService.account(firstUserId).balance()).isEqualTo(1);
 		assertThat(pointsService.account(secondUserId).balance()).isEqualTo(1);
+	}
+
+	@Test
+	void fairModeAccumulatesFractionalTenthsAcrossEpisodes() {
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
+		UUID userId = UUID.randomUUID();
+
+		// 78 秒 / 60 = 1.3 分（13 个十分位）。连续 3 集，累计 3.9 分。
+		pointsService.awardWatchProgress(userId, "fair-book", 1, 100, 78);
+		pointsService.awardWatchProgress(userId, "fair-book", 2, 100, 78);
+		pointsService.awardWatchProgress(userId, "fair-book", 3, 100, 78);
+
+		// balance 是真实整数部分 = 3，fractionalPart 累积到 9
+		PointAccount account = pointAccountRepository.findByUserId(userId).orElseThrow();
+		assertThat(account.balance()).isEqualTo(3);
+		assertThat(account.fractionalPart()).isEqualTo(9);
+		assertThat(pointsService.account(userId).balance()).isEqualTo(3);
+	}
+
+	@Test
+	void fairModeCarriesFractionIntoIntegerOnFourthAward() {
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
+		UUID userId = UUID.randomUUID();
+
+		// 78 秒 × 4 集 = 5.2 分。整数 5，小数 2。
+		for (int episode = 1; episode <= 4; episode++) {
+			pointsService.awardWatchProgress(userId, "fair-carry-book", episode, 100, 78);
+		}
+
+		PointAccount account = pointAccountRepository.findByUserId(userId).orElseThrow();
+		assertThat(account.balance()).isEqualTo(5);
+		assertThat(account.fractionalPart()).isEqualTo(2);
+	}
+
+	@Test
+	void fairModeToggleDoesNotDistortExistingBalance() {
+		// 先在 fair mode 下累积小数
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
+		UUID userId = UUID.randomUUID();
+		pointsService.awardWatchProgress(userId, "toggle-book", 1, 100, 78); // 1.3 分
+
+		PointAccount before = pointAccountRepository.findByUserId(userId).orElseThrow();
+		assertThat(before.balance()).isEqualTo(1);
+		assertThat(before.fractionalPart()).isEqualTo(3);
+
+		// 切换到普通模式（关闭 fair mode），余额和小数部分保持不变
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "0");
+		PointAccount afterToggle = pointAccountRepository.findByUserId(userId).orElseThrow();
+		assertThat(afterToggle.balance()).isEqualTo(1);
+		assertThat(afterToggle.fractionalPart()).isEqualTo(3);
+		assertThat(pointsService.account(userId).balance()).isEqualTo(1);
+	}
+
+	@Test
+	void estimatedRewardPointsInFairModeReturnsIntegerPart() {
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "1");
+		// 78 秒 / 60 = 1.3 分 → 整数部分 1
+		assertThat(pointsService.estimatedWatchRewardPoints(78)).isEqualTo(1);
+		// 90 秒 / 60 = 1.5 分 → 整数部分 1
+		assertThat(pointsService.estimatedWatchRewardPoints(90)).isEqualTo(1);
+		// 120 秒 / 60 = 2.0 分 → 整数部分 2
+		assertThat(pointsService.estimatedWatchRewardPoints(120)).isEqualTo(2);
 	}
 
 	private WatchProgressRequest request(String bookId, int episodeNum, int positionSeconds, int durationSeconds) {

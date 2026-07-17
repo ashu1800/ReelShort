@@ -22,4 +22,19 @@ class WatchRewardCalculationTests {
 		assertThat(WatchRewardCalculation.effectiveDailyLimit(1000, 15)).isEqualTo(850);
 		assertThat(WatchRewardCalculation.effectiveDailyLimit(1000, 35)).isEqualTo(650);
 	}
+
+	@Test
+	void fairModeReturnsTenthsWithOneDecimalPrecision() {
+		// 60 秒 / 60 秒每分 = 1.0 分 → 10 个十分位
+		assertThat(WatchRewardCalculation.pointsForDurationTenths(60, 60)).isEqualTo(10);
+		// 78 秒 / 60 = 1.3 分 → 13 个十分位
+		assertThat(WatchRewardCalculation.pointsForDurationTenths(78, 60)).isEqualTo(13);
+		// 75 秒 / 60 = 1.25 → 四舍五入到 1.3 → 13
+		assertThat(WatchRewardCalculation.pointsForDurationTenths(75, 60)).isEqualTo(13);
+		// 90 秒 / 60 = 1.5 → 15 个十分位
+		assertThat(WatchRewardCalculation.pointsForDurationTenths(90, 60)).isEqualTo(15);
+		// 极短视频仍保证最少 10 个十分位（=1.0 分）
+		assertThat(WatchRewardCalculation.pointsForDurationTenths(1, 60)).isEqualTo(10);
+		assertThat(WatchRewardCalculation.pointsForDurationTenths(5, 60)).isEqualTo(10);
+	}
 }
