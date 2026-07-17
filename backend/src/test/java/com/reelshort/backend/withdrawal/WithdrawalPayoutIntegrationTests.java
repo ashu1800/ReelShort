@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -29,6 +30,8 @@ import com.reelshort.backend.points.PointTransactionRepository;
 @TestPropertySource(properties = {
 		"reelshort.eth.required-confirmations=2",
 		"reelshort.tron.required-confirmations=2",
+		"reelshort.tron.hot-wallet-address=TVjsyZ7fYF3qLF6BQgPmTEZy1xrNNyVAAA",
+		"reelshort.eth.hot-wallet-address=0x2222222222222222222222222222222222222222",
 		"reelshort.withdrawal.payout.unknown-max-attempts=2"
 })
 class WithdrawalPayoutIntegrationTests {
@@ -177,13 +180,14 @@ class WithdrawalPayoutIntegrationTests {
 	void independentTransactionsInitializeOneNonceRowWithoutUniqueConflict() throws Exception {
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
-			Future<BigInteger> first = executor.submit(() -> nonceAllocator.allocate(
+			Future<?> first = executor.submit(() -> nonceAllocator.ensureInitialized(
 					"ERC20", "0x4444444444444444444444444444444444444444", 1L, BigInteger.valueOf(5)));
-			Future<BigInteger> second = executor.submit(() -> nonceAllocator.allocate(
+			Future<?> second = executor.submit(() -> nonceAllocator.ensureInitialized(
 					"ERC20", "0x4444444444444444444444444444444444444444", 1L, BigInteger.valueOf(5)));
 
-			assertThat(List.of(first.get(), second.get()))
-					.containsExactlyInAnyOrder(BigInteger.valueOf(5), BigInteger.valueOf(6));
+			first.get();
+			second.get();
+			assertThat(nonceRepository.count()).isEqualTo(1);
 		}
 		finally {
 			executor.shutdownNow();
@@ -194,7 +198,7 @@ class WithdrawalPayoutIntegrationTests {
 	void concurrentEthereumPreparationSignsOnceOutsideTheReservationTransaction() throws Exception {
 		Fixture fixture = fixtureWithoutAttempt();
 		String privateKey = "ethereum-intent-key";
-		String hotWallet = "0x5555555555555555555555555555555555555555";
+		String hotWallet = "0x2222222222222222222222222222222222222222";
 		BigInteger gasPrice = BigInteger.valueOf(20_000_000_000L);
 		AtomicInteger signingCount = new AtomicInteger();
 		AtomicBoolean signedInsideTransaction = new AtomicBoolean();
@@ -286,6 +290,44 @@ class WithdrawalPayoutIntegrationTests {
 	}
 
 	@Test
+	void failedSigningIntentPersistenceDoesNotConsumeNonce() {
+		Fixture failed = fixtureWithoutAttempt();
+		String hotWallet = "0x6666666666666666666666666666666666666666";
+		BigInteger observedNonce = BigInteger.valueOf(21);
+		BigInteger gasPrice = BigInteger.valueOf(20_000_000_000L);
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> transactionService.reserveEthereum(
+				failed.withdrawal().id(), "owner", hotWallet, observedNonce, gasPrice, "x".repeat(100)))
+				.isInstanceOf(RuntimeException.class);
+
+		Fixture successful = fixtureWithoutAttempt();
+		WithdrawalPayoutAttempt attempt = transactionService.reserveEthereum(successful.withdrawal().id(),
+				"owner", hotWallet, observedNonce, gasPrice, "admin");
+		assertThat(attempt.nonce()).isEqualTo(observedNonce);
+	}
+
+	@Test
+	void expiredTronReplayWithSingleNodeNotFoundMovesToManualReviewWithoutReleasingSlot() {
+		Fixture fixture = fixtureWithoutAttempt("TRC20", "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE");
+		PreparedPayoutTransaction signed = new PreparedPayoutTransaction("TRC20", "TVjsyZ7fYF3qLF6BQgPmTEZy1xrNNyVAAA",
+				"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", 0L, BigInteger.ZERO,
+				"{\"txID\":\"expired-not-found\"}", "expired-not-found");
+		WithdrawalPayoutAttempt attempt = WithdrawalPayoutAttempt.prepared(fixture.withdrawal().id(), 1,
+				fixture.withdrawal().walletAddress(), fixture.withdrawal().usdtAmount(), signed, "admin");
+		attemptRepository.saveAndFlush(attempt);
+		when(tronClient.broadcastSignedTransaction(signed.signedRawTransaction(), signed.txHash()))
+				.thenReturn(new PayoutBroadcastResult(PayoutBroadcastDisposition.EXPIRED, "expired"));
+		when(tronClient.queryTransactionStatus(signed.txHash()))
+				.thenReturn(PayoutChainStatus.of(PayoutChainState.NOT_FOUND, 0));
+
+		WithdrawalPayoutAttempt result = coordinator.retryBroadcast(attempt.id());
+
+		assertThat(result.status()).isEqualTo(WithdrawalPayoutStatus.MANUAL_REVIEW);
+		assertThat(result.activeSlot()).isEqualTo("ACTIVE");
+		assertThat(transactionService.findActive(fixture.withdrawal().id())).isPresent();
+	}
+
+	@Test
 	void repeatedUnknownBroadcastEscalatesToManualReviewAtConfiguredThreshold() {
 		Fixture fixture = fixture();
 		PayoutBroadcastResult unknown = PayoutBroadcastResult.unknown("rpc timeout");
@@ -296,6 +338,25 @@ class WithdrawalPayoutIntegrationTests {
 		assertThat(escalated.status()).isEqualTo(WithdrawalPayoutStatus.MANUAL_REVIEW);
 		assertThat(escalated.activeSlot()).isEqualTo("ACTIVE");
 		assertThat(escalated.unknownCount()).isEqualTo(2);
+	}
+
+	@Test
+	void concurrentAttemptMutationsCompleteWithoutDeadlock() throws Exception {
+		Fixture fixture = fixture();
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> broadcast = executor.submit(() -> transactionService.recordBroadcastResult(
+					fixture.attempt().id(), PayoutBroadcastResult.accepted()));
+			Future<?> observation = executor.submit(() -> transactionService.recordChainObservation(
+					fixture.attempt().id(), PayoutChainStatus.of(PayoutChainState.PENDING, 0)));
+
+			broadcast.get(5, TimeUnit.SECONDS);
+			observation.get(5, TimeUnit.SECONDS);
+			assertThat(attemptRepository.findById(fixture.attempt().id())).isPresent();
+		}
+		finally {
+			executor.shutdownNow();
+		}
 	}
 
 	private Fixture fixture() {

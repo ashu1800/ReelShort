@@ -21,6 +21,8 @@ public class TronProperties {
 
 	private int requiredConfirmations = 20;
 
+	private String hotWalletAddress = "";
+
 	public String getNodeUrl() {
 		return nodeUrl;
 	}
@@ -59,5 +61,13 @@ public class TronProperties {
 
 	public void setRequiredConfirmations(int requiredConfirmations) {
 		this.requiredConfirmations = requiredConfirmations;
+	}
+
+	public String getHotWalletAddress() {
+		return hotWalletAddress;
+	}
+
+	public void setHotWalletAddress(String hotWalletAddress) {
+		this.hotWalletAddress = hotWalletAddress;
 	}
 }

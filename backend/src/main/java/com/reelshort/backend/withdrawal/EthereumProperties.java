@@ -26,6 +26,8 @@ public class EthereumProperties {
 
 	private int requiredConfirmations = 12;
 
+	private String hotWalletAddress = "";
+
 	public String getNodeUrl() {
 		return nodeUrl;
 	}
@@ -77,5 +79,13 @@ public class EthereumProperties {
 
 	public void setRequiredConfirmations(int requiredConfirmations) {
 		this.requiredConfirmations = requiredConfirmations;
+	}
+
+	public String getHotWalletAddress() {
+		return hotWalletAddress;
+	}
+
+	public void setHotWalletAddress(String hotWalletAddress) {
+		this.hotWalletAddress = hotWalletAddress;
 	}
 }

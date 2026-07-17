@@ -35,11 +35,18 @@ class WithdrawalPayoutCoordinatorTests {
 	private TronClient tronClient;
 
 	private WithdrawalPayoutCoordinator coordinator;
+	private EthereumProperties ethereumProperties;
+	private TronProperties tronProperties;
 
 	@BeforeEach
 	void setUp() {
+		ethereumProperties = new EthereumProperties();
+		ethereumProperties.setHotWalletAddress("0x2222222222222222222222222222222222222222");
+		tronProperties = new TronProperties();
+		tronProperties.setHotWalletAddress("TVjsyZ7fYF3qLF6BQgPmTEZy1xrNNyVAAA");
 		coordinator = new WithdrawalPayoutCoordinator(
-				transactionService, withdrawalRequestRepository, ethereumClient, tronClient);
+				transactionService, withdrawalRequestRepository, ethereumClient, tronClient,
+				ethereumProperties, tronProperties);
 	}
 
 	@Test
@@ -101,6 +108,39 @@ class WithdrawalPayoutCoordinatorTests {
 				.isInstanceOf(WithdrawalException.class)
 				.hasMessageContaining("manual review");
 		verify(ethereumClient, never()).broadcastSignedTransaction(any(), any());
+	}
+
+	@Test
+	void emptyExpectedHotWalletFailsClosedBeforeCreatingAttempt() {
+		WithdrawalRequest request = org.mockito.Mockito.mock(WithdrawalRequest.class);
+		when(transactionService.findActive(WITHDRAWAL_ID)).thenReturn(Optional.empty());
+		when(withdrawalRequestRepository.findById(WITHDRAWAL_ID)).thenReturn(Optional.of(request));
+		when(request.status()).thenReturn(WithdrawalStatus.PENDING);
+		when(request.network()).thenReturn("ERC20");
+		when(ethereumClient.addressFromPrivateKey("private-key"))
+				.thenReturn("0x2222222222222222222222222222222222222222");
+		ethereumProperties.setHotWalletAddress("");
+
+		assertThatThrownBy(() -> coordinator.prepareAndBroadcast(WITHDRAWAL_ID, "private-key", "admin"))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("expected hot wallet");
+		verify(transactionService, never()).reserveEthereum(any(), any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void mismatchedExpectedHotWalletFailsClosedBeforeCreatingAttempt() {
+		WithdrawalRequest request = org.mockito.Mockito.mock(WithdrawalRequest.class);
+		when(transactionService.findActive(WITHDRAWAL_ID)).thenReturn(Optional.empty());
+		when(withdrawalRequestRepository.findById(WITHDRAWAL_ID)).thenReturn(Optional.of(request));
+		when(request.status()).thenReturn(WithdrawalStatus.PENDING);
+		when(request.network()).thenReturn("TRC20");
+		when(tronClient.addressFromPrivateKey("private-key"))
+				.thenReturn("TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE");
+
+		assertThatThrownBy(() -> coordinator.prepareAndBroadcast(WITHDRAWAL_ID, "private-key", "admin"))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("does not match configured hot wallet");
+		verify(transactionService, never()).reserveTron(any(), any(), any(), any());
 	}
 
 	private WithdrawalPayoutAttempt preparedAttempt() {

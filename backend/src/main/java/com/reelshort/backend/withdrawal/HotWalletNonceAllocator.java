@@ -23,13 +23,14 @@ public class HotWalletNonceAllocator {
 		this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
-	public BigInteger allocate(String network, String walletAddress, long chainId, BigInteger observedChainNonce) {
+	public void ensureInitialized(String network, String walletAddress, long chainId, BigInteger observedChainNonce) {
 		String normalizedWallet = walletAddress.toLowerCase();
 		DataIntegrityViolationException lastConflict = null;
 		for (int attempt = 0; attempt < MAX_INITIALIZATION_ATTEMPTS; attempt++) {
 			try {
-				return transactionTemplate.execute(status -> allocateInTransaction(
+				transactionTemplate.executeWithoutResult(status -> initializeInTransaction(
 						network, normalizedWallet, chainId, observedChainNonce));
+				return;
 			}
 			catch (DataIntegrityViolationException conflict) {
 				lastConflict = conflict;
@@ -40,13 +41,20 @@ public class HotWalletNonceAllocator {
 				: lastConflict;
 	}
 
-	private BigInteger allocateInTransaction(String network, String walletAddress, long chainId,
+	public BigInteger allocateInitialized(String network, String walletAddress, long chainId,
 			BigInteger observedChainNonce) {
-		HotWalletNonce nonce = nonceRepository.findForUpdate(network, walletAddress, chainId)
-				.orElseGet(() -> nonceRepository.saveAndFlush(
-						HotWalletNonce.create(network, walletAddress, chainId, observedChainNonce)));
+		HotWalletNonce nonce = nonceRepository.findForUpdate(network, walletAddress.toLowerCase(), chainId)
+				.orElseThrow(() -> new IllegalStateException("nonce row is not initialized"));
 		BigInteger allocated = nonce.allocate(observedChainNonce);
-		nonceRepository.saveAndFlush(nonce);
+		nonceRepository.save(nonce);
 		return allocated;
+	}
+
+	private void initializeInTransaction(String network, String walletAddress, long chainId,
+			BigInteger observedChainNonce) {
+		if (nonceRepository.findForUpdate(network, walletAddress, chainId).isEmpty()) {
+			nonceRepository.saveAndFlush(HotWalletNonce.create(
+					network, walletAddress, chainId, observedChainNonce));
+		}
 	}
 }

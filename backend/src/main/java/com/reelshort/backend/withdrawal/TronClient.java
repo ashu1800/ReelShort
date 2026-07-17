@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.HexFormat;
 
 import org.bouncycastle.asn1.sec.SECNamedCurves;
 import org.bouncycastle.asn1.x9.X9ECParameters;
@@ -26,6 +27,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.protobuf.Any;
+import com.google.protobuf.ByteString;
+import org.tron.trident.proto.Chain;
+import org.tron.trident.proto.Contract;
 
 /**
  * TronGrid HTTP client for TRC20 USDT transfer and balance queries. Signs transactions in-memory
@@ -40,6 +45,9 @@ public class TronClient {
 	private static final ECDomainParameters DOMAIN =
 			new ECDomainParameters(SECP256K1.getCurve(), SECP256K1.getG(), SECP256K1.getN(), SECP256K1.getH());
 	private static final BigDecimal USDT_DECIMALS = new BigDecimal("1000000"); // 6 decimals
+	private static final byte[] TRANSFER_SELECTOR = HexFormat.of().parseHex("a9059cbb");
+	private static final long MAX_TRANSACTION_LIFETIME_MILLIS = Duration.ofMinutes(5).toMillis();
+	private static final long MAX_TIMESTAMP_SKEW_MILLIS = Duration.ofMinutes(1).toMillis();
 
 	private final TronProperties properties;
 	private final ObjectMapper objectMapper;
@@ -116,6 +124,7 @@ public class TronClient {
 		String ownerAddress = addressFromPrivateKey(hexPrivateKey);
 		BigDecimal rawAmount = usdtAmount.multiply(USDT_DECIMALS).setScale(0, RoundingMode.DOWN);
 		String parameter = encodeTransferParams(toAddress, rawAmount.toBigInteger());
+		long intentCreatedAt = System.currentTimeMillis();
 
 		// 1. Build the unsigned transaction
 		JsonNode triggerResponse = triggersmartcontract(ownerAddress, parameter);
@@ -142,6 +151,7 @@ public class TronClient {
 
 		// 2. Sign the transaction
 		byte[] rawBytes = hexStringToBytes(rawDataHex);
+		validateRawTransaction(rawBytes, ownerAddress, toAddress, rawAmount.toBigInteger(), intentCreatedAt);
 		byte[] hash = sha256(rawBytes);
 		String computedTxId = bytesToHex(hash);
 		if (!txid.isBlank() && !txid.equalsIgnoreCase(computedTxId)) {
@@ -159,6 +169,70 @@ public class TronClient {
 		catch (Exception exception) {
 			throw new WithdrawalException(500, "failed to serialize signed TRON transaction");
 		}
+	}
+
+	private void validateRawTransaction(byte[] rawBytes, String ownerAddress, String toAddress,
+			BigInteger rawAmount, long intentCreatedAt) {
+		try {
+			Chain.Transaction.raw raw = Chain.Transaction.raw.parseFrom(rawBytes);
+			long now = System.currentTimeMillis();
+			if (raw.getContractCount() != 1 || raw.getFeeLimit() != properties.getFeeLimit()
+					|| raw.getTimestamp() < intentCreatedAt - MAX_TIMESTAMP_SKEW_MILLIS
+					|| raw.getTimestamp() > now + MAX_TIMESTAMP_SKEW_MILLIS
+					|| raw.getExpiration() <= now
+					|| raw.getExpiration() > intentCreatedAt + MAX_TRANSACTION_LIFETIME_MILLIS
+					|| raw.getExpiration() <= raw.getTimestamp()) {
+				throw rawIntentMismatch();
+			}
+			Chain.Transaction.Contract transactionContract = raw.getContract(0);
+			if (transactionContract.getType()
+					!= Chain.Transaction.Contract.ContractType.TriggerSmartContract) {
+				throw rawIntentMismatch();
+			}
+			Any parameter = transactionContract.getParameter();
+			Contract.TriggerSmartContract trigger = parameter.unpack(Contract.TriggerSmartContract.class);
+			byte[] callData = trigger.getData().toByteArray();
+			if (!trigger.getOwnerAddress().equals(ByteString.copyFrom(addressPayload(ownerAddress)))
+					|| !trigger.getContractAddress().equals(
+							ByteString.copyFrom(addressPayload(properties.getUsdtContract())))
+					|| trigger.getCallValue() != 0
+					|| callData.length != 68
+					|| !Arrays.equals(Arrays.copyOfRange(callData, 0, 4), TRANSFER_SELECTOR)
+					|| !Arrays.equals(Arrays.copyOfRange(callData, 4, 36), abiAddress(toAddress))
+					|| !new BigInteger(1, Arrays.copyOfRange(callData, 36, 68)).equals(rawAmount)) {
+				throw rawIntentMismatch();
+			}
+		}
+		catch (WithdrawalException exception) {
+			throw exception;
+		}
+		catch (Exception exception) {
+			throw rawIntentMismatch();
+		}
+	}
+
+	private byte[] abiAddress(String address) {
+		byte[] payload = addressPayload(address);
+		byte[] padded = new byte[32];
+		System.arraycopy(payload, 1, padded, 12, 20);
+		return padded;
+	}
+
+	private byte[] addressPayload(String address) {
+		byte[] decoded = base58Decode(address);
+		if (decoded.length != 25) {
+			throw rawIntentMismatch();
+		}
+		byte[] payload = Arrays.copyOf(decoded, 21);
+		byte[] checksum = Arrays.copyOfRange(decoded, 21, 25);
+		if (!Arrays.equals(checksum, Arrays.copyOf(doubleSha256(payload), 4))) {
+			throw rawIntentMismatch();
+		}
+		return payload;
+	}
+
+	private WithdrawalException rawIntentMismatch() {
+		return new WithdrawalException(502, "TRON raw transaction does not match payout intent");
 	}
 
 	private JsonNode triggersmartcontract(String ownerAddress, String parameter) {

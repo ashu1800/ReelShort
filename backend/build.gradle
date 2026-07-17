@@ -30,6 +30,7 @@ dependencies {
 	implementation 'org.springframework.security:spring-security-crypto'
 	implementation 'com.qcloud:cos_api:5.6.269'
 	implementation 'org.bouncycastle:bcprov-jdk18on:1.79'
+	implementation 'io.github.tronprotocol:trident:0.11.0'
 	implementation 'org.web3j:core:4.12.3'
 	runtimeOnly 'com.h2database:h2'
 	runtimeOnly 'org.postgresql:postgresql'

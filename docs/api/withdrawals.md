@@ -1,6 +1,6 @@
 # Withdrawal API
 
-提现继续使用用户绑定的 TRC20 钱包并人工转账 USDT。金额按人民币积分比例和后台维护的 CNY/USD 汇率计算。
+提现使用用户绑定的 TRC20 或 ERC20 钱包。管理员逐次从后台提交私钥，后端仅在内存中签名；私钥不持久化，已签名交易与确定性交易哈希持久化后才广播。金额按人民币积分比例和后台维护的 CNY/USD 汇率计算。
 
 ## 换算规则
 
@@ -21,3 +21,11 @@
 请求仍只提交 `pointAmount`。后端按当前配置计算金额并在提现单保存 `cnyPerPoint`、`cnyPerUsd`、`minimumUsd` 和 `usdtPerPoint` 快照；之后调整后台配置不会影响已提交申请。
 
 历史提现记录可能没有新增的人民币和美元快照字段，API 会返回 `null`，最终 `usdtAmount` 和 `usdtPerPoint` 仍可正常展示。
+
+## 打款安全边界
+
+- `REELSHORT_TRON_HOT_WALLET_ADDRESS` 与 `REELSHORT_ETH_HOT_WALLET_ADDRESS` 分别配置受控热钱包公钥地址。对应网络配置为空或私钥派生地址不匹配时，在创建打款 attempt 前拒绝请求。
+- TRON 节点返回的 `raw_data_hex` 使用 Trident generated protobuf 解析。签名前严格核对唯一 `TriggerSmartContract`、owner、USDT 合约、零 `callValue`、`transfer(address,uint256)` selector、收款人、金额、`feeLimit`、timestamp 和 expiration；节点返回的 JSON 字段不作为信任依据。
+- ERC20 nonce 的数据库行可在独立事务中初始化，但锁定、递增与保存 `SIGNING` intent 位于同一事务；intent 保存失败不会消耗 nonce。
+- 所有 attempt mutation 固定按 withdrawal -> payout attempt 顺序加悲观锁，避免状态确认与广播更新之间形成反向锁顺序。
+- TRON 交易过期后，即使配置节点单次返回 `NOT_FOUND`，也进入 `MANUAL_REVIEW` 并保留 active slot，禁止自动释放后重新签名。

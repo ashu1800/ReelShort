@@ -64,7 +64,8 @@ public class WithdrawalPayoutTransactionService {
 			return claimExpiredSigning(active.get(), signingOwner);
 		}
 		requirePending(withdrawal);
-		BigInteger allocatedNonce = nonceAllocator.allocate(
+		nonceAllocator.ensureInitialized("ERC20", hotWalletAddress, ethereumClientChainId(), observedChainNonce);
+		BigInteger allocatedNonce = nonceAllocator.allocateInitialized(
 				"ERC20", hotWalletAddress, ethereumClientChainId(), observedChainNonce);
 		return persistSigningIntent(withdrawal, "ERC20", hotWalletAddress,
 				ethereumProperties.getUsdtContract(), ethereumProperties.getChainId(), allocatedNonce,
@@ -102,20 +103,20 @@ public class WithdrawalPayoutTransactionService {
 	@Transactional
 	public WithdrawalPayoutAttempt completeSigning(UUID attemptId, String signingOwner,
 			PreparedPayoutTransaction signed) {
-		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		WithdrawalPayoutAttempt attempt = lockAttemptAfterWithdrawal(attemptId);
 		attempt.completeSigning(signingOwner, signed);
 		return attemptRepository.saveAndFlush(attempt);
 	}
 
 	@Transactional
 	public WithdrawalPayoutAttempt claimSigning(UUID attemptId, String signingOwner) {
-		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		WithdrawalPayoutAttempt attempt = lockAttemptAfterWithdrawal(attemptId);
 		return claimExpiredSigning(attempt, signingOwner);
 	}
 
 	@Transactional
 	public WithdrawalPayoutAttempt recordBroadcastResult(UUID attemptId, PayoutBroadcastResult result) {
-		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		WithdrawalPayoutAttempt attempt = lockAttemptAfterWithdrawal(attemptId);
 		if (attempt.status() == WithdrawalPayoutStatus.CONFIRMED
 				|| attempt.status() == WithdrawalPayoutStatus.FAILED_RETRYABLE
 				|| attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW) {
@@ -132,7 +133,7 @@ public class WithdrawalPayoutTransactionService {
 
 	@Transactional
 	public WithdrawalPayoutAttempt recordChainObservation(UUID attemptId, PayoutChainStatus chainStatus) {
-		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		WithdrawalPayoutAttempt attempt = lockAttemptAfterWithdrawal(attemptId);
 		if (attempt.status() == WithdrawalPayoutStatus.CONFIRMED
 				|| attempt.status() == WithdrawalPayoutStatus.FAILED_RETRYABLE
 				|| attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW) {
@@ -147,7 +148,7 @@ public class WithdrawalPayoutTransactionService {
 
 	@Transactional
 	public WithdrawalPayoutAttempt markManualReview(UUID attemptId, String reason) {
-		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		WithdrawalPayoutAttempt attempt = lockAttemptAfterWithdrawal(attemptId);
 		if (attempt.status() != WithdrawalPayoutStatus.MANUAL_REVIEW) {
 			attempt.markManualReview(reason);
 		}
@@ -156,7 +157,7 @@ public class WithdrawalPayoutTransactionService {
 
 	@Transactional
 	public WithdrawalPayoutAttempt markRetryable(UUID attemptId, String code, String reason) {
-		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		WithdrawalPayoutAttempt attempt = lockAttemptAfterWithdrawal(attemptId);
 		if (attempt.status() != WithdrawalPayoutStatus.FAILED_RETRYABLE) {
 			attempt.markFailedRetryable(code, reason);
 		}
@@ -165,7 +166,7 @@ public class WithdrawalPayoutTransactionService {
 
 	@Transactional
 	public WithdrawalPayoutAttempt settleConfirmed(UUID attemptId, int confirmations) {
-		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		WithdrawalPayoutAttempt attempt = lockAttemptAfterWithdrawal(attemptId);
 		if (attempt.status() == WithdrawalPayoutStatus.CONFIRMED) {
 			return attempt;
 		}
@@ -173,7 +174,8 @@ public class WithdrawalPayoutTransactionService {
 				|| attempt.status() == WithdrawalPayoutStatus.FAILED_RETRYABLE) {
 			throw new WithdrawalException(409, "payout attempt cannot be settled from " + attempt.status());
 		}
-		WithdrawalRequest withdrawal = withdrawalForUpdate(attempt.withdrawalRequestId());
+		WithdrawalRequest withdrawal = withdrawalRepository.findById(attempt.withdrawalRequestId())
+				.orElseThrow(() -> new WithdrawalException(404, "withdrawal not found"));
 		String idempotencyKey = "withdrawal:" + withdrawal.id();
 		if (withdrawal.status() == WithdrawalStatus.APPROVED) {
 			attempt.markConfirmed(confirmations);
@@ -208,9 +210,17 @@ public class WithdrawalPayoutTransactionService {
 				.orElseThrow(() -> new WithdrawalException(404, "withdrawal not found"));
 	}
 
-	private WithdrawalPayoutAttempt attemptForUpdate(UUID attemptId) {
-		return attemptRepository.findByIdForUpdate(attemptId)
+	private WithdrawalPayoutAttempt lockAttemptAfterWithdrawal(UUID attemptId) {
+		WithdrawalPayoutAttempt snapshot = attemptRepository.findById(attemptId)
 				.orElseThrow(() -> new WithdrawalException(404, "payout attempt not found"));
+		UUID withdrawalId = snapshot.withdrawalRequestId();
+		withdrawalForUpdate(withdrawalId);
+		WithdrawalPayoutAttempt locked = attemptRepository.findByIdForUpdate(attemptId)
+				.orElseThrow(() -> new WithdrawalException(404, "payout attempt not found"));
+		if (!withdrawalId.equals(locked.withdrawalRequestId())) {
+			throw new WithdrawalException(409, "payout attempt changed during lock acquisition");
+		}
+		return locked;
 	}
 
 	private void requirePending(WithdrawalRequest withdrawal) {
