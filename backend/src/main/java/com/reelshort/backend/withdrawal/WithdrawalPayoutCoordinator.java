@@ -29,6 +29,11 @@ public class WithdrawalPayoutCoordinator {
 		}
 		WithdrawalRequest withdrawal = withdrawalRepository.findById(withdrawalId)
 				.orElseThrow(() -> new WithdrawalException(404, "withdrawal not found"));
+		if (withdrawal.status() == WithdrawalStatus.APPROVED) {
+			return transactionService.findLatestConfirmed(withdrawalId)
+					.orElseThrow(() -> new WithdrawalException(409,
+							"approved withdrawal has no confirmed payout attempt"));
+		}
 		if (withdrawal.status() != WithdrawalStatus.PENDING) {
 			throw new WithdrawalException(409, "withdrawal is not pending");
 		}

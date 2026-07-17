@@ -36,6 +36,8 @@ class WithdrawalPayoutIntegrationTests {
 	@Autowired
 	private WithdrawalPayoutCoordinator coordinator;
 	@Autowired
+	private HotWalletNonceAllocator nonceAllocator;
+	@Autowired
 	private WithdrawalPayoutTransactionService transactionService;
 	@Autowired
 	private WithdrawalPayoutAttemptRepository attemptRepository;
@@ -174,6 +176,23 @@ class WithdrawalPayoutIntegrationTests {
 					second.withdrawal().id(), privateKey, hotWallet, BigInteger.valueOf(5), gasPrice, "admin"));
 
 			assertThat(List.of(firstResult.get().nonce(), secondResult.get().nonce()))
+					.containsExactlyInAnyOrder(BigInteger.valueOf(5), BigInteger.valueOf(6));
+		}
+		finally {
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void independentTransactionsInitializeOneNonceRowWithoutUniqueConflict() throws Exception {
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<BigInteger> first = executor.submit(() -> nonceAllocator.allocate(
+					"ERC20", "0x4444444444444444444444444444444444444444", 1L, BigInteger.valueOf(5)));
+			Future<BigInteger> second = executor.submit(() -> nonceAllocator.allocate(
+					"ERC20", "0x4444444444444444444444444444444444444444", 1L, BigInteger.valueOf(5)));
+
+			assertThat(List.of(first.get(), second.get()))
 					.containsExactlyInAnyOrder(BigInteger.valueOf(5), BigInteger.valueOf(6));
 		}
 		finally {

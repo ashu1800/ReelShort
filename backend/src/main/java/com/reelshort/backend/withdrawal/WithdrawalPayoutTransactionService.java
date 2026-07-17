@@ -17,19 +17,19 @@ public class WithdrawalPayoutTransactionService {
 
 	private final WithdrawalRequestRepository withdrawalRepository;
 	private final WithdrawalPayoutAttemptRepository attemptRepository;
-	private final HotWalletNonceRepository nonceRepository;
+	private final HotWalletNonceAllocator nonceAllocator;
 	private final PointAccountRepository pointAccountRepository;
 	private final PointTransactionRepository pointTransactionRepository;
 	private final EthereumClient ethereumClient;
 	private final EthereumProperties ethereumProperties;
 
 	public WithdrawalPayoutTransactionService(WithdrawalRequestRepository withdrawalRepository,
-			WithdrawalPayoutAttemptRepository attemptRepository, HotWalletNonceRepository nonceRepository,
+			WithdrawalPayoutAttemptRepository attemptRepository, HotWalletNonceAllocator nonceAllocator,
 			PointAccountRepository pointAccountRepository, PointTransactionRepository pointTransactionRepository,
 			EthereumClient ethereumClient, EthereumProperties ethereumProperties) {
 		this.withdrawalRepository = withdrawalRepository;
 		this.attemptRepository = attemptRepository;
-		this.nonceRepository = nonceRepository;
+		this.nonceAllocator = nonceAllocator;
 		this.pointAccountRepository = pointAccountRepository;
 		this.pointTransactionRepository = pointTransactionRepository;
 		this.ethereumClient = ethereumClient;
@@ -42,12 +42,18 @@ public class WithdrawalPayoutTransactionService {
 	}
 
 	@Transactional(readOnly = true)
+	public Optional<WithdrawalPayoutAttempt> findLatestConfirmed(UUID withdrawalId) {
+		return attemptRepository.findFirstByWithdrawalRequestIdAndStatusOrderByAttemptNumberDesc(
+				withdrawalId, WithdrawalPayoutStatus.CONFIRMED);
+	}
+
+	@Transactional(readOnly = true)
 	public Optional<WithdrawalPayoutAttempt> findAttempt(UUID attemptId) {
 		return attemptRepository.findById(attemptId);
 	}
 
 	@Transactional
-	public synchronized WithdrawalPayoutAttempt prepareEthereum(UUID withdrawalId, String privateKey,
+	public WithdrawalPayoutAttempt prepareEthereum(UUID withdrawalId, String privateKey,
 			String hotWalletAddress, BigInteger observedChainNonce, BigInteger gasPrice, String createdBy) {
 		WithdrawalRequest withdrawal = withdrawalForUpdate(withdrawalId);
 		Optional<WithdrawalPayoutAttempt> active = attemptRepository.findActiveForUpdate(withdrawalId);
@@ -55,13 +61,8 @@ public class WithdrawalPayoutTransactionService {
 			return active.get();
 		}
 		requirePending(withdrawal);
-		String normalizedWallet = hotWalletAddress.toLowerCase();
-		HotWalletNonce nonce = nonceRepository
-				.findForUpdate("ERC20", normalizedWallet, ethereumClientChainId())
-				.orElseGet(() -> nonceRepository.saveAndFlush(HotWalletNonce.create(
-						"ERC20", normalizedWallet, ethereumClientChainId(), observedChainNonce)));
-		BigInteger allocatedNonce = nonce.allocate(observedChainNonce);
-		nonceRepository.save(nonce);
+		BigInteger allocatedNonce = nonceAllocator.allocate(
+				"ERC20", hotWalletAddress, ethereumClientChainId(), observedChainNonce);
 		PreparedPayoutTransaction signed = ethereumClient.signTransfer(privateKey, withdrawal.walletAddress(),
 				withdrawal.usdtAmount(), allocatedNonce, gasPrice);
 		if (!signed.hotWalletAddress().equalsIgnoreCase(hotWalletAddress)) {

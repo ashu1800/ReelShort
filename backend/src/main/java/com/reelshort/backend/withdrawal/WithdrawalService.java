@@ -283,8 +283,11 @@ public class WithdrawalService {
 				String privateKey = "TRC20".equals(request.network()) ? tronPrivateKey : ethPrivateKey;
 				WithdrawalPayoutAttempt attempt = payoutCoordinator.prepareAndBroadcast(
 						withdrawalId, privateKey, admin.username());
+				String resultStatus = attempt.status() == WithdrawalPayoutStatus.CONFIRMED
+						? WithdrawalStatus.APPROVED.name()
+						: attempt.status().name();
 				results.add(new BatchWithdrawalResponse.ItemResult(
-						withdrawalId.toString(), attempt.status().name(), attempt.txHash(), null));
+						withdrawalId.toString(), resultStatus, attempt.txHash(), null));
 				succeeded++;
 			}
 			catch (Exception exception) {

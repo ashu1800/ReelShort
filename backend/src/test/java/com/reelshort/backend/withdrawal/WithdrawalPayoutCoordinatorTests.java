@@ -43,6 +43,23 @@ class WithdrawalPayoutCoordinatorTests {
 	}
 
 	@Test
+	void completedWithdrawalIsIdempotentAndReturnsConfirmedAttemptWithoutBroadcast() {
+		WithdrawalPayoutAttempt confirmed = preparedAttempt();
+		confirmed.markConfirmed(12);
+		WithdrawalRequest request = org.mockito.Mockito.mock(WithdrawalRequest.class);
+		when(transactionService.findActive(WITHDRAWAL_ID)).thenReturn(Optional.empty());
+		when(transactionService.findLatestConfirmed(WITHDRAWAL_ID)).thenReturn(Optional.of(confirmed));
+		when(withdrawalRequestRepository.findById(WITHDRAWAL_ID)).thenReturn(Optional.of(request));
+		when(request.status()).thenReturn(WithdrawalStatus.APPROVED);
+
+		assertThat(coordinator.prepareAndBroadcast(WITHDRAWAL_ID, "must-not-be-used", "admin"))
+				.isSameAs(confirmed);
+		verify(ethereumClient, never()).broadcastSignedTransaction(any(), any());
+		verify(tronClient, never()).broadcastSignedTransaction(any(), any());
+		verify(ethereumClient, never()).signTransfer(any(), any(), any(), any(), any());
+	}
+
+	@Test
 	void activePreparedAttemptReplaysTheSameRawTransactionWithoutSigningAgain() {
 		WithdrawalPayoutAttempt attempt = preparedAttempt();
 		when(transactionService.findActive(WITHDRAWAL_ID)).thenReturn(Optional.of(attempt));
