@@ -265,10 +265,11 @@ class FinancialMigrationTests {
 				insert into withdrawal_payout_attempts (
 				    id, withdrawal_request_id, attempt_number, network, hot_wallet_address,
 				    destination_address, token_contract_address, token_amount, chain_id, nonce,
-				    signed_raw_transaction, status, active_slot, created_by, created_at, updated_at
-				) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				    signed_raw_transaction, tx_hash, status, active_slot, created_by, created_at, updated_at
+				) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""", UUID.randomUUID(), withdrawalId, attemptNumber, "ERC20", "0xHot", "0xDestination", "0xUsdt",
-				"9.000000", 1L, attemptNumber, "0xsigned", status, activeSlot, "admin", now(), now());
+				"9.000000", 1L, attemptNumber, "0xsigned", withdrawalId + "-" + attemptNumber,
+				status, activeSlot, "admin", now(), now());
 	}
 
 	private Timestamp now() {

@@ -20,20 +20,23 @@ public class WithdrawalPayoutTransactionService {
 	private final HotWalletNonceAllocator nonceAllocator;
 	private final PointAccountRepository pointAccountRepository;
 	private final PointTransactionRepository pointTransactionRepository;
-	private final EthereumClient ethereumClient;
 	private final EthereumProperties ethereumProperties;
+	private final TronProperties tronProperties;
+	private final WithdrawalPayoutProperties payoutProperties;
 
 	public WithdrawalPayoutTransactionService(WithdrawalRequestRepository withdrawalRepository,
 			WithdrawalPayoutAttemptRepository attemptRepository, HotWalletNonceAllocator nonceAllocator,
 			PointAccountRepository pointAccountRepository, PointTransactionRepository pointTransactionRepository,
-			EthereumClient ethereumClient, EthereumProperties ethereumProperties) {
+			EthereumProperties ethereumProperties, TronProperties tronProperties,
+			WithdrawalPayoutProperties payoutProperties) {
 		this.withdrawalRepository = withdrawalRepository;
 		this.attemptRepository = attemptRepository;
 		this.nonceAllocator = nonceAllocator;
 		this.pointAccountRepository = pointAccountRepository;
 		this.pointTransactionRepository = pointTransactionRepository;
-		this.ethereumClient = ethereumClient;
 		this.ethereumProperties = ethereumProperties;
+		this.tronProperties = tronProperties;
+		this.payoutProperties = payoutProperties;
 	}
 
 	@Transactional(readOnly = true)
@@ -53,45 +56,61 @@ public class WithdrawalPayoutTransactionService {
 	}
 
 	@Transactional
-	public WithdrawalPayoutAttempt prepareEthereum(UUID withdrawalId, String privateKey,
+	public WithdrawalPayoutAttempt reserveEthereum(UUID withdrawalId, String signingOwner,
 			String hotWalletAddress, BigInteger observedChainNonce, BigInteger gasPrice, String createdBy) {
 		WithdrawalRequest withdrawal = withdrawalForUpdate(withdrawalId);
 		Optional<WithdrawalPayoutAttempt> active = attemptRepository.findActiveForUpdate(withdrawalId);
 		if (active.isPresent()) {
-			return active.get();
+			return claimExpiredSigning(active.get(), signingOwner);
 		}
 		requirePending(withdrawal);
 		BigInteger allocatedNonce = nonceAllocator.allocate(
 				"ERC20", hotWalletAddress, ethereumClientChainId(), observedChainNonce);
-		PreparedPayoutTransaction signed = ethereumClient.signTransfer(privateKey, withdrawal.walletAddress(),
-				withdrawal.usdtAmount(), allocatedNonce, gasPrice);
-		if (!signed.hotWalletAddress().equalsIgnoreCase(hotWalletAddress)) {
-			throw new WithdrawalException(400, "private key does not match the derived hot wallet address");
-		}
-		return persistPrepared(withdrawal, signed, createdBy);
+		return persistSigningIntent(withdrawal, "ERC20", hotWalletAddress,
+				ethereumProperties.getUsdtContract(), ethereumProperties.getChainId(), allocatedNonce,
+				gasPrice, signingOwner, createdBy);
 	}
 
 	@Transactional
-	public WithdrawalPayoutAttempt prepareTron(UUID withdrawalId, PreparedPayoutTransaction signed,
-			String createdBy) {
+	public WithdrawalPayoutAttempt reserveTron(UUID withdrawalId, String signingOwner,
+			String hotWalletAddress, String createdBy) {
 		WithdrawalRequest withdrawal = withdrawalForUpdate(withdrawalId);
 		Optional<WithdrawalPayoutAttempt> active = attemptRepository.findActiveForUpdate(withdrawalId);
 		if (active.isPresent()) {
-			return active.get();
+			return claimExpiredSigning(active.get(), signingOwner);
 		}
 		requirePending(withdrawal);
-		if (!"TRC20".equals(signed.network())) {
-			throw new WithdrawalException(400, "invalid TRON payout transaction");
-		}
-		return persistPrepared(withdrawal, signed, createdBy);
+		return persistSigningIntent(withdrawal, "TRC20", hotWalletAddress,
+				tronProperties.getUsdtContract(), 0L, BigInteger.ZERO, null, signingOwner, createdBy);
 	}
 
-	private WithdrawalPayoutAttempt persistPrepared(WithdrawalRequest withdrawal,
-			PreparedPayoutTransaction signed, String createdBy) {
+	private WithdrawalPayoutAttempt persistSigningIntent(WithdrawalRequest withdrawal, String network,
+			String hotWalletAddress, String tokenContractAddress, long chainId, BigInteger nonce,
+			BigInteger gasPrice, String signingOwner, String createdBy) {
 		int attemptNumber = attemptRepository.maximumAttemptNumber(withdrawal.id()) + 1;
-		WithdrawalPayoutAttempt attempt = WithdrawalPayoutAttempt.prepared(withdrawal.id(), attemptNumber,
-				withdrawal.walletAddress(), withdrawal.usdtAmount(), signed, createdBy);
+		WithdrawalPayoutAttempt attempt = WithdrawalPayoutAttempt.signingIntent(withdrawal.id(), attemptNumber,
+				network, hotWalletAddress, withdrawal.walletAddress(), tokenContractAddress, withdrawal.usdtAmount(),
+				chainId, nonce, gasPrice, signingOwner, createdBy, payoutProperties.getSigningLease());
 		return attemptRepository.saveAndFlush(attempt);
+	}
+
+	private WithdrawalPayoutAttempt claimExpiredSigning(WithdrawalPayoutAttempt attempt, String signingOwner) {
+		attempt.claimSigning(signingOwner, payoutProperties.getSigningLease());
+		return attemptRepository.save(attempt);
+	}
+
+	@Transactional
+	public WithdrawalPayoutAttempt completeSigning(UUID attemptId, String signingOwner,
+			PreparedPayoutTransaction signed) {
+		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		attempt.completeSigning(signingOwner, signed);
+		return attemptRepository.saveAndFlush(attempt);
+	}
+
+	@Transactional
+	public WithdrawalPayoutAttempt claimSigning(UUID attemptId, String signingOwner) {
+		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		return claimExpiredSigning(attempt, signingOwner);
 	}
 
 	@Transactional
@@ -105,7 +124,8 @@ public class WithdrawalPayoutTransactionService {
 		switch (result.disposition()) {
 			case ACCEPTED -> attempt.markBroadcasted();
 			case EXPLICITLY_REJECTED -> attempt.markFailedRetryable("BROADCAST_REJECTED", result.detail());
-			case UNKNOWN -> attempt.markBroadcastUnknown(result.detail());
+			case UNKNOWN, EXPIRED -> attempt.markBroadcastUnknown(result.detail(),
+					payoutProperties.getUnknownMaxAttempts(), payoutProperties.getUnknownMaxAge());
 		}
 		return attemptRepository.save(attempt);
 	}
@@ -130,6 +150,15 @@ public class WithdrawalPayoutTransactionService {
 		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
 		if (attempt.status() != WithdrawalPayoutStatus.MANUAL_REVIEW) {
 			attempt.markManualReview(reason);
+		}
+		return attemptRepository.save(attempt);
+	}
+
+	@Transactional
+	public WithdrawalPayoutAttempt markRetryable(UUID attemptId, String code, String reason) {
+		WithdrawalPayoutAttempt attempt = attemptForUpdate(attemptId);
+		if (attempt.status() != WithdrawalPayoutStatus.FAILED_RETRYABLE) {
+			attempt.markFailedRetryable(code, reason);
 		}
 		return attemptRepository.save(attempt);
 	}

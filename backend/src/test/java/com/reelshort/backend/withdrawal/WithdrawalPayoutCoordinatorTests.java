@@ -65,6 +65,8 @@ class WithdrawalPayoutCoordinatorTests {
 		when(transactionService.findActive(WITHDRAWAL_ID)).thenReturn(Optional.of(attempt));
 		when(ethereumClient.broadcastSignedTransaction(RAW_TRANSACTION, TX_HASH))
 				.thenReturn(PayoutBroadcastResult.accepted());
+		when(transactionService.recordBroadcastResult(attempt.id(), PayoutBroadcastResult.accepted()))
+				.thenReturn(attempt);
 
 		WithdrawalPayoutAttempt result = coordinator.prepareAndBroadcast(
 				WITHDRAWAL_ID, "private-key-must-not-be-used", "admin");
@@ -86,7 +88,7 @@ class WithdrawalPayoutCoordinatorTests {
 		coordinator.prepareAndBroadcast(WITHDRAWAL_ID, "unused", "admin");
 
 		verify(transactionService).recordBroadcastResult(attempt.id(), unknown);
-		verify(transactionService, never()).prepareEthereum(any(), any(), any(), any(), any(), any());
+		verify(transactionService, never()).reserveEthereum(any(), any(), any(), any(), any(), any());
 	}
 
 	@Test

@@ -187,8 +187,10 @@ public class TronClient {
 			if ("DUP_TRANSACTION_ERROR".equals(code)) {
 				return PayoutBroadcastResult.accepted();
 			}
-			if ("SIGERROR".equals(code) || "CONTRACT_VALIDATE_ERROR".equals(code)
-					|| "TRANSACTION_EXPIRATION_ERROR".equals(code)) {
+			if ("TRANSACTION_EXPIRATION_ERROR".equals(code)) {
+				return new PayoutBroadcastResult(PayoutBroadcastDisposition.EXPIRED, message);
+			}
+			if ("SIGERROR".equals(code) || "CONTRACT_VALIDATE_ERROR".equals(code)) {
 				return PayoutBroadcastResult.rejected(message);
 			}
 			return PayoutBroadcastResult.unknown(message);

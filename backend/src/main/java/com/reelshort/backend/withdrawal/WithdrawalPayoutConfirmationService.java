@@ -71,6 +71,8 @@ public class WithdrawalPayoutConfirmationService {
 			return;
 		}
 		if (chainStatus.state() == PayoutChainState.UNKNOWN) {
+			transactionService.recordBroadcastResult(attempt.id(),
+					PayoutBroadcastResult.unknown(chainStatus.detail()));
 			return;
 		}
 		if (chainStatus.state() == PayoutChainState.FAILED) {

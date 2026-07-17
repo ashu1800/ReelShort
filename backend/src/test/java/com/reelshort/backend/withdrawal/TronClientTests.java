@@ -67,6 +67,22 @@ class TronClientTests {
 				.isEqualTo(objectMapper.readTree(prepared.signedRawTransaction()));
 	}
 
+	@Test
+	void reportsExpiredBroadcastSeparatelyFromDefinitiveFailure() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/broadcasttransaction", exchange -> respond(exchange,
+				"{\"result\":false,\"code\":\"TRANSACTION_EXPIRATION_ERROR\",\"message\":\"expired\"}"));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+
+		PayoutBroadcastResult result = client.broadcastSignedTransaction(
+				"{\"txID\":\"expired-hash\",\"signature\":[\"00\"]}", "expired-hash");
+
+		assertThat(result.disposition()).isEqualTo(PayoutBroadcastDisposition.EXPIRED);
+	}
+
 	private TronClient client(AtomicReference<String> broadcastBody) throws IOException {
 		String txId = sha256Hex(RAW_DATA_HEX);
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
