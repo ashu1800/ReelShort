@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -124,5 +125,24 @@ class VipOrderServiceTests {
 		locks.verify(orders).lockAllocation();
 		locks.verify(orders).findPendingForUpdate();
 		locks.verify(users).findByIdForUpdate(user.id());
+	}
+
+	@Test
+	void ninetyNineActivePayableSlotsAreExhaustedButOneUserStillConsumesOnlyOne() {
+		List<VipOrder> occupied = IntStream.rangeClosed(1, 99)
+				.mapToObj(suffix -> VipOrder.create(UUID.randomUUID(), "VIP-slot-" + suffix,
+						new BigDecimal("15"), suffix, 20, "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
+						"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"))
+				.toList();
+		when(orders.findPendingForUpdate()).thenReturn(occupied);
+
+		assertThatThrownBy(() -> service.create(user.id()))
+				.isInstanceOf(AdminException.class)
+				.hasMessageContaining("too many pending VIP orders");
+
+		VipOrder own = VipOrder.create(user.id(), "VIP-own", new BigDecimal("15"), 1, 20);
+		when(orders.findPendingForUpdate()).thenReturn(List.of(own));
+		assertThat(IntStream.range(0, 100).mapToObj(index -> service.create(user.id())).distinct())
+				.containsExactly(own);
 	}
 }

@@ -216,6 +216,26 @@ class FinancialMigrationTests {
 				.hasMessageContaining("uk_withdrawal_payout_attempt_active");
 	}
 
+	@Test
+	void vipTransferCursorIsDurableAndUniquePerReceiptSnapshot() {
+		JdbcTemplate jdbc = migratedDatabase("financial-migration-vip-transfer-cursor");
+		UUID first = UUID.randomUUID();
+		jdbc.update("""
+				insert into vip_transfer_scan_cursors (
+				    id, receiving_wallet_address, token_contract_address, fingerprint,
+				    scan_window_started_at, updated_at
+				) values (?, ?, ?, ?, ?, ?)
+				""", first, "TAddress", "TContract", "page-2", now(), now());
+
+		assertThatThrownBy(() -> jdbc.update("""
+				insert into vip_transfer_scan_cursors (
+				    id, receiving_wallet_address, token_contract_address, fingerprint,
+				    scan_window_started_at, updated_at
+				) values (?, ?, ?, ?, ?, ?)
+				""", UUID.randomUUID(), "TAddress", "TContract", "page-3", now(), now()))
+				.hasMessageContaining("uk_vip_transfer_scan_cursor_snapshot");
+	}
+
 	private JdbcTemplate migratedDatabase(String databaseName) {
 		DataSource dataSource = dataSource(databaseName);
 		Flyway.configure()

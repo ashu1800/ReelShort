@@ -158,7 +158,8 @@ class TronClientTests {
 		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
 		TronClient client = new TronClient(properties, objectMapper);
 
-		TronClient.IncomingTransfer transfer = client.fetchIncomingUsdtTransfers(DESTINATION, 10).get(0);
+		TronClient.IncomingTransfer transfer = client.fetchIncomingUsdtTransfers(DESTINATION,
+				properties.getUsdtContract(), 10, null).get(0);
 
 		assertThat(transfer.txHash()).isEqualTo("d".repeat(64));
 		assertThat(transfer.amount()).isEqualByComparingTo("1.250000");
@@ -189,7 +190,7 @@ class TronClientTests {
 		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
 		TronClient client = new TronClient(properties, objectMapper);
 
-		assertThat(client.fetchIncomingUsdtTransfers(DESTINATION, 200))
+		assertThat(client.fetchIncomingUsdtTransfers(DESTINATION, properties.getUsdtContract(), 200, null))
 				.extracting(TronClient.IncomingTransfer::txHash)
 				.containsExactly("e".repeat(64), "f".repeat(64));
 	}
@@ -212,6 +213,31 @@ class TronClientTests {
 
 		assertThat(verified.successful()).isTrue();
 		assertThat(verified.confirmationCount()).isEqualTo(20);
+	}
+
+	@Test
+	void fetchesExactTransferEventUsingSnapshotRecipientAndContract() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/v1/transactions/", exchange -> respond(exchange, """
+				{"data":[
+				 {"event_name":"Transfer","contract_address":"TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
+				  "block_timestamp":1000,"result":{"to":"%s","value":"999999"}},
+				 {"event_name":"Transfer","contract_address":"%s","block_timestamp":2000,
+				  "result":{"to":"%s","value":"1250000"}}
+				]}
+				""".formatted(DESTINATION, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", DESTINATION)));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		properties.setUsdtContract("TJRabPrwbZy45sbavfcjinPJC18kjpRTv8");
+		TronClient client = new TronClient(properties, objectMapper);
+
+		TronClient.IncomingTransfer transfer = client.fetchIncomingUsdtTransfer("2".repeat(64), DESTINATION,
+				"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");
+
+		assertThat(transfer.amount()).isEqualByComparingTo("1.250000");
+		assertThat(transfer.contract()).isEqualTo("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");
+		assertThat(transfer.recipient()).isEqualTo(DESTINATION);
 	}
 
 	private ClientFixture client(AtomicReference<String> broadcastBody, String rawDestination,

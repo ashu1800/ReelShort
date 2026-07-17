@@ -3,6 +3,7 @@ package com.reelshort.backend.order;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -24,7 +25,8 @@ class VipAutoConfirmServiceTests {
 	void expiresOrdersBeforeCheckingWhetherAnyCanBePolled() {
 		VipOrderService orders = mock(VipOrderService.class);
 		TronClient tron = mock(TronClient.class);
-		VipAutoConfirmService service = new VipAutoConfirmService(orders, tron, new TronProperties());
+		VipTransferScanCursorService cursors = mock(VipTransferScanCursorService.class);
+		VipAutoConfirmService service = new VipAutoConfirmService(orders, tron, new TronProperties(), cursors);
 		when(orders.pendingOrders()).thenReturn(List.of());
 
 		service.autoConfirmPendingOrders();
@@ -39,18 +41,64 @@ class VipAutoConfirmServiceTests {
 		VipOrderService orders = mock(VipOrderService.class);
 		TronClient tron = mock(TronClient.class);
 		TronProperties properties = new TronProperties();
-		VipAutoConfirmService service = new VipAutoConfirmService(orders, tron, properties);
+		properties.setUsdtContract("TJRabPrwbZy45sbavfcjinPJC18kjpRTv8");
+		VipTransferScanCursorService cursors = mock(VipTransferScanCursorService.class);
+		VipAutoConfirmService service = new VipAutoConfirmService(orders, tron, properties, cursors);
 		VipOrder order = VipOrder.create(UUID.randomUUID(), "VIP-auto", new BigDecimal("15"), 1, 20,
 				ADDRESS, CONTRACT);
 		TronClient.IncomingTransfer transfer = new TronClient.IncomingTransfer("b".repeat(64),
 				order.payableAmount(), ADDRESS, CONTRACT, order.createdAt().plusSeconds(5),
 				properties.getRequiredConfirmations(), true);
 		when(orders.pendingOrders()).thenReturn(List.of(order));
-		when(tron.fetchIncomingUsdtTransfers(ADDRESS, 200, order.createdAt())).thenReturn(List.of(transfer));
+		UUID cursorId = UUID.randomUUID();
+		when(cursors.start(ADDRESS, CONTRACT, order.createdAt()))
+				.thenReturn(new VipTransferScanCursorService.State(cursorId, null));
+		when(tron.fetchIncomingUsdtTransferPage(ADDRESS, CONTRACT, 200, null))
+				.thenReturn(new TronClient.IncomingTransferPage(List.of(transfer), null));
 		when(tron.verifyIncomingTransfer(transfer)).thenReturn(transfer);
 
 		service.autoConfirmPendingOrders();
 
+		verify(orders).autoConfirm(order.id(), transfer);
+		verify(cursors).complete(cursorId);
+	}
+
+	@Test
+	void durableCursorReachesThirdPageAcrossThreePollingRounds() {
+		VipOrderService orders = mock(VipOrderService.class);
+		TronClient tron = mock(TronClient.class);
+		TronProperties properties = new TronProperties();
+		properties.setIncomingTransferMaxPages(1);
+		VipTransferScanCursorService cursors = mock(VipTransferScanCursorService.class);
+		VipAutoConfirmService service = new VipAutoConfirmService(orders, tron, properties, cursors);
+		VipOrder order = VipOrder.create(UUID.randomUUID(), "VIP-third-page", new BigDecimal("15"), 1, 20,
+				ADDRESS, CONTRACT);
+		TronClient.IncomingTransfer transfer = new TronClient.IncomingTransfer("c".repeat(64),
+				order.payableAmount(), ADDRESS, CONTRACT, order.createdAt().plusSeconds(5),
+				properties.getRequiredConfirmations(), true);
+		UUID cursorId = UUID.randomUUID();
+		when(orders.pendingOrders()).thenReturn(List.of(order));
+		when(cursors.start(ADDRESS, CONTRACT, order.createdAt()))
+				.thenReturn(new VipTransferScanCursorService.State(cursorId, null),
+						new VipTransferScanCursorService.State(cursorId, "page-2"),
+						new VipTransferScanCursorService.State(cursorId, "page-3"));
+		when(tron.fetchIncomingUsdtTransferPage(ADDRESS, CONTRACT, 200, null))
+				.thenReturn(new TronClient.IncomingTransferPage(List.of(), "page-2"));
+		when(tron.fetchIncomingUsdtTransferPage(ADDRESS, CONTRACT, 200, "page-2"))
+				.thenReturn(new TronClient.IncomingTransferPage(List.of(), "page-3"));
+		when(tron.fetchIncomingUsdtTransferPage(ADDRESS, CONTRACT, 200, "page-3"))
+				.thenReturn(new TronClient.IncomingTransferPage(List.of(transfer), null));
+		when(tron.verifyIncomingTransfer(transfer)).thenReturn(transfer);
+
+		service.autoConfirmPendingOrders();
+		verify(orders, never()).autoConfirm(order.id(), transfer);
+		service.autoConfirmPendingOrders();
+		verify(orders, never()).autoConfirm(order.id(), transfer);
+		service.autoConfirmPendingOrders();
+
+		verify(cursors).advance(cursorId, "page-2");
+		verify(cursors).advance(cursorId, "page-3");
+		verify(cursors).complete(cursorId);
 		verify(orders).autoConfirm(order.id(), transfer);
 	}
 }

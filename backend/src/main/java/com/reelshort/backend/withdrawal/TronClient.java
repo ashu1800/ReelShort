@@ -321,17 +321,14 @@ public class TronClient {
 	 * Fetch recent incoming TRC20 USDT transfers to an address. Returns a list of {txHash, amount}
 	 * pairs for matching against pending VIP orders.
 	 */
-	public List<IncomingTransfer> fetchIncomingUsdtTransfers(String address, int limit) {
-		return fetchIncomingUsdtTransfers(address, limit, null);
-	}
-
-	public List<IncomingTransfer> fetchIncomingUsdtTransfers(String address, int limit, OffsetDateTime earliest) {
+	public List<IncomingTransfer> fetchIncomingUsdtTransfers(String address, String contract, int limit,
+			OffsetDateTime earliest) {
 		try {
 			List<IncomingTransfer> transfers = new ArrayList<>();
 			String fingerprint = null;
 			int pages = 0;
 			do {
-				TransferPage page = fetchIncomingTransferPage(address, limit, fingerprint);
+				IncomingTransferPage page = fetchIncomingUsdtTransferPage(address, contract, limit, fingerprint);
 				transfers.addAll(page.transfers().stream()
 						.filter(transfer -> earliest == null || transfer.blockTimestamp() == null
 								|| !transfer.blockTimestamp().isBefore(earliest))
@@ -355,7 +352,8 @@ public class TronClient {
 		}
 	}
 
-	private TransferPage fetchIncomingTransferPage(String address, int limit, String fingerprint) {
+	public IncomingTransferPage fetchIncomingUsdtTransferPage(String address, String contract, int limit,
+			String fingerprint) {
 		try {
 			String cursor = fingerprint == null || fingerprint.isBlank() ? ""
 					: "&fingerprint=" + URLEncoder.encode(fingerprint, StandardCharsets.UTF_8);
@@ -363,7 +361,7 @@ public class TronClient {
 					.uri(URI.create(String.format("%s/v1/accounts/%s/transactions/trc20"
 							+ "?limit=%d&contract_address=%s&only_to=true&only_confirmed=true"
 							+ "&order_by=block_timestamp,desc%s",
-							properties.getNodeUrl(), address, limit, properties.getUsdtContract(), cursor)))
+							properties.getNodeUrl(), address, limit, contract, cursor)))
 					.timeout(Duration.ofSeconds(15))
 					.header("Accept", "application/json");
 			if (!properties.getApiKey().isBlank()) {
@@ -383,7 +381,7 @@ public class TronClient {
 						continue;
 					}
 					String txHash = tx.path("transaction_id").asText("");
-					String contract = tx.path("token_info").path("address").asText("");
+					String transferContract = tx.path("token_info").path("address").asText("");
 					BigDecimal rawAmount = new BigDecimal(tx.path("value").asText("0"));
 					BigDecimal amount = rawAmount.divide(USDT_DECIMALS, 6, RoundingMode.DOWN);
 					long timestampMillis = tx.path("block_timestamp").asLong(0);
@@ -391,11 +389,11 @@ public class TronClient {
 							? OffsetDateTime.ofInstant(Instant.ofEpochMilli(timestampMillis), ZoneOffset.UTC)
 							: null;
 					boolean successful = "Transfer".equalsIgnoreCase(tx.path("type").asText("Transfer"));
-					transfers.add(new IncomingTransfer(txHash, amount, toAddress, contract, blockTimestamp,
+					transfers.add(new IncomingTransfer(txHash, amount, toAddress, transferContract, blockTimestamp,
 							0, successful));
 				}
 			}
-			return new TransferPage(transfers, root.path("meta").path("fingerprint").asText(null));
+			return new IncomingTransferPage(transfers, root.path("meta").path("fingerprint").asText(null));
 		}
 		catch (Exception exception) {
 			throw new WithdrawalException(503, "failed to fetch TRC20 transfers: " + exception.getMessage());
@@ -413,7 +411,69 @@ public class TronClient {
 				transfer.blockTimestamp(), status.confirmations(), successful);
 	}
 
-	private record TransferPage(List<IncomingTransfer> transfers, String nextFingerprint) {
+	public IncomingTransfer fetchIncomingUsdtTransfer(String txHash, String recipient, String contract) {
+		try {
+			String url = properties.getNodeUrl() + "/v1/transactions/"
+					+ URLEncoder.encode(txHash, StandardCharsets.UTF_8) + "/events?only_confirmed=true";
+			JsonNode data = getJson(url).path("data");
+			if (data.isArray()) {
+				for (JsonNode event : data) {
+					if (!"Transfer".equalsIgnoreCase(event.path("event_name").asText())) {
+						continue;
+					}
+					String eventContract = normalizeEventAddress(event.path("contract_address").asText());
+					String eventRecipient = normalizeEventAddress(event.path("result").path("to").asText());
+					if (!contract.equals(eventContract) || !recipient.equals(eventRecipient)) {
+						continue;
+					}
+					BigDecimal amount = new BigDecimal(event.path("result").path("value").asText("0"))
+							.divide(USDT_DECIMALS, 6, RoundingMode.DOWN);
+					long timestamp = event.path("block_timestamp").asLong(0);
+					return new IncomingTransfer(txHash, amount, recipient, contract,
+							OffsetDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneOffset.UTC), 0, true);
+				}
+			}
+			throw new WithdrawalException(409, "transaction has no matching TRC20 transfer event");
+		}
+		catch (WithdrawalException exception) {
+			throw exception;
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "failed to fetch TRC20 transfer event: " + exception.getMessage());
+		}
+	}
+
+	private String normalizeEventAddress(String value) {
+		if (TronAddress.isValid(value)) {
+			return value;
+		}
+		String hex = value == null ? "" : value.replaceFirst("^(0x|0X)", "");
+		if (hex.length() == 42 && hex.startsWith("41") && hex.matches("(?i)[0-9a-f]{42}")) {
+			return base58CheckEncode(hexStringToBytes(hex));
+		}
+		if (hex.length() == 40 && hex.matches("(?i)[0-9a-f]{40}")) {
+			byte[] payload = new byte[21];
+			payload[0] = 0x41;
+			System.arraycopy(hexStringToBytes(hex), 0, payload, 1, 20);
+			return base58CheckEncode(payload);
+		}
+		return value;
+	}
+
+	private JsonNode getJson(String url) throws Exception {
+		HttpRequest.Builder builder = HttpRequest.newBuilder().uri(URI.create(url))
+				.timeout(Duration.ofSeconds(15)).header("Accept", "application/json").GET();
+		if (!properties.getApiKey().isBlank()) {
+			builder.header("TRON-PRO-API-KEY", properties.getApiKey());
+		}
+		HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+		if (response.statusCode() < 200 || response.statusCode() >= 300) {
+			throw new WithdrawalException(503, "TronGrid event query failed with HTTP " + response.statusCode());
+		}
+		return objectMapper.readTree(response.body());
+	}
+
+	public record IncomingTransferPage(List<IncomingTransfer> transfers, String nextFingerprint) {
 	}
 
 

@@ -285,10 +285,11 @@ export type SystemAlert = {
   resolvedAt: string | null
 }
 
-export async function login(username: string, password: string) {
+export async function login(username: string, password: string, totpCode?: string) {
   const response = await http.post<ApiResponse<AdminLoginResponse>>('/auth/login', {
     username,
     password,
+    totpCode: totpCode || undefined,
   })
   return response.data.data
 }

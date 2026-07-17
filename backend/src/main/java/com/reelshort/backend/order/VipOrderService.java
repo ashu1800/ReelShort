@@ -2,7 +2,6 @@ package com.reelshort.backend.order;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.OffsetDateTime;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -30,7 +29,6 @@ import com.reelshort.backend.withdrawal.TronProperties;
 @Service
 public class VipOrderService {
 
-	private static final int VIP_DURATION_DAYS = 30;
 	private static final int SUFFIX_MAX = 99;
 	private static final int CREATE_RETRIES = 3;
 
@@ -42,12 +40,14 @@ public class VipOrderService {
 	private final TransactionTemplate transactionTemplate;
 	private final Duration confirmationGrace;
 	private final AdminAuditService adminAuditService;
+	private final VipEntitlementService entitlementService;
 
 	@Autowired
 	public VipOrderService(VipOrderRepository vipOrderRepository, UserAccountRepository userAccountRepository,
 			SystemConfigService systemConfigService, TronProperties tronProperties, TronClient tronClient,
 			PlatformTransactionManager transactionManager, AdminAuditService adminAuditService,
-			@Value("${reelshort.vip.confirmation-grace:10m}") Duration confirmationGrace) {
+			@Value("${reelshort.vip.confirmation-grace:10m}") Duration confirmationGrace,
+			VipEntitlementService entitlementService) {
 		this.vipOrderRepository = vipOrderRepository;
 		this.userAccountRepository = userAccountRepository;
 		this.systemConfigService = systemConfigService;
@@ -56,6 +56,7 @@ public class VipOrderService {
 		this.transactionTemplate = new TransactionTemplate(transactionManager);
 		this.confirmationGrace = confirmationGrace;
 		this.adminAuditService = adminAuditService;
+		this.entitlementService = entitlementService;
 	}
 
 	VipOrderService(VipOrderRepository vipOrderRepository, UserAccountRepository userAccountRepository,
@@ -68,6 +69,7 @@ public class VipOrderService {
 		this.transactionTemplate = null;
 		this.confirmationGrace = Duration.ofMinutes(10);
 		this.adminAuditService = null;
+		this.entitlementService = new VipEntitlementService(userAccountRepository);
 	}
 
 	public VipOrder create(UUID userId) {
@@ -182,12 +184,8 @@ public class VipOrderService {
 		}
 		VipOrder snapshot = vipOrderRepository.findById(orderId)
 				.orElseThrow(() -> new AdminException(404, "VIP order not found"));
-		IncomingTransfer transfer = tronClient.fetchIncomingUsdtTransfers(snapshot.receivingWalletAddress(), 200,
-				snapshot.createdAt())
-				.stream()
-				.filter(candidate -> candidate.txHash().equalsIgnoreCase(txHash))
-				.findFirst()
-				.orElseThrow(() -> new AdminException(409, "transaction was not found for this order"));
+		IncomingTransfer transfer = tronClient.fetchIncomingUsdtTransfer(txHash,
+				snapshot.receivingWalletAddress(), snapshot.tokenContractAddress());
 		IncomingTransfer verified = tronClient.verifyIncomingTransfer(transfer);
 		if (transactionTemplate == null) {
 			return confirmTransfer(orderId, verified, adminUsername);
@@ -216,7 +214,7 @@ public class VipOrderService {
 			throw new AdminException(409, "transaction does not match this VIP order");
 		}
 		order.confirm(transfer.txHash(), confirmedBy, transfer.blockTimestamp(), transfer.confirmationCount());
-		grantVip(order.userId());
+		entitlementService.grantMonth(order.userId());
 		VipOrder saved = vipOrderRepository.save(order);
 		if ("auto-confirm".equals(confirmedBy)) {
 			recordSystemAudit("VIP_ORDER_AUTO_CONFIRMED", saved,
@@ -231,15 +229,6 @@ public class VipOrderService {
 				.orElseThrow(() -> new AdminException(404, "VIP order not found"));
 		order.reject(adminUsername);
 		return vipOrderRepository.save(order);
-	}
-
-	private void grantVip(UUID userId) {
-		UserAccount user = userAccountRepository.findByIdForUpdate(userId)
-				.orElseThrow(() -> new AdminException(404, "user not found"));
-		OffsetDateTime now = OffsetDateTime.now();
-		OffsetDateTime base = user.vipUntil() != null && user.vipUntil().isAfter(now) ? user.vipUntil() : now;
-		user.grantVip(base.plusDays(VIP_DURATION_DAYS));
-		userAccountRepository.save(user);
 	}
 
 	private void recordSystemAudit(String action, VipOrder order, String summary) {

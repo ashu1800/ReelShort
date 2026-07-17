@@ -1,9 +1,9 @@
 package com.reelshort.backend.order;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import java.time.OffsetDateTime;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,65 +12,89 @@ import org.springframework.stereotype.Service;
 
 import com.reelshort.backend.withdrawal.TronClient;
 import com.reelshort.backend.withdrawal.TronProperties;
+import com.reelshort.backend.admin.AdminException;
 
 @Service
 public class VipAutoConfirmService {
-
 	private static final Logger log = LoggerFactory.getLogger(VipAutoConfirmService.class);
 	private static final int POLL_LIMIT = 200;
 
 	private final VipOrderService vipOrderService;
 	private final TronClient tronClient;
 	private final TronProperties tronProperties;
+	private final VipTransferScanCursorService cursorService;
 
-	public VipAutoConfirmService(VipOrderService vipOrderService, TronClient tronClient, TronProperties tronProperties) {
+	public VipAutoConfirmService(VipOrderService vipOrderService, TronClient tronClient,
+			TronProperties tronProperties, VipTransferScanCursorService cursorService) {
 		this.vipOrderService = vipOrderService;
 		this.tronClient = tronClient;
 		this.tronProperties = tronProperties;
+		this.cursorService = cursorService;
 	}
 
 	@Scheduled(fixedDelayString = "${reelshort.vip.auto-confirm-interval:120000}", initialDelay = 30_000)
 	public void autoConfirmPendingOrders() {
 		vipOrderService.expireOverdueOrders();
 		List<VipOrder> pending = vipOrderService.pendingOrders();
-		if (pending.isEmpty()) {
-			return;
+		Map<ReceiptSnapshot, List<VipOrder>> groups = pending.stream()
+				.filter(order -> order.receivingWalletAddress() != null && order.tokenContractAddress() != null)
+				.collect(Collectors.groupingBy(order -> new ReceiptSnapshot(
+						order.receivingWalletAddress(), order.tokenContractAddress())));
+		groups.forEach(this::pollSnapshot);
+	}
+
+	private void pollSnapshot(ReceiptSnapshot snapshot, List<VipOrder> orders) {
+		OffsetDateTime earliest = orders.stream().map(VipOrder::createdAt)
+				.min(OffsetDateTime::compareTo).orElseThrow();
+		VipTransferScanCursorService.State cursor = cursorService.start(
+				snapshot.address(), snapshot.contract(), earliest);
+		String fingerprint = cursor.fingerprint();
+		int pages = 0;
+		try {
+			do {
+				TronClient.IncomingTransferPage page = tronClient.fetchIncomingUsdtTransferPage(
+						snapshot.address(), snapshot.contract(), POLL_LIMIT, fingerprint);
+				for (TronClient.IncomingTransfer transfer : page.transfers()) {
+					processCandidate(orders, transfer);
+				}
+				pages++;
+				boolean reachedWindow = page.transfers().stream()
+						.map(TronClient.IncomingTransfer::blockTimestamp)
+						.filter(java.util.Objects::nonNull)
+						.anyMatch(timestamp -> timestamp.isBefore(earliest));
+				fingerprint = page.nextFingerprint();
+				if (reachedWindow || fingerprint == null || fingerprint.isBlank()) {
+					cursorService.complete(cursor.id());
+					return;
+				}
+				cursorService.advance(cursor.id(), fingerprint);
+			} while (pages < tronProperties.getIncomingTransferMaxPages());
+			log.warn("VIP transfer scan paused at configured page limit for address {} and contract {}",
+					snapshot.address(), snapshot.contract());
 		}
-		Map<String, List<VipOrder>> ordersByAddress = pending.stream()
-				.filter(order -> order.receivingWalletAddress() != null && !order.receivingWalletAddress().isBlank())
-				.collect(Collectors.groupingBy(VipOrder::receivingWalletAddress));
-		for (Map.Entry<String, List<VipOrder>> entry : ordersByAddress.entrySet()) {
-			pollAddress(entry.getKey(), entry.getValue());
+		catch (RuntimeException exception) {
+			log.warn("VIP transfer scan failed for receipt snapshot: {}", exception.getMessage());
 		}
 	}
 
-	private void pollAddress(String address, List<VipOrder> orders) {
-		try {
-			OffsetDateTime earliest = orders.stream().map(VipOrder::createdAt).min(OffsetDateTime::compareTo).orElseThrow();
-			for (TronClient.IncomingTransfer transfer : tronClient.fetchIncomingUsdtTransfers(address, POLL_LIMIT,
-					earliest)) {
-				VipOrder matched = orders.stream()
-						.filter(order -> VipPaymentMatcher.matches(order, transfer, 0))
-						.findFirst()
-						.orElse(null);
-				if (matched == null) {
-					continue;
-				}
-				try {
-					TronClient.IncomingTransfer verified = tronClient.verifyIncomingTransfer(transfer);
-					if (!VipPaymentMatcher.matches(matched, verified, tronProperties.getRequiredConfirmations())) {
-						continue;
-					}
-					vipOrderService.autoConfirm(matched.id(), verified);
-					log.info("Auto-confirmed VIP order {} with transaction {}", matched.orderNo(), transfer.txHash());
-				}
-				catch (RuntimeException exception) {
-					log.warn("VIP auto-confirm rejected order {}: {}", matched.orderNo(), exception.getMessage());
-				}
+	private void processCandidate(List<VipOrder> orders, TronClient.IncomingTransfer transfer) {
+		VipOrder matched = orders.stream()
+				.filter(order -> VipPaymentMatcher.matches(order, transfer, 0))
+				.findFirst().orElse(null);
+		if (matched == null) {
+			return;
+		}
+		TronClient.IncomingTransfer verified = tronClient.verifyIncomingTransfer(transfer);
+		if (VipPaymentMatcher.matches(matched, verified, tronProperties.getRequiredConfirmations())) {
+			try {
+				vipOrderService.autoConfirm(matched.id(), verified);
+			}
+			catch (AdminException businessRejection) {
+				log.warn("VIP transfer rejected for order {}: {}", matched.orderNo(), businessRejection.getMessage());
 			}
 		}
-		catch (RuntimeException exception) {
-			log.warn("VIP auto-confirm polling failed for configured address: {}", exception.getMessage());
-		}
+	}
+
+	private record ReceiptSnapshot(String address, String contract) {
 	}
 }

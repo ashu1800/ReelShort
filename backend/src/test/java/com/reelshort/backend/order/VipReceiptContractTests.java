@@ -54,4 +54,12 @@ class VipReceiptContractTests {
 		assertThat(AdminPermissions.ALL).contains("ORDER_WRITE");
 		assertThat(requestFields).contains("txHash", "totpCode");
 	}
+
+	@Test
+	void tronReceiptApisRequireSnapshotAddressAndContract() throws Exception {
+		assertThat(com.reelshort.backend.withdrawal.TronClient.class.getMethod(
+				"fetchIncomingUsdtTransferPage", String.class, String.class, int.class, String.class)).isNotNull();
+		assertThat(com.reelshort.backend.withdrawal.TronClient.class.getMethod(
+				"fetchIncomingUsdtTransfer", String.class, String.class, String.class)).isNotNull();
+	}
 }
