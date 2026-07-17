@@ -401,14 +401,33 @@ public class TronClient {
 	}
 
 	public record IncomingTransfer(String txHash, BigDecimal amount, String recipient, String contract,
-			OffsetDateTime blockTimestamp, int confirmationCount, boolean successful) {
+			OffsetDateTime blockTimestamp, int confirmationCount, boolean successful,
+			ReceiptVerification verification) {
+		public IncomingTransfer(String txHash, BigDecimal amount, String recipient, String contract,
+				OffsetDateTime blockTimestamp, int confirmationCount, boolean successful) {
+			this(txHash, amount, recipient, contract, blockTimestamp, confirmationCount, successful,
+					successful && confirmationCount > 0 ? ReceiptVerification.CONFIRMED
+							: successful ? ReceiptVerification.UNVERIFIED : ReceiptVerification.DEFER);
+		}
 	}
 
 	public IncomingTransfer verifyIncomingTransfer(IncomingTransfer transfer) {
 		PayoutChainStatus status = queryTransactionStatus(transfer.txHash());
-		boolean successful = transfer.successful() && status.state() == PayoutChainState.CONFIRMED;
+		ReceiptVerification verification = switch (status.state()) {
+			case CONFIRMED -> ReceiptVerification.CONFIRMED;
+			case FAILED -> ReceiptVerification.FAILED;
+			case PENDING, NOT_FOUND, UNKNOWN -> ReceiptVerification.DEFER;
+		};
+		boolean successful = transfer.successful() && verification == ReceiptVerification.CONFIRMED;
 		return new IncomingTransfer(transfer.txHash(), transfer.amount(), transfer.recipient(), transfer.contract(),
-				transfer.blockTimestamp(), status.confirmations(), successful);
+				transfer.blockTimestamp(), status.confirmations(), successful, verification);
+	}
+
+	public enum ReceiptVerification {
+		UNVERIFIED,
+		CONFIRMED,
+		DEFER,
+		FAILED
 	}
 
 	public IncomingTransfer fetchIncomingUsdtTransfer(String txHash, String recipient, String contract,

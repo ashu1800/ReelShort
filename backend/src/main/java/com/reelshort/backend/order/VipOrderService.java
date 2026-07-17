@@ -236,4 +236,11 @@ public class VipOrderService {
 			adminAuditService.record("system", action, "VIP_ORDER", order.id(), summary);
 		}
 	}
+
+	public void recordTerminalReceiptFailure(UUID orderId, String txHash) {
+		if (adminAuditService != null) {
+			adminAuditService.recordIndependent("system", "VIP_RECEIPT_TERMINAL_FAILURE", "VIP_ORDER", orderId,
+					"status=CHAIN_FAILED, txHash=" + txHash);
+		}
+	}
 }

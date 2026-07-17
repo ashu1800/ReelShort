@@ -89,6 +89,15 @@ public class VipAutoConfirmService {
 			return CandidateOutcome.IRRELEVANT;
 		}
 		TronClient.IncomingTransfer verified = tronClient.verifyIncomingTransfer(transfer);
+		if (verified.verification() == TronClient.ReceiptVerification.FAILED) {
+			vipOrderService.recordTerminalReceiptFailure(matched.id(), verified.txHash());
+			log.warn("Terminally failed VIP receipt ignored for order {} and transaction {}",
+					matched.orderNo(), verified.txHash());
+			return CandidateOutcome.PROCESSED;
+		}
+		if (verified.verification() != TronClient.ReceiptVerification.CONFIRMED) {
+			return CandidateOutcome.DEFER;
+		}
 		if (!VipPaymentMatcher.matches(matched, verified, tronProperties.getRequiredConfirmations())) {
 			return CandidateOutcome.DEFER;
 		}
