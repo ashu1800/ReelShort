@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -124,6 +125,148 @@ class WithdrawalAdminServiceTests {
 		assertThatThrownBy(() -> service.batchPreview(List.of(withdrawalId, withdrawalId)))
 				.isInstanceOf(com.reelshort.backend.admin.AdminException.class)
 				.hasMessage("duplicate withdrawal ids are not allowed");
+	}
+
+	@Test
+	void failedRetryableAttemptIsReportedAndAuditedAsFailure() {
+		UUID adminId = configuredAdmin();
+		UUID withdrawalId = UUID.randomUUID();
+		WithdrawalRequest withdrawal = payoutWithdrawal(withdrawalId);
+		WithdrawalPayoutAttempt attempt = preparedAttempt(withdrawalId);
+		attempt.markFailedRetryable("RPC_REJECTED", "node rejected transaction");
+		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
+		when(payoutCoordinator.prepareAndBroadcast(withdrawalId, "eth-key", "operator")).thenReturn(attempt);
+
+		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key",
+				"123456", adminId);
+
+		assertThat(result.succeeded()).isZero();
+		assertThat(result.failed()).isEqualTo(1);
+		assertThat(result.items().get(0).payoutStatus()).isEqualTo("FAILED_RETRYABLE");
+		verify(auditService).recordIndependent("operator", "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
+				withdrawalId, "network=ERC20,amount=12.5,status=FAILED_RETRYABLE,txHash=0xpayout");
+	}
+
+	@Test
+	void manualReviewAttemptIsNotReportedAsSubmitted() {
+		UUID adminId = configuredAdmin();
+		UUID withdrawalId = UUID.randomUUID();
+		WithdrawalRequest withdrawal = payoutWithdrawal(withdrawalId);
+		WithdrawalPayoutAttempt attempt = preparedAttempt(withdrawalId);
+		attempt.markManualReview("chain state is ambiguous");
+		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
+		when(payoutCoordinator.prepareAndBroadcast(withdrawalId, "eth-key", "operator")).thenReturn(attempt);
+
+		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key",
+				"123456", adminId);
+
+		assertThat(result.succeeded()).isZero();
+		assertThat(result.failed()).isEqualTo(1);
+		assertThat(result.items().get(0).manualReview()).isTrue();
+		assertThat(result.items().get(0).failureReason()).isEqualTo("chain state is ambiguous");
+		verify(auditService).recordIndependent("operator", "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
+				withdrawalId, "network=ERC20,amount=12.5,status=MANUAL_REVIEW,txHash=0xpayout");
+	}
+
+	@Test
+	void singleApprovalAuditsExplicitlyRejectedAttemptAsFailure() {
+		UUID adminId = configuredAdmin();
+		UUID withdrawalId = UUID.randomUUID();
+		WithdrawalRequest withdrawal = payoutWithdrawal(withdrawalId);
+		WithdrawalPayoutAttempt attempt = preparedAttempt(withdrawalId);
+		attempt.markFailedRetryable("RPC_REJECTED", "node rejected transaction");
+		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
+		when(payoutCoordinator.prepareAndBroadcast(withdrawalId, "eth-key", "operator")).thenReturn(attempt);
+		when(attemptRepository.findFirstByWithdrawalRequestIdOrderByAttemptNumberDesc(withdrawalId))
+				.thenReturn(Optional.of(attempt));
+
+		WithdrawalResponse response = service.approve(withdrawalId, null, "eth-key", "123456", adminId,
+				"operator");
+
+		assertThat(response.payoutStatus()).isEqualTo("FAILED_RETRYABLE");
+		verify(auditService).recordIndependent("operator", "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
+				withdrawalId, "network=ERC20,amount=12.5,status=FAILED_RETRYABLE,txHash=0xpayout");
+	}
+
+	@Test
+	void missingApprovalTargetWritesStableIndependentAudit() {
+		UUID adminId = configuredAdmin();
+		UUID withdrawalId = UUID.randomUUID();
+		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.approve(withdrawalId, null, "eth-key", "123456", adminId,
+				"operator"))
+				.isInstanceOf(com.reelshort.backend.admin.AdminException.class)
+				.hasMessage("withdrawal not found");
+		verify(auditService).recordIndependent("operator", "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
+				withdrawalId, "status=NOT_FOUND");
+	}
+
+	@Test
+	void missingRejectTargetWritesStableIndependentAudit() {
+		UUID withdrawalId = UUID.randomUUID();
+		when(withdrawalRepository.findByIdForUpdate(withdrawalId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.reject(withdrawalId, "invalid wallet", "operator"))
+				.isInstanceOf(com.reelshort.backend.admin.AdminException.class)
+				.hasMessage("withdrawal not found");
+		verify(auditService).recordIndependent("operator", "WITHDRAWAL_REJECT_FAILED", "WITHDRAWAL",
+				withdrawalId, "status=NOT_FOUND");
+	}
+
+	@Test
+	void approvalLookupFailureWritesStableIndependentAudit() {
+		UUID adminId = configuredAdmin();
+		UUID withdrawalId = UUID.randomUUID();
+		when(withdrawalRepository.findById(withdrawalId))
+				.thenThrow(new IllegalStateException("database detail must not enter audit"));
+
+		assertThatThrownBy(() -> service.approve(withdrawalId, null, "eth-key", "123456", adminId,
+				"operator"))
+				.isInstanceOf(IllegalStateException.class);
+		verify(auditService).recordIndependent("operator", "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
+				withdrawalId, "status=LOOKUP_FAILED");
+	}
+
+	@Test
+	void rejectLookupFailureWritesStableIndependentAudit() {
+		UUID withdrawalId = UUID.randomUUID();
+		when(withdrawalRepository.findByIdForUpdate(withdrawalId))
+				.thenThrow(new IllegalStateException("database detail must not enter audit"));
+
+		assertThatThrownBy(() -> service.reject(withdrawalId, "invalid wallet", "operator"))
+				.isInstanceOf(IllegalStateException.class);
+		verify(auditService).recordIndependent("operator", "WITHDRAWAL_REJECT_FAILED", "WITHDRAWAL",
+				withdrawalId, "status=LOOKUP_FAILED");
+	}
+
+	private UUID configuredAdmin() {
+		UUID adminId = UUID.randomUUID();
+		AdminUser admin = AdminUser.create("operator", "hash", AdminUserStatus.ACTIVE);
+		admin.enableTotp("secret");
+		when(adminRepository.findById(adminId)).thenReturn(Optional.of(admin));
+		when(totpService.verify("secret", "123456")).thenReturn(true);
+		return adminId;
+	}
+
+	private WithdrawalRequest payoutWithdrawal(UUID withdrawalId) {
+		WithdrawalRequest withdrawal = mock(WithdrawalRequest.class);
+		when(withdrawal.id()).thenReturn(withdrawalId);
+		when(withdrawal.userId()).thenReturn(UUID.randomUUID());
+		when(withdrawal.network()).thenReturn("ERC20");
+		when(withdrawal.usdtAmount()).thenReturn(new BigDecimal("12.5"));
+		when(withdrawal.usdtPerPoint()).thenReturn(new BigDecimal("0.01"));
+		when(withdrawal.status()).thenReturn(WithdrawalStatus.PENDING);
+		return withdrawal;
+	}
+
+	private WithdrawalPayoutAttempt preparedAttempt(UUID withdrawalId) {
+		PreparedPayoutTransaction signed = new PreparedPayoutTransaction(
+				"ERC20", "0x2222222222222222222222222222222222222222",
+				"0xdAC17F958D2ee523a2206206994597C13D831ec7", 1L, BigInteger.ONE,
+				"0xsigned", "0xpayout");
+		return WithdrawalPayoutAttempt.prepared(withdrawalId, 1,
+				"0x1111111111111111111111111111111111111111", new BigDecimal("12.5"), signed, "operator");
 	}
 
 	private WithdrawalRequest withdrawal(UUID id, String network, String address, String amount,

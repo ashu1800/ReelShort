@@ -12,6 +12,7 @@ import {
 } from '../services/adminApi'
 import type { BatchWithdrawalPreview, BatchWithdrawalResult, WithdrawalRequest, WithdrawalStatus } from '../services/adminApi'
 import { backendErrorMessage } from '../services/http'
+import { buildSinglePayoutResult } from '../services/payoutOutcome.js'
 import { clearWithdrawalSecrets } from '../services/withdrawalSecrets.js'
 
 const loading = ref(false)
@@ -140,21 +141,7 @@ async function doPayout() {
         ethKey,
         credentials.totpCode,
       )
-      batchResult.value = {
-        succeeded: 1,
-        failed: 0,
-        stoppedAtIndex: -1,
-        errorMessage: null,
-        items: [{
-          withdrawalId: withdrawal.id,
-          payoutStatus: withdrawal.payoutStatus ?? withdrawal.status,
-          txHash: withdrawal.payoutTxHash ?? withdrawal.txHash,
-          confirmationCount: withdrawal.confirmationCount,
-          failureReason: withdrawal.failureReason,
-          manualReview: withdrawal.manualReview,
-          errorMessage: null,
-        }],
-      }
+      batchResult.value = buildSinglePayoutResult(withdrawal)
     } else {
       batchResult.value = await batchApproveWithdrawals(
         activePayoutIds.value,
@@ -166,7 +153,9 @@ async function doPayout() {
     if (batchResult.value.succeeded > 0) {
       ElMessage.success(`已提交 ${batchResult.value.succeeded} 笔打款`)
     }
-    if (batchResult.value.failed > 0) {
+    if (batchResult.value.items.some((item) => item.manualReview)) {
+      ElMessage.warning('打款状态需要人工核对，请勿重复生成交易')
+    } else if (batchResult.value.failed > 0) {
       ElMessage.error(`${batchResult.value.failed} 笔提交失败，请查看逐笔结果`)
     }
     batchStep.value = 'result'
@@ -395,12 +384,14 @@ onBeforeRouteLeave(() => clearSecrets())
 
       <div v-if="batchStep === 'result' && batchResult">
           <el-alert
-            :type="batchResult.failed === 0 ? 'success' : 'error'"
+            :type="batchResult.items.some((item) => item.manualReview) ? 'warning' : batchResult.failed === 0 ? 'success' : 'error'"
             show-icon
             :closable="false"
             style="margin-bottom: 12px"
           >
-            {{ batchResult.failed === 0
+            {{ batchResult.items.some((item) => item.manualReview)
+              ? '存在需要人工核对的打款，请勿重复生成交易'
+              : batchResult.failed === 0
               ? `已提交全部 ${batchResult.succeeded} 笔打款，等待链上确认`
               : `已提交 ${batchResult.succeeded} 笔，失败 ${batchResult.failed} 笔` }}
           </el-alert>
