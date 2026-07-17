@@ -60,6 +60,7 @@ class VipReceiptContractTests {
 		assertThat(com.reelshort.backend.withdrawal.TronClient.class.getMethod(
 				"fetchIncomingUsdtTransferPage", String.class, String.class, int.class, String.class)).isNotNull();
 		assertThat(com.reelshort.backend.withdrawal.TronClient.class.getMethod(
-				"fetchIncomingUsdtTransfer", String.class, String.class, String.class)).isNotNull();
+				"fetchIncomingUsdtTransfer", String.class, String.class, String.class,
+				java.math.BigDecimal.class)).isNotNull();
 	}
 }

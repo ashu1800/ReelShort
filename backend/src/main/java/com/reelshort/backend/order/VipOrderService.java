@@ -185,7 +185,7 @@ public class VipOrderService {
 		VipOrder snapshot = vipOrderRepository.findById(orderId)
 				.orElseThrow(() -> new AdminException(404, "VIP order not found"));
 		IncomingTransfer transfer = tronClient.fetchIncomingUsdtTransfer(txHash,
-				snapshot.receivingWalletAddress(), snapshot.tokenContractAddress());
+				snapshot.receivingWalletAddress(), snapshot.tokenContractAddress(), snapshot.payableAmount());
 		IncomingTransfer verified = tronClient.verifyIncomingTransfer(transfer);
 		if (transactionTemplate == null) {
 			return confirmTransfer(orderId, verified, adminUsername);

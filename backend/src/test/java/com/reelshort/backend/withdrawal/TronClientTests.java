@@ -220,12 +220,13 @@ class TronClientTests {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/v1/transactions/", exchange -> respond(exchange, """
 				{"data":[
-				 {"event_name":"Transfer","contract_address":"TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
+				 {"event_name":"Transfer","contract_address":"%s",
 				  "block_timestamp":1000,"result":{"to":"%s","value":"999999"}},
 				 {"event_name":"Transfer","contract_address":"%s","block_timestamp":2000,
 				  "result":{"to":"%s","value":"1250000"}}
 				]}
-				""".formatted(DESTINATION, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", DESTINATION)));
+				""".formatted("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", DESTINATION,
+				"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", DESTINATION)));
 		server.start();
 		TronProperties properties = new TronProperties();
 		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
@@ -233,7 +234,7 @@ class TronClientTests {
 		TronClient client = new TronClient(properties, objectMapper);
 
 		TronClient.IncomingTransfer transfer = client.fetchIncomingUsdtTransfer("2".repeat(64), DESTINATION,
-				"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");
+				"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", AMOUNT);
 
 		assertThat(transfer.amount()).isEqualByComparingTo("1.250000");
 		assertThat(transfer.contract()).isEqualTo("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");

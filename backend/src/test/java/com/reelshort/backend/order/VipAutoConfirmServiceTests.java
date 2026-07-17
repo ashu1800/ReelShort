@@ -101,4 +101,39 @@ class VipAutoConfirmServiceTests {
 		verify(cursors).complete(cursorId);
 		verify(orders).autoConfirm(order.id(), transfer);
 	}
+
+	@Test
+	void immatureExactCandidateKeepsCursorOnPageUntilReceiptConfirms() {
+		VipOrderService orders = mock(VipOrderService.class);
+		TronClient tron = mock(TronClient.class);
+		TronProperties properties = new TronProperties();
+		properties.setIncomingTransferMaxPages(1);
+		VipTransferScanCursorService cursors = mock(VipTransferScanCursorService.class);
+		VipAutoConfirmService service = new VipAutoConfirmService(orders, tron, properties, cursors);
+		VipOrder order = VipOrder.create(UUID.randomUUID(), "VIP-immature", new BigDecimal("15"), 1, 20,
+				ADDRESS, CONTRACT);
+		TronClient.IncomingTransfer raw = new TronClient.IncomingTransfer("d".repeat(64), order.payableAmount(),
+				ADDRESS, CONTRACT, order.createdAt().plusSeconds(5), 0, true);
+		TronClient.IncomingTransfer immature = new TronClient.IncomingTransfer(raw.txHash(), raw.amount(), ADDRESS,
+				CONTRACT, raw.blockTimestamp(), 0, false);
+		TronClient.IncomingTransfer mature = new TronClient.IncomingTransfer(raw.txHash(), raw.amount(), ADDRESS,
+				CONTRACT, raw.blockTimestamp(), properties.getRequiredConfirmations(), true);
+		UUID cursorId = UUID.randomUUID();
+		when(orders.pendingOrders()).thenReturn(List.of(order));
+		when(cursors.start(ADDRESS, CONTRACT, order.createdAt()))
+				.thenReturn(new VipTransferScanCursorService.State(cursorId, null));
+		when(tron.fetchIncomingUsdtTransferPage(ADDRESS, CONTRACT, 200, null))
+				.thenReturn(new TronClient.IncomingTransferPage(List.of(raw), "page-2"));
+		when(tron.verifyIncomingTransfer(raw)).thenReturn(immature, mature);
+
+		service.autoConfirmPendingOrders();
+
+		verify(cursors, never()).advance(cursorId, "page-2");
+		verify(orders, never()).autoConfirm(order.id(), mature);
+
+		service.autoConfirmPendingOrders();
+
+		verify(orders).autoConfirm(order.id(), mature);
+		verify(cursors).advance(cursorId, "page-2");
+	}
 }

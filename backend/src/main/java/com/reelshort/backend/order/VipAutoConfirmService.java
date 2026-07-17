@@ -54,8 +54,12 @@ public class VipAutoConfirmService {
 			do {
 				TronClient.IncomingTransferPage page = tronClient.fetchIncomingUsdtTransferPage(
 						snapshot.address(), snapshot.contract(), POLL_LIMIT, fingerprint);
+				boolean deferred = false;
 				for (TronClient.IncomingTransfer transfer : page.transfers()) {
-					processCandidate(orders, transfer);
+					deferred |= processCandidate(orders, transfer) == CandidateOutcome.DEFER;
+				}
+				if (deferred) {
+					return;
 				}
 				pages++;
 				boolean reachedWindow = page.transfers().stream()
@@ -77,22 +81,30 @@ public class VipAutoConfirmService {
 		}
 	}
 
-	private void processCandidate(List<VipOrder> orders, TronClient.IncomingTransfer transfer) {
+	private CandidateOutcome processCandidate(List<VipOrder> orders, TronClient.IncomingTransfer transfer) {
 		VipOrder matched = orders.stream()
 				.filter(order -> VipPaymentMatcher.matches(order, transfer, 0))
 				.findFirst().orElse(null);
 		if (matched == null) {
-			return;
+			return CandidateOutcome.IRRELEVANT;
 		}
 		TronClient.IncomingTransfer verified = tronClient.verifyIncomingTransfer(transfer);
-		if (VipPaymentMatcher.matches(matched, verified, tronProperties.getRequiredConfirmations())) {
-			try {
-				vipOrderService.autoConfirm(matched.id(), verified);
-			}
-			catch (AdminException businessRejection) {
-				log.warn("VIP transfer rejected for order {}: {}", matched.orderNo(), businessRejection.getMessage());
-			}
+		if (!VipPaymentMatcher.matches(matched, verified, tronProperties.getRequiredConfirmations())) {
+			return CandidateOutcome.DEFER;
 		}
+		try {
+			vipOrderService.autoConfirm(matched.id(), verified);
+		}
+		catch (AdminException businessRejection) {
+			log.warn("VIP transfer rejected for order {}: {}", matched.orderNo(), businessRejection.getMessage());
+		}
+		return CandidateOutcome.PROCESSED;
+	}
+
+	private enum CandidateOutcome {
+		PROCESSED,
+		IRRELEVANT,
+		DEFER
 	}
 
 	private record ReceiptSnapshot(String address, String contract) {

@@ -411,7 +411,8 @@ public class TronClient {
 				transfer.blockTimestamp(), status.confirmations(), successful);
 	}
 
-	public IncomingTransfer fetchIncomingUsdtTransfer(String txHash, String recipient, String contract) {
+	public IncomingTransfer fetchIncomingUsdtTransfer(String txHash, String recipient, String contract,
+			BigDecimal expectedAmount) {
 		try {
 			String url = properties.getNodeUrl() + "/v1/transactions/"
 					+ URLEncoder.encode(txHash, StandardCharsets.UTF_8) + "/events?only_confirmed=true";
@@ -428,6 +429,9 @@ public class TronClient {
 					}
 					BigDecimal amount = new BigDecimal(event.path("result").path("value").asText("0"))
 							.divide(USDT_DECIMALS, 6, RoundingMode.DOWN);
+					if (amount.compareTo(expectedAmount) != 0) {
+						continue;
+					}
 					long timestamp = event.path("block_timestamp").asLong(0);
 					return new IncomingTransfer(txHash, amount, recipient, contract,
 							OffsetDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneOffset.UTC), 0, true);
