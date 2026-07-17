@@ -420,14 +420,14 @@ class ReelShortClient:
             watchdog.cancel()
             self._close_response(response)
 
-    def _validate_redirect_url(self, url: str):
+    def _validate_redirect_url(self, url: str) -> tuple[str, str]:
         return self._validate_and_pin_url(url, "upstream_redirect_blocked", "upstream returned unsafe redirect")
 
-    def _validate_url(self, url: str, event_type: str, message: str):
+    def _validate_url(self, url: str, event_type: str, message: str) -> tuple[str, str]:
         # M11: 返回 pinning 后的 URL（用解析到的 IP 直连，避免 TOCTOU DNS rebinding）
         return self._validate_and_pin_url(url, event_type, message)
 
-    def _validate_and_pin_url(self, url: str, event_type: str, message: str) -> str:
+    def _validate_and_pin_url(self, url: str, event_type: str, message: str) -> tuple[str, str]:
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             self.diagnostics.record(event_type, url=url)
@@ -443,9 +443,14 @@ class ReelShortClient:
             raise UpstreamError(502, message)
         # 用第一个公网 IP 替换 hostname 实现 pinning，保留原 Host header
         pinned_ip = sorted(addresses)[0]
-        port = f":{parsed.port}" if parsed.port else ""
-        pinned_url = url.replace(f"{parsed.hostname}{port}", pinned_ip, 1) if port else \
-            parsed._replace(netloc=pinned_ip).geturl()
+        # M11: 统一用 _replace(netloc=...) 构造，正确处理 IPv4/IPv6/带端口场景
+        if parsed.port:
+            netloc = f"{pinned_ip}:{parsed.port}"
+        elif parsed.scheme == "https":
+            netloc = pinned_ip
+        else:
+            netloc = pinned_ip
+        pinned_url = parsed._replace(netloc=netloc).geturl()
         return pinned_url, parsed.hostname
 
     @staticmethod

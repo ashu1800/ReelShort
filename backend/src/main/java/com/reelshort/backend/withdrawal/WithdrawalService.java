@@ -276,6 +276,10 @@ public class WithdrawalService {
 	 * H2: 两阶段提现——先在事务内扣减积分并标记 BROADCAST_FAILED（兜底状态），事务提交后再广播。
 	 * 广播成功则另起事务标记 APPROVED+txHash；广播失败则保持 BROADCAST_FAILED（积分已扣，需人工对账）。
 	 * 这样避免了"广播成功但 DB 失败导致平台损失真实 USDT"的旧风险。
+	 *
+	 * <p>Phase 1: {@link #deductAndMarkForBroadcast} — 事务内扣减积分，标记 BROADCAST_FAILED。
+	 * <br>Phase 2: 事务外广播 TRC20 转账。
+	 * <br>Phase 3: {@link #markApprovedAfterBroadcast} — 广播成功后新事务标记 APPROVED。
 	 */
 	public String approveWithTransfer(UUID withdrawalId, String hotWalletPrivateKey, String adminUsername) {
 		// Phase 1: 扣减积分 + 标记兜底状态（事务内）
