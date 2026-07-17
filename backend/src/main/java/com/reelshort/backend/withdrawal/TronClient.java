@@ -196,6 +196,8 @@ public class TronClient {
 					|| !trigger.getContractAddress().equals(
 							ByteString.copyFrom(addressPayload(properties.getUsdtContract())))
 					|| trigger.getCallValue() != 0
+					|| trigger.getCallTokenValue() != 0
+					|| trigger.getTokenId() != 0
 					|| callData.length != 68
 					|| !Arrays.equals(Arrays.copyOfRange(callData, 0, 4), TRANSFER_SELECTOR)
 					|| !Arrays.equals(Arrays.copyOfRange(callData, 4, 36), abiAddress(toAddress))

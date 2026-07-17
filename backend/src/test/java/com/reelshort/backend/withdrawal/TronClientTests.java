@@ -117,14 +117,38 @@ class TronClientTests {
 				.hasMessageContaining("raw transaction does not match payout intent");
 	}
 
+	@Test
+	void rejectsRawTransactionWithAttachedTrc10CallTokenValue() throws Exception {
+		TronClient client = client(new AtomicReference<>(), null, null, null, 1L, 0L).client();
+
+		assertThatThrownBy(() -> client.prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("raw transaction does not match payout intent");
+	}
+
+	@Test
+	void rejectsRawTransactionWithAttachedTrc10TokenId() throws Exception {
+		TronClient client = client(new AtomicReference<>(), null, null, null, 0L, 1L).client();
+
+		assertThatThrownBy(() -> client.prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("raw transaction does not match payout intent");
+	}
+
 	private ClientFixture client(AtomicReference<String> broadcastBody, String rawDestination,
 			BigInteger rawAmount, String rawContract) throws IOException {
+		return client(broadcastBody, rawDestination, rawAmount, rawContract, 0L, 0L);
+	}
+
+	private ClientFixture client(AtomicReference<String> broadcastBody, String rawDestination,
+			BigInteger rawAmount, String rawContract, long callTokenValue, long tokenId) throws IOException {
 		TronProperties properties = new TronProperties();
 		TronClient addressClient = new TronClient(properties, objectMapper);
 		String rawDataHex = rawDataHex(addressClient,
 				rawDestination == null ? DESTINATION : rawDestination,
 				rawAmount == null ? AMOUNT.movePointRight(6).toBigIntegerExact() : rawAmount,
-				rawContract == null ? properties.getUsdtContract() : rawContract);
+				rawContract == null ? properties.getUsdtContract() : rawContract,
+				callTokenValue, tokenId);
 		String txId = sha256Hex(rawDataHex);
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/wallet/triggersmartcontract", exchange -> respond(exchange,
@@ -140,12 +164,15 @@ class TronClientTests {
 		return new ClientFixture(new TronClient(properties, objectMapper), rawDataHex);
 	}
 
-	private String rawDataHex(TronClient client, String destination, BigInteger amount, String contractAddress) {
+	private String rawDataHex(TronClient client, String destination, BigInteger amount, String contractAddress,
+			long callTokenValue, long tokenId) {
 		byte[] data = HexFormat.of().parseHex("a9059cbb" + abiParams(destination, amount));
 		Contract.TriggerSmartContract trigger = Contract.TriggerSmartContract.newBuilder()
 				.setOwnerAddress(ByteString.copyFrom(addressPayload(client.addressFromPrivateKey(PRIVATE_KEY))))
 				.setContractAddress(ByteString.copyFrom(addressPayload(contractAddress)))
 				.setCallValue(0)
+				.setCallTokenValue(callTokenValue)
+				.setTokenId(tokenId)
 				.setData(ByteString.copyFrom(data))
 				.build();
 		Chain.Transaction.Contract contract = Chain.Transaction.Contract.newBuilder()
