@@ -35,7 +35,15 @@ CREATE TABLE withdrawal_payout_attempts (
     constraint ck_withdrawal_payout_attempt_number check (attempt_number > 0),
     constraint ck_withdrawal_payout_attempt_amount check (token_amount > 0),
     constraint ck_withdrawal_payout_attempt_confirmations check (confirmation_count >= 0),
-    constraint ck_withdrawal_payout_attempt_active_slot check (active_slot IS NULL OR active_slot = 'ACTIVE')
+    constraint ck_withdrawal_payout_attempt_active_slot check (
+        (
+            status IN ('PREPARED', 'BROADCASTED', 'FAILED_RETRYABLE', 'MANUAL_REVIEW')
+            AND active_slot IS NOT NULL
+            AND active_slot = 'ACTIVE'
+        )
+        OR
+        (status NOT IN ('PREPARED', 'BROADCASTED', 'FAILED_RETRYABLE', 'MANUAL_REVIEW') AND active_slot IS NULL)
+    )
 );
 
 CREATE INDEX idx_withdrawal_payout_attempt_status
@@ -65,6 +73,19 @@ ALTER TABLE vip_orders ADD COLUMN IF NOT EXISTS payable_usdt_amount numeric(18, 
 ALTER TABLE vip_orders ADD COLUMN IF NOT EXISTS pending_slot varchar(24);
 ALTER TABLE vip_orders ADD COLUMN IF NOT EXISTS payment_observed_at timestamp with time zone;
 ALTER TABLE vip_orders ADD COLUMN IF NOT EXISTS confirmation_count integer NOT NULL DEFAULT 0;
+
+-- V13-V19 orders do not contain an immutable chain/address/contract snapshot.
+-- They cannot be matched safely, so retain them for audit but remove them from
+-- the active payment set before deriving any reporting-only amount fields.
+UPDATE vip_orders
+SET status = 'EXPIRED', pending_slot = NULL
+WHERE status = 'PENDING'
+  AND (
+      receiving_network IS NULL OR trim(receiving_network) = ''
+      OR receiving_wallet_address IS NULL OR trim(receiving_wallet_address) = ''
+      OR token_contract_address IS NULL OR trim(token_contract_address) = ''
+      OR payable_usdt_amount IS NULL OR payable_usdt_amount <= 0
+  );
 
 UPDATE vip_orders
 SET base_usdt_amount = usdt_amount
@@ -107,11 +128,27 @@ ALTER TABLE vip_orders ADD CONSTRAINT uk_vip_orders_amount_pending_slot
     unique (payable_usdt_amount, pending_slot);
 ALTER TABLE vip_orders ADD CONSTRAINT uk_vip_orders_tx_hash unique (tx_hash);
 ALTER TABLE vip_orders ADD CONSTRAINT ck_vip_orders_pending_slot
-    check ((status = 'PENDING' AND pending_slot = 'PENDING') OR (status <> 'PENDING' AND pending_slot IS NULL));
+    check (
+        (
+            status = 'PENDING'
+            AND pending_slot = 'PENDING'
+            AND receiving_network IS NOT NULL AND trim(receiving_network) <> ''
+            AND receiving_wallet_address IS NOT NULL AND trim(receiving_wallet_address) <> ''
+            AND token_contract_address IS NOT NULL AND trim(token_contract_address) <> ''
+            AND base_usdt_amount IS NOT NULL AND base_usdt_amount > 0
+            AND payable_usdt_amount IS NOT NULL AND payable_usdt_amount >= base_usdt_amount
+        )
+        OR
+        (status <> 'PENDING' AND pending_slot IS NULL)
+    );
 ALTER TABLE vip_orders ADD CONSTRAINT ck_vip_orders_confirmation_count
     check (confirmation_count >= 0);
 ALTER TABLE vip_orders ADD CONSTRAINT ck_vip_orders_amounts
-    check (base_usdt_amount IS NULL OR (base_usdt_amount > 0 AND payable_usdt_amount >= base_usdt_amount));
+    check (
+        (base_usdt_amount IS NULL AND payable_usdt_amount IS NULL)
+        OR
+        (base_usdt_amount > 0 AND payable_usdt_amount >= base_usdt_amount)
+    );
 
 ALTER TABLE withdrawal_requests ADD CONSTRAINT uk_withdrawal_requests_tx_hash unique (tx_hash);
 
