@@ -135,13 +135,13 @@ async function doBatchApprove() {
     }
     batchStep.value = 'totp'
     await loadWithdrawals()
-    // Clear private keys from memory immediately after use
-    tronPrivateKey.value = ''
-    ethPrivateKey.value = ''
   } catch (error) {
     ElMessage.error(backendErrorMessage(error, '批量打款失败'))
   } finally {
     operationLoading.value = false
+    // M7: 无论成功失败都在 finally 清私钥，避免失败路径残留
+    tronPrivateKey.value = ''
+    ethPrivateKey.value = ''
   }
 }
 
@@ -301,7 +301,7 @@ onMounted(() => {
     </el-table>
 
     <!-- Batch payout dialog -->
-    <el-dialog v-model="batchDialogVisible" title="批量自动打款" width="600px" :close-on-click-modal="false">
+    <el-dialog v-model="batchDialogVisible" title="批量自动打款" width="600px" :close-on-click-modal="false" @close="closeBatchDialog">
       <!-- Step 1: input private keys (dual chain) -->
       <div v-if="batchStep === 'input-key'">
         <el-alert type="warning" show-icon :closable="false" style="margin-bottom: 16px">
@@ -381,7 +381,7 @@ onMounted(() => {
           <el-table :data="batchResult.items" border size="small" max-height="250">
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'APPROVED' ? 'success' : 'danger'" effect="plain">{{ row.status }}</el-tag>
+                <el-tag :type="row.status === 'APPROVED' ? 'success' : row.status === 'PENDING' ? 'info' : 'danger'" effect="plain">{{ row.status }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="tx hash" prop="txHash" min-width="200" />

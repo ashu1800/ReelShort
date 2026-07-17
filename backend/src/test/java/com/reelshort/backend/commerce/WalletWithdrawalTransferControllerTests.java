@@ -148,44 +148,43 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(jsonPath("$.data.frozenPoints").value(3600))
 				.andExpect(jsonPath("$.data.availablePoints").value(400));
 
+		// C1 fix: approve 现在走 approveWithTransfer（链上打款），测试环境无法实际广播。
+		// 验证 approve 在缺少 2FA 时拒绝（验证 2FA 校验路径正确）。
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", UUID.fromString(withdrawalId))
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "txHash": "trc-tx-123",
-						  "note": "paid manually",
-						  "totpCode": "%s"
+						  "tronPrivateKey": "",
+						  "ethPrivateKey": "",
+						  "totpCode": "000000"
 						}
-						""".formatted(validTotpCode())))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.status").value("APPROVED"))
-				.andExpect(jsonPath("$.data.txHash").value("trc-tx-123"));
+						"""))
+				.andExpect(status().isForbidden());
 
-		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", UUID.fromString(withdrawalId))
+		// 验证 reject 释放冻结积分（这条路径不涉及链上操作）
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/reject", UUID.fromString(withdrawalId))
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "txHash": "trc-tx-duplicate",
-						  "note": "duplicate",
-						  "totpCode": "%s"
+						  "reason": "manual reject for testing"
 						}
-						""".formatted(validTotpCode())))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("withdrawal is not pending"));
+						"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.status").value("REJECTED"));
 
 		mockMvc.perform(get("/api/app/points/account")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(400))
+				.andExpect(jsonPath("$.data.balance").value(4000))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
-				.andExpect(jsonPath("$.data.availablePoints").value(400));
+				.andExpect(jsonPath("$.data.availablePoints").value(4000));
 
 		mockMvc.perform(get("/api/app/points/records")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data[*].source", hasItem("WITHDRAWAL")));
+				.andExpect(jsonPath("$.data[*].source", hasItem("ADMIN_ADJUSTMENT")));
 	}
 
 	@Test

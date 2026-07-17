@@ -271,7 +271,8 @@ internal fun withdrawalConversionLines(
             "1 USD = ${cnyPerUsd.toUiDecimal()} CNY",
     )
     if (pointAmount > 0) {
-        val fee = if (summary.feePercent > 0) (pointAmount * summary.feePercent + 99) / 100 else 0
+        // M6: 用 Long 防溢出（pointAmount * feePercent 在大额时可能超过 Int.MAX_VALUE）
+        val fee = if (summary.feePercent > 0) ((pointAmount.toLong() * summary.feePercent + 99) / 100).toInt() else 0
         val withdrawable = pointAmount - fee
         val points = withdrawable.toBigDecimal()
         val cnyAmount = points.multiply(cnyPerPoint)

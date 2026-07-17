@@ -39,8 +39,8 @@ public class AdminWithdrawalController {
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
 	public ApiResponse<WithdrawalResponse> approve(CurrentAdmin currentAdmin, @PathVariable UUID withdrawalId,
 			@Valid @RequestBody WithdrawalApprovalRequest approvalRequest, HttpServletRequest request) {
-		return ApiResponse.success(withdrawalService.approve(withdrawalId, approvalRequest.txHash(),
-				approvalRequest.note(), approvalRequest.totpCode(), currentAdmin.adminUserId(),
+		return ApiResponse.success(withdrawalService.approve(withdrawalId, approvalRequest.tronPrivateKey(),
+				approvalRequest.ethPrivateKey(), approvalRequest.totpCode(), currentAdmin.adminUserId(),
 				currentAdmin.username()), requestId(request));
 	}
 

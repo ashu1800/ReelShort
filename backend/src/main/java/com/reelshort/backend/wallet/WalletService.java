@@ -31,13 +31,16 @@ public class WalletService {
 	private final UserAccountRepository userAccountRepository;
 	private final BankCardAttemptRepository bankCardAttemptRepository;
 	private final SystemConfigService systemConfigService;
+	private final com.reelshort.backend.system.concurrency.UserActionLocks userActionLocks;
 
 	public WalletService(UserWalletRepository userWalletRepository, UserAccountRepository userAccountRepository,
-			BankCardAttemptRepository bankCardAttemptRepository, SystemConfigService systemConfigService) {
+			BankCardAttemptRepository bankCardAttemptRepository, SystemConfigService systemConfigService,
+			com.reelshort.backend.system.concurrency.UserActionLocks userActionLocks) {
 		this.userWalletRepository = userWalletRepository;
 		this.userAccountRepository = userAccountRepository;
 		this.bankCardAttemptRepository = bankCardAttemptRepository;
 		this.systemConfigService = systemConfigService;
+		this.userActionLocks = userActionLocks;
 	}
 
 	@Transactional(readOnly = true)
@@ -55,16 +58,19 @@ public class WalletService {
 
 	@Transactional
 	public WalletResponse bindOrReplace(UUID userId, String network, String walletAddress) {
-		String normalizedWalletAddress = normalizeWalletAddress(network, walletAddress);
-		activeUser(userId);
-		UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
-		if (wallet == null) {
-			wallet = UserWallet.create(userId, network, normalizedWalletAddress);
-		}
-		else {
-			wallet.replace(network, normalizedWalletAddress);
-		}
-		return WalletResponse.from(userWalletRepository.save(wallet));
+		// H3: 加 userActionLocks 防止与提现 create 并发时 wallet 被覆盖导致网络/地址错配
+		return userActionLocks.withUserLock(userId, () -> {
+			String normalizedWalletAddress = normalizeWalletAddress(network, walletAddress);
+			activeUser(userId);
+			UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
+			if (wallet == null) {
+				wallet = UserWallet.create(userId, network, normalizedWalletAddress);
+			}
+			else {
+				wallet.replace(network, normalizedWalletAddress);
+			}
+			return WalletResponse.from(userWalletRepository.save(wallet));
+		});
 	}
 
 	@Transactional

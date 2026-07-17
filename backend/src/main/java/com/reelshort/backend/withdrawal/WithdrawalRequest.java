@@ -91,15 +91,16 @@ public class WithdrawalRequest {
 
 	public static WithdrawalRequest create(UUID userId, int pointAmount, int feeAmount,
 			WithdrawalConversion conversion, String network, String walletAddress) {
-		BigDecimal normalizedRate = conversion.usdtPerPoint().setScale(8, RoundingMode.UNNECESSARY);
+		// L4: 用 HALF_UP 而非 UNNECESSARY，避免配置小数过多时抛 ArithmeticException
+		BigDecimal normalizedRate = conversion.usdtPerPoint().setScale(8, RoundingMode.HALF_UP);
 		// 需求2: pointAmount 是用户输入的扣除总额，实际提取 = pointAmount - feeAmount
 		// USDT 按实际可提取积分换算
 		int withdrawable = pointAmount - feeAmount;
 		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, feeAmount,
 				conversion.usdtAmount(withdrawable),
-				normalizedRate, conversion.cnyPerPoint().setScale(8, RoundingMode.UNNECESSARY),
-				conversion.cnyPerUsd().setScale(8, RoundingMode.UNNECESSARY),
-				conversion.minimumUsd().setScale(2, RoundingMode.UNNECESSARY), network, walletAddress,
+				normalizedRate, conversion.cnyPerPoint().setScale(8, RoundingMode.HALF_UP),
+				conversion.cnyPerUsd().setScale(8, RoundingMode.HALF_UP),
+				conversion.minimumUsd().setScale(2, RoundingMode.HALF_UP), network, walletAddress,
 				OffsetDateTime.now());
 	}
 

@@ -115,6 +115,11 @@ public class WithdrawalService {
 			// 手续费向上取整（long 防溢出）
 			long rawFee = (long) pointAmount * feePercent;
 			int feeAmount = (int) ((rawFee + 99) / 100);
+			// M1: 防止 feePercent 配置过高导致 withdrawable <= 0（用户全额被扣手续费）
+			int withdrawable = pointAmount - feeAmount;
+			if (withdrawable <= 0) {
+				throw new AdminException(400, "fee percentage too high, no withdrawable points remain");
+			}
 			UserWallet wallet = userWalletRepository.findByUserId(userId)
 					.orElseThrow(() -> new AdminException(400, "wallet required"));
 			PointAccount account = accountEntityForUpdate(userId);
@@ -151,38 +156,19 @@ public class WithdrawalService {
 		return value.stripTrailingZeros().toPlainString();
 	}
 
-	@Transactional
-	public WithdrawalResponse approve(UUID withdrawalId, String txHash, String note, String totpCode,
-			UUID adminUserId, String adminUsername) {
-		// H1: 单笔提现也必须验证 2FA，与批量打款保持一致。
+	/**
+	 * C1 fix: 单笔审批不再接受手动 txHash（安全绕过风险），统一走 approveWithTransfer 两阶段打款。
+	 * 与 batchApprove 共用同一条链上转账路径，确保积分扣减和链上广播的原子性。
+	 */
+	public WithdrawalResponse approve(UUID withdrawalId, String tronPrivateKey, String ethPrivateKey,
+			String totpCode, UUID adminUserId, String adminUsername) {
 		AdminUser admin = adminUserRepository.findById(adminUserId)
 				.orElseThrow(() -> new AdminException(404, "admin not found"));
 		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
 			throw new AdminException(403, "2FA verification failed");
 		}
-		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
-		return userActionLocks.withUserLock(request.userId(), () -> {
-			if (request.status() != WithdrawalStatus.PENDING) {
-				throw new AdminException(400, "withdrawal is not pending");
-			}
-			PointAccount account = accountEntityForUpdate(request.userId());
-			try {
-				account.deductFrozen(request.totalDeductedPoints());
-			}
-			catch (IllegalStateException exception) {
-				throw new AdminException(400, exception.getMessage());
-			}
-			pointAccountRepository.save(account);
-			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(), request.totalDeductedPoints(),
-					account.balance(), request.id().toString()));
-			try {
-				request.approve(txHash.trim(), note == null ? "" : note.trim(), adminUsername);
-			}
-			catch (IllegalStateException exception) {
-				throw new AdminException(400, exception.getMessage());
-			}
-			return adminResponse(withdrawalRequestRepository.save(request));
-		});
+		approveWithTransfer(withdrawalId, tronPrivateKey, ethPrivateKey, adminUsername);
+		return adminResponse(withdrawalRequestRepository.findById(withdrawalId).orElseThrow());
 	}
 
 	@Transactional
@@ -236,14 +222,31 @@ public class WithdrawalService {
 		}
 		List<WithdrawalRequest> requests = withdrawalRequestRepository.findAllById(withdrawalIds);
 		BigDecimal total = BigDecimal.ZERO;
+		BigDecimal tronPendingTotal = BigDecimal.ZERO;
+		BigDecimal ethPendingTotal = BigDecimal.ZERO;
 		List<BatchWithdrawalPreviewResponse.PreviewItem> items = new ArrayList<>();
 		for (WithdrawalRequest req : requests) {
 			if (req.status() == WithdrawalStatus.PENDING) {
 				total = total.add(req.usdtAmount());
+				if ("TRC20".equals(req.network())) {
+					tronPendingTotal = tronPendingTotal.add(req.usdtAmount());
+				}
+				else {
+					ethPendingTotal = ethPendingTotal.add(req.usdtAmount());
+				}
 			}
 			items.add(new BatchWithdrawalPreviewResponse.PreviewItem(
 					req.id().toString(), userAccount(req.userId()), decimal(req.usdtAmount()),
 					req.network(), req.walletAddress()));
+		}
+		// M3: 余额不足预警（不阻断，由管理员决定是否继续）
+		if (tronAddress != null && tronUsdt.compareTo(tronPendingTotal) < 0) {
+			log.warn("TRC20 hot wallet USDT balance {} insufficient for pending total {}",
+					tronUsdt, tronPendingTotal);
+		}
+		if (ethAddress != null && ethUsdt.compareTo(ethPendingTotal) < 0) {
+			log.warn("ERC20 hot wallet USDT balance {} insufficient for pending total {}",
+					ethUsdt, ethPendingTotal);
 		}
 		return new BatchWithdrawalPreviewResponse(
 				tronAddress, decimal(tronUsdt), decimal(tronTrx),
@@ -253,7 +256,8 @@ public class WithdrawalService {
 
 	/**
 	 * Execute a batch payout: verify 2FA, then transfer USDT sequentially for each withdrawal.
-	 * Stops on first failure. Private keys are used in-memory only, dispatched by withdrawal network.
+	 * H2 fix: 改为尽力而为模式——某条失败后继续处理剩余提现，而非立即中断放弃所有后续。
+	 * Private keys are used in-memory only, dispatched by withdrawal network.
 	 */
 	public BatchWithdrawalResponse batchApprove(List<UUID> withdrawalIds, String tronPrivateKey,
 			String ethPrivateKey, String totpCode, UUID adminUserId) {
@@ -264,6 +268,8 @@ public class WithdrawalService {
 		}
 		List<BatchWithdrawalResponse.ItemResult> results = new ArrayList<>();
 		int succeeded = 0;
+		int firstFailureIndex = -1;
+		String firstFailureMessage = null;
 		int index = 0;
 		for (UUID withdrawalId : withdrawalIds) {
 			try {
@@ -275,11 +281,15 @@ public class WithdrawalService {
 			catch (Exception exception) {
 				results.add(new BatchWithdrawalResponse.ItemResult(
 						withdrawalId.toString(), "FAILED", null, exception.getMessage()));
-				return new BatchWithdrawalResponse(succeeded, index, exception.getMessage(), results);
+				if (firstFailureIndex < 0) {
+					firstFailureIndex = index;
+					firstFailureMessage = exception.getMessage();
+				}
+				// H2: 继续处理剩余提现而非中断
 			}
 			index++;
 		}
-		return new BatchWithdrawalResponse(succeeded, -1, null, results);
+		return new BatchWithdrawalResponse(succeeded, firstFailureIndex, firstFailureMessage, results);
 	}
 
 	/**
@@ -324,7 +334,17 @@ public class WithdrawalService {
 				txHash = ethereumClient.transferUSDT(ethPrivateKey, broadcasted.walletAddress(), broadcasted.usdtAmount());
 			}
 			// Phase 3: 广播成功，标记 APPROVED（新事务）
-			markApprovedAfterBroadcast(withdrawalId, txHash, adminUsername);
+			// C2 fix: 若 markApprovedAfterBroadcast 失败（DB 写入异常），USDT 已在链上但订单仍是 BROADCAST_FAILED。
+			// 此时用 ERROR 级别记录 txHash 供人工对账，禁止自动重试（避免重复打款）。
+			try {
+				markApprovedAfterBroadcast(withdrawalId, txHash, adminUsername);
+			}
+			catch (RuntimeException dbException) {
+				log.error("CRITICAL: USDT already broadcast (txHash={}) for withdrawal {} but DB update failed. "
+						+ "Manual reconciliation required. Error: {}",
+						txHash, withdrawalId, dbException.getMessage());
+				throw dbException;
+			}
 			return txHash;
 		}
 		catch (RuntimeException exception) {
