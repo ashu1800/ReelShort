@@ -6,9 +6,13 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class VipTransferScanCursorService {
+	private static final Logger log = LoggerFactory.getLogger(VipTransferScanCursorService.class);
+	private static final int MAX_FINGERPRINT_LENGTH = 512;
 	private final VipTransferScanCursorRepository repository;
 
 	public VipTransferScanCursorService(VipTransferScanCursorRepository repository) {
@@ -29,6 +33,10 @@ public class VipTransferScanCursorService {
 
 	@Transactional
 	public void advance(UUID cursorId, String fingerprint) {
+		if (fingerprint != null && fingerprint.length() > MAX_FINGERPRINT_LENGTH) {
+			log.warn("Rejecting oversized TRON pagination fingerprint (length={})", fingerprint.length());
+			throw new IllegalArgumentException("pagination fingerprint exceeds 512 characters");
+		}
 		VipTransferScanCursor cursor = repository.findById(cursorId).orElseThrow();
 		cursor.advance(fingerprint);
 		repository.save(cursor);

@@ -20,6 +20,7 @@ import com.reelshort.backend.admin.RequireAdminPermission;
 import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.security.TotpService;
 import com.reelshort.backend.system.web.RequestIdFilter;
+import com.reelshort.backend.withdrawal.WithdrawalException;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -57,11 +58,9 @@ public class AdminVipOrderController {
 		verifyTotp(currentAdmin, confirmRequest.totpCode(), orderId);
 		try {
 			VipOrder confirmed = vipOrderService.manualConfirm(orderId, confirmRequest.txHash(), currentAdmin.username());
-			adminAuditService.recordIndependent(currentAdmin.username(), "VIP_ORDER_CONFIRM_VERIFIED", "VIP_ORDER", orderId,
-					"status=CONFIRMED, confirmedBy=" + confirmed.confirmedBy() + ", txHash=" + confirmed.txHash());
 			return ApiResponse.success(VipOrderResponse.from(confirmed), requestId(request));
 		}
-		catch (RuntimeException exception) {
+		catch (AdminException | WithdrawalException exception) {
 			adminAuditService.recordIndependent(currentAdmin.username(), "VIP_ORDER_CONFIRM_FAILED", "VIP_ORDER", orderId,
 					"status=CHAIN_VERIFICATION_FAILED");
 			throw exception;
@@ -74,11 +73,9 @@ public class AdminVipOrderController {
 			HttpServletRequest request) {
 		try {
 			VipOrder rejected = vipOrderService.reject(orderId, currentAdmin.username());
-			adminAuditService.recordIndependent(currentAdmin.username(), "VIP_ORDER_REJECTED", "VIP_ORDER", orderId,
-					"status=REJECTED");
 			return ApiResponse.success(VipOrderResponse.from(rejected), requestId(request));
 		}
-		catch (RuntimeException exception) {
+		catch (AdminException exception) {
 			adminAuditService.recordIndependent(currentAdmin.username(), "VIP_ORDER_REJECT_FAILED", "VIP_ORDER", orderId,
 					"status=FAILED");
 			throw exception;

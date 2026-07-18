@@ -55,10 +55,13 @@ public class AdminTwoFactorController {
 	@PostMapping("/enable")
 	public ApiResponse<TwoFactorStatusResponse> enable(CurrentAdmin currentAdmin,
 			@Valid @RequestBody TwoFactorEnableRequest enableRequest, HttpServletRequest request) {
+		AdminUser admin = loadAdmin(currentAdmin);
+		if (admin.totpEnabled()) {
+			throw new AdminException(409, "2FA already enabled; use rebind");
+		}
 		if (!totpService.verify(enableRequest.secret(), enableRequest.code())) {
 			throw new AdminException(400, "invalid verification code");
 		}
-		AdminUser admin = loadAdmin(currentAdmin);
 		admin.enableTotp(enableRequest.secret());
 		adminUserRepository.save(admin);
 		return ApiResponse.success(new TwoFactorStatusResponse(true), requestId(request));

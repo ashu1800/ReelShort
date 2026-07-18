@@ -54,6 +54,10 @@ public class VipOrderService {
 		this.tronProperties = tronProperties;
 		this.tronClient = tronClient;
 		this.transactionTemplate = new TransactionTemplate(transactionManager);
+		if (confirmationGrace == null || confirmationGrace.isNegative()
+				|| confirmationGrace.compareTo(Duration.ofDays(1)) > 0) {
+			throw new IllegalArgumentException("reelshort.vip.confirmation-grace must be between 0 and 24h");
+		}
 		this.confirmationGrace = confirmationGrace;
 		this.adminAuditService = adminAuditService;
 		this.entitlementService = entitlementService;
@@ -182,9 +186,10 @@ public class VipOrderService {
 		if (tronClient == null) {
 			throw new AdminException(503, "chain verification unavailable");
 		}
+		String normalizedTxHash = normalizeTxHash(txHash);
 		VipOrder snapshot = vipOrderRepository.findById(orderId)
 				.orElseThrow(() -> new AdminException(404, "VIP order not found"));
-		IncomingTransfer transfer = tronClient.fetchIncomingUsdtTransfer(txHash,
+		IncomingTransfer transfer = tronClient.fetchIncomingUsdtTransfer(normalizedTxHash,
 				snapshot.receivingWalletAddress(), snapshot.tokenContractAddress(), snapshot.payableAmount());
 		IncomingTransfer verified = tronClient.verifyIncomingTransfer(transfer);
 		if (transactionTemplate == null) {
@@ -207,18 +212,23 @@ public class VipOrderService {
 			}
 			throw new AdminException(409, "VIP order is not pending");
 		}
-		if (vipOrderRepository.existsByTxHash(transfer.txHash())) {
+		String normalizedTxHash = normalizeTxHash(transfer.txHash());
+		if (vipOrderRepository.existsByTxHash(normalizedTxHash)) {
 			throw new AdminException(409, "transaction has already been consumed");
 		}
 		if (!VipPaymentMatcher.matches(order, transfer, tronProperties.getRequiredConfirmations())) {
 			throw new AdminException(409, "transaction does not match this VIP order");
 		}
-		order.confirm(transfer.txHash(), confirmedBy, transfer.blockTimestamp(), transfer.confirmationCount());
+		order.confirm(normalizedTxHash, confirmedBy, transfer.blockTimestamp(), transfer.confirmationCount());
 		entitlementService.grantMonth(order.userId());
 		VipOrder saved = vipOrderRepository.save(order);
 		if ("auto-confirm".equals(confirmedBy)) {
 			recordSystemAudit("VIP_ORDER_AUTO_CONFIRMED", saved,
 					"status=CONFIRMED, txHash=" + saved.txHash());
+		}
+		else if (adminAuditService != null) {
+			adminAuditService.record(confirmedBy, "VIP_ORDER_CONFIRM_VERIFIED", "VIP_ORDER", saved.id(),
+					"status=CONFIRMED, confirmedBy=" + saved.confirmedBy() + ", txHash=" + saved.txHash());
 		}
 		return saved;
 	}
@@ -228,7 +238,19 @@ public class VipOrderService {
 		VipOrder order = vipOrderRepository.findByIdForUpdate(orderId)
 				.orElseThrow(() -> new AdminException(404, "VIP order not found"));
 		order.reject(adminUsername);
-		return vipOrderRepository.save(order);
+		VipOrder saved = vipOrderRepository.save(order);
+		if (adminAuditService != null) {
+			adminAuditService.record(adminUsername, "VIP_ORDER_REJECTED", "VIP_ORDER", saved.id(),
+					"status=REJECTED");
+		}
+		return saved;
+	}
+
+	private String normalizeTxHash(String txHash) {
+		if (txHash == null || txHash.isBlank()) {
+			throw new AdminException(400, "transaction hash is required");
+		}
+		return txHash.trim().toLowerCase(java.util.Locale.ROOT);
 	}
 
 	private void recordSystemAudit(String action, VipOrder order, String summary) {

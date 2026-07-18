@@ -25,6 +25,9 @@ public class TronProperties {
 
 	private int incomingTransferMaxPages = 50;
 
+	/** Maximum bytes accepted from a TronGrid response. */
+	private int maxResponseBytes = 5 * 1024 * 1024;
+
 	public String getNodeUrl() {
 		return nodeUrl;
 	}
@@ -62,6 +65,9 @@ public class TronProperties {
 	}
 
 	public void setRequiredConfirmations(int requiredConfirmations) {
+		if (requiredConfirmations < 1 || requiredConfirmations > 100_000) {
+			throw new IllegalArgumentException("reelshort.tron.required-confirmations must be between 1 and 100000");
+		}
 		this.requiredConfirmations = requiredConfirmations;
 	}
 
@@ -78,6 +84,20 @@ public class TronProperties {
 	}
 
 	public void setIncomingTransferMaxPages(int incomingTransferMaxPages) {
+		if (incomingTransferMaxPages < 1 || incomingTransferMaxPages > 100) {
+			throw new IllegalArgumentException("reelshort.tron.incoming-transfer-max-pages must be between 1 and 100");
+		}
 		this.incomingTransferMaxPages = incomingTransferMaxPages;
+	}
+
+	public int getMaxResponseBytes() {
+		return maxResponseBytes;
+	}
+
+	public void setMaxResponseBytes(int maxResponseBytes) {
+		if (maxResponseBytes < 1 || maxResponseBytes > 50 * 1024 * 1024) {
+			throw new IllegalArgumentException("reelshort.tron.max-response-bytes is out of range");
+		}
+		this.maxResponseBytes = maxResponseBytes;
 	}
 }

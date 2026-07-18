@@ -136,7 +136,7 @@ public class VipOrder {
 		if (!"PENDING".equals(this.status)) {
 			throw new IllegalStateException("order is not pending");
 		}
-		this.txHash = txHash;
+		this.txHash = txHash == null ? null : txHash.trim().toLowerCase(java.util.Locale.ROOT);
 		this.confirmedBy = confirmedBy;
 		this.status = "CONFIRMED";
 		this.confirmedAt = OffsetDateTime.now();

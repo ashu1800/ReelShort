@@ -52,6 +52,9 @@ public class VipTransferScanCursor {
 	}
 
 	void advance(String fingerprint) {
+		if (fingerprint != null && fingerprint.length() > 512) {
+			throw new IllegalArgumentException("pagination fingerprint exceeds 512 characters");
+		}
 		this.fingerprint = fingerprint;
 		this.updatedAt = OffsetDateTime.now();
 	}

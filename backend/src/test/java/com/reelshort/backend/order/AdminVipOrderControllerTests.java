@@ -3,6 +3,7 @@ package com.reelshort.backend.order;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,7 +50,7 @@ class AdminVipOrderControllerTests {
 	}
 
 	@Test
-	void manualConfirmationUsesVerifiedChainServiceAndAuditsSuccess() {
+	void manualConfirmationDelegatesSuccessAuditToTransactionalService() {
 		VipOrderService orders = mock(VipOrderService.class);
 		AdminUserRepository admins = mock(AdminUserRepository.class);
 		TotpService totp = mock(TotpService.class);
@@ -71,7 +72,6 @@ class AdminVipOrderControllerTests {
 				new AdminVipOrderController.VipConfirmRequest(txHash, "654321"), mock(HttpServletRequest.class));
 
 		verify(orders).manualConfirm(orderId, txHash, admin.username());
-		verify(audit).recordIndependent(admin.username(), "VIP_ORDER_CONFIRM_VERIFIED", "VIP_ORDER", orderId,
-				"status=CONFIRMED, confirmedBy=" + admin.username() + ", txHash=" + txHash);
+		verifyNoInteractions(audit);
 	}
 }

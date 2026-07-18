@@ -146,7 +146,7 @@ public class WithdrawalPayoutAttempt {
 		}
 		OffsetDateTime now = OffsetDateTime.now();
 		signedRawTransaction = signed.signedRawTransaction();
-		txHash = signed.txHash();
+		txHash = signed.txHash() == null ? null : signed.txHash().trim().toLowerCase(java.util.Locale.ROOT);
 		status = WithdrawalPayoutStatus.PREPARED;
 		signingOwner = null;
 		signingLeaseUntil = null;

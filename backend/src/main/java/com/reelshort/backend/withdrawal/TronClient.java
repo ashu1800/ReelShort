@@ -367,11 +367,11 @@ public class TronClient {
 			if (!properties.getApiKey().isBlank()) {
 				builder.header("TRON-PRO-API-KEY", properties.getApiKey());
 			}
-			HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+			HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
 			if (response.statusCode() < 200 || response.statusCode() >= 300) {
 				throw new WithdrawalException(503, "TronGrid transfer query failed with HTTP " + response.statusCode());
 			}
-			JsonNode root = objectMapper.readTree(response.body());
+			JsonNode root = objectMapper.readTree(responseBody(response, "transfer query"));
 			JsonNode data = root.path("data");
 			List<IncomingTransfer> transfers = new ArrayList<>();
 			if (data.isArray()) {
@@ -393,7 +393,12 @@ public class TronClient {
 							0, successful));
 				}
 			}
-			return new IncomingTransferPage(transfers, root.path("meta").path("fingerprint").asText(null));
+			String nextFingerprint = root.path("meta").path("fingerprint").asText(null);
+			if (nextFingerprint != null && nextFingerprint.length() > 512) {
+				log.warn("TRON transfer pagination fingerprint exceeds 512 characters; refusing to persist it");
+				throw new WithdrawalException(502, "TronGrid pagination fingerprint is too long");
+			}
+			return new IncomingTransferPage(transfers, nextFingerprint);
 		}
 		catch (Exception exception) {
 			throw new WithdrawalException(503, "failed to fetch TRC20 transfers: " + exception.getMessage());
@@ -489,11 +494,11 @@ public class TronClient {
 		if (!properties.getApiKey().isBlank()) {
 			builder.header("TRON-PRO-API-KEY", properties.getApiKey());
 		}
-		HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+		HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
 		if (response.statusCode() < 200 || response.statusCode() >= 300) {
 			throw new WithdrawalException(503, "TronGrid event query failed with HTTP " + response.statusCode());
 		}
-		return objectMapper.readTree(response.body());
+		return objectMapper.readTree(responseBody(response, "event query"));
 	}
 
 	public record IncomingTransferPage(List<IncomingTransfer> transfers, String nextFingerprint) {
@@ -609,12 +614,23 @@ public class TronClient {
 			if (!properties.getApiKey().isBlank()) {
 				builder.header("TRON-PRO-API-KEY", properties.getApiKey());
 			}
-			HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-			return objectMapper.readTree(response.body());
+			HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+			return objectMapper.readTree(responseBody(response, "RPC request"));
 		}
 		catch (Exception exception) {
 			throw new WithdrawalException(503, "TronGrid request failed: " + exception.getMessage());
 		}
+	}
+
+	private String responseBody(HttpResponse<byte[]> response, String operation) {
+		byte[] body = response.body();
+		if (body == null || body.length > properties.getMaxResponseBytes()) {
+			int size = body == null ? -1 : body.length;
+			log.warn("TRON {} response exceeded byte limit {} (actual={})", operation,
+					properties.getMaxResponseBytes(), size);
+			throw new WithdrawalException(503, "TronGrid response is too large");
+		}
+		return new String(body, StandardCharsets.UTF_8);
 	}
 
 	// --- Crypto utilities ---

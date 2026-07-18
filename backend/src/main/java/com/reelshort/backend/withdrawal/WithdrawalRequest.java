@@ -109,7 +109,7 @@ public class WithdrawalRequest {
 			throw new IllegalStateException("withdrawal is not pending");
 		}
 		this.status = WithdrawalStatus.APPROVED;
-		this.txHash = txHash;
+		this.txHash = txHash == null ? null : txHash.trim().toLowerCase(java.util.Locale.ROOT);
 		this.adminNote = note;
 		this.reviewedBy = reviewedBy;
 		this.reviewedAt = OffsetDateTime.now();
