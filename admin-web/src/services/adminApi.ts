@@ -321,10 +321,11 @@ export async function updateUserStatus(userId: string, status: AdminUserSummary[
   return response.data.data
 }
 
-export async function adjustUserPoints(userId: string, amount: number, reason: string) {
+export async function adjustUserPoints(userId: string, amount: number, reason: string, idempotencyKey: string) {
   const response = await http.post<ApiResponse<AdminUserDetail>>(`/users/${userId}/points/adjust`, {
     amount,
     reason,
+    idempotencyKey,
   })
   return response.data.data
 }

@@ -56,7 +56,7 @@ public class AdminUserController {
 			@Valid @RequestBody AdminPointAdjustRequest adjustRequest,
 			HttpServletRequest request) {
 		return ApiResponse.success(adminUserService.adjustPoints(currentAdmin.username(), userId, adjustRequest.amount(),
-				adjustRequest.reason()), requestId(request));
+				adjustRequest.reason(), adjustRequest.idempotencyKey()), requestId(request));
 	}
 
 	@GetMapping("/{userId}/watch-records")

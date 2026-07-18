@@ -103,9 +103,14 @@ public class PointsService {
 		return tenths / WatchRewardCalculation.FAIR_MODE_SCALE;
 	}
 
-	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason) {
+	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason, String idempotencyKey) {
 		return userActionLocks.withUserLock(userId,
-				() -> PointAccountResponse.from(pointAwardTransaction.adjustByAdmin(userId, amount, reason)));
+				() -> PointAccountResponse.from(pointAwardTransaction.adjustByAdmin(userId, amount, reason, idempotencyKey)));
+	}
+
+	/** Internal maintenance callers that do not expose a retryable HTTP request key. */
+	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason) {
+		return adjustByAdmin(userId, amount, reason, "internal-adjust:" + UUID.randomUUID());
 	}
 
 	public PointAccountResponse creditRechargeOrder(UUID userId, String orderNo, int amount) {

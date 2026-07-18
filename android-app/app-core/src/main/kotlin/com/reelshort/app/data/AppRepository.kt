@@ -99,10 +99,10 @@ class AppRepository(
 
     override suspend fun loadWallet(): WalletInfo = apiClient.getWallet()
 
-    override suspend fun bindWallet(network: String, walletAddress: String): WalletInfo =
-        apiClient.bindWallet(network, walletAddress)
+    override suspend fun bindWallet(network: String, walletAddress: String, password: String): WalletInfo =
+        apiClient.bindWallet(network, walletAddress, password)
 
-    override suspend fun unbindWallet(): WalletInfo = apiClient.unbindWallet()
+    override suspend fun unbindWallet(password: String): WalletInfo = apiClient.unbindWallet(password)
 
     override suspend fun createVipOrder(): VipOrder = apiClient.createVipOrder()
 

@@ -18,6 +18,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
+import com.reelshort.backend.order.CreateRechargeOrderRequest;
+import com.reelshort.backend.order.RechargeOrderService;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -30,6 +32,9 @@ class PaymentCallbackControllerTests {
 
 	@Autowired
 	private ObjectMapper objectMapper;
+
+	@Autowired
+	private RechargeOrderService rechargeOrderService;
 
 	@Test
 	void callbackRequiresSecret() throws Exception {
@@ -53,7 +58,7 @@ class PaymentCallbackControllerTests {
 	@Test
 	void validCallbackSettlesOrder() throws Exception {
 		RegisteredUser user = registerAppUser("payment-callback-alice");
-		String orderNo = createOrder(user.token(), 990, 99);
+		String orderNo = createOrder(user, 990, 99);
 
 		mockMvc.perform(post("/api/internal/payments/recharge/callback")
 				.header("X-Payment-Callback-Secret", CALLBACK_SECRET)
@@ -73,7 +78,7 @@ class PaymentCallbackControllerTests {
 	@Test
 	void duplicateCallbackDoesNotCreditTwice() throws Exception {
 		RegisteredUser user = registerAppUser("payment-callback-bob");
-		String orderNo = createOrder(user.token(), 990, 99);
+		String orderNo = createOrder(user, 990, 99);
 		String body = callbackBody("evt-controller-duplicate", orderNo, 990);
 
 		postCallback(body).andExpect(status().isOk());
@@ -88,7 +93,7 @@ class PaymentCallbackControllerTests {
 	@Test
 	void amountMismatchReturnsBadRequest() throws Exception {
 		RegisteredUser user = registerAppUser("payment-callback-carol");
-		String orderNo = createOrder(user.token(), 990, 99);
+		String orderNo = createOrder(user, 990, 99);
 
 		mockMvc.perform(post("/api/internal/payments/recharge/callback")
 				.header("X-Payment-Callback-Secret", CALLBACK_SECRET)
@@ -122,25 +127,14 @@ class PaymentCallbackControllerTests {
 	}
 
 	private RegisteredUser registerAppUser(String username) throws Exception {
-		return new RegisteredUser(TestAppUsers.token(mockMvc, objectMapper, username));
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, username);
+		return new RegisteredUser(user.userId(), user.token());
 	}
 
-	private String createOrder(String token, int amountCents, int pointAmount) throws Exception {
-		MvcResult result = mockMvc.perform(post("/api/app/orders/recharge")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "amountCents": %d,
-						  "pointAmount": %d
-						}
-						""".formatted(amountCents, pointAmount)))
-				.andExpect(status().isOk())
-				.andReturn();
-		JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-		return response.path("data").path("orderNo").asText();
+	private String createOrder(RegisteredUser user, int amountCents, int pointAmount) {
+		return rechargeOrderService.create(user.userId(), new CreateRechargeOrderRequest(amountCents, pointAmount)).orderNo();
 	}
 
-	private record RegisteredUser(String token) {
+	private record RegisteredUser(java.util.UUID userId, String token) {
 	}
 }

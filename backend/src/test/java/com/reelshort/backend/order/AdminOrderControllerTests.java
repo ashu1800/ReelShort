@@ -52,13 +52,16 @@ class AdminOrderControllerTests {
 	@Autowired
 	private PasswordHasher passwordHasher;
 
+	@Autowired
+	private RechargeOrderService rechargeOrderService;
+
 	@Test
 	void adminCanListAllRechargeOrdersNewestFirst() throws Exception {
 		String adminToken = adminLogin();
-		String aliceToken = registerAndExtractToken("admin-order-alice");
-		String bobToken = registerAndExtractToken("admin-order-bob");
-		createOrder(aliceToken, 990, 99);
-		createOrder(bobToken, 2990, 299);
+		TestAppUsers.RegisteredUser alice = TestAppUsers.register(mockMvc, objectMapper, "admin-order-alice");
+		TestAppUsers.RegisteredUser bob = TestAppUsers.register(mockMvc, objectMapper, "admin-order-bob");
+		rechargeOrderService.create(alice.userId(), new CreateRechargeOrderRequest(990, 99));
+		rechargeOrderService.create(bob.userId(), new CreateRechargeOrderRequest(2990, 299));
 
 		mockMvc.perform(get("/api/admin/orders")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
@@ -120,20 +123,4 @@ class AdminOrderControllerTests {
 		return response.path("data").path("token").asText();
 	}
 
-	private String registerAndExtractToken(String username) throws Exception {
-		return TestAppUsers.token(mockMvc, objectMapper, username);
-	}
-
-	private void createOrder(String token, int amountCents, int pointAmount) throws Exception {
-		mockMvc.perform(post("/api/app/orders/recharge")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "amountCents": %d,
-						  "pointAmount": %d
-						}
-						""".formatted(amountCents, pointAmount)))
-				.andExpect(status().isOk());
-	}
 }

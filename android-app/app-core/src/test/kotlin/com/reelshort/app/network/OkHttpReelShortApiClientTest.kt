@@ -479,6 +479,45 @@ class OkHttpReelShortApiClientTest {
     }
 
     @Test
+    fun walletMutationsSendCurrentPasswordAndVipSnapshotFieldsAreMapped() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""{ "network": "ERC20", "walletAddress": "0x123", "updatedAt": "now" }"""))
+            server.enqueue(successBody("""{ "network": "ERC20", "walletAddress": null, "updatedAt": null }"""))
+            server.enqueue(successBody("""
+                {
+                  "id": "vip-1",
+                  "orderNo": "VIP1",
+                  "usdtAmount": "15",
+                  "payableAmount": "15.07",
+                  "status": "PENDING",
+                  "paymentMethod": "USDT_TRC20",
+                  "txHash": null,
+                  "createdAt": "2026-07-07T00:00:00Z",
+                  "confirmedAt": null,
+                  "expiresAt": "2026-07-07T00:10:00Z",
+                  "receivingNetwork": "TRC20",
+                  "receivingAddress": "TReceiver",
+                  "tokenContract": "TContract"
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            client.bindWallet("ERC20", "0x123", "Password123")
+            client.unbindWallet("Password123")
+            val order = client.createVipOrder()
+
+            val bind = server.takeRequest()
+            assertEquals("{\"network\":\"ERC20\",\"walletAddress\":\"0x123\",\"password\":\"Password123\"}", bind.body.readUtf8())
+            val unbind = server.takeRequest()
+            assertEquals("{\"password\":\"Password123\"}", unbind.body.readUtf8())
+            assertEquals("15.07", order.payableAmount)
+            assertEquals("TReceiver", order.receivingWalletAddress)
+            assertEquals("TContract", order.tokenContractAddress)
+            assertEquals("15", order.baseUsdtAmount)
+        }
+    }
+
+    @Test
     fun toggleLikePostsAuthenticatedAndParsesResult() = runTest {
         MockWebServer().use { server ->
             server.enqueue(successBody("""{ "active": true, "count": 1 }"""))

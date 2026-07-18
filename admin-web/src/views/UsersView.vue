@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import {
   adjustUserPoints,
   fetchUserDetail,
@@ -36,7 +36,15 @@ const withdrawals = ref<WithdrawalRequest[]>([])
 const pointsForm = reactive({
   amount: 0,
   reason: '',
+  idempotencyKey: '',
 })
+
+watch(
+  () => [pointsForm.amount, pointsForm.reason],
+  () => {
+    pointsForm.idempotencyKey = ''
+  },
+)
 
 const statusOptions: UserStatus[] = ['ACTIVE', 'DISABLED', 'BLACKLISTED']
 
@@ -117,11 +125,15 @@ async function submitPointAdjustment() {
     return
   }
   let adjusted = false
+  if (!pointsForm.idempotencyKey) {
+    pointsForm.idempotencyKey = crypto.randomUUID()
+  }
   operationLoading.value = true
   try {
-    selectedUser.value = await adjustUserPoints(userId, pointsForm.amount, reason)
+    selectedUser.value = await adjustUserPoints(userId, pointsForm.amount, reason, pointsForm.idempotencyKey)
     pointsForm.amount = 0
     pointsForm.reason = ''
+    pointsForm.idempotencyKey = ''
     adjusted = true
     ElMessage.success('积分调整已提交')
   } catch {

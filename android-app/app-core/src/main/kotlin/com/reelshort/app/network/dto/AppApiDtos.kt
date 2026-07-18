@@ -150,6 +150,12 @@ data class WalletResponseDto(
 data class WalletBindRequestDto(
     val network: String,
     val walletAddress: String,
+    val password: String,
+)
+
+@Serializable
+data class WalletUnbindRequestDto(
+    val password: String,
 )
 
 @Serializable
@@ -164,6 +170,9 @@ data class VipOrderDto(
     val createdAt: String,
     val confirmedAt: String? = null,
     val expiresAt: String? = null,
+    val receivingNetwork: String? = null,
+    val receivingAddress: String? = null,
+    val tokenContract: String? = null,
 )
 
 @Serializable

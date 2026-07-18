@@ -19,6 +19,7 @@ import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.content.ContentProviderException;
 import com.reelshort.backend.payment.PaymentException;
+import com.reelshort.backend.order.OrderException;
 import com.reelshort.backend.release.ReleaseException;
 import com.reelshort.backend.social.SocialException;
 import com.reelshort.backend.system.api.ApiErrorResponse;
@@ -73,6 +74,12 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(PaymentException.class)
 	public ResponseEntity<ApiErrorResponse> handlePaymentException(PaymentException exception,
+			HttpServletRequest request) {
+		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(OrderException.class)
+	public ResponseEntity<ApiErrorResponse> handleOrderException(OrderException exception,
 			HttpServletRequest request) {
 		return error(resolveStatus(exception.statusCode()), exception.getMessage(), request);
 	}

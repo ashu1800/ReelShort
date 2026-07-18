@@ -33,6 +33,9 @@ class WatchEpisodeRewardClaim {
 	@Column(name = "calculated_points", nullable = false)
 	private int calculatedPoints;
 
+	@Column(name = "calculated_tenths", nullable = false)
+	private int calculatedTenths;
+
 	@Column(name = "awarded_points", nullable = false)
 	private int awardedPoints;
 
@@ -43,20 +46,21 @@ class WatchEpisodeRewardClaim {
 	}
 
 	private WatchEpisodeRewardClaim(UUID id, UUID userId, String bookId, int episodeNum, int durationSeconds,
-			int calculatedPoints, int awardedPoints, OffsetDateTime createdAt) {
+			int calculatedPoints, int calculatedTenths, int awardedPoints, OffsetDateTime createdAt) {
 		this.id = id;
 		this.userId = userId;
 		this.bookId = bookId;
 		this.episodeNum = episodeNum;
 		this.durationSeconds = durationSeconds;
 		this.calculatedPoints = calculatedPoints;
+		this.calculatedTenths = calculatedTenths;
 		this.awardedPoints = awardedPoints;
 		this.createdAt = createdAt;
 	}
 
 	static WatchEpisodeRewardClaim create(UUID userId, String bookId, int episodeNum, int durationSeconds,
-			int calculatedPoints, int awardedPoints, OffsetDateTime createdAt) {
+			int calculatedTenths, int awardedPoints, OffsetDateTime createdAt) {
 		return new WatchEpisodeRewardClaim(UUID.randomUUID(), userId, bookId, episodeNum, durationSeconds,
-				calculatedPoints, awardedPoints, createdAt);
+				calculatedTenths / WatchRewardCalculation.FAIR_MODE_SCALE, calculatedTenths, awardedPoints, createdAt);
 	}
 }

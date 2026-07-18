@@ -33,8 +33,9 @@ class WatchRewardCalculationTests {
 		assertThat(WatchRewardCalculation.pointsForDurationTenths(75, 60)).isEqualTo(13);
 		// 90 秒 / 60 = 1.5 → 15 个十分位
 		assertThat(WatchRewardCalculation.pointsForDurationTenths(90, 60)).isEqualTo(15);
-		// 极短视频仍保证最少 10 个十分位（=1.0 分）
-		assertThat(WatchRewardCalculation.pointsForDurationTenths(1, 60)).isEqualTo(10);
-		assertThat(WatchRewardCalculation.pointsForDurationTenths(5, 60)).isEqualTo(10);
+		// 公平模式保留真实十分位，极短视频最少 0.1 分；普通模式仍保证最低 1 分。
+		assertThat(WatchRewardCalculation.pointsForDurationTenths(1, 60)).isEqualTo(1);
+		assertThat(WatchRewardCalculation.pointsForDurationTenths(5, 60)).isEqualTo(1);
+		assertThat(WatchRewardCalculation.pointsForDurationTenths(42, 60)).isEqualTo(7);
 	}
 }

@@ -4,7 +4,6 @@ import com.reelshort.app.ui.format.navigationLabel
 import com.reelshort.app.ui.format.usesGlobalTopBar
 import com.reelshort.app.ui.format.AccountDashboardSection
 import com.reelshort.app.ui.format.AccountDetailSheet
-import com.reelshort.app.ui.format.accountEntryLabels
 import com.reelshort.app.ui.format.accountDashboardSections
 import com.reelshort.app.ui.format.accountPrimaryActionLabels
 import com.reelshort.app.ui.format.accountContinueWatchingLimit
@@ -72,7 +71,7 @@ class VisualTextContractTest {
     fun bottomNavigationUsesReadableLabels() {
         val labels = primaryTabs.map { it.navigationLabel }
 
-        assertEquals(listOf("首頁", "探索", "我的"), labels)
+        assertEquals(listOf("Home", "Discover", "Me"), labels)
         assertTrue(labels.all { it.length >= 2 })
     }
 
@@ -99,22 +98,6 @@ class VisualTextContractTest {
     }
 
     @Test
-    fun accountPageUsesMeStyleEntryLabels() {
-        assertEquals(
-            listOf("我的收藏", "積分餘額", "觀看記錄", "積分流水", "充值訂單", "冷錢包", "提現", "積分交易", "交易記錄", "修改密碼", "銀行卡", "開發診斷", "退出登入"),
-            accountEntryLabels(),
-        )
-    }
-
-    @Test
-    fun accountPageUsesLocalizedEntryLabelsInEnglish() {
-        assertEquals(
-            listOf("Favorites", "Points", "Watch history", "Point records", "Orders", "Cold wallet", "Withdraw", "Transfer points", "Transfer records", "Change password", "Bank card", "Diagnostics", "Sign out"),
-            accountEntryLabels(AppLanguage.ENGLISH),
-        )
-    }
-
-    @Test
     fun accountDashboardUsesCommercialMePageHierarchy() {
         assertEquals(
             listOf(
@@ -133,10 +116,7 @@ class VisualTextContractTest {
             listOf("Favorites", "Points", "Watch history", "Withdraw"),
             accountPrimaryActionLabels(AppLanguage.ENGLISH),
         )
-        assertEquals(
-            listOf("我的收藏", "積分餘額", "觀看記錄", "提現"),
-            accountPrimaryActionLabels(),
-        )
+        assertEquals(listOf("Favorites", "Points", "Watch history", "Withdraw"), accountPrimaryActionLabels())
     }
 
     @Test
@@ -166,19 +146,17 @@ class VisualTextContractTest {
     fun accountDetailSheetsHaveLocalizedTitles() {
         assertEquals("Point records", accountDetailSheetTitle(AccountDetailSheet.POINT_RECORDS, AppLanguage.ENGLISH))
         assertEquals("Watch history", accountDetailSheetTitle(AccountDetailSheet.WATCH_HISTORY, AppLanguage.ENGLISH))
-        assertEquals("Orders", accountDetailSheetTitle(AccountDetailSheet.ORDERS, AppLanguage.ENGLISH))
+        assertEquals("VIP Orders", accountDetailSheetTitle(AccountDetailSheet.ORDERS, AppLanguage.ENGLISH))
         assertEquals("Withdrawals", accountDetailSheetTitle(AccountDetailSheet.WITHDRAWALS, AppLanguage.ENGLISH))
-        assertEquals("Transfer records", accountDetailSheetTitle(AccountDetailSheet.TRANSFERS, AppLanguage.ENGLISH))
-        assertEquals("積分流水", accountDetailSheetTitle(AccountDetailSheet.POINT_RECORDS))
-        assertEquals("觀看記錄", accountDetailSheetTitle(AccountDetailSheet.WATCH_HISTORY))
-        assertEquals("充值訂單", accountDetailSheetTitle(AccountDetailSheet.ORDERS))
-        assertEquals("提現記錄", accountDetailSheetTitle(AccountDetailSheet.WITHDRAWALS))
-        assertEquals("交易記錄", accountDetailSheetTitle(AccountDetailSheet.TRANSFERS))
+        assertEquals("Point records", accountDetailSheetTitle(AccountDetailSheet.POINT_RECORDS))
+        assertEquals("Watch history", accountDetailSheetTitle(AccountDetailSheet.WATCH_HISTORY))
+        assertEquals("VIP Orders", accountDetailSheetTitle(AccountDetailSheet.ORDERS))
+        assertEquals("Withdrawals", accountDetailSheetTitle(AccountDetailSheet.WITHDRAWALS))
     }
 
     @Test
     fun guestAccountPageShowsAuthEntryLabels() {
-        assertEquals(listOf("登入", "註冊"), guestAccountEntryLabels())
+        assertEquals(listOf("Sign in", "Create account"), guestAccountEntryLabels())
     }
 
     @Test
@@ -193,8 +171,8 @@ class VisualTextContractTest {
 
     @Test
     fun authPromptTitleMatchesTriggerContext() {
-        assertEquals("登入後繼續播放", authPromptTitle(hasPendingPlayback = true))
-        assertEquals("登入後查看帳戶", authPromptTitle(hasPendingPlayback = false))
+        assertEquals("Sign in to keep watching", authPromptTitle(hasPendingPlayback = true))
+        assertEquals("Sign in to view your account", authPromptTitle(hasPendingPlayback = false))
     }
 
     @Test
@@ -215,7 +193,7 @@ class VisualTextContractTest {
 
     @Test
     fun authFormProvidesRememberPasswordEntry() {
-        assertEquals("記住密碼", rememberPasswordLabel())
+        assertEquals("Remember password", rememberPasswordLabel())
     }
 
     @Test
@@ -226,11 +204,11 @@ class VisualTextContractTest {
     @Test
     fun authFormControlsAreModeSpecific() {
         assertEquals(
-            listOf("phone", "password", "rememberPassword", "primary:Sign in", "secondary:New here? Create account"),
+            listOf("username", "password", "rememberPassword", "primary:Sign in", "secondary:New here? Create account"),
             authFormControls(AuthMode.LOGIN, AppLanguage.ENGLISH),
         )
         assertEquals(
-            listOf("phone", "password", "verificationCode", "sendCode", "primary:Create account", "secondary:Already have access? Sign in"),
+            listOf("username", "password", "confirmPassword", "captchaImage", "captchaAnswer", "primary:Create account", "secondary:Already have access? Sign in"),
             authFormControls(AuthMode.REGISTER, AppLanguage.ENGLISH),
         )
     }
@@ -249,7 +227,7 @@ class VisualTextContractTest {
         assertEquals(
             AuthSheetCopy(
                 title = "Create your account",
-                subtitle = "Use a non-mainland phone number and enter the 6-digit code.",
+                subtitle = "Pick a username, set a password, and solve the captcha.",
                 primaryAction = "Create account",
                 secondaryAction = "Already have access? Sign in",
             ),
@@ -279,12 +257,6 @@ class VisualTextContractTest {
     }
 
     @Test
-    fun commercialAccountActionsHaveLocalizedCopy() {
-        assertEquals("Received", strings(AppLanguage.ENGLISH).accountTransferInLabel)
-        assertEquals("Sent", strings(AppLanguage.ENGLISH).accountTransferOutLabel)
-    }
-
-    @Test
     fun loadingFeedbackUsesCenteredDialog() {
         assertEquals(LoadingFeedbackMode.CENTER_DIALOG, loadingFeedbackMode())
     }
@@ -303,10 +275,10 @@ class VisualTextContractTest {
 
     @Test
     fun episodeRowsUseNumberOnlyDisplayWithoutDuration() {
-        assertEquals("第 01 集", episodeNumberLabel(1))
-        assertEquals("第 12 集", episodeNumberLabel(12))
-        assertEquals("第 99 集", episodeNumberLabel(99))
-        assertEquals("播放", episodeRowActionLabel())
+        assertEquals("EP 01", episodeNumberLabel(1))
+        assertEquals("EP 12", episodeNumberLabel(12))
+        assertEquals("EP 99", episodeNumberLabel(99))
+        assertEquals("Play", episodeRowActionLabel())
     }
 
     @Test

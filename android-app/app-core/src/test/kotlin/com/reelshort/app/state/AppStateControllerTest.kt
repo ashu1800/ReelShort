@@ -10,7 +10,6 @@ import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.PointRecord
-import com.reelshort.app.data.PointTransferRecord
 import com.reelshort.app.data.RechargeOrderSummary
 import com.reelshort.app.data.SavedCredentials
 import com.reelshort.app.data.SocialToggleResult
@@ -1265,7 +1264,7 @@ class AppStateControllerTest {
         assertEquals("TRC20", state.wallet?.network)
         assertEquals(100, state.withdrawalSummary?.minimumPoints)
         assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
-        assertEquals(listOf("history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"), dataSource.calls)
+        assertEquals(listOf("history", "points", "orders", "wallet", "vip:orders", "withdrawal-summary", "withdrawals"), dataSource.calls)
     }
 
     @Test
@@ -1274,7 +1273,6 @@ class AppStateControllerTest {
         dataSource.walletError = ApiClientException(404, null, "resource not found")
         dataSource.withdrawalSummaryError = ApiClientException(404, null, "resource not found")
         dataSource.withdrawalsError = ApiClientException(404, null, "resource not found")
-        dataSource.transfersError = ApiClientException(404, null, "resource not found")
         val controller = AppStateController(dataSource)
 
         controller.loadAccountSnapshot()
@@ -1286,7 +1284,6 @@ class AppStateControllerTest {
         assertNull(state.wallet)
         assertNull(state.withdrawalSummary)
         assertTrue(state.withdrawals.isEmpty())
-        assertTrue(state.pointTransfers.isEmpty())
         assertNull(state.errorMessage)
         assertFalse(state.isLoading)
     }
@@ -1311,7 +1308,7 @@ class AppStateControllerTest {
         val state = controller.state.value
         assertEquals(listOf("book-1", "book-2"), state.continueWatchingBooks.keys.toList())
         assertEquals(
-            listOf("history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers", "book:book-1", "book:book-2"),
+            listOf("history", "points", "orders", "wallet", "vip:orders", "withdrawal-summary", "withdrawals", "book:book-1", "book:book-2"),
             dataSource.calls,
         )
     }
@@ -1452,7 +1449,7 @@ class AppStateControllerTest {
         assertFalse(state.isLoading)
         assertNull(state.errorMessage)
         assertEquals(
-            listOf("history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers", "history"),
+            listOf("history", "points", "orders", "wallet", "vip:orders", "withdrawal-summary", "withdrawals", "history"),
             dataSource.calls,
         )
     }
@@ -1703,7 +1700,7 @@ class AppStateControllerTest {
         assertFalse(state.authPromptVisible)
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(listOf("RO202606270001"), state.orders.map { it.orderNo })
-        assertEquals(listOf("login:demo", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"), dataSource.calls)
+        assertEquals(listOf("login:demo", "history", "points", "orders", "wallet", "vip:orders", "withdrawal-summary", "withdrawals"), dataSource.calls)
     }
 
     @Test
@@ -1740,31 +1737,6 @@ class AppStateControllerTest {
     }
 
     @Test
-    fun commercialAccountActionsRefreshSnapshotAndShowSuccessMessage() = runTest {
-        val dataSource = FakeAppDataSource(
-            restoredSession = AuthSession(
-                username = "demo",
-                token = "token-demo",
-                tokenType = "Bearer",
-                phoneE164 = "+14155550101",
-            ),
-        )
-        val controller = AppStateController(dataSource)
-        controller.restoreSession()
-        dataSource.calls.clear()
-
-        controller.transferPoints("alice", 5)
-
-        val state = controller.state.value
-        assertEquals(AppScreen.ACCOUNT, state.screen)
-        assertEquals("Transfer submitted.", state.errorMessage)
-        assertEquals(
-            listOf("transfer:alice:5", "history", "points", "orders", "wallet", "withdrawal-summary", "withdrawals", "transfers"),
-            dataSource.calls,
-        )
-    }
-
-    @Test
     fun successfulWithdrawalIsNotTurnedIntoFailureWhenSnapshotRefreshFails() = runTest {
         val dataSource = FakeAppDataSource(
             restoredSession = AuthSession("demo", "token-demo", "Bearer", phoneE164 = "+14155550101"),
@@ -1796,7 +1768,7 @@ class AppStateControllerTest {
         controller.restoreSession()
         val initialVersion = controller.state.value.walletMutationVersion
 
-        controller.bindWallet("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc")
+        controller.bindWallet("TRC20", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "Password123")
 
         assertEquals(initialVersion + 1, controller.state.value.walletMutationVersion)
     }
@@ -1817,11 +1789,11 @@ class AppStateControllerTest {
         controller.restoreSession()
         dataSource.calls.clear()
 
-        val first = launch { controller.bindWallet("wallet-a") }
+        val first = launch { controller.bindWallet("TRC20", "wallet-a", "Password123") }
         runCurrent()
         assertEquals(AccountOperation.WALLET_MUTATION, controller.state.value.accountOperation)
 
-        val duplicate = launch { controller.bindWallet("wallet-a") }
+        val duplicate = launch { controller.bindWallet("TRC20", "wallet-a", "Password123") }
         runCurrent()
         assertEquals(1, dataSource.calls.count { it == "wallet:bind:wallet-a" })
 
@@ -1845,7 +1817,7 @@ class AppStateControllerTest {
         controller.restoreSession()
         val initialVersion = controller.state.value.walletMutationVersion
 
-        controller.unbindWallet()
+        controller.unbindWallet("Password123")
 
         assertEquals(initialVersion + 1, controller.state.value.walletMutationVersion)
     }
@@ -1865,7 +1837,7 @@ class AppStateControllerTest {
         dataSource.walletMutationError = IllegalStateException("Wallet update failed")
         val initialVersion = controller.state.value.walletMutationVersion
 
-        controller.bindWallet("TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc")
+        controller.bindWallet("TRC20", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "Password123")
 
         assertEquals(initialVersion, controller.state.value.walletMutationVersion)
         assertNull(controller.state.value.accountOperation)
@@ -2082,7 +2054,6 @@ class AppStateControllerTest {
         var walletMutationGate: CompletableDeferred<Unit>? = null
         var withdrawalSummaryError: Throwable? = null
         var withdrawalsError: Throwable? = null
-        var transfersError: Throwable? = null
         var socialGate: CompletableDeferred<Unit>? = null
         var favoritesGate: CompletableDeferred<Unit>? = null
         private val liked = mutableSetOf<String>()
@@ -2248,14 +2219,14 @@ class AppStateControllerTest {
             return WalletInfo("TRC20", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "2026-07-07T00:00:00Z")
         }
 
-        override suspend fun bindWallet(walletAddress: String): WalletInfo {
+        override suspend fun bindWallet(network: String, walletAddress: String, password: String): WalletInfo {
             calls += "wallet:bind:$walletAddress"
             walletMutationGate?.await()
             walletMutationError?.let { throw it }
             return WalletInfo("TRC20", walletAddress, "2026-07-07T00:00:00Z")
         }
 
-        override suspend fun unbindWallet(): WalletInfo {
+        override suspend fun unbindWallet(password: String): WalletInfo {
             calls += "wallet:unbind"
             walletMutationError?.let { throw it }
             return WalletInfo("TRC20", null, null)
@@ -2278,6 +2249,11 @@ class AppStateControllerTest {
         override suspend fun loadVipOrders(): List<VipOrder> {
             calls += "vip:orders"
             return emptyList()
+        }
+
+        override suspend fun loadLatestVipOrder(): VipOrder? {
+            calls += "vip:latest"
+            return null
         }
 
         override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
@@ -2314,18 +2290,6 @@ class AppStateControllerTest {
                 createdAt = "2026-07-07T00:00:00Z",
                 reviewedAt = null,
             )
-        }
-
-        override suspend fun loadPointTransfers(): List<PointTransferRecord> {
-            calls += "transfers"
-            transfersError?.let { throw it }
-            accountError?.let { throw it }
-            return emptyList()
-        }
-
-        override suspend fun transferPoints(recipientAccount: String, pointAmount: Int): PointTransferRecord {
-            calls += "transfer:$recipientAccount:$pointAmount"
-            return PointTransferRecord("transfer-1", "OUT", "demo", recipientAccount, pointAmount, "2026-07-07T00:00:00Z")
         }
 
         override suspend fun restoreSession(): AuthSession? {

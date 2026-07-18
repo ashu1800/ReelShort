@@ -37,3 +37,7 @@
 - `POST /api/admin/withdrawals/{id}/approve` 请求按网络提交 `tronPrivateKey` 或 `ethPrivateKey`，并提交 6 位数字 `totpCode`。私钥必须为空或 64 位 hex，可带 `0x`/`0X` 前缀；coordinator 会统一剥离前缀，非法格式统一返回 400。私钥只传入 payout coordinator，不持久化、不审计、不记录日志，也不进入响应。
 - `POST /api/admin/withdrawals/batch-approve` 使用相同的私钥与 TOTP 边界，最多逐笔执行 10 笔，并返回 `succeeded`、`pending`、`failed` 和每笔 attempt 状态。只有 `BROADCASTED`、`CONFIRMED` 计为已提交，`PREPARED` 单独计为待广播；`FAILED_RETRYABLE` 和 `MANUAL_REVIEW` 均为非成功结果，后者要求人工核对且禁止重复生成交易。单笔审计写入失败只记录 WARN，不改变该笔结果或阻断后续提现。
 - 执行、执行失败和拒绝操作均写管理员审计。失败审计使用独立事务，摘要只包含提现 ID、网络、金额、状态和可用的交易哈希，不记录异常请求体或签名材料。
+
+## 钱包写操作
+
+`PUT /api/app/wallet` 请求必须包含 `network`、`walletAddress` 和当前 `password`；`POST /api/app/wallet/unbind` 请求必须包含当前 `password`。不增加换绑后的提现冷静期。银行卡占位接口保持现状，不改变现有表单契约。

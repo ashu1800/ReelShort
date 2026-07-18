@@ -943,15 +943,15 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun bindWallet(network: String, walletAddress: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
+    suspend fun bindWallet(network: String, walletAddress: String, password: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
         requireAuthenticatedAccount()
-        dataSource.bindWallet(network, walletAddress)
+        dataSource.bindWallet(network, walletAddress, password)
         reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
     }
 
-    suspend fun unbindWallet() = runAccountOperation(AccountOperation.WALLET_MUTATION) {
+    suspend fun unbindWallet(password: String) = runAccountOperation(AccountOperation.WALLET_MUTATION) {
         requireAuthenticatedAccount()
-        dataSource.unbindWallet()
+        dataSource.unbindWallet(password)
         reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
     }
 

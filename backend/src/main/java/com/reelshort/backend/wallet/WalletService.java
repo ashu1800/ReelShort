@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.reelshort.backend.admin.AdminException;
+import com.reelshort.backend.auth.PasswordHasher;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.user.UserAccount;
@@ -32,15 +33,17 @@ public class WalletService {
 	private final BankCardAttemptRepository bankCardAttemptRepository;
 	private final SystemConfigService systemConfigService;
 	private final com.reelshort.backend.system.concurrency.UserActionLocks userActionLocks;
+	private final PasswordHasher passwordHasher;
 
 	public WalletService(UserWalletRepository userWalletRepository, UserAccountRepository userAccountRepository,
 			BankCardAttemptRepository bankCardAttemptRepository, SystemConfigService systemConfigService,
-			com.reelshort.backend.system.concurrency.UserActionLocks userActionLocks) {
+			com.reelshort.backend.system.concurrency.UserActionLocks userActionLocks, PasswordHasher passwordHasher) {
 		this.userWalletRepository = userWalletRepository;
 		this.userAccountRepository = userAccountRepository;
 		this.bankCardAttemptRepository = bankCardAttemptRepository;
 		this.systemConfigService = systemConfigService;
 		this.userActionLocks = userActionLocks;
+		this.passwordHasher = passwordHasher;
 	}
 
 	@Transactional(readOnly = true)
@@ -57,11 +60,11 @@ public class WalletService {
 	}
 
 	@Transactional
-	public WalletResponse bindOrReplace(UUID userId, String network, String walletAddress) {
+	public WalletResponse bindOrReplace(UUID userId, String network, String walletAddress, String password) {
 		// H3: 加 userActionLocks 防止与提现 create 并发时 wallet 被覆盖导致网络/地址错配
 		return userActionLocks.withUserLock(userId, () -> {
+			verifyCurrentPassword(userId, password);
 			String normalizedWalletAddress = normalizeWalletAddress(network, walletAddress);
-			activeUser(userId);
 			UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
 			if (wallet == null) {
 				wallet = UserWallet.create(userId, network, normalizedWalletAddress);
@@ -74,10 +77,12 @@ public class WalletService {
 	}
 
 	@Transactional
-	public WalletResponse unbind(UUID userId) {
-		activeUser(userId);
-		userWalletRepository.findByUserId(userId).ifPresent(userWalletRepository::delete);
-		return WalletResponse.from(null);
+	public WalletResponse unbind(UUID userId, String password) {
+		return userActionLocks.withUserLock(userId, () -> {
+			verifyCurrentPassword(userId, password);
+			userWalletRepository.findByUserId(userId).ifPresent(userWalletRepository::delete);
+			return WalletResponse.from(null);
+		});
 	}
 
 	/**
@@ -115,6 +120,17 @@ public class WalletService {
 			throw new AdminException(403, "user disabled");
 		}
 		return user.username();
+	}
+
+	private void verifyCurrentPassword(UUID userId, String password) {
+		UserAccount user = userAccountRepository.findById(userId)
+				.orElseThrow(() -> new AdminException(404, "user not found"));
+		if (user.status() != UserStatus.ACTIVE) {
+			throw new AdminException(403, "user disabled");
+		}
+		if (!passwordHasher.matches(password, user.passwordHash())) {
+			throw new AdminException(401, "invalid current password");
+		}
 	}
 
 	private String normalizeWalletAddress(String network, String walletAddress) {
@@ -198,7 +214,7 @@ public class WalletService {
 				return false;
 			}
 		}
-		return true;
+		return !walletAddress.substring(2).chars().allMatch(character -> character == '0');
 	}
 
 	/**

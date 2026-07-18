@@ -86,14 +86,13 @@ class PointAwardTransaction {
 				pointTransactionRepository.save(PointTransaction.watchReward(userId, awardedInteger, account.balance(),
 						bookId, episodeNum, now));
 			}
-			awardedDisplayPoints = grantedTenths / WatchRewardCalculation.FAIR_MODE_SCALE; // 返回整数部分（向下取整）
+			awardedDisplayPoints = awardedInteger;
 		}
 		else {
 			awardedDisplayPoints = 0;
 		}
 		watchEpisodeRewardClaimRepository.save(WatchEpisodeRewardClaim.create(userId, bookId, episodeNum,
-				authoritativeDurationSeconds, grantedTenths / WatchRewardCalculation.FAIR_MODE_SCALE,
-				grantedTenths / WatchRewardCalculation.FAIR_MODE_SCALE, now));
+				authoritativeDurationSeconds, requestedTenths, awardedDisplayPoints, now));
 		pointAccountRepository.save(account);
 		WatchRewardStatus status = grantedTenths == 0
 				? WatchRewardStatus.DAILY_LIMIT_REACHED
@@ -173,13 +172,21 @@ class PointAwardTransaction {
 	}
 
 	@Transactional
-	public PointAccount adjustByAdmin(UUID userId, int amount, String reason) {
-		PointAccount account = accountEntity(userId);
+	public PointAccount adjustByAdmin(UUID userId, int amount, String reason, String idempotencyKey) {
+		if (pointTransactionRepository.findByIdempotencyKey(idempotencyKey).isPresent()) {
+			return accountEntity(userId);
+		}
+		PointAccount account = pointAccountRepository.findByUserIdForUpdate(userId)
+				.orElseGet(() -> pointAccountRepository.saveAndFlush(PointAccount.create(userId)));
+		if (pointTransactionRepository.findByIdempotencyKey(idempotencyKey).isPresent()) {
+			return account;
+		}
 		if (!account.canAdjust(amount)) {
 			throw new AdminException(400, amount > 0 ? "point balance overflow" : "insufficient point balance");
 		}
 		addPoints(account, amount);
-		pointTransactionRepository.save(PointTransaction.adminAdjustment(userId, amount, account.balance(), reason));
+		pointTransactionRepository.saveAndFlush(PointTransaction.adminAdjustment(userId, amount, account.balance(), reason,
+				idempotencyKey, account.frozenPoints()));
 		return pointAccountRepository.save(account);
 	}
 

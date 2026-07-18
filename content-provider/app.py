@@ -14,6 +14,8 @@ from urllib.parse import quote, urljoin, urlparse
 
 import requests
 from flask import Flask, jsonify, request
+from requests.adapters import HTTPAdapter
+from urllib3.connectionpool import HTTPSConnectionPool
 
 
 DEFAULT_CATALOG_SEARCH_KEYWORDS = (
@@ -52,6 +54,28 @@ DEFAULT_MAX_REDIRECTS = 3
 RESPONSE_CHUNK_SIZE = 64 * 1024
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 UPSTREAM_USER_AGENT = "ShortLinkContentProvider/1.0"
+
+
+class _PinnedHTTPSAdapter(HTTPAdapter):
+    """连接到已校验的 IP，但让 TLS 使用原始域名的 SNI 和证书校验。"""
+
+    def __init__(self, original_hostname: str):
+        super().__init__()
+        self.original_hostname = original_hostname
+
+    def get_connection(self, url, proxies=None):
+        pool = super().get_connection(url, proxies=proxies)
+        return self._configure_pool(pool)
+
+    def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
+        pool = super().get_connection_with_tls_context(request, verify, proxies=proxies, cert=cert)
+        return self._configure_pool(pool)
+
+    def _configure_pool(self, pool):
+        if isinstance(pool, HTTPSConnectionPool):
+            pool.assert_hostname = self.original_hostname
+            pool.conn_kw["server_hostname"] = self.original_hostname
+        return pool
 
 
 class UpstreamError(Exception):
@@ -325,12 +349,13 @@ class ReelShortClient:
 
     def _request(self, url: str, params=None):
         # M11: _validate_url 现在返回 (pinned_url, original_hostname) 用于 DNS pinning
-        pinned_url, original_host = self._validate_url(url, "upstream_url_blocked", "upstream returned unsafe upstream URL")
+        pinned_url, _ = self._validate_url(url, "upstream_url_blocked", "upstream returned unsafe upstream URL")
         deadline = self.monotonic() + self.timeout_seconds
         current_url = pinned_url
+        original_current_url = url
         current_params = params
         visited = {url}
-        headers = {"Host": original_host, "User-Agent": UPSTREAM_USER_AGENT}
+        headers = {"Host": self._host_header(url), "User-Agent": UPSTREAM_USER_AGENT}
 
         for redirect_count in range(self.max_redirects + 1):
             remaining = self.timeout_seconds if redirect_count == 0 else deadline - self.monotonic()
@@ -338,8 +363,9 @@ class ReelShortClient:
                 self.diagnostics.record("upstream_deadline_exceeded", url=current_url)
                 raise UpstreamError(502, "upstream request deadline exceeded")
             try:
-                response = requests.get(
+                response = self._request_get(
                     current_url,
+                    original_url=original_current_url,
                     params=current_params,
                     timeout=remaining,
                     allow_redirects=False,
@@ -361,18 +387,36 @@ class ReelShortClient:
                 self.diagnostics.record("upstream_redirect_limit", url=current_url)
                 raise UpstreamError(502, "upstream returned too many redirects")
 
-            redirect_url = urljoin(current_url, location)
+            redirect_url = urljoin(original_current_url, location)
             # M11: _validate_redirect_url 也返回 pinned URL
-            pinned_redirect, redirect_host = self._validate_redirect_url(redirect_url)
+            pinned_redirect, _ = self._validate_redirect_url(redirect_url)
             if redirect_url in visited:
                 self.diagnostics.record("upstream_redirect_loop", url=redirect_url)
                 raise UpstreamError(502, "upstream redirect loop")
             visited.add(redirect_url)
             current_url = pinned_redirect
-            headers["Host"] = redirect_host
+            original_current_url = redirect_url
+            headers["Host"] = self._host_header(redirect_url)
             current_params = None
 
         raise UpstreamError(502, "upstream returned too many redirects")
+
+    def _request_get(self, pinned_url: str, original_url: str, **kwargs):
+        parsed = urlparse(original_url)
+        if parsed.scheme != "https":
+            return requests.get(pinned_url, **kwargs)
+
+        session = requests.Session()
+        session.trust_env = False
+        session.mount("https://", _PinnedHTTPSAdapter(parsed.hostname))
+        try:
+            response = session.get(pinned_url, **kwargs)
+            # Keep the session alive until response streaming has completed.
+            response._reelshort_session = session
+            return response
+        except Exception:
+            session.close()
+            raise
 
     def _read_limited_response(self, response, deadline: float, url: str):
         if not hasattr(response, "iter_content"):
@@ -427,12 +471,21 @@ class ReelShortClient:
         # M11: 返回 pinning 后的 URL（用解析到的 IP 直连，避免 TOCTOU DNS rebinding）
         return self._validate_and_pin_url(url, event_type, message)
 
+    @staticmethod
+    def _host_header(url: str) -> str:
+        parsed = urlparse(url)
+        hostname = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+        if parsed.port is None:
+            return hostname
+        return f"{hostname}:{parsed.port}"
+
     def _validate_and_pin_url(self, url: str, event_type: str, message: str) -> tuple[str, str]:
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             self.diagnostics.record(event_type, url=url)
             raise UpstreamError(502, message)
         try:
+            original_port = parsed.port
             # M11: DNS pinning —— 解析后直接用 IP 连接，避免 requests 二次解析导致的 TOCTOU
             addresses = self.resolver(parsed.hostname)
             safe = addresses and all(ipaddress.ip_address(address).is_global for address in addresses)
@@ -444,14 +497,20 @@ class ReelShortClient:
         # 用第一个公网 IP 替换 hostname 实现 pinning，保留原 Host header
         pinned_ip = sorted(addresses)[0]
         # M11: 统一用 _replace(netloc=...) 构造，正确处理 IPv4/IPv6/带端口场景
-        if parsed.port:
-            netloc = f"{pinned_ip}:{parsed.port}"
-        elif parsed.scheme == "https":
-            netloc = pinned_ip
+        host_literal = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+        if original_port:
+            netloc = f"{host_literal}:{original_port}"
         else:
-            netloc = pinned_ip
+            netloc = host_literal
         pinned_url = parsed._replace(netloc=netloc).geturl()
-        return pinned_url, parsed.hostname
+        original_host_literal = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+        default_port = 443 if parsed.scheme == "https" else 80
+        host_header = (
+            original_host_literal
+            if original_port in {None, default_port}
+            else f"{original_host_literal}:{original_port}"
+        )
+        return pinned_url, host_header
 
     @staticmethod
     def _resolve_addresses(hostname: str):
@@ -462,6 +521,9 @@ class ReelShortClient:
         close = getattr(response, "close", None)
         if close:
             close()
+        session = getattr(response, "_reelshort_session", None)
+        if session is not None:
+            session.close()
 
     def _home_shelf_books(self, shelf_name: str, locale: str = DEFAULT_LOCALE):
         payload = self._get_locale_data(".json", locale=locale)

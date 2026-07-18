@@ -41,6 +41,7 @@ import com.reelshort.app.network.dto.RegisterRequestDto
 import com.reelshort.app.network.dto.SocialToggleDto
 import com.reelshort.app.network.dto.VipOrderDto
 import com.reelshort.app.network.dto.WalletBindRequestDto
+import com.reelshort.app.network.dto.WalletUnbindRequestDto
 import com.reelshort.app.network.dto.WalletResponseDto
 import com.reelshort.app.network.dto.WatchProgressRequestDto
 import com.reelshort.app.network.dto.WatchEpisodeSnapshotDto
@@ -185,17 +186,18 @@ class OkHttpReelShortApiClient(
     override suspend fun getWallet(): WalletInfo =
         get<WalletResponseDto>("/wallet", authenticated = true).toDomain()
 
-    override suspend fun bindWallet(network: String, walletAddress: String): WalletInfo =
+    override suspend fun bindWallet(network: String, walletAddress: String, password: String): WalletInfo =
         postWithMethod<WalletBindRequestDto, WalletResponseDto>(
             path = "/wallet",
-            requestDto = WalletBindRequestDto(network, walletAddress),
+            requestDto = WalletBindRequestDto(network, walletAddress, password),
             method = "PUT",
             authenticated = true,
         ).toDomain()
 
-    override suspend fun unbindWallet(): WalletInfo =
-        postEmpty<WalletResponseDto>(
+    override suspend fun unbindWallet(password: String): WalletInfo =
+        post<WalletUnbindRequestDto, WalletResponseDto>(
             "/wallet/unbind",
+            WalletUnbindRequestDto(password),
             authenticated = true,
         ).toDomain()
 
@@ -424,6 +426,10 @@ class OkHttpReelShortApiClient(
             createdAt = createdAt,
             confirmedAt = confirmedAt,
             expiresAt = expiresAt,
+            receivingNetwork = receivingNetwork,
+            receivingWalletAddress = receivingAddress,
+            tokenContractAddress = tokenContract,
+            baseUsdtAmount = usdtAmount,
         )
 
     private fun WithdrawalSummaryDto.toDomain(): WithdrawalSummary =

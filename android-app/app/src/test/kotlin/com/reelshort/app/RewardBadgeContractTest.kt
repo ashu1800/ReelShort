@@ -157,7 +157,12 @@ class RewardBadgeContractTest {
     fun playerPrimaryActionsDoNotExposeManualReportCopy() {
         val labels = playerSecondaryActionLabels()
 
-        assertEquals(listOf("刷新地址"), labels)
-        assertFalse(labels.any { it.contains("上报当前进度") || it.contains("同步 25%") || it.contains("可上报") })
+        assertEquals(listOf("Refresh stream"), labels)
+        assertFalse(labels.any { label ->
+            val normalized = label.lowercase()
+            normalized.contains("report current progress") ||
+                normalized.contains("sync 25%") ||
+                normalized.contains("reportable")
+        })
     }
 }

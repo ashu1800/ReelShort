@@ -60,6 +60,12 @@ class PointsServiceTests {
 	private DailyEarningRuleRepository dailyEarningRuleRepository;
 
 	@Autowired
+	private PointTransactionRepository pointTransactionRepository;
+
+	@Autowired
+	private WatchEpisodeRewardClaimRepository watchEpisodeRewardClaimRepository;
+
+	@Autowired
 	private ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
 
 	@Autowired
@@ -397,6 +403,27 @@ class PointsServiceTests {
 		PointAccount account = pointAccountRepository.findByUserId(userId).orElseThrow();
 		assertThat(account.balance()).isEqualTo(5);
 		assertThat(account.fractionalPart()).isEqualTo(2);
+	}
+
+	@Test
+	void fairModeClaimAndLedgerUseTheSameIntegerSettlementWhenFractionCarries() {
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
+		UUID userId = UUID.randomUUID();
+
+		WatchRewardResult first = pointsService.awardWatchProgress(userId, "fair-ledger-book", 1, 100, 42);
+		WatchRewardResult second = pointsService.awardWatchProgress(userId, "fair-ledger-book", 2, 100, 36);
+
+		assertThat(first.awardedPoints()).isEqualTo(0);
+		assertThat(second.awardedPoints()).isEqualTo(1);
+		assertThat(pointTransactionRepository.findByUserIdOrderByCreatedAtDesc(userId))
+				.extracting(PointTransaction::amount).containsExactly(1);
+		assertThat(watchEpisodeRewardClaimRepository.findAwardedPoints(userId, "fair-ledger-book", 1)).contains(0);
+		assertThat(watchEpisodeRewardClaimRepository.findAwardedPoints(userId, "fair-ledger-book", 2)).contains(1);
+		assertThat(watchEpisodeRewardClaimRepository.findCalculatedTenths(userId, "fair-ledger-book", 1)).contains(7);
+		assertThat(watchEpisodeRewardClaimRepository.findCalculatedTenths(userId, "fair-ledger-book", 2)).contains(6);
+		assertThat(pointsService.account(userId).balance()).isEqualTo(1);
 	}
 
 	@Test

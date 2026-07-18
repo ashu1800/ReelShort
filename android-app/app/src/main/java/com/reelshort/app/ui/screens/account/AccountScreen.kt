@@ -154,8 +154,8 @@ internal fun AccountScreen(
     onShowRegisterAuthPrompt: () -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenWatchRecord: (WatchRecord) -> Unit,
-    onBindWallet: (String, String) -> Unit,
-    onUnbindWallet: () -> Unit,
+    onBindWallet: (String, String, String) -> Unit,
+    onUnbindWallet: (String) -> Unit,
     onCreateVipOrder: () -> Unit,
     onRefreshVipOrder: () -> Unit,
     onRefreshAccount: () -> Unit,
@@ -337,7 +337,7 @@ internal fun AccountScreen(
             language = language,
             onDismiss = { walletSheetVisible = false },
             onBindWallet = onBindWallet,
-            onUnbindWallet = { pendingConfirmation = PendingAccountConfirmation.WalletUnbind },
+            onUnbindWallet = { password -> pendingConfirmation = PendingAccountConfirmation.WalletUnbind(password) },
             isSubmitting = accountOperation != null,
         )
     }
@@ -402,7 +402,7 @@ internal fun AccountScreen(
                     onClick = {
                         pendingConfirmation = null
                         when (confirmation) {
-                            is PendingAccountConfirmation.WalletUnbind -> onUnbindWallet()
+                            is PendingAccountConfirmation.WalletUnbind -> onUnbindWallet(confirmation.password)
                             is PendingAccountConfirmation.Withdrawal -> onSubmitWithdrawal(confirmation.points)
                         }
                     },
@@ -937,13 +937,14 @@ private fun WalletBottomSheet(
     wallet: WalletInfo?,
     language: AppLanguage,
     onDismiss: () -> Unit,
-    onBindWallet: (String, String) -> Unit,
-    onUnbindWallet: () -> Unit,
+    onBindWallet: (String, String, String) -> Unit,
+    onUnbindWallet: (String) -> Unit,
     isSubmitting: Boolean,
 ) {
     val copy = strings(language)
     var walletAddress by remember(wallet) { mutableStateOf(wallet?.walletAddress.orEmpty()) }
     var selectedNetwork by remember(wallet) { mutableStateOf(wallet?.network ?: "ERC20") }
+    var password by remember { mutableStateOf("") }
     AccountFormBottomSheet(onDismiss = onDismiss) {
         SheetForm(title = copy.accountWalletTitle) {
             Text(wallet?.walletAddress ?: copy.accountWalletNoBound, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
@@ -961,15 +962,16 @@ private fun WalletBottomSheet(
                 }
             }
             LoginTextField(walletAddress, { walletAddress = it.trim() }, "$selectedNetwork wallet address", enabled = true)
+            LoginTextField(password, { password = it }, "Current password", enabled = true, isPassword = true)
             PrimaryWalletActionRow(
                 primary = if (wallet?.walletAddress.isNullOrBlank()) copy.accountWalletBindAction else copy.accountWalletReplaceAction,
-                primaryEnabled = walletAddress.isNotBlank() && !isSubmitting,
+                primaryEnabled = walletAddress.isNotBlank() && password.isNotBlank() && !isSubmitting,
                 onPrimary = {
-                    onBindWallet(selectedNetwork, walletAddress)
+                    onBindWallet(selectedNetwork, walletAddress, password)
                 },
                 secondary = copy.accountWalletUnbindAction,
-                secondaryEnabled = !wallet?.walletAddress.isNullOrBlank() && !isSubmitting,
-                onSecondary = onUnbindWallet,
+                secondaryEnabled = !wallet?.walletAddress.isNullOrBlank() && password.isNotBlank() && !isSubmitting,
+                onSecondary = { onUnbindWallet(password) },
             )
         }
     }
@@ -1120,7 +1122,7 @@ private fun BankCardBottomSheet(
 }
 
 private sealed interface PendingAccountConfirmation {
-    data object WalletUnbind : PendingAccountConfirmation
+    data class WalletUnbind(val password: String) : PendingAccountConfirmation
 
     data class Withdrawal(val points: Int) : PendingAccountConfirmation
 }
@@ -1347,12 +1349,13 @@ private fun VipBottomSheet(
                 }
             } else if (latestVipOrder != null && latestVipOrder.status == "PENDING") {
                 // State 2: Non-VIP with pending order — show payment info
+                val paymentAddress = latestVipOrder.receivingWalletAddress ?: vipCollectionAddress
                 Text("${copy.vipPayAmount}${latestVipOrder.payableAmount ?: latestVipOrder.usdtAmount} USDT", color = PrimaryGold, style = MaterialTheme.typography.titleMedium)
                 Text("${copy.vipPayOrderNo}${latestVipOrder.orderNo}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(4.dp))
                 Text(copy.vipPayAddress, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    vipCollectionAddress.ifBlank { "N/A" },
+                    paymentAddress.ifBlank { "N/A" },
                     color = TextPrimary,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth(),
@@ -1368,14 +1371,14 @@ private fun VipBottomSheet(
                         Text(copy.vipPayExpired, color = DangerText, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
-                if (vipCollectionAddress.isNotBlank()) {
+                if (paymentAddress.isNotBlank()) {
                     AsyncImage(
-                        model = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$vipCollectionAddress",
+                        model = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$paymentAddress",
                         contentDescription = copy.vipPayQrHint,
                         modifier = Modifier.size(200.dp),
                     )
                     GoldOutlinedButton(copy.vipPayCopy, true, {
-                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(vipCollectionAddress))
+                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(paymentAddress))
                     }, Modifier.fillMaxWidth(), PrimaryGold)
                 }
                 Spacer(Modifier.height(4.dp))

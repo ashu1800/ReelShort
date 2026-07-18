@@ -13,7 +13,6 @@ import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/app/orders")
@@ -27,8 +26,8 @@ public class OrderController {
 
 	@PostMapping("/recharge")
 	public ApiResponse<RechargeOrderResponse> create(CurrentUser currentUser,
-			@Valid @RequestBody CreateRechargeOrderRequest request, HttpServletRequest httpRequest) {
-		return ApiResponse.success(rechargeOrderService.create(currentUser.userId(), request), requestId(httpRequest));
+			@RequestBody(required = false) Object ignoredRequest, HttpServletRequest httpRequest) {
+		throw new OrderException(400, "recharge is not supported");
 	}
 
 	@GetMapping

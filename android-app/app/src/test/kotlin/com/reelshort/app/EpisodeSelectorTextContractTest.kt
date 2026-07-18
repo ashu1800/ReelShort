@@ -22,22 +22,22 @@ import kotlin.test.assertTrue
 class EpisodeSelectorTextContractTest {
     @Test
     fun episodeSelectorLabelShowsCompletionAndTotalEpisodeCount() {
-        assertEquals("選集 · 已完結 · 全113集", episodeSelectorLabel(113))
+        assertEquals("Episodes · Completed · Total 113", episodeSelectorLabel(113))
     }
 
     @Test
     fun episodeSelectorLabelNeverShowsNegativeEpisodeCount() {
-        assertEquals("選集 · 已完結 · 全0集", episodeSelectorLabel(-1))
+        assertEquals("Episodes · Completed · Total 0", episodeSelectorLabel(-1))
     }
 
     @Test
     fun playerLoadingLabelShowsEpisodeNumber() {
-        assertEquals("載入第 02 集...", playerLoadingLabel(2))
+        assertEquals("Loading EP 02...", playerLoadingLabel(2))
     }
 
     @Test
     fun playerLoadingLabelClampsInvalidEpisodeNumber() {
-        assertEquals("載入第 00 集...", playerLoadingLabel(-5))
+        assertEquals("Loading EP 00...", playerLoadingLabel(-5))
     }
 
     @Test

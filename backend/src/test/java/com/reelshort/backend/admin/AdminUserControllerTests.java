@@ -132,7 +132,8 @@ class AdminUserControllerTests {
 				.content("""
 						{
 						  "amount": 10,
-						  "reason": "manual campaign grant"
+						  "reason": "manual campaign grant",
+						  "idempotencyKey": "adjust-admin-can-adjust-1"
 						}
 						"""))
 				.andExpect(status().isOk())
@@ -163,7 +164,8 @@ class AdminUserControllerTests {
 				.content("""
 						{
 						  "amount": 0,
-						  "reason": "zero is invalid"
+						  "reason": "zero is invalid",
+						  "idempotencyKey": "adjust-invalid-zero-1"
 						}
 						"""))
 				.andExpect(status().isBadRequest())
@@ -175,7 +177,8 @@ class AdminUserControllerTests {
 				.content("""
 						{
 						  "amount": 1,
-						  "reason": " "
+						  "reason": " ",
+						  "idempotencyKey": "adjust-invalid-reason-1"
 						}
 						"""))
 				.andExpect(status().isBadRequest())
@@ -193,7 +196,8 @@ class AdminUserControllerTests {
 				.content("""
 						{
 						  "amount": -1,
-						  "reason": "manual correction"
+						  "reason": "manual correction",
+						  "idempotencyKey": "adjust-negative-1"
 						}
 						"""))
 				.andExpect(status().isBadRequest())
@@ -212,7 +216,8 @@ class AdminUserControllerTests {
 				.content("""
 						{
 						  "amount": -4,
-						  "reason": "manual correction"
+						  "reason": "manual correction",
+						  "idempotencyKey": "adjust-subtract-2"
 						}
 						"""))
 				.andExpect(status().isOk())
@@ -237,7 +242,8 @@ class AdminUserControllerTests {
 				.content("""
 						{
 						  "amount": 1,
-						  "reason": "%s"
+						  "reason": "%s",
+						  "idempotencyKey": "adjust-long-reason-1"
 						}
 						""".formatted(reason)))
 				.andExpect(status().isOk())
@@ -263,6 +269,45 @@ class AdminUserControllerTests {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data[*].action", hasItem("USER_STATUS_CHANGED")));
+	}
+
+	@Test
+	void repeatedAdminPointAdjustmentWithSameIdempotencyKeySettlesOnce() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = registerAppUser("admin-adjust-idempotent-alice");
+		String body = """
+				{
+				  "amount": 10,
+				  "reason": "exactly once",
+				  "idempotencyKey": "adjust-idempotent-1"
+				}
+				""";
+
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.pointBalance").value(10));
+		adjustPoints(adminToken, user.userId(), 5, "later adjustment");
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.pointBalance").value(10));
+
+		mockMvc.perform(post("/api/admin/users/{userId}/points/adjust", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body.replace("\"amount\": 10", "\"amount\": 20")))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value("idempotency key reused with different request"));
+
+		mockMvc.perform(get("/api/admin/users/{userId}/point-records", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data", hasSize(2)));
 	}
 
 	private String adminLogin() throws Exception {
@@ -323,9 +368,10 @@ class AdminUserControllerTests {
 				.content("""
 						{
 						  "amount": %d,
-						  "reason": "%s"
+						  "reason": "%s",
+						  "idempotencyKey": "helper-%s-%d"
 						}
-						""".formatted(amount, reason)))
+						""".formatted(amount, reason, reason.hashCode(), amount)))
 				.andExpect(status().isOk());
 	}
 

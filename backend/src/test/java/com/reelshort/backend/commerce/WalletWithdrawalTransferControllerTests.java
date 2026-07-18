@@ -77,7 +77,8 @@ class WalletWithdrawalTransferControllerTests {
 				.content("""
 						{
 						  "network": "ERC20",
-						  "walletAddress": "%s"
+						  "walletAddress": "%s",
+						  "password": "Password123"
 						}
 						""".formatted(VALID_ETH_ADDRESS)))
 				.andExpect(status().isOk())
@@ -110,7 +111,8 @@ class WalletWithdrawalTransferControllerTests {
 				.content("""
 						{
 						  "network": "ERC20",
-						  "walletAddress": "%s"
+						  "walletAddress": "%s",
+						  "password": "Password123"
 						}
 						""".formatted(INVALID_ETH_ADDRESS)))
 				.andExpect(status().isBadRequest())
@@ -282,6 +284,57 @@ class WalletWithdrawalTransferControllerTests {
 	}
 
 	@Test
+	void walletBindRequiresCurrentPasswordAndRejectsErc20ZeroAddress() throws Exception {
+		RegisteredUser user = createUser("wallet-password");
+
+		mockMvc.perform(put("/api/app/wallet")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "network": "ERC20",
+						  "walletAddress": "%s",
+						  "password": "WrongPassword"
+						}
+						""".formatted(VALID_ETH_ADDRESS)))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("invalid current password"));
+
+		mockMvc.perform(put("/api/app/wallet")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "network": "ERC20",
+						  "walletAddress": "0x0000000000000000000000000000000000000000",
+						  "password": "Password123"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("invalid wallet address for ERC20"));
+	}
+
+	@Test
+	void walletUnbindRequiresCurrentPassword() throws Exception {
+		RegisteredUser user = createUser("wallet-unbind-password");
+		bindWallet(user.token(), VALID_ETH_ADDRESS);
+
+		mockMvc.perform(post("/api/app/wallet/unbind")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"password\":\"WrongPassword\"}"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("invalid current password"));
+
+		mockMvc.perform(post("/api/app/wallet/unbind")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"password\":\"Password123\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.walletAddress").doesNotExist());
+	}
+
+	@Test
 	void adminPayoutExecutionRejectsNonNumericTotpBeforeServiceInvocation() throws Exception {
 		String adminToken = adminLogin();
 		UUID withdrawalId = UUID.randomUUID();
@@ -378,9 +431,10 @@ class WalletWithdrawalTransferControllerTests {
 				.content("""
 						{
 						  "amount": %d,
-						  "reason": "%s"
+						  "reason": "%s",
+						  "idempotencyKey": "commerce-%s-%d"
 						}
-						""".formatted(amount, reason)))
+						""".formatted(amount, reason, reason.hashCode(), amount)))
 				.andExpect(status().isOk());
 	}
 
@@ -395,7 +449,8 @@ class WalletWithdrawalTransferControllerTests {
 				.content("""
 						{
 						  "network": "%s",
-						  "walletAddress": "%s"
+						  "walletAddress": "%s",
+						  "password": "Password123"
 						}
 						""".formatted(network, walletAddress)))
 				.andExpect(status().isOk());

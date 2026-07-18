@@ -34,13 +34,15 @@ public class WalletController {
 			@Valid @RequestBody WalletBindRequest bindRequest,
 			HttpServletRequest request) {
 		return ApiResponse.success(
-				walletService.bindOrReplace(currentUser.userId(), bindRequest.network(), bindRequest.walletAddress()),
+				walletService.bindOrReplace(currentUser.userId(), bindRequest.network(), bindRequest.walletAddress(),
+						bindRequest.password()),
 				requestId(request));
 	}
 
 	@PostMapping("/unbind")
-	public ApiResponse<WalletResponse> unbind(CurrentUser currentUser, HttpServletRequest request) {
-		return ApiResponse.success(walletService.unbind(currentUser.userId()), requestId(request));
+	public ApiResponse<WalletResponse> unbind(CurrentUser currentUser,
+			@Valid @RequestBody WalletUnbindRequest unbindRequest, HttpServletRequest request) {
+		return ApiResponse.success(walletService.unbind(currentUser.userId(), unbindRequest.password()), requestId(request));
 	}
 
 	@PostMapping("/bank-card")

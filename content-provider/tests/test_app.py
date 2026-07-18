@@ -12,6 +12,11 @@ from app import ReelShortClient, UpstreamError, create_app
 @pytest.fixture(autouse=True)
 def resolve_test_hosts_to_public_address(monkeypatch):
     monkeypatch.setattr(ReelShortClient, "_resolve_addresses", staticmethod(lambda host: ["93.184.216.34"]))
+    monkeypatch.setattr(
+        ReelShortClient,
+        "_request_get",
+        lambda self, pinned_url, original_url, **kwargs: app_module.requests.get(original_url, **kwargs),
+    )
 
 
 BOOK = {
@@ -1531,6 +1536,105 @@ def test_reelshort_client_follows_public_redirect_without_requests_auto_redirect
     assert client._get("/data.json") == {"ok": True}
     assert [call[0] for call in calls] == ["https://site.example/data.json", "https://cdn.example/data.json"]
     assert all(call[1]["allow_redirects"] is False and call[1]["stream"] is True for call in calls)
+
+
+def test_reelshort_client_keeps_original_host_for_relative_redirect(monkeypatch):
+    calls = []
+    responses = [
+        StreamingResponse(302, headers={"Location": "/next.json"}),
+        StreamingResponse(body=b'{"ok": true}'),
+    ]
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["headers"]["Host"]))
+        return responses.pop(0)
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    client = ReelShortClient(
+        "https://site.example", "id", 3, build_id="build", resolver=lambda host: ["93.184.216.34"]
+    )
+
+    assert client._get("/data.json") == {"ok": True}
+    assert calls == [
+        ("https://site.example/data.json", "site.example"),
+        ("https://site.example/next.json", "site.example"),
+    ]
+
+
+def test_reelshort_client_preserves_explicit_port_in_host_header(monkeypatch):
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["host"] = kwargs["headers"]["Host"]
+        return StreamingResponse(body=b'{"ok": true}')
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    client = ReelShortClient(
+        "https://site.example:8443", "id", 3, build_id="build", resolver=lambda host: ["93.184.216.34"]
+    )
+
+    assert client._get("/data.json") == {"ok": True}
+    assert captured["host"] == "site.example:8443"
+
+
+def test_reelshort_client_brackets_pinned_ipv6_url():
+    client = ReelShortClient(
+        "https://site.example", "id", 3, resolver=lambda host: ["2001:4860:4860::8888"]
+    )
+
+    pinned, original_host = client._validate_url("https://site.example:8443/data.json", "blocked", "blocked")
+
+    assert pinned == "https://[2001:4860:4860::8888]:8443/data.json"
+    assert original_host == "site.example:8443"
+
+
+def test_pinned_https_transport_uses_original_hostname_for_tls(monkeypatch):
+    monkeypatch.undo()
+    captured = {}
+
+    class FakeResponse:
+        pass
+
+    class FakeSession:
+        def mount(self, prefix, adapter):
+            captured["prefix"] = prefix
+            captured["adapter"] = adapter
+
+        def get(self, url, **kwargs):
+            captured["url"] = url
+            captured["headers"] = kwargs["headers"]
+            return FakeResponse()
+
+        def close(self):
+            captured["closed"] = True
+
+    monkeypatch.setattr(app_module.requests, "Session", FakeSession)
+    client = ReelShortClient(
+        "https://site.example", "id", 3, resolver=lambda host: ["93.184.216.34"]
+    )
+
+    response = client._request_get(
+        "https://93.184.216.34/data.json",
+        original_url="https://site.example/data.json",
+        headers={"Host": "site.example"},
+    )
+
+    assert captured["prefix"] == "https://"
+    assert captured["adapter"].original_hostname == "site.example"
+    assert captured["url"] == "https://93.184.216.34/data.json"
+    assert captured["headers"]["Host"] == "site.example"
+    assert response._reelshort_session is not None
+
+
+def test_pinned_https_adapter_configures_requests_232_connection_pool():
+    adapter = app_module._PinnedHTTPSAdapter("site.example")
+    prepared = app_module.requests.Request("GET", "https://93.184.216.34/data.json").prepare()
+
+    pool = adapter.get_connection_with_tls_context(prepared, True, proxies={})
+
+    assert pool.assert_hostname == "site.example"
+    assert pool.conn_kw["server_hostname"] == "site.example"
+    adapter.close()
 
 
 def test_reelshort_client_rejects_redirect_to_private_network(monkeypatch):

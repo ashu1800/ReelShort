@@ -70,9 +70,9 @@ interface ReelShortApiClient {
 
     suspend fun getWallet(): WalletInfo
 
-    suspend fun bindWallet(network: String, walletAddress: String): WalletInfo
+    suspend fun bindWallet(network: String, walletAddress: String, password: String): WalletInfo
 
-    suspend fun unbindWallet(): WalletInfo
+    suspend fun unbindWallet(password: String): WalletInfo
 
     suspend fun createVipOrder(): VipOrder
 

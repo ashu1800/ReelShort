@@ -95,3 +95,5 @@ Token 已撤销：
 - 过期或撤销 Token 会由 `AuthSessionCleanupService` 定期清理，默认保留 1 天，可通过 `reelshort.auth.session.cleanup-retention` 调整；清理初始延迟和间隔分别由 `reelshort.auth.session.cleanup-initial-delay`、`reelshort.auth.session.cleanup-interval` 控制。
 - 当前 App Token 不提供 refresh token、多设备会话列表或 Redis blacklist；后续可在 `auth/session` 边界内扩展。
 - 管理员后台使用独立后台 Token 鉴权，不复用 App Token。
+- 已启用 TOTP 的管理员登录必须提交有效 6 位动态码；`/api/admin/2fa/enable` 只能首次启用，换绑必须验证旧码。
+- 钱包绑定、更换和解绑属于资金敏感操作，必须提交当前 App 密码；服务端只校验密码，不保存请求明文。

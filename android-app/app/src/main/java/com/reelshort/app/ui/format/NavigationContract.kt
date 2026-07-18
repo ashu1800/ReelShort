@@ -26,25 +26,6 @@ internal fun primaryTabRefreshModes(): Map<AppScreen, TabRefreshMode> =
         AppScreen.ACCOUNT to TabRefreshMode.CACHE_FIRST_BACKGROUND_REFRESH,
     )
 
-internal fun accountEntryLabels(language: AppLanguage = AppLanguage.ENGLISH): List<String> {
-    val copy = strings(language)
-    return listOf(
-        copy.accountFavoritesTitle,
-        copy.accountPointsTitle,
-        copy.accountWatchHistoryTitle,
-        copy.accountPointRecordsTitle,
-        copy.accountOrdersTitle,
-        copy.accountWalletTitle,
-        copy.accountWithdrawTitle,
-        copy.accountTransferTitle,
-        copy.accountTransferRecordsTitle,
-        copy.accountChangePasswordTitle,
-        copy.accountBankCardTitle,
-        copy.accountDiagnosticsTitle,
-        copy.accountSignOutTitle,
-    )
-}
-
 internal enum class AccountDashboardSection {
     IDENTITY,
     PRIMARY_ACTIONS,

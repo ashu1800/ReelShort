@@ -13,4 +13,8 @@ public interface WatchEpisodeRewardClaimRepository extends JpaRepository<WatchEp
 	@Query("select claim.awardedPoints from WatchEpisodeRewardClaim claim "
 			+ "where claim.userId = :userId and claim.bookId = :bookId and claim.episodeNum = :episodeNum")
 	Optional<Integer> findAwardedPoints(UUID userId, String bookId, int episodeNum);
+
+	@Query("select claim.calculatedTenths from WatchEpisodeRewardClaim claim "
+			+ "where claim.userId = :userId and claim.bookId = :bookId and claim.episodeNum = :episodeNum")
+	Optional<Integer> findCalculatedTenths(UUID userId, String bookId, int episodeNum);
 }

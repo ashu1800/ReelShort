@@ -1,7 +1,11 @@
 package com.reelshort.backend.admin;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -78,14 +82,29 @@ public class AdminUserService {
 	}
 
 	@Transactional
-	public AdminUserDetailResponse adjustPoints(String adminUsername, UUID userId, int amount, String reason) {
+	public AdminUserDetailResponse adjustPoints(String adminUsername, UUID userId, int amount, String reason,
+			String idempotencyKey) {
 		if (amount == 0) {
 			throw new AdminException(400, "bad request");
 		}
-		UserAccount user = user(userId);
-		PointAccountResponse account = pointsService.adjustByAdmin(userId, amount, reason.trim());
+		UserAccount user = userForUpdate(userId);
+		String normalizedReason = reason.trim();
+		String scopedKey = scopedIdempotencyKey(adminUsername, userId, idempotencyKey);
+		var existing = pointTransactionRepository.findByIdempotencyKey(scopedKey);
+		if (existing.isPresent()) {
+			var original = existing.get();
+			if (original.amount() != amount || !Objects.equals(original.reason(), normalizedReason)) {
+				throw new AdminException(409, "idempotency key reused with different request");
+			}
+			int frozenPoints = original.frozenPointsAfter() == null
+					? accountSnapshot(userId).frozenPoints()
+					: original.frozenPointsAfter();
+			return detailResponse(user, original.balanceAfter(), frozenPoints,
+					original.balanceAfter() - frozenPoints);
+		}
+		PointAccountResponse account = pointsService.adjustByAdmin(userId, amount, normalizedReason, scopedKey);
 		adminAuditService.record(adminUsername, "POINTS_ADJUSTED", "USER", userId,
-				"Adjusted points by " + amount + ": " + reason.trim());
+				"Adjusted points by " + amount + ": " + normalizedReason);
 		return detailResponse(user, account.balance(), account.frozenPoints(), account.availablePoints());
 	}
 
@@ -139,6 +158,27 @@ public class AdminUserService {
 				.map(account -> new AccountSnapshot(account.balance(), account.frozenPoints(),
 						account.availablePoints()))
 				.orElse(new AccountSnapshot(0, 0, 0));
+	}
+
+	private UserAccount userForUpdate(UUID userId) {
+		return userAccountRepository.findByIdForUpdate(userId)
+				.orElseThrow(() -> new AdminException(404, "user not found"));
+	}
+
+	private String scopedIdempotencyKey(String adminUsername, UUID userId, String requestKey) {
+		try {
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+			byte[] bytes = digest.digest((adminUsername + "\n" + userId + "\n" + requestKey.trim())
+					.getBytes(StandardCharsets.UTF_8));
+			StringBuilder result = new StringBuilder("admin-adjust:");
+			for (byte value : bytes) {
+				result.append(String.format("%02x", value));
+			}
+			return result.toString();
+		}
+		catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 not available", exception);
+		}
 	}
 
 	private record AccountSnapshot(int balance, int frozenPoints, int availablePoints) {

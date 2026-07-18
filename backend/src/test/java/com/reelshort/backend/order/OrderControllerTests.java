@@ -15,9 +15,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import java.util.UUID;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
 
@@ -31,6 +31,12 @@ class OrderControllerTests {
 	@Autowired
 	private ObjectMapper objectMapper;
 
+	@Autowired
+	private RechargeOrderRepository rechargeOrderRepository;
+
+	@Autowired
+	private RechargeOrderService rechargeOrderService;
+
 	@Test
 	void createRechargeOrderRequiresAuthentication() throws Exception {
 		mockMvc.perform(post("/api/app/orders/recharge")
@@ -41,28 +47,30 @@ class OrderControllerTests {
 	}
 
 	@Test
-	void authenticatedUserCreatesRechargeOrder() throws Exception {
+	void authenticatedUserCannotCreateUnsupportedRechargeOrder() throws Exception {
 		String token = registerAndExtractToken("order-alice");
+		long before = rechargeOrderRepository.count();
 
 		mockMvc.perform(post("/api/app/orders/recharge")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(rechargeBody(990, 99)))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.code").value(0))
-				.andExpect(jsonPath("$.data.orderNo", not(blankOrNullString())))
-				.andExpect(jsonPath("$.data.amountCents").value(990))
-				.andExpect(jsonPath("$.data.pointAmount").value(99))
-				.andExpect(jsonPath("$.data.status").value("CREATED"));
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400))
+				.andExpect(jsonPath("$.message").value("recharge is not supported"));
+		org.assertj.core.api.Assertions.assertThat(rechargeOrderRepository.count()).isEqualTo(before);
 	}
 
 	@Test
 	void orderListIsScopedToCurrentUserAndNewestFirst() throws Exception {
-		String token = registerAndExtractToken("order-bob");
-		String otherToken = registerAndExtractToken("order-carol");
-		createOrder(token, 990, 99);
-		createOrder(otherToken, 2990, 299);
-		createOrder(token, 1990, 199);
+		TestAppUsers.RegisteredUser bob = TestAppUsers.register(mockMvc, objectMapper, "order-bob");
+		TestAppUsers.RegisteredUser carol = TestAppUsers.register(mockMvc, objectMapper, "order-carol");
+		String token = bob.token();
+		UUID bobId = bob.userId();
+		UUID carolId = carol.userId();
+		rechargeOrderService.create(bobId, new CreateRechargeOrderRequest(990, 99));
+		rechargeOrderService.create(carolId, new CreateRechargeOrderRequest(2990, 299));
+		rechargeOrderService.create(bobId, new CreateRechargeOrderRequest(1990, 199));
 
 		mockMvc.perform(get("/api/app/orders")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
@@ -73,7 +81,7 @@ class OrderControllerTests {
 	}
 
 	@Test
-	void invalidRechargeOrderReturnsBadRequest() throws Exception {
+	void unsupportedRechargeOrderReturnsBusinessErrorEvenForLegacyPayload() throws Exception {
 		String token = registerAndExtractToken("order-dan");
 
 		mockMvc.perform(post("/api/app/orders/recharge")
@@ -81,15 +89,8 @@ class OrderControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(rechargeBody(0, 99)))
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value(400));
-	}
-
-	private void createOrder(String token, int amountCents, int pointAmount) throws Exception {
-		mockMvc.perform(post("/api/app/orders/recharge")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content(rechargeBody(amountCents, pointAmount)))
-				.andExpect(status().isOk());
+				.andExpect(jsonPath("$.code").value(400))
+				.andExpect(jsonPath("$.message").value("recharge is not supported"));
 	}
 
 	private String rechargeBody(int amountCents, int pointAmount) {

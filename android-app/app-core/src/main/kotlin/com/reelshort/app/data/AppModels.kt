@@ -160,6 +160,10 @@ data class VipOrder(
     val createdAt: String,
     val confirmedAt: String?,
     val expiresAt: String? = null,
+    val receivingNetwork: String? = null,
+    val receivingWalletAddress: String? = null,
+    val tokenContractAddress: String? = null,
+    val baseUsdtAmount: String? = null,
 )
 
 data class WithdrawalSummary(

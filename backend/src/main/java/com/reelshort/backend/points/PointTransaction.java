@@ -40,6 +40,9 @@ public class PointTransaction {
 	@Column(name = "idempotency_key", length = 128, unique = true)
 	private String idempotencyKey;
 
+	@Column(name = "frozen_points_after")
+	private Integer frozenPointsAfter;
+
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
 
@@ -47,7 +50,8 @@ public class PointTransaction {
 	}
 
 	private PointTransaction(UUID id, UUID userId, int amount, int balanceAfter, String source, String bookId,
-			Integer episodeNum, Integer stage, String reason, String idempotencyKey, OffsetDateTime createdAt) {
+			Integer episodeNum, Integer stage, String reason, String idempotencyKey, Integer frozenPointsAfter,
+			OffsetDateTime createdAt) {
 		this.id = id;
 		this.userId = userId;
 		this.amount = amount;
@@ -58,6 +62,7 @@ public class PointTransaction {
 		this.stage = stage;
 		this.reason = reason;
 		this.idempotencyKey = idempotencyKey;
+		this.frozenPointsAfter = frozenPointsAfter;
 		this.createdAt = createdAt;
 	}
 
@@ -69,38 +74,44 @@ public class PointTransaction {
 	public static PointTransaction watchReward(UUID userId, int amount, int balanceAfter, String bookId, int episodeNum,
 			int stage, OffsetDateTime createdAt) {
 		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "WATCH_REWARD", bookId, episodeNum,
-				stage, null, null, createdAt);
+				stage, null, null, null, createdAt);
 	}
 
 	public static PointTransaction watchReward(UUID userId, int amount, int balanceAfter, String bookId, int episodeNum,
 			OffsetDateTime createdAt) {
 		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "WATCH_REWARD", bookId, episodeNum,
-				null, null, null, createdAt);
+				null, null, null, null, createdAt);
 	}
 
 	public static PointTransaction adminAdjustment(UUID userId, int amount, int balanceAfter, String reason) {
 		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "ADMIN_ADJUSTMENT", null, null,
-				null, reason, null, OffsetDateTime.now());
+				null, reason, null, null, OffsetDateTime.now());
+	}
+
+	public static PointTransaction adminAdjustment(UUID userId, int amount, int balanceAfter, String reason,
+			String idempotencyKey, int frozenPointsAfter) {
+		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "ADMIN_ADJUSTMENT", null, null,
+				null, reason, idempotencyKey, frozenPointsAfter, OffsetDateTime.now());
 	}
 
 	public static PointTransaction rechargeOrder(UUID userId, int amount, int balanceAfter, String orderNo) {
 		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "RECHARGE_ORDER", null, null,
-				null, orderNo, null, OffsetDateTime.now());
+				null, orderNo, null, null, OffsetDateTime.now());
 	}
 
 	public static PointTransaction withdrawal(UUID userId, int amount, int balanceAfter, String withdrawalId) {
 		return new PointTransaction(UUID.randomUUID(), userId, -Math.abs(amount), balanceAfter, "WITHDRAWAL", null, null,
-				null, withdrawalId, "withdrawal:" + withdrawalId, OffsetDateTime.now());
+				null, withdrawalId, "withdrawal:" + withdrawalId, null, OffsetDateTime.now());
 	}
 
 	public static PointTransaction transferOut(UUID userId, int amount, int balanceAfter, String transferId) {
 		return new PointTransaction(UUID.randomUUID(), userId, -Math.abs(amount), balanceAfter, "TRANSFER_OUT", null, null,
-				null, transferId, null, OffsetDateTime.now());
+				null, transferId, null, null, OffsetDateTime.now());
 	}
 
 	public static PointTransaction transferIn(UUID userId, int amount, int balanceAfter, String transferId) {
 		return new PointTransaction(UUID.randomUUID(), userId, Math.abs(amount), balanceAfter, "TRANSFER_IN", null, null,
-				null, transferId, null, OffsetDateTime.now());
+				null, transferId, null, null, OffsetDateTime.now());
 	}
 
 	public UUID id() {
@@ -141,6 +152,10 @@ public class PointTransaction {
 
 	public String idempotencyKey() {
 		return idempotencyKey;
+	}
+
+	public Integer frozenPointsAfter() {
+		return frozenPointsAfter;
 	}
 
 	public OffsetDateTime createdAt() {
