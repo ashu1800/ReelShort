@@ -1,18 +1,15 @@
 package com.reelshort.backend.operations;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.admin.AdminAuditService;
 import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.content.ContentBookCache;
 import com.reelshort.backend.content.ContentBookCacheRepository;
 import com.reelshort.backend.content.ContentCacheService;
 import com.reelshort.backend.content.ContentEpisode;
-import com.reelshort.backend.content.ContentEpisodeCache;
-import com.reelshort.backend.content.ContentEpisodeCacheRepository;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
 import com.reelshort.backend.content.ContentLocale;
 import com.reelshort.backend.points.DailyEarningQuotaResponse;
@@ -38,31 +35,26 @@ public class InternalOperationsService {
 	private final WatchService watchService;
 	private final WatchRecordRepository watchRecordRepository;
 	private final ContentBookCacheRepository contentBookCacheRepository;
-	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 	private final ContentEpisodeRuntimeCacheRepository runtimeCacheRepository;
 	private final WatchEpisodeRewardClaimRepository rewardClaimRepository;
 	private final ContentCacheService contentCacheService;
 	private final AdminAuditService adminAuditService;
-	private final ObjectMapper objectMapper;
 
 	public InternalOperationsService(UserAccountRepository userAccountRepository, PointsService pointsService,
 			WatchService watchService, WatchRecordRepository watchRecordRepository,
 			ContentBookCacheRepository contentBookCacheRepository,
-			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
 			ContentEpisodeRuntimeCacheRepository runtimeCacheRepository,
 			WatchEpisodeRewardClaimRepository rewardClaimRepository,
-			ContentCacheService contentCacheService, AdminAuditService adminAuditService, ObjectMapper objectMapper) {
+			ContentCacheService contentCacheService, AdminAuditService adminAuditService) {
 		this.userAccountRepository = userAccountRepository;
 		this.pointsService = pointsService;
 		this.watchService = watchService;
 		this.watchRecordRepository = watchRecordRepository;
 		this.contentBookCacheRepository = contentBookCacheRepository;
-		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
 		this.runtimeCacheRepository = runtimeCacheRepository;
 		this.rewardClaimRepository = rewardClaimRepository;
 		this.contentCacheService = contentCacheService;
 		this.adminAuditService = adminAuditService;
-		this.objectMapper = objectMapper;
 	}
 
 	public InternalPointsAccountResponse pointsAccount(UUID userId) {
@@ -123,17 +115,25 @@ public class InternalOperationsService {
 	}
 
 	private InternalWatchRewardTaskResponse taskFromContentCache(UUID userId) {
+		// 一次性预取该用户全部已领奖的 (bookId, episodeNum) 集合，避免逐集 N+1 查询。
+		Set<String> claimed = rewardClaimRepository.findClaimedKeysByUserId(userId);
 		for (ContentBookCache book : contentBookCacheRepository
 				.findByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale.ENGLISH, 0)) {
-			ContentEpisodeCache episodeCache = contentEpisodeCacheRepository
-					.findFirstByBookIdAndLocaleAndEpisodeCountGreaterThanOrderByRefreshedAtDesc(
-							book.bookId(), ContentLocale.ENGLISH, 0)
-					.orElse(null);
-			if (episodeCache == null) {
+			// 通过 getEpisodes 获取剧集列表：episode_cache 命中则秒回，缺失时向上游 provider 现拉并回填，
+			// 使候选池覆盖全部 ENGLISH 剧，而非仅限已预热的少数剧集。
+			List<ContentEpisode> episodes;
+			try {
+				episodes = contentCacheService.getEpisodes(book.bookId(), book.filteredTitle(), ContentLocale.ENGLISH);
+			}
+			catch (RuntimeException exception) {
+				// 上游 5xx / 404 或解析失败时跳过这本书，不阻断整体遍历。
 				continue;
 			}
-			for (ContentEpisode episode : episodes(episodeCache)) {
-				if (rewardClaimRepository.existsByUserIdAndBookIdAndEpisodeNum(userId, book.bookId(), episode.episode())) {
+			if (episodes == null || episodes.isEmpty()) {
+				continue;
+			}
+			for (ContentEpisode episode : episodes) {
+				if (claimed.contains(book.bookId() + "#" + episode.episode())) {
 					continue;
 				}
 				int duration = resolveDuration(book.bookId(), episode.episode(), book.filteredTitle(), episode.chapterId());
@@ -168,16 +168,6 @@ public class InternalOperationsService {
 						return 0;
 					}
 				});
-	}
-
-	private List<ContentEpisode> episodes(ContentEpisodeCache episodeCache) {
-		try {
-			return objectMapper.readValue(episodeCache.episodesJson(), new TypeReference<List<ContentEpisode>>() {
-			});
-		}
-		catch (Exception exception) {
-			return List.of();
-		}
 	}
 
 	private UserAccount activeUser(UUID userId) {

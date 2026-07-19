@@ -21,6 +21,9 @@ import com.reelshort.backend.content.ContentEpisodeCache;
 import com.reelshort.backend.content.ContentEpisodeCacheRepository;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCache;
 import com.reelshort.backend.content.ContentEpisodeRuntimeCacheRepository;
+import com.reelshort.backend.content.ContentEpisodesDetail;
+import com.reelshort.backend.content.ContentLocale;
+import com.reelshort.backend.content.ContentProvider;
 import com.reelshort.backend.points.DailyEarningRuleRepository;
 import com.reelshort.backend.points.PointsService;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
@@ -37,6 +40,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = "reelshort.internal.super-token=test-super-token")
@@ -77,6 +81,9 @@ class InternalOperationsControllerTests {
 
 	@Autowired
 	private DailyEarningRuleRepository dailyEarningRuleRepository;
+
+	@MockitoBean
+	private ContentProvider contentProvider;
 
 	@AfterEach
 	void resetConfigs() {
@@ -193,6 +200,37 @@ class InternalOperationsControllerTests {
 				.header("X-Internal-Super-Token", TOKEN))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.message").value("watch reward task not found"));
+	}
+
+	@Test
+	void watchRewardTaskFallsBackToLiveProviderWhenEpisodeCacheMissing() throws Exception {
+		// 治本回归保护：book_cache 有书、episode_cache 缺失时，应通过 contentProvider 现拉剧集并返回任务，
+		// 而非像旧实现那样因 episode_cache 为空直接跳过该书返回 404。
+		RegisteredUser user = createUser("4155550712", "Password123");
+		clearContentCaches();
+		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(
+				"book-live", "Live Drama", "live-drama", "", "Live description", 2)));
+		org.mockito.BDDMockito
+				.given(contentProvider.getEpisodesDetail("book-live", "live-drama", ContentLocale.ENGLISH))
+				.willReturn(new ContentEpisodesDetail(java.util.Optional.empty(), List.of(
+						new ContentEpisode(1, "chapter-live-1", "Episode 1", "First episode"))));
+		// runtime_cache 未 seed book-live，resolveDuration 会 fallback 到 getVideoUrl 现拉（同时回填 runtime_cache）。
+		org.mockito.BDDMockito
+				.given(contentProvider.getVideoUrl("book-live", 1, "live-drama", "chapter-live-1", ContentLocale.ENGLISH))
+				.willReturn(new com.reelshort.backend.content.ContentVideo(
+						"https://example.test/live.m3u8", 1, 300, null));
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-live"))
+				.andExpect(jsonPath("$.data.bookTitle").value("Live Drama"))
+				.andExpect(jsonPath("$.data.bookDescription").value("Live description"))
+				.andExpect(jsonPath("$.data.episodeNum").value(1))
+				.andExpect(jsonPath("$.data.chapterId").value("chapter-live-1"))
+				.andExpect(jsonPath("$.data.episodeTitle").value("Episode 1"))
+				.andExpect(jsonPath("$.data.durationSeconds").value(300))
+				.andExpect(jsonPath("$.data.canReport").value(true));
 	}
 
 	@Test

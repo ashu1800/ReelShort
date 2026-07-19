@@ -1,10 +1,12 @@
 package com.reelshort.backend.points;
 
-import java.util.UUID;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface WatchEpisodeRewardClaimRepository extends JpaRepository<WatchEpisodeRewardClaim, UUID> {
 
@@ -13,6 +15,10 @@ public interface WatchEpisodeRewardClaimRepository extends JpaRepository<WatchEp
 	@Query("select claim.awardedPoints from WatchEpisodeRewardClaim claim "
 			+ "where claim.userId = :userId and claim.bookId = :bookId and claim.episodeNum = :episodeNum")
 	Optional<Integer> findAwardedPoints(UUID userId, String bookId, int episodeNum);
+
+	@Query("select concat(claim.bookId, '#', claim.episodeNum) from WatchEpisodeRewardClaim claim "
+			+ "where claim.userId = :userId")
+	Set<String> findClaimedKeysByUserId(@Param("userId") UUID userId);
 
 	@Query("select claim.calculatedTenths from WatchEpisodeRewardClaim claim "
 			+ "where claim.userId = :userId and claim.bookId = :bookId and claim.episodeNum = :episodeNum")
