@@ -234,6 +234,41 @@ class InternalOperationsControllerTests {
 	}
 
 	@Test
+	void watchRewardTaskSkipsBookWhenProviderFailsAndContinuesToNext() throws Exception {
+		// 鲁棒性回归保护：当上游 provider 对某本书返回 5xx（episode_cache 缺失需现拉），
+		// 应跳过该书继续遍历下一本，而非让整次调用失败或返回 404。
+		// 不依赖遍历顺序：无论 book-fail 还是 book-ok 先被遇到，最终都必须返回 book-ok。
+		RegisteredUser user = createUser("4155550713", "Password123");
+		clearContentCaches();
+		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(
+				"book-fail", "Fail Drama", "fail-drama", "", "Fail description", 2)));
+		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(
+				"book-ok", "Ok Drama", "ok-drama", "", "Ok description", 2)));
+		// book-fail：provider 返回 503，模拟上游不可用。
+		org.mockito.BDDMockito
+				.given(contentProvider.getEpisodesDetail("book-fail", "fail-drama", ContentLocale.ENGLISH))
+				.willThrow(new com.reelshort.backend.content.ContentProviderException(503, "upstream unavailable"));
+		// book-ok：provider 正常返回，runtime_cache 缺失时 resolveDuration 走 getVideoUrl 兜底。
+		org.mockito.BDDMockito
+				.given(contentProvider.getEpisodesDetail("book-ok", "ok-drama", ContentLocale.ENGLISH))
+				.willReturn(new ContentEpisodesDetail(java.util.Optional.empty(), List.of(
+						new ContentEpisode(1, "chapter-ok-1", "Episode 1", "First episode"))));
+		org.mockito.BDDMockito
+				.given(contentProvider.getVideoUrl("book-ok", 1, "ok-drama", "chapter-ok-1", ContentLocale.ENGLISH))
+				.willReturn(new com.reelshort.backend.content.ContentVideo(
+						"https://example.test/ok.m3u8", 1, 300, null));
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-ok"))
+				.andExpect(jsonPath("$.data.bookTitle").value("Ok Drama"))
+				.andExpect(jsonPath("$.data.episodeNum").value(1))
+				.andExpect(jsonPath("$.data.durationSeconds").value(300))
+				.andExpect(jsonPath("$.data.canReport").value(true));
+	}
+
+	@Test
 	void simulatedWatchProgressAwardsDurationRewardIdempotently() throws Exception {
 		RegisteredUser user = createUser("4155550704", "Password123");
 
