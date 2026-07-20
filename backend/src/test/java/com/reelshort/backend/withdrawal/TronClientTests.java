@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.time.OffsetDateTime;
 
@@ -96,7 +97,7 @@ class TronClientTests {
 
 		assertThatThrownBy(() -> client.prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
 				.isInstanceOf(WithdrawalException.class)
-				.hasMessageContaining("raw transaction does not match payout intent");
+				.hasMessageContaining("raw transaction does not match payout intent: recipient");
 	}
 
 	@Test
@@ -105,7 +106,7 @@ class TronClientTests {
 
 		assertThatThrownBy(() -> client.prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
 				.isInstanceOf(WithdrawalException.class)
-				.hasMessageContaining("raw transaction does not match payout intent");
+				.hasMessageContaining("raw transaction does not match payout intent: amount");
 	}
 
 	@Test
@@ -115,7 +116,7 @@ class TronClientTests {
 
 		assertThatThrownBy(() -> client.prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
 				.isInstanceOf(WithdrawalException.class)
-				.hasMessageContaining("raw transaction does not match payout intent");
+				.hasMessageContaining("raw transaction does not match payout intent: token_contract");
 	}
 
 	@Test
@@ -124,7 +125,7 @@ class TronClientTests {
 
 		assertThatThrownBy(() -> client.prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
 				.isInstanceOf(WithdrawalException.class)
-				.hasMessageContaining("raw transaction does not match payout intent");
+				.hasMessageContaining("raw transaction does not match payout intent: call_token_value");
 	}
 
 	@Test
@@ -133,7 +134,61 @@ class TronClientTests {
 
 		assertThatThrownBy(() -> client.prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
 				.isInstanceOf(WithdrawalException.class)
-				.hasMessageContaining("raw transaction does not match payout intent");
+				.hasMessageContaining("raw transaction does not match payout intent: token_id");
+	}
+
+	@Test
+	void rebuildsUnsignedTransactionOnceAfterIntentMismatch() throws Exception {
+		TronProperties properties = new TronProperties();
+		TronClient addressClient = new TronClient(properties, objectMapper);
+		String invalidRaw = rawDataHex(addressClient, "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
+				AMOUNT.movePointRight(6).toBigIntegerExact(), properties.getUsdtContract(), 0L, 0L);
+		String validRaw = rawDataHex(addressClient, DESTINATION,
+				AMOUNT.movePointRight(6).toBigIntegerExact(), properties.getUsdtContract(), 0L, 0L);
+		RetryFixture fixture = clientWithRawResponses(properties, invalidRaw, validRaw);
+
+		PreparedPayoutTransaction prepared = fixture.client().prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT);
+
+		assertThat(fixture.requestCount()).hasValue(2);
+		assertThat(prepared.txHash()).isEqualTo(sha256Hex(validRaw));
+	}
+
+	@Test
+	void reportsSpecificReasonAfterSecondIntentMismatch() throws Exception {
+		TronProperties properties = new TronProperties();
+		TronClient addressClient = new TronClient(properties, objectMapper);
+		String invalidRaw = rawDataHex(addressClient, DESTINATION, new BigInteger("999999"),
+				properties.getUsdtContract(), 0L, 0L);
+		RetryFixture fixture = clientWithRawResponses(properties, invalidRaw, invalidRaw);
+
+		assertThatThrownBy(() -> fixture.client().prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("raw transaction does not match payout intent: amount");
+		assertThat(fixture.requestCount()).hasValue(2);
+	}
+
+	@Test
+	void doesNotRebuildWhenTransactionIdMismatches() throws Exception {
+		TronProperties properties = new TronProperties();
+		TronClient addressClient = new TronClient(properties, objectMapper);
+		String validRaw = rawDataHex(addressClient, DESTINATION,
+				AMOUNT.movePointRight(6).toBigIntegerExact(), properties.getUsdtContract(), 0L, 0L);
+		AtomicInteger requestCount = new AtomicInteger();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/triggersmartcontract", exchange -> {
+			requestCount.incrementAndGet();
+			respond(exchange, "{\"result\":{\"result\":true},\"transaction\":{\"visible\":true,"
+					+ "\"txID\":\"" + "0".repeat(64) + "\",\"raw_data_hex\":\""
+					+ validRaw + "\"}}");
+		});
+		server.start();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+
+		assertThatThrownBy(() -> client.prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("mismatched transaction id");
+		assertThat(requestCount).hasValue(1);
 	}
 
 	@Test
@@ -270,6 +325,22 @@ class TronClientTests {
 		return new ClientFixture(new TronClient(properties, objectMapper), rawDataHex);
 	}
 
+	private RetryFixture clientWithRawResponses(TronProperties properties, String... rawResponses)
+			throws IOException {
+		AtomicInteger requestCount = new AtomicInteger();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/triggersmartcontract", exchange -> {
+			int index = Math.min(requestCount.getAndIncrement(), rawResponses.length - 1);
+			String rawDataHex = rawResponses[index];
+			respond(exchange, "{\"result\":{\"result\":true},\"transaction\":{\"visible\":true,"
+					+ "\"txID\":\"" + sha256Hex(rawDataHex) + "\",\"raw_data_hex\":\""
+					+ rawDataHex + "\"}}");
+		});
+		server.start();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		return new RetryFixture(new TronClient(properties, objectMapper), requestCount);
+	}
+
 	private String rawDataHex(TronClient client, String destination, BigInteger amount, String contractAddress,
 			long callTokenValue, long tokenId) {
 		byte[] data = HexFormat.of().parseHex("a9059cbb" + abiParams(destination, amount));
@@ -336,5 +407,8 @@ class TronClientTests {
 	}
 
 	private record ClientFixture(TronClient client, String rawDataHex) {
+	}
+
+	private record RetryFixture(TronClient client, AtomicInteger requestCount) {
 	}
 }
