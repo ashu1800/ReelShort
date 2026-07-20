@@ -132,92 +132,135 @@ public class TronClient {
 		String ownerAddress = addressFromPrivateKey(hexPrivateKey);
 		BigDecimal rawAmount = usdtAmount.multiply(USDT_DECIMALS).setScale(0, RoundingMode.DOWN);
 		String parameter = encodeTransferParams(toAddress, rawAmount.toBigInteger());
-		long intentCreatedAt = System.currentTimeMillis();
+		for (int buildAttempt = 1; buildAttempt <= 2; buildAttempt++) {
+			long intentCreatedAt = System.currentTimeMillis();
+			JsonNode triggerResponse = triggersmartcontract(ownerAddress, parameter);
+			// TronGrid returns error as { "result": { "code": <nonzero>, "message": "..." } }
+			// Success may be { "result": { "code": 0 } } or { "result": true } or no result field at all.
+			JsonNode resultNode = triggerResponse.path("result");
+			if (resultNode.isObject() && resultNode.has("code") && resultNode.get("code").asInt(0) != 0) {
+				String message = resultNode.path("message").asText("trigger failed");
+				throw new WithdrawalException(502, "TRC20 trigger failed: " + message);
+			}
+			JsonNode transaction = triggerResponse.path("transaction");
+			String rawDataHex = transaction.path("raw_data_hex").asText("");
+			if (rawDataHex.isEmpty()) {
+				rawDataHex = transaction.path("transaction").path("raw_data_hex").asText("");
+			}
+			if (rawDataHex.isEmpty()) {
+				throw new WithdrawalException(502, "missing raw_data_hex in trigger response");
+			}
+			String txid = transaction.path("txID").asText("");
+			if (txid.isEmpty()) {
+				txid = transaction.path("txid").asText("");
+			}
 
-		// 1. Build the unsigned transaction
-		JsonNode triggerResponse = triggersmartcontract(ownerAddress, parameter);
-		// TronGrid returns error as { "result": { "code": <nonzero>, "message": "..." } }
-		// Success may be { "result": { "code": 0 } } or { "result": true } or no result field at all.
-		JsonNode resultNode = triggerResponse.path("result");
-		if (resultNode.isObject() && resultNode.has("code") && resultNode.get("code").asInt(0) != 0) {
-			String message = resultNode.path("message").asText("trigger failed");
-			throw new WithdrawalException(502, "TRC20 trigger failed: " + message);
+			byte[] rawBytes = hexStringToBytes(rawDataHex);
+			try {
+				validateRawTransaction(rawBytes, ownerAddress, toAddress,
+						rawAmount.toBigInteger(), intentCreatedAt);
+			}
+			catch (RawIntentMismatchException exception) {
+				if (buildAttempt == 1) {
+					log.warn("TRON raw transaction validation failed; rebuilding once; reason={}",
+							exception.reason());
+					continue;
+				}
+				throw exception;
+			}
+			byte[] hash = sha256(rawBytes);
+			String computedTxId = bytesToHex(hash);
+			if (!txid.isBlank() && !txid.equalsIgnoreCase(computedTxId)) {
+				throw new WithdrawalException(502, "TronGrid returned a mismatched transaction id");
+			}
+			ObjectNode signedTransaction = transaction.deepCopy();
+			signedTransaction.put("txID", computedTxId);
+			ArrayNode signatures = objectMapper.createArrayNode();
+			signatures.add(sign(hash, hexPrivateKey));
+			signedTransaction.set("signature", signatures);
+			try {
+				return new PreparedPayoutTransaction("TRC20", ownerAddress, properties.getUsdtContract(), 0L,
+						BigInteger.ZERO, objectMapper.writeValueAsString(signedTransaction), computedTxId);
+			}
+			catch (Exception exception) {
+				throw new WithdrawalException(500, "failed to serialize signed TRON transaction");
+			}
 		}
-		JsonNode transaction = triggerResponse.path("transaction");
-		String rawDataHex = transaction.path("raw_data_hex").asText("");
-		if (rawDataHex.isEmpty()) {
-			rawDataHex = transaction.path("transaction").path("raw_data_hex").asText("");
-		}
-		if (rawDataHex.isEmpty()) {
-			throw new WithdrawalException(502, "missing raw_data_hex in trigger response");
-		}
-		// TronGrid returns "txID" (camelCase) — try both casing
-		String txid = transaction.path("txID").asText("");
-		if (txid.isEmpty()) {
-			txid = transaction.path("txid").asText("");
-		}
-
-		// 2. Sign the transaction
-		byte[] rawBytes = hexStringToBytes(rawDataHex);
-		validateRawTransaction(rawBytes, ownerAddress, toAddress, rawAmount.toBigInteger(), intentCreatedAt);
-		byte[] hash = sha256(rawBytes);
-		String computedTxId = bytesToHex(hash);
-		if (!txid.isBlank() && !txid.equalsIgnoreCase(computedTxId)) {
-			throw new WithdrawalException(502, "TronGrid returned a mismatched transaction id");
-		}
-		ObjectNode signedTransaction = transaction.deepCopy();
-		signedTransaction.put("txID", computedTxId);
-		ArrayNode signatures = objectMapper.createArrayNode();
-		signatures.add(sign(hash, hexPrivateKey));
-		signedTransaction.set("signature", signatures);
-		try {
-			return new PreparedPayoutTransaction("TRC20", ownerAddress, properties.getUsdtContract(), 0L,
-					BigInteger.ZERO, objectMapper.writeValueAsString(signedTransaction), computedTxId);
-		}
-		catch (Exception exception) {
-			throw new WithdrawalException(500, "failed to serialize signed TRON transaction");
-		}
+		throw new IllegalStateException("TRON transaction build loop exhausted");
 	}
 
 	private void validateRawTransaction(byte[] rawBytes, String ownerAddress, String toAddress,
 			BigInteger rawAmount, long intentCreatedAt) {
+		Chain.Transaction.raw raw;
 		try {
-			Chain.Transaction.raw raw = Chain.Transaction.raw.parseFrom(rawBytes);
-			long now = System.currentTimeMillis();
-			if (raw.getContractCount() != 1 || raw.getFeeLimit() != properties.getFeeLimit()
-					|| raw.getTimestamp() < intentCreatedAt - MAX_TIMESTAMP_SKEW_MILLIS
-					|| raw.getTimestamp() > now + MAX_TIMESTAMP_SKEW_MILLIS
-					|| raw.getExpiration() <= now
-					|| raw.getExpiration() > intentCreatedAt + MAX_TRANSACTION_LIFETIME_MILLIS
-					|| raw.getExpiration() <= raw.getTimestamp()) {
-				throw rawIntentMismatch();
-			}
-			Chain.Transaction.Contract transactionContract = raw.getContract(0);
-			if (transactionContract.getType()
-					!= Chain.Transaction.Contract.ContractType.TriggerSmartContract) {
-				throw rawIntentMismatch();
-			}
-			Any parameter = transactionContract.getParameter();
-			Contract.TriggerSmartContract trigger = parameter.unpack(Contract.TriggerSmartContract.class);
-			byte[] callData = trigger.getData().toByteArray();
-			if (!trigger.getOwnerAddress().equals(ByteString.copyFrom(addressPayload(ownerAddress)))
-					|| !trigger.getContractAddress().equals(
-							ByteString.copyFrom(addressPayload(properties.getUsdtContract())))
-					|| trigger.getCallValue() != 0
-					|| trigger.getCallTokenValue() != 0
-					|| trigger.getTokenId() != 0
-					|| callData.length != 68
-					|| !Arrays.equals(Arrays.copyOfRange(callData, 0, 4), TRANSFER_SELECTOR)
-					|| !Arrays.equals(Arrays.copyOfRange(callData, 4, 36), abiAddress(toAddress))
-					|| !new BigInteger(1, Arrays.copyOfRange(callData, 36, 68)).equals(rawAmount)) {
-				throw rawIntentMismatch();
-			}
-		}
-		catch (WithdrawalException exception) {
-			throw exception;
+			raw = Chain.Transaction.raw.parseFrom(rawBytes);
 		}
 		catch (Exception exception) {
-			throw rawIntentMismatch();
+			throw rawIntentMismatch("protobuf_parse");
+		}
+		long now = System.currentTimeMillis();
+		if (raw.getContractCount() != 1) {
+			throw rawIntentMismatch("contract_count");
+		}
+		if (raw.getFeeLimit() != properties.getFeeLimit()) {
+			throw rawIntentMismatch("fee_limit");
+		}
+		if (raw.getTimestamp() < intentCreatedAt - MAX_TIMESTAMP_SKEW_MILLIS) {
+			throw rawIntentMismatch("timestamp_before_intent");
+		}
+		if (raw.getTimestamp() > now + MAX_TIMESTAMP_SKEW_MILLIS) {
+			throw rawIntentMismatch("timestamp_in_future");
+		}
+		if (raw.getExpiration() <= now) {
+			throw rawIntentMismatch("expiration_not_future");
+		}
+		if (raw.getExpiration() > intentCreatedAt + MAX_TRANSACTION_LIFETIME_MILLIS) {
+			throw rawIntentMismatch("expiration_too_far");
+		}
+		if (raw.getExpiration() <= raw.getTimestamp()) {
+			throw rawIntentMismatch("expiration_before_timestamp");
+		}
+		Chain.Transaction.Contract transactionContract = raw.getContract(0);
+		if (transactionContract.getType()
+				!= Chain.Transaction.Contract.ContractType.TriggerSmartContract) {
+			throw rawIntentMismatch("contract_type");
+		}
+		Contract.TriggerSmartContract trigger;
+		try {
+			Any parameter = transactionContract.getParameter();
+			trigger = parameter.unpack(Contract.TriggerSmartContract.class);
+		}
+		catch (Exception exception) {
+			throw rawIntentMismatch("contract_parameter");
+		}
+		byte[] callData = trigger.getData().toByteArray();
+		if (!trigger.getOwnerAddress().equals(ByteString.copyFrom(addressPayload(ownerAddress)))) {
+			throw rawIntentMismatch("owner_address");
+		}
+		if (!trigger.getContractAddress().equals(
+				ByteString.copyFrom(addressPayload(properties.getUsdtContract())))) {
+			throw rawIntentMismatch("token_contract");
+		}
+		if (trigger.getCallValue() != 0) {
+			throw rawIntentMismatch("call_value");
+		}
+		if (trigger.getCallTokenValue() != 0) {
+			throw rawIntentMismatch("call_token_value");
+		}
+		if (trigger.getTokenId() != 0) {
+			throw rawIntentMismatch("token_id");
+		}
+		if (callData.length != 68) {
+			throw rawIntentMismatch("call_data_length");
+		}
+		if (!Arrays.equals(Arrays.copyOfRange(callData, 0, 4), TRANSFER_SELECTOR)) {
+			throw rawIntentMismatch("selector");
+		}
+		if (!Arrays.equals(Arrays.copyOfRange(callData, 4, 36), abiAddress(toAddress))) {
+			throw rawIntentMismatch("recipient");
+		}
+		if (!new BigInteger(1, Arrays.copyOfRange(callData, 36, 68)).equals(rawAmount)) {
+			throw rawIntentMismatch("amount");
 		}
 	}
 
@@ -231,18 +274,31 @@ public class TronClient {
 	private byte[] addressPayload(String address) {
 		byte[] decoded = base58Decode(address);
 		if (decoded.length != 25) {
-			throw rawIntentMismatch();
+			throw rawIntentMismatch("address_format");
 		}
 		byte[] payload = Arrays.copyOf(decoded, 21);
 		byte[] checksum = Arrays.copyOfRange(decoded, 21, 25);
 		if (!Arrays.equals(checksum, Arrays.copyOf(doubleSha256(payload), 4))) {
-			throw rawIntentMismatch();
+			throw rawIntentMismatch("address_checksum");
 		}
 		return payload;
 	}
 
-	private WithdrawalException rawIntentMismatch() {
-		return new WithdrawalException(502, "TRON raw transaction does not match payout intent");
+	private RawIntentMismatchException rawIntentMismatch(String reason) {
+		return new RawIntentMismatchException(reason);
+	}
+
+	private static final class RawIntentMismatchException extends WithdrawalException {
+		private final String reason;
+
+		private RawIntentMismatchException(String reason) {
+			super(502, "TRON raw transaction does not match payout intent: " + reason);
+			this.reason = reason;
+		}
+
+		private String reason() {
+			return reason;
+		}
 	}
 
 	private JsonNode triggersmartcontract(String ownerAddress, String parameter) {
