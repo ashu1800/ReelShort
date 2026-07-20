@@ -89,9 +89,14 @@ public class PayoutBalancePreflightService {
 	}
 
 	private void checkAtLeast(String asset, BigDecimal required, BigDecimal available) {
-		if (available == null || available.compareTo(required) < 0) {
-			throw new WithdrawalException(409, asset + " balance insufficient: required="
-					+ decimal(required) + ", available=" + decimal(available));
+		if (available == null) {
+			throw new WithdrawalException(409, asset + " 余额查询结果无效");
+		}
+		if (available.compareTo(required) < 0) {
+			BigDecimal missing = required.subtract(available);
+			throw new WithdrawalException(409, asset + " 余额不足：本次需要 "
+					+ decimal(required) + "，当前余额 " + decimal(available)
+					+ "，还差 " + decimal(missing));
 		}
 	}
 

@@ -37,8 +37,7 @@ class PayoutBalancePreflightServiceTests {
 		assertThatThrownBy(() -> service.requireSufficient(
 				List.of(first, second), "tron-key", null, null))
 				.isInstanceOf(WithdrawalException.class)
-				.hasMessageContaining("TRC20 USDT balance insufficient")
-				.hasMessageContaining("required=13");
+				.hasMessage("TRC20 USDT 余额不足：本次需要 13，当前余额 12，还差 1");
 	}
 
 	@Test
@@ -50,7 +49,7 @@ class PayoutBalancePreflightServiceTests {
 
 		assertThatThrownBy(() -> service.requireSufficient(List.of(request), "tron-key", null, null))
 				.isInstanceOf(WithdrawalException.class)
-				.hasMessageContaining("TRX balance insufficient");
+				.hasMessage("TRX 余额不足：本次需要 100，当前余额 1，还差 99");
 	}
 
 	private WithdrawalRequest withdrawal(String network, String amount) {

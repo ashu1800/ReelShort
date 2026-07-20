@@ -146,6 +146,17 @@ test('admin HTTP client allows long-running payout requests and handles timeout 
   assert.match(viewSource, /后台可能仍在处理/)
 })
 
+test('payout balance failures stay visible inside the dialog', () => {
+  const source = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
+
+  assert.match(source, /const payoutError = ref\(''\)/)
+  assert.match(source, /payoutError\.value = backendErrorMessage/)
+  assert.match(source, /v-if="payoutError"/)
+  assert.match(source, /title="打款未执行"/)
+  assert.match(source, /:description="payoutError"/)
+  assert.match(source, /payoutError\.value = ''/)
+})
+
 test('compose and host nginx keep payout execution routes open for 150 seconds', () => {
   const composeNginx = readFileSync(new URL('../nginx.conf', import.meta.url), 'utf8')
   const hostTemplateUrl = new URL('../../infra/nginx/shortlink-payout-timeouts.conf.template', import.meta.url)

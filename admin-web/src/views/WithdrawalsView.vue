@@ -27,6 +27,7 @@ const batchStep = ref<'preview' | 'credentials' | 'result'>('preview')
 const credentials = reactive({ tronPrivateKey: '', ethPrivateKey: '', bepPrivateKey: '', totpCode: '' })
 const preview = ref<BatchWithdrawalPreview | null>(null)
 const batchResult = ref<BatchWithdrawalResult | null>(null)
+const payoutError = ref('')
 const totpEnabled = ref(false)
 
 const selectedPendingIds = computed(() =>
@@ -102,6 +103,7 @@ async function openPayoutDialog(row?: WithdrawalRequest) {
     return
   }
   clearSecrets()
+  payoutError.value = ''
   preview.value = null
   batchResult.value = null
   batchStep.value = 'preview'
@@ -139,6 +141,7 @@ async function doPayout() {
     ElMessage.warning('请输入 6 位 2FA 验证码')
     return
   }
+  payoutError.value = ''
   operationLoading.value = true
   try {
     const tronKey = credentials.tronPrivateKey.trim() || undefined
@@ -180,7 +183,7 @@ async function doPayout() {
       batchDialogVisible.value = false
       ElMessage.warning('请求超时，后台可能仍在处理，请刷新列表核对打款状态')
     } else {
-      ElMessage.error(backendErrorMessage(error, '打款提交失败'))
+      payoutError.value = backendErrorMessage(error, '打款提交失败')
     }
   } finally {
     operationLoading.value = false
@@ -190,7 +193,13 @@ async function doPayout() {
 
 function closeBatchDialog() {
   batchDialogVisible.value = false
+  payoutError.value = ''
   clearSecrets()
+}
+
+function showPreviewStep() {
+  payoutError.value = ''
+  batchStep.value = 'preview'
 }
 
 async function reject(row: WithdrawalRequest) {
@@ -388,6 +397,15 @@ onBeforeRouteLeave(() => clearSecrets())
         <el-alert type="warning" show-icon :closable="false" style="margin-bottom: 16px">
           私钥只随本次执行请求发送，不用于预览，不会出现在响应或审计日志中。
         </el-alert>
+        <el-alert
+          v-if="payoutError"
+          title="打款未执行"
+          :description="payoutError"
+          type="error"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 16px"
+        />
         <div v-if="needsTronKey" style="margin-bottom: 12px">
           <div style="margin-bottom: 4px; font-weight: 600">TRC20 热钱包私钥</div>
           <el-input
@@ -433,7 +451,7 @@ onBeforeRouteLeave(() => clearSecrets())
           />
         </div>
         <div style="margin-top: 16px; text-align: right">
-          <el-button @click="batchStep = 'preview'">上一步</el-button>
+          <el-button @click="showPreviewStep">上一步</el-button>
           <el-button type="danger" :loading="operationLoading" @click="doPayout">确认并签名打款</el-button>
         </div>
       </div>
