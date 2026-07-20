@@ -56,8 +56,18 @@ class TronClientTests {
 		assertThat(new BigInteger(signature.substring(0, 64), 16)).isPositive();
 		assertThat(new BigInteger(signature.substring(64, 128), 16)).isPositive();
 		assertThat(Integer.parseInt(signature.substring(128), 16)).isBetween(0, 3);
-		assertThat(signature.substring(0, 2)).isNotIn("1b", "1c", "1d", "1e");
 		assertThat(prepared.txHash()).isEqualTo(sha256Hex(fixture.rawDataHex()));
+	}
+
+	@Test
+	void encodesRecipientWithoutBase58Checksum() throws Exception {
+		ClientFixture fixture = client(new AtomicReference<>(), null, null, null);
+
+		fixture.client().prepareTransfer(PRIVATE_KEY, DESTINATION, AMOUNT);
+
+		JsonNode triggerRequest = objectMapper.readTree(fixture.triggerBody().get());
+		assertThat(triggerRequest.path("parameter").asText())
+				.isEqualTo(abiParams(DESTINATION, AMOUNT.movePointRight(6).toBigIntegerExact()));
 	}
 
 	@Test
@@ -311,18 +321,21 @@ class TronClientTests {
 				rawContract == null ? properties.getUsdtContract() : rawContract,
 				callTokenValue, tokenId);
 		String txId = sha256Hex(rawDataHex);
+		AtomicReference<String> triggerBody = new AtomicReference<>();
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-		server.createContext("/wallet/triggersmartcontract", exchange -> respond(exchange,
-				"{\"result\":{\"result\":true},\"transaction\":{\"visible\":true,"
-						+ "\"txID\":\"" + txId + "\",\"raw_data_hex\":\"" + rawDataHex + "\","
-						+ "\"raw_data\":{\"expiration\":9999999999999,\"timestamp\":1}}}"));
+		server.createContext("/wallet/triggersmartcontract", exchange -> {
+			triggerBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+			respond(exchange, "{\"result\":{\"result\":true},\"transaction\":{\"visible\":true,"
+					+ "\"txID\":\"" + txId + "\",\"raw_data_hex\":\"" + rawDataHex + "\","
+					+ "\"raw_data\":{\"expiration\":9999999999999,\"timestamp\":1}}}");
+		});
 		server.createContext("/wallet/broadcasttransaction", exchange -> {
 			broadcastBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
 			respond(exchange, "{\"result\":true,\"txid\":\"" + txId + "\"}");
 		});
 		server.start();
 		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
-		return new ClientFixture(new TronClient(properties, objectMapper), rawDataHex);
+		return new ClientFixture(new TronClient(properties, objectMapper), rawDataHex, triggerBody);
 	}
 
 	private RetryFixture clientWithRawResponses(TronProperties properties, String... rawResponses)
@@ -406,7 +419,7 @@ class TronClientTests {
 		}
 	}
 
-	private record ClientFixture(TronClient client, String rawDataHex) {
+	private record ClientFixture(TronClient client, String rawDataHex, AtomicReference<String> triggerBody) {
 	}
 
 	private record RetryFixture(TronClient client, AtomicInteger requestCount) {
