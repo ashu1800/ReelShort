@@ -4,7 +4,7 @@
 
 **Goal:** 允许未配置预期热钱包公开地址的生产环境使用管理员临时提交的私钥执行提现，同时保留已配置地址时的严格匹配校验。
 
-**Architecture:** 保留三条链现有的私钥派生地址与统一校验调用，只调整统一校验函数为空配置时直接返回。测试直接覆盖 Coordinator 的 reserve 边界，证明空配置继续执行、错误配置仍在签名前拒绝。
+**Architecture:** 保留三条链现有的私钥派生地址与统一校验调用，将公开地址白名单校验调整为空配置时直接返回；签名阶段始终使用私钥派生地址复核已持久化 intent。测试直接覆盖 Coordinator 的 reserve 和恢复签名边界，证明空配置继续执行、错误配置及 intent 地址不一致仍在签名前拒绝。
 
 **Tech Stack:** Java 17、Spring Boot、JUnit 5、Mockito、Gradle、Docker Compose
 
@@ -32,7 +32,7 @@ Expected: FAIL，错误为 `expected hot wallet address is not configured`。
 
 **Step 1: 写最小实现**
 
-在统一地址校验方法中，当配置为 `null` 或空白时直接返回；非空时保持现有大小写规则与不匹配异常。
+在公开地址校验方法中，当配置为 `null` 或空白时直接返回；非空时保持现有大小写规则与不匹配异常。将签名 intent 校验改为始终与当前私钥派生地址比较。
 
 **Step 2: 验证目标测试通过**
 

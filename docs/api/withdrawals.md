@@ -24,7 +24,7 @@
 
 ## 打款安全边界
 
-- `REELSHORT_TRON_HOT_WALLET_ADDRESS` 与 `REELSHORT_ETH_HOT_WALLET_ADDRESS` 分别配置受控热钱包公钥地址。对应网络配置为空或私钥派生地址不匹配时，在创建打款 attempt 前拒绝请求。
+- `REELSHORT_TRON_HOT_WALLET_ADDRESS`、`REELSHORT_ETH_HOT_WALLET_ADDRESS` 与 `REELSHORT_BSC_HOT_WALLET_ADDRESS` 可选配置受控热钱包公开地址。未配置时使用本次提交私钥派生出的地址创建打款 attempt；配置后若私钥派生地址不匹配，则在创建 attempt 前拒绝请求。签名阶段始终复核私钥派生地址与已持久化 intent 地址一致。
 - TRON 节点返回的 `raw_data_hex` 使用 Trident generated protobuf 解析。签名前严格核对唯一 `TriggerSmartContract`、owner、USDT 合约、零 `callValue`、零 `callTokenValue`、零 `tokenId`、`transfer(address,uint256)` selector、收款人、金额、`feeLimit`、timestamp 和 expiration；节点返回的 JSON 字段不作为信任依据。
 - ERC20 nonce 的数据库行可在独立事务中初始化，但锁定、递增与保存 `SIGNING` intent 位于同一事务；intent 保存失败不会消耗 nonce。
 - 所有 attempt mutation 固定按 withdrawal -> payout attempt 顺序加悲观锁，避免状态确认与广播更新之间形成反向锁顺序。

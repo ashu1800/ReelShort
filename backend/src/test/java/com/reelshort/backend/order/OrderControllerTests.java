@@ -15,7 +15,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,9 +70,16 @@ class OrderControllerTests {
 		String token = bob.token();
 		UUID bobId = bob.userId();
 		UUID carolId = carol.userId();
-		rechargeOrderService.create(bobId, new CreateRechargeOrderRequest(990, 99));
-		rechargeOrderService.create(carolId, new CreateRechargeOrderRequest(2990, 299));
-		rechargeOrderService.create(bobId, new CreateRechargeOrderRequest(1990, 199));
+		OffsetDateTime base = OffsetDateTime.parse("2026-07-20T00:00:00Z");
+		RechargeOrder oldOrder = RechargeOrder.create(bobId, "app-order-old", 990, 99);
+		RechargeOrder otherOrder = RechargeOrder.create(carolId, "app-order-other", 2990, 299);
+		RechargeOrder newOrder = RechargeOrder.create(bobId, "app-order-new", 1990, 199);
+		ReflectionTestUtils.setField(oldOrder, "createdAt", base);
+		ReflectionTestUtils.setField(otherOrder, "createdAt", base.plusSeconds(1));
+		ReflectionTestUtils.setField(newOrder, "createdAt", base.plusSeconds(2));
+		rechargeOrderRepository.saveAndFlush(oldOrder);
+		rechargeOrderRepository.saveAndFlush(otherOrder);
+		rechargeOrderRepository.saveAndFlush(newOrder);
 
 		mockMvc.perform(get("/api/app/orders")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))

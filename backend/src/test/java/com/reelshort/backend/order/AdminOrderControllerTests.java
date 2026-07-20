@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.OffsetDateTime;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -14,6 +16,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -53,15 +56,20 @@ class AdminOrderControllerTests {
 	private PasswordHasher passwordHasher;
 
 	@Autowired
-	private RechargeOrderService rechargeOrderService;
+	private RechargeOrderRepository rechargeOrderRepository;
 
 	@Test
 	void adminCanListAllRechargeOrdersNewestFirst() throws Exception {
 		String adminToken = adminLogin();
 		TestAppUsers.RegisteredUser alice = TestAppUsers.register(mockMvc, objectMapper, "admin-order-alice");
 		TestAppUsers.RegisteredUser bob = TestAppUsers.register(mockMvc, objectMapper, "admin-order-bob");
-		rechargeOrderService.create(alice.userId(), new CreateRechargeOrderRequest(990, 99));
-		rechargeOrderService.create(bob.userId(), new CreateRechargeOrderRequest(2990, 299));
+		OffsetDateTime base = OffsetDateTime.parse("2026-07-20T00:00:00Z");
+		RechargeOrder oldOrder = RechargeOrder.create(alice.userId(), "admin-order-old", 990, 99);
+		RechargeOrder newOrder = RechargeOrder.create(bob.userId(), "admin-order-new", 2990, 299);
+		ReflectionTestUtils.setField(oldOrder, "createdAt", base);
+		ReflectionTestUtils.setField(newOrder, "createdAt", base.plusSeconds(1));
+		rechargeOrderRepository.saveAndFlush(oldOrder);
+		rechargeOrderRepository.saveAndFlush(newOrder);
 
 		mockMvc.perform(get("/api/admin/orders")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))

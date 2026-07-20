@@ -106,22 +106,22 @@ public class WithdrawalPayoutCoordinator {
 		if ("TRC20".equals(attempt.network())) {
 			String derivedAddress = tronClient.addressFromPrivateKey(privateKey);
 			requireConfiguredWallet(tronProperties.getHotWalletAddress(), derivedAddress, false);
-			requireIntentUsesConfiguredWallet(attempt, tronProperties.getHotWalletAddress(), false);
+			requireIntentUsesWallet(attempt, derivedAddress, false);
 			signed = tronClient.prepareTransfer(privateKey, attempt.destinationAddress(), attempt.tokenAmount());
 		}
 		else if ("ERC20".equals(attempt.network())) {
 			String derivedAddress = ethereumClient.addressFromPrivateKey(privateKey);
 			requireConfiguredWallet(ethereumProperties.getHotWalletAddress(), derivedAddress, true);
-			requireIntentUsesConfiguredWallet(attempt, ethereumProperties.getHotWalletAddress(), true);
+			requireIntentUsesWallet(attempt, derivedAddress, true);
 			signed = ethereumClient.signTransfer(privateKey, attempt.destinationAddress(), attempt.tokenAmount(),
-					attempt.nonce(), attempt.gasPrice());
+				attempt.nonce(), attempt.gasPrice());
 		}
 		else if ("BEP20".equals(attempt.network())) {
 			String derivedAddress = bscClient.addressFromPrivateKey(privateKey);
 			requireConfiguredWallet(bscProperties.getHotWalletAddress(), derivedAddress, true);
-			requireIntentUsesConfiguredWallet(attempt, bscProperties.getHotWalletAddress(), true);
+			requireIntentUsesWallet(attempt, derivedAddress, true);
 			signed = bscClient.signTransfer(privateKey, attempt.destinationAddress(), attempt.tokenAmount(),
-					attempt.nonce(), attempt.gasPrice());
+				attempt.nonce(), attempt.gasPrice());
 		}
 		else {
 			throw new WithdrawalException(400, "unsupported withdrawal network");
@@ -177,11 +177,10 @@ public class WithdrawalPayoutCoordinator {
 		};
 	}
 
-	private void requireIntentUsesConfiguredWallet(WithdrawalPayoutAttempt attempt, String configuredAddress,
-			boolean ignoreCase) {
+	private void requireIntentUsesWallet(WithdrawalPayoutAttempt attempt, String expectedAddress, boolean ignoreCase) {
 		boolean matches = ignoreCase
-				? attempt.hotWalletAddress().equalsIgnoreCase(configuredAddress.trim())
-				: attempt.hotWalletAddress().equals(configuredAddress.trim());
+				? attempt.hotWalletAddress().equalsIgnoreCase(expectedAddress.trim())
+				: attempt.hotWalletAddress().equals(expectedAddress.trim());
 		if (!matches) {
 			throw new WithdrawalException(409, "payout signing intent does not use configured hot wallet");
 		}
@@ -189,7 +188,7 @@ public class WithdrawalPayoutCoordinator {
 
 	private void requireConfiguredWallet(String configuredAddress, String derivedAddress, boolean ignoreCase) {
 		if (configuredAddress == null || configuredAddress.isBlank()) {
-			throw new WithdrawalException(503, "expected hot wallet address is not configured");
+			return;
 		}
 		boolean matches = ignoreCase
 				? configuredAddress.trim().equalsIgnoreCase(derivedAddress)
