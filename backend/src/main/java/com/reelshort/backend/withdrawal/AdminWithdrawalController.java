@@ -41,8 +41,8 @@ public class AdminWithdrawalController {
 	public ApiResponse<WithdrawalResponse> approve(CurrentAdmin currentAdmin, @PathVariable UUID withdrawalId,
 			@Valid @RequestBody WithdrawalApprovalRequest approvalRequest, HttpServletRequest request) {
 		return ApiResponse.success(withdrawalService.approve(withdrawalId, approvalRequest.tronPrivateKey(),
-				approvalRequest.ethPrivateKey(), approvalRequest.totpCode(), currentAdmin.adminUserId(),
-				currentAdmin.username()), requestId(request));
+				approvalRequest.ethPrivateKey(), approvalRequest.bepPrivateKey(), approvalRequest.totpCode(),
+				currentAdmin.adminUserId(), currentAdmin.username()), requestId(request));
 	}
 
 	@PostMapping("/{withdrawalId}/reject")
@@ -65,8 +65,8 @@ public class AdminWithdrawalController {
 	public ApiResponse<BatchWithdrawalResponse> batchApprove(CurrentAdmin currentAdmin,
 			@Valid @RequestBody BatchWithdrawalRequest batchRequest, HttpServletRequest request) {
 		return ApiResponse.success(withdrawalService.batchApprove(batchRequest.withdrawalIds(),
-				batchRequest.tronPrivateKey(), batchRequest.ethPrivateKey(), batchRequest.totpCode(),
-				currentAdmin.adminUserId()), requestId(request));
+				batchRequest.tronPrivateKey(), batchRequest.ethPrivateKey(), batchRequest.bepPrivateKey(),
+				batchRequest.totpCode(), currentAdmin.adminUserId()), requestId(request));
 	}
 
 	private String requestId(HttpServletRequest request) {

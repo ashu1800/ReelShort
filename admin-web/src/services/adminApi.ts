@@ -430,11 +430,13 @@ export async function approveWithdrawal(
   withdrawalId: string,
   tronPrivateKey: string | undefined,
   ethPrivateKey: string | undefined,
+  bepPrivateKey: string | undefined,
   totpCode: string,
 ) {
   const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/approve`, {
     tronPrivateKey,
     ethPrivateKey,
+    bepPrivateKey,
     totpCode,
   })
   return response.data.data
@@ -458,12 +460,14 @@ export async function batchApproveWithdrawals(
   withdrawalIds: string[],
   tronPrivateKey: string | undefined,
   ethPrivateKey: string | undefined,
+  bepPrivateKey: string | undefined,
   totpCode: string,
 ) {
   const response = await http.post<ApiResponse<BatchWithdrawalResult>>('/withdrawals/batch-approve', {
     withdrawalIds,
     tronPrivateKey,
     ethPrivateKey,
+    bepPrivateKey,
     totpCode,
   })
   return response.data.data
@@ -472,6 +476,7 @@ export async function batchApproveWithdrawals(
 export type BatchWithdrawalPreview = {
   tronHotWalletAddress: string | null
   ethHotWalletAddress: string | null
+  bepHotWalletAddress: string | null
   totalUsdt: string
   itemCount: number
   items: {

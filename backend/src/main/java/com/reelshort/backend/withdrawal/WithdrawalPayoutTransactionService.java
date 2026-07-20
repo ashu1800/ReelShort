@@ -22,12 +22,13 @@ public class WithdrawalPayoutTransactionService {
 	private final PointTransactionRepository pointTransactionRepository;
 	private final EthereumProperties ethereumProperties;
 	private final TronProperties tronProperties;
+	private final BscProperties bscProperties;
 	private final WithdrawalPayoutProperties payoutProperties;
 
 	public WithdrawalPayoutTransactionService(WithdrawalRequestRepository withdrawalRepository,
 			WithdrawalPayoutAttemptRepository attemptRepository, HotWalletNonceAllocator nonceAllocator,
 			PointAccountRepository pointAccountRepository, PointTransactionRepository pointTransactionRepository,
-			EthereumProperties ethereumProperties, TronProperties tronProperties,
+			EthereumProperties ethereumProperties, TronProperties tronProperties, BscProperties bscProperties,
 			WithdrawalPayoutProperties payoutProperties) {
 		this.withdrawalRepository = withdrawalRepository;
 		this.attemptRepository = attemptRepository;
@@ -36,6 +37,7 @@ public class WithdrawalPayoutTransactionService {
 		this.pointTransactionRepository = pointTransactionRepository;
 		this.ethereumProperties = ethereumProperties;
 		this.tronProperties = tronProperties;
+		this.bscProperties = bscProperties;
 		this.payoutProperties = payoutProperties;
 	}
 
@@ -83,6 +85,25 @@ public class WithdrawalPayoutTransactionService {
 		requirePending(withdrawal);
 		return persistSigningIntent(withdrawal, "TRC20", hotWalletAddress,
 				tronProperties.getUsdtContract(), 0L, BigInteger.ZERO, null, signingOwner, createdBy);
+	}
+
+	@Transactional
+	public WithdrawalPayoutAttempt reserveBep20(UUID withdrawalId, String signingOwner, String hotWalletAddress,
+			BigInteger observedChainNonce, BigInteger gasPrice, String createdBy) {
+		WithdrawalRequest withdrawal = withdrawalForUpdate(withdrawalId);
+		Optional<WithdrawalPayoutAttempt> active = attemptRepository.findActiveForUpdate(withdrawalId);
+		if (active.isPresent()) {
+			return claimExpiredSigning(active.get(), signingOwner);
+		}
+		requirePending(withdrawal);
+		// BEP20 与 ERC20 共享 EVM nonce 机制，但 hot_wallet_nonces 唯一键含 network，
+		// "BEP20" + BSC 地址 + chainId=56 与 ERC20 的 nonce 行天然隔离。
+		nonceAllocator.ensureInitialized("BEP20", hotWalletAddress, bscClientChainId(), observedChainNonce);
+		BigInteger allocatedNonce = nonceAllocator.allocateInitialized(
+				"BEP20", hotWalletAddress, bscClientChainId(), observedChainNonce);
+		return persistSigningIntent(withdrawal, "BEP20", hotWalletAddress,
+				bscProperties.getUsdtContract(), bscProperties.getChainId(), allocatedNonce,
+				gasPrice, signingOwner, createdBy);
 	}
 
 	private WithdrawalPayoutAttempt persistSigningIntent(WithdrawalRequest withdrawal, String network,
@@ -203,6 +224,10 @@ public class WithdrawalPayoutTransactionService {
 
 	private long ethereumClientChainId() {
 		return ethereumProperties.getChainId();
+	}
+
+	private long bscClientChainId() {
+		return bscProperties.getChainId();
 	}
 
 	private WithdrawalRequest withdrawalForUpdate(UUID withdrawalId) {

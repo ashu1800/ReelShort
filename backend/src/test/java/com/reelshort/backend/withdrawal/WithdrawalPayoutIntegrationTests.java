@@ -1,6 +1,8 @@
 package com.reelshort.backend.withdrawal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -30,8 +32,10 @@ import com.reelshort.backend.points.PointTransactionRepository;
 @TestPropertySource(properties = {
 		"reelshort.eth.required-confirmations=2",
 		"reelshort.tron.required-confirmations=2",
+		"reelshort.bsc.required-confirmations=2",
 		"reelshort.tron.hot-wallet-address=TVjsyZ7fYF3qLF6BQgPmTEZy1xrNNyVAAA",
 		"reelshort.eth.hot-wallet-address=0x2222222222222222222222222222222222222222",
+		"reelshort.bsc.hot-wallet-address=0x3333333333333333333333333333333333333333",
 		"reelshort.withdrawal.payout.unknown-max-attempts=2"
 })
 class WithdrawalPayoutIntegrationTests {
@@ -59,6 +63,8 @@ class WithdrawalPayoutIntegrationTests {
 	private EthereumClient ethereumClient;
 	@MockitoBean
 	private TronClient tronClient;
+	@MockitoBean
+	private BscClient bscClient;
 
 	@BeforeEach
 	void clean() {
@@ -287,6 +293,49 @@ class WithdrawalPayoutIntegrationTests {
 		assertThat(result.status()).isEqualTo(WithdrawalPayoutStatus.MANUAL_REVIEW);
 		assertThat(result.activeSlot()).isEqualTo("ACTIVE");
 		assertThat(transactionService.findActive(fixture.withdrawal().id())).isPresent();
+	}
+
+	@Test
+	void bep20ConfirmedAttemptSettlesFrozenPointsViaBscClient() {
+		// BEP20 端到端：确认达标后通过 bscClient 查询链状态，幂等结算冻结积分。
+		Fixture fixture = fixtureWithoutAttempt("BEP20", "0x1111111111111111111111111111111111111111");
+		PreparedPayoutTransaction signed = new PreparedPayoutTransaction("BEP20",
+				"0x3333333333333333333333333333333333333333", "0x55d398326f99059fF775485246999027B3197955",
+				56L, BigInteger.valueOf(3), "0xbsc-signed", "0xb" + "0".repeat(63));
+		WithdrawalPayoutAttempt attempt = WithdrawalPayoutAttempt.prepared(fixture.withdrawal().id(), 1,
+				fixture.withdrawal().walletAddress(), fixture.withdrawal().usdtAmount(), signed, "admin");
+		attempt.markBroadcasted();
+		attemptRepository.saveAndFlush(attempt);
+		when(bscClient.queryTransactionStatus(signed.txHash()))
+				.thenReturn(PayoutChainStatus.of(PayoutChainState.CONFIRMED, 2));
+
+		confirmationService.processAttempt(attempt.id());
+		confirmationService.processAttempt(attempt.id());
+
+		PointAccount account = pointAccountRepository.findByUserId(fixture.userId()).orElseThrow();
+		assertThat(account.balance()).isEqualTo(400);
+		assertThat(account.frozenPoints()).isZero();
+		assertThat(withdrawalRepository.findById(fixture.withdrawal().id()).orElseThrow().status())
+				.isEqualTo(WithdrawalStatus.APPROVED);
+		// 确认走的是 bscClient 而非 ethereumClient（第二次 processAttempt 因已 CONFIRMED 提前返回，不再查链）。
+		verify(bscClient, times(1)).queryTransactionStatus(signed.txHash());
+	}
+
+	@Test
+	void bep20NonceIsolatedFromErc20EvenWithSameWalletAddress() {
+		// 验证 hot_wallet_nonces 唯一键含 network：同一地址在 BEP20 和 ERC20 下 nonce 行独立。
+		String hotWallet = "0x5555555555555555555555555555555555555555";
+		BigInteger gasPrice = BigInteger.valueOf(5_000_000_000L);
+		Fixture bepFixture = fixtureWithoutAttempt("BEP20", "0x1111111111111111111111111111111111111111");
+		Fixture ethFixture = fixtureWithoutAttempt("ERC20", "0x1111111111111111111111111111111111111111");
+
+		transactionService.reserveBep20(bepFixture.withdrawal().id(), "owner", hotWallet,
+				BigInteger.valueOf(10), gasPrice, "admin");
+		transactionService.reserveEthereum(ethFixture.withdrawal().id(), "owner", hotWallet,
+				BigInteger.valueOf(10), gasPrice, "admin");
+
+		// 两条链各一条 nonce 行，互不影响。
+		assertThat(nonceRepository.count()).isEqualTo(2L);
 	}
 
 	@Test

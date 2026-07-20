@@ -135,8 +135,9 @@ public class WalletService {
 
 	private String normalizeWalletAddress(String network, String walletAddress) {
 		String trimmed = walletAddress == null ? "" : walletAddress.trim();
+		// BEP20 与 ERC20 同为 EVM 地址格式（0x + 40 hex），复用以太坊地址校验。
 		boolean valid = "TRC20".equals(network) ? isValidTronAddress(trimmed)
-				: "ERC20".equals(network) ? isValidEthereumAddress(trimmed) : false;
+				: ("ERC20".equals(network) || "BEP20".equals(network)) ? isValidEthereumAddress(trimmed) : false;
 		if (!valid) {
 			throw new AdminException(400, "invalid wallet address for " + network);
 		}

@@ -52,7 +52,8 @@ class WithdrawalAdminServiceTests {
 	void setUp() {
 		service = new WithdrawalService(withdrawalRepository, walletRepository, pointAccountRepository,
 				configService, new UserActionLocks(), userRepository, totpService, adminRepository,
-				payoutCoordinator, attemptRepository, ethereumProperties, tronProperties, auditService);
+				payoutCoordinator, attemptRepository, ethereumProperties, tronProperties, new BscProperties(),
+				auditService);
 	}
 
 	@Test
@@ -70,7 +71,7 @@ class WithdrawalAdminServiceTests {
 		when(payoutCoordinator.prepareAndBroadcast(eq(withdrawalId), eq("eth-key"), any()))
 				.thenThrow(new WithdrawalException(503, "rpc detail that must not enter audit"));
 
-		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key",
+		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key", null,
 				"123456", adminId);
 
 		assertThat(result.succeeded()).isZero();
@@ -115,7 +116,7 @@ class WithdrawalAdminServiceTests {
 		when(payoutCoordinator.prepareAndBroadcast(eq(withdrawalId), eq("eth-key"), any()))
 				.thenThrow(new IllegalStateException("privateKey=must-never-leak"));
 
-		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key",
+		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key", null,
 				"123456", adminId);
 
 		assertThat(result.items().get(0).errorMessage()).isEqualTo("payout processing failed");
@@ -141,7 +142,7 @@ class WithdrawalAdminServiceTests {
 		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
 		when(payoutCoordinator.prepareAndBroadcast(withdrawalId, "eth-key", "operator")).thenReturn(attempt);
 
-		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key",
+		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key", null,
 				"123456", adminId);
 
 		assertThat(result.succeeded()).isZero();
@@ -161,7 +162,7 @@ class WithdrawalAdminServiceTests {
 		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
 		when(payoutCoordinator.prepareAndBroadcast(withdrawalId, "eth-key", "operator")).thenReturn(attempt);
 
-		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key",
+		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key", null,
 				"123456", adminId);
 
 		assertThat(result.succeeded()).isZero();
@@ -184,7 +185,7 @@ class WithdrawalAdminServiceTests {
 		when(attemptRepository.findFirstByWithdrawalRequestIdOrderByAttemptNumberDesc(withdrawalId))
 				.thenReturn(Optional.of(attempt));
 
-		WithdrawalResponse response = service.approve(withdrawalId, null, "eth-key", "123456", adminId,
+		WithdrawalResponse response = service.approve(withdrawalId, null, "eth-key", null, "123456", adminId,
 				"operator");
 
 		assertThat(response.payoutStatus()).isEqualTo("FAILED_RETRYABLE");
@@ -198,7 +199,7 @@ class WithdrawalAdminServiceTests {
 		UUID withdrawalId = UUID.randomUUID();
 		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> service.approve(withdrawalId, null, "eth-key", "123456", adminId,
+		assertThatThrownBy(() -> service.approve(withdrawalId, null, "eth-key", null, "123456", adminId,
 				"operator"))
 				.isInstanceOf(com.reelshort.backend.admin.AdminException.class)
 				.hasMessage("withdrawal not found");
@@ -225,7 +226,7 @@ class WithdrawalAdminServiceTests {
 		when(withdrawalRepository.findById(withdrawalId))
 				.thenThrow(new IllegalStateException("database detail must not enter audit"));
 
-		assertThatThrownBy(() -> service.approve(withdrawalId, null, "eth-key", "123456", adminId,
+		assertThatThrownBy(() -> service.approve(withdrawalId, null, "eth-key", null, "123456", adminId,
 				"operator"))
 				.isInstanceOf(IllegalStateException.class);
 		verify(auditService).recordIndependent("operator", "WITHDRAWAL_PAYOUT_FAILED", "WITHDRAWAL",
@@ -253,7 +254,7 @@ class WithdrawalAdminServiceTests {
 		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
 		when(payoutCoordinator.prepareAndBroadcast(withdrawalId, "eth-key", "operator")).thenReturn(attempt);
 
-		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key",
+		BatchWithdrawalResponse result = service.batchApprove(List.of(withdrawalId), null, "eth-key", null,
 				"123456", adminId);
 
 		assertThat(result.succeeded()).isZero();
@@ -277,7 +278,7 @@ class WithdrawalAdminServiceTests {
 		doThrow(new IllegalStateException("audit store down")).when(auditService)
 				.recordIndependent(any(), any(), any(), any(), any());
 
-		WithdrawalResponse response = service.approve(withdrawalId, null, "eth-key", "123456", adminId,
+		WithdrawalResponse response = service.approve(withdrawalId, null, "eth-key", null, "123456", adminId,
 				"operator");
 
 		assertThat(response.payoutStatus()).isEqualTo("BROADCASTED");
@@ -301,7 +302,7 @@ class WithdrawalAdminServiceTests {
 		doThrow(new IllegalStateException("audit store down")).when(auditService)
 				.recordIndependent(any(), any(), any(), any(), any());
 
-		BatchWithdrawalResponse result = service.batchApprove(List.of(firstId, secondId), null, "eth-key",
+		BatchWithdrawalResponse result = service.batchApprove(List.of(firstId, secondId), null, "eth-key", null,
 				"123456", adminId);
 
 		assertThat(result.succeeded()).isEqualTo(2);
@@ -323,13 +324,18 @@ class WithdrawalAdminServiceTests {
 	void privateKeysMustBeOptionalBlankOrExactly64HexCharacters() {
 		Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
-		assertThat(validator.validate(new WithdrawalApprovalRequest("not-hex", null, "123456")))
+		assertThat(validator.validate(new WithdrawalApprovalRequest("not-hex", null, null, "123456")))
 				.isNotEmpty();
-		assertThat(validator.validate(new WithdrawalApprovalRequest("a".repeat(65), null, "123456")))
+		assertThat(validator.validate(new WithdrawalApprovalRequest("a".repeat(65), null, null, "123456")))
 				.isNotEmpty();
-		assertThat(validator.validate(new WithdrawalApprovalRequest("0x" + "a".repeat(64), null, "123456")))
+		assertThat(validator.validate(new WithdrawalApprovalRequest("0x" + "a".repeat(64), null, null, "123456")))
 				.isEmpty();
-		assertThat(validator.validate(new WithdrawalApprovalRequest("", null, "123456")))
+		assertThat(validator.validate(new WithdrawalApprovalRequest("", null, null, "123456")))
+				.isEmpty();
+		// BEP20 私钥遵循同样的校验规则（可选、空或 64 hex）。
+		assertThat(validator.validate(new WithdrawalApprovalRequest(null, null, "not-hex", "123456")))
+				.isNotEmpty();
+		assertThat(validator.validate(new WithdrawalApprovalRequest(null, null, "0x" + "a".repeat(64), "123456")))
 				.isEmpty();
 	}
 

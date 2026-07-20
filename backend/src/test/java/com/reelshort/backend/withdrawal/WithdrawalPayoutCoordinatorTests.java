@@ -33,10 +33,13 @@ class WithdrawalPayoutCoordinatorTests {
 	private EthereumClient ethereumClient;
 	@Mock
 	private TronClient tronClient;
+	@Mock
+	private BscClient bscClient;
 
 	private WithdrawalPayoutCoordinator coordinator;
 	private EthereumProperties ethereumProperties;
 	private TronProperties tronProperties;
+	private BscProperties bscProperties;
 
 	@BeforeEach
 	void setUp() {
@@ -44,9 +47,11 @@ class WithdrawalPayoutCoordinatorTests {
 		ethereumProperties.setHotWalletAddress("0x2222222222222222222222222222222222222222");
 		tronProperties = new TronProperties();
 		tronProperties.setHotWalletAddress("TVjsyZ7fYF3qLF6BQgPmTEZy1xrNNyVAAA");
+		bscProperties = new BscProperties();
+		bscProperties.setHotWalletAddress("0x3333333333333333333333333333333333333333");
 		coordinator = new WithdrawalPayoutCoordinator(
-				transactionService, withdrawalRequestRepository, ethereumClient, tronClient,
-				ethereumProperties, tronProperties);
+				transactionService, withdrawalRequestRepository, ethereumClient, tronClient, bscClient,
+				ethereumProperties, tronProperties, bscProperties);
 	}
 
 	@Test
@@ -141,6 +146,39 @@ class WithdrawalPayoutCoordinatorTests {
 				.isInstanceOf(WithdrawalException.class)
 				.hasMessageContaining("does not match configured hot wallet");
 		verify(transactionService, never()).reserveTron(any(), any(), any(), any());
+	}
+
+	@Test
+	void bep20EmptyHotWalletFailsClosedBeforeCreatingAttempt() {
+		WithdrawalRequest request = org.mockito.Mockito.mock(WithdrawalRequest.class);
+		when(transactionService.findActive(WITHDRAWAL_ID)).thenReturn(Optional.empty());
+		when(withdrawalRequestRepository.findById(WITHDRAWAL_ID)).thenReturn(Optional.of(request));
+		when(request.status()).thenReturn(WithdrawalStatus.PENDING);
+		when(request.network()).thenReturn("BEP20");
+		when(bscClient.addressFromPrivateKey("private-key"))
+				.thenReturn("0x3333333333333333333333333333333333333333");
+		bscProperties.setHotWalletAddress("");
+
+		assertThatThrownBy(() -> coordinator.prepareAndBroadcast(WITHDRAWAL_ID, "private-key", "admin"))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("expected hot wallet");
+		verify(transactionService, never()).reserveBep20(any(), any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void bep20MismatchedHotWalletFailsClosedBeforeCreatingAttempt() {
+		WithdrawalRequest request = org.mockito.Mockito.mock(WithdrawalRequest.class);
+		when(transactionService.findActive(WITHDRAWAL_ID)).thenReturn(Optional.empty());
+		when(withdrawalRequestRepository.findById(WITHDRAWAL_ID)).thenReturn(Optional.of(request));
+		when(request.status()).thenReturn(WithdrawalStatus.PENDING);
+		when(request.network()).thenReturn("BEP20");
+		when(bscClient.addressFromPrivateKey("private-key"))
+				.thenReturn("0x4444444444444444444444444444444444444444");
+
+		assertThatThrownBy(() -> coordinator.prepareAndBroadcast(WITHDRAWAL_ID, "private-key", "admin"))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("does not match configured hot wallet");
+		verify(transactionService, never()).reserveBep20(any(), any(), any(), any(), any(), any());
 	}
 
 	private WithdrawalPayoutAttempt preparedAttempt() {

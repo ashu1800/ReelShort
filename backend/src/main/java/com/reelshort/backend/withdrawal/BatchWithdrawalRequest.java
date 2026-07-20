@@ -17,5 +17,6 @@ public record BatchWithdrawalRequest(
 		@NotEmpty @Size(max = 10) List<UUID> withdrawalIds,
 		@Size(max = 66) @Pattern(regexp = "(?i)^(?:|[0-9a-f]{64}|0x[0-9a-f]{64})$") String tronPrivateKey,
 		@Size(max = 66) @Pattern(regexp = "(?i)^(?:|[0-9a-f]{64}|0x[0-9a-f]{64})$") String ethPrivateKey,
+		@Size(max = 66) @Pattern(regexp = "(?i)^(?:|[0-9a-f]{64}|0x[0-9a-f]{64})$") String bepPrivateKey,
 		@NotBlank @Pattern(regexp = "\\d{6}") String totpCode) {
 }

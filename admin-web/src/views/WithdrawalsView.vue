@@ -24,7 +24,7 @@ const activePayoutIds = ref<string[]>([])
 
 const batchDialogVisible = ref(false)
 const batchStep = ref<'preview' | 'credentials' | 'result'>('preview')
-const credentials = reactive({ tronPrivateKey: '', ethPrivateKey: '', totpCode: '' })
+const credentials = reactive({ tronPrivateKey: '', ethPrivateKey: '', bepPrivateKey: '', totpCode: '' })
 const preview = ref<BatchWithdrawalPreview | null>(null)
 const batchResult = ref<BatchWithdrawalResult | null>(null)
 const totpEnabled = ref(false)
@@ -34,6 +34,7 @@ const selectedPendingIds = computed(() =>
 )
 const needsTronKey = computed(() => preview.value?.items.some((item) => item.network === 'TRC20') ?? false)
 const needsEthKey = computed(() => preview.value?.items.some((item) => item.network === 'ERC20') ?? false)
+const needsBepKey = computed(() => preview.value?.items.some((item) => item.network === 'BEP20') ?? false)
 const payoutDialogTitle = computed(() =>
   activePayoutIds.value.length === 1 ? '执行提现打款' : `批量执行 ${activePayoutIds.value.length} 笔提现`,
 )
@@ -126,6 +127,10 @@ async function doPayout() {
     ElMessage.warning('请输入 ERC20 热钱包私钥')
     return
   }
+  if (needsBepKey.value && !credentials.bepPrivateKey.trim()) {
+    ElMessage.warning('请输入 BEP20 热钱包私钥')
+    return
+  }
   if (!/^\d{6}$/.test(credentials.totpCode)) {
     ElMessage.warning('请输入 6 位 2FA 验证码')
     return
@@ -134,11 +139,13 @@ async function doPayout() {
   try {
     const tronKey = credentials.tronPrivateKey.trim() || undefined
     const ethKey = credentials.ethPrivateKey.trim() || undefined
+    const bepKey = credentials.bepPrivateKey.trim() || undefined
     if (activePayoutIds.value.length === 1) {
       const withdrawal = await approveWithdrawal(
         activePayoutIds.value[0],
         tronKey,
         ethKey,
+        bepKey,
         credentials.totpCode,
       )
       batchResult.value = buildSinglePayoutResult(withdrawal)
@@ -147,6 +154,7 @@ async function doPayout() {
         activePayoutIds.value,
         tronKey,
         ethKey,
+        bepKey,
         credentials.totpCode,
       )
     }
@@ -345,6 +353,9 @@ onBeforeRouteLeave(() => clearSecrets())
           <el-descriptions-item v-if="preview.ethHotWalletAddress" label="ERC20 热钱包地址">
             <span class="mono">{{ preview.ethHotWalletAddress }}</span>
           </el-descriptions-item>
+          <el-descriptions-item v-if="preview.bepHotWalletAddress" label="BEP20 热钱包地址">
+            <span class="mono">{{ preview.bepHotWalletAddress }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="本次提现总计 USDT">
             <strong>{{ preview.totalUsdt }}</strong>
           </el-descriptions-item>
@@ -385,6 +396,17 @@ onBeforeRouteLeave(() => clearSecrets())
             type="password"
             maxlength="66"
             placeholder="Ethereum 私钥（hex，不含 0x 前缀）"
+            show-password
+            autocomplete="off"
+          />
+        </div>
+        <div v-if="needsBepKey" style="margin-bottom: 12px">
+          <div style="margin-bottom: 4px; font-weight: 600">BEP20 热钱包私钥</div>
+          <el-input
+            v-model="credentials.bepPrivateKey"
+            type="password"
+            maxlength="66"
+            placeholder="BSC 私钥（hex，不含 0x 前缀）"
             show-password
             autocomplete="off"
           />

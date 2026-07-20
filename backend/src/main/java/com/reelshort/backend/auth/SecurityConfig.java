@@ -22,6 +22,7 @@ import com.reelshort.backend.content.ContentRefreshProperties;
 import com.reelshort.backend.release.AppReleaseProperties;
 import com.reelshort.backend.system.api.ApiErrorResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
+import com.reelshort.backend.withdrawal.BscProperties;
 import com.reelshort.backend.withdrawal.EthereumProperties;
 import com.reelshort.backend.withdrawal.TronProperties;
 import com.reelshort.backend.withdrawal.WithdrawalPayoutProperties;
@@ -33,7 +34,8 @@ import jakarta.servlet.http.HttpServletResponse;
 	@EnableConfigurationProperties(
 			{AdminProperties.class, AdminSessionProperties.class, AuthSessionProperties.class,
 					ContentRefreshProperties.class, ContentCacheProperties.class, AppReleaseProperties.class,
-					TronProperties.class, EthereumProperties.class, WithdrawalPayoutProperties.class})
+					TronProperties.class, EthereumProperties.class, BscProperties.class,
+					WithdrawalPayoutProperties.class})
 public class SecurityConfig {
 
 	private final BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter;

@@ -46,6 +46,7 @@ public class WithdrawalService {
 	private final WithdrawalPayoutAttemptRepository payoutAttemptRepository;
 	private final EthereumProperties ethereumProperties;
 	private final TronProperties tronProperties;
+	private final BscProperties bscProperties;
 	private final AdminAuditService adminAuditService;
 
 	public WithdrawalService(WithdrawalRequestRepository withdrawalRequestRepository,
@@ -55,7 +56,7 @@ public class WithdrawalService {
 			TotpService totpService,
 			AdminUserRepository adminUserRepository, WithdrawalPayoutCoordinator payoutCoordinator,
 			WithdrawalPayoutAttemptRepository payoutAttemptRepository,
-			EthereumProperties ethereumProperties, TronProperties tronProperties,
+			EthereumProperties ethereumProperties, TronProperties tronProperties, BscProperties bscProperties,
 			AdminAuditService adminAuditService) {
 		this.withdrawalRequestRepository = withdrawalRequestRepository;
 		this.userWalletRepository = userWalletRepository;
@@ -69,6 +70,7 @@ public class WithdrawalService {
 		this.payoutAttemptRepository = payoutAttemptRepository;
 		this.ethereumProperties = ethereumProperties;
 		this.tronProperties = tronProperties;
+		this.bscProperties = bscProperties;
 		this.adminAuditService = adminAuditService;
 	}
 
@@ -166,11 +168,24 @@ public class WithdrawalService {
 	}
 
 	/**
+	 * 按提现 network 选择对应链的热钱包私钥。BEP20 提现必须传 bepPrivateKey，否则无法打款。
+	 */
+	private String selectPrivateKey(String network, String tronPrivateKey, String ethPrivateKey,
+			String bepPrivateKey) {
+		return switch (network) {
+			case "TRC20" -> tronPrivateKey;
+			case "ERC20" -> ethPrivateKey;
+			case "BEP20" -> bepPrivateKey;
+			default -> throw new AdminException(400, "unsupported withdrawal network: " + network);
+		};
+	}
+
+	/**
 	 * C1 fix: 单笔审批不再接受手动 txHash（安全绕过风险），统一走 approveWithTransfer 两阶段打款。
 	 * 与 batchApprove 共用同一条链上转账路径，确保积分扣减和链上广播的原子性。
 	 */
 	public WithdrawalResponse approve(UUID withdrawalId, String tronPrivateKey, String ethPrivateKey,
-			String totpCode, UUID adminUserId, String adminUsername) {
+			String bepPrivateKey, String totpCode, UUID adminUserId, String adminUsername) {
 		AdminUser admin = adminUserRepository.findById(adminUserId)
 				.orElseThrow(() -> new AdminException(404, "admin not found"));
 		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
@@ -182,7 +197,7 @@ public class WithdrawalService {
 		WithdrawalPayoutAttempt attempt;
 		try {
 			request = withdrawal(withdrawalId);
-			String privateKey = "TRC20".equals(request.network()) ? tronPrivateKey : ethPrivateKey;
+			String privateKey = selectPrivateKey(request.network(), tronPrivateKey, ethPrivateKey, bepPrivateKey);
 			attempt = payoutCoordinator.prepareAndBroadcast(withdrawalId, privateKey,
 					adminUsername);
 		}
@@ -251,6 +266,7 @@ public class WithdrawalService {
 		validateBatchIds(withdrawalIds);
 		String tronAddress = configuredAddress(tronProperties.getHotWalletAddress());
 		String ethAddress = configuredAddress(ethereumProperties.getHotWalletAddress());
+		String bepAddress = configuredAddress(bscProperties.getHotWalletAddress());
 		List<WithdrawalRequest> requests = withdrawalRequestRepository.findAllById(withdrawalIds);
 		Map<UUID, WithdrawalRequest> requestsById = new HashMap<>();
 		for (WithdrawalRequest request : requests) {
@@ -271,7 +287,7 @@ public class WithdrawalService {
 					req.network(), req.walletAddress(), req.status()));
 		}
 		return new BatchWithdrawalPreviewResponse(
-				tronAddress, ethAddress,
+				tronAddress, ethAddress, bepAddress,
 				decimal(total), items.size(), items);
 	}
 
@@ -281,7 +297,7 @@ public class WithdrawalService {
 	 * Private keys are used in-memory only, dispatched by withdrawal network.
 	 */
 	public BatchWithdrawalResponse batchApprove(List<UUID> withdrawalIds, String tronPrivateKey,
-			String ethPrivateKey, String totpCode, UUID adminUserId) {
+			String ethPrivateKey, String bepPrivateKey, String totpCode, UUID adminUserId) {
 		validateBatchIds(withdrawalIds);
 		AdminUser admin = adminUserRepository.findById(adminUserId)
 				.orElseThrow(() -> new AdminException(404, "admin not found"));
@@ -303,7 +319,7 @@ public class WithdrawalService {
 			WithdrawalPayoutAttempt attempt;
 			try {
 				request = withdrawal(withdrawalId);
-				String privateKey = "TRC20".equals(request.network()) ? tronPrivateKey : ethPrivateKey;
+				String privateKey = selectPrivateKey(request.network(), tronPrivateKey, ethPrivateKey, bepPrivateKey);
 				attempt = payoutCoordinator.prepareAndBroadcast(
 						withdrawalId, privateKey, admin.username());
 			}

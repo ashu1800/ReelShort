@@ -18,20 +18,24 @@ public class WithdrawalPayoutConfirmationService {
 	private final WithdrawalPayoutCoordinator coordinator;
 	private final EthereumClient ethereumClient;
 	private final TronClient tronClient;
+	private final BscClient bscClient;
 	private final EthereumProperties ethereumProperties;
 	private final TronProperties tronProperties;
+	private final BscProperties bscProperties;
 
 	public WithdrawalPayoutConfirmationService(WithdrawalPayoutAttemptRepository attemptRepository,
 			WithdrawalPayoutTransactionService transactionService, WithdrawalPayoutCoordinator coordinator,
-			EthereumClient ethereumClient, TronClient tronClient, EthereumProperties ethereumProperties,
-			TronProperties tronProperties) {
+			EthereumClient ethereumClient, TronClient tronClient, BscClient bscClient,
+			EthereumProperties ethereumProperties, TronProperties tronProperties, BscProperties bscProperties) {
 		this.attemptRepository = attemptRepository;
 		this.transactionService = transactionService;
 		this.coordinator = coordinator;
 		this.ethereumClient = ethereumClient;
 		this.tronClient = tronClient;
+		this.bscClient = bscClient;
 		this.ethereumProperties = ethereumProperties;
 		this.tronProperties = tronProperties;
+		this.bscProperties = bscProperties;
 	}
 
 	@Scheduled(fixedDelayString = "${reelshort.withdrawal.payout-confirmation-interval:30000}",
@@ -63,9 +67,7 @@ public class WithdrawalPayoutConfirmationService {
 				return;
 			}
 		}
-		PayoutChainStatus chainStatus = "TRC20".equals(attempt.network())
-				? tronClient.queryTransactionStatus(attempt.txHash())
-				: ethereumClient.queryTransactionStatus(attempt.txHash());
+		PayoutChainStatus chainStatus = queryChainStatus(attempt);
 		if (chainStatus.state() == PayoutChainState.NOT_FOUND) {
 			coordinator.retryBroadcast(attempt.id());
 			return;
@@ -79,9 +81,7 @@ public class WithdrawalPayoutConfirmationService {
 			transactionService.recordChainObservation(attempt.id(), chainStatus);
 			return;
 		}
-		int requiredConfirmations = "TRC20".equals(attempt.network())
-				? tronProperties.getRequiredConfirmations()
-				: ethereumProperties.getRequiredConfirmations();
+		int requiredConfirmations = requiredConfirmationsFor(attempt.network());
 		if (chainStatus.state() == PayoutChainState.CONFIRMED
 				&& chainStatus.confirmations() >= requiredConfirmations) {
 			transactionService.settleConfirmed(attempt.id(), chainStatus.confirmations());
@@ -89,5 +89,24 @@ public class WithdrawalPayoutConfirmationService {
 		else {
 			transactionService.recordChainObservation(attempt.id(), chainStatus);
 		}
+	}
+
+	private PayoutChainStatus queryChainStatus(WithdrawalPayoutAttempt attempt) {
+		String txHash = attempt.txHash();
+		return switch (attempt.network()) {
+			case "TRC20" -> tronClient.queryTransactionStatus(txHash);
+			case "ERC20" -> ethereumClient.queryTransactionStatus(txHash);
+			case "BEP20" -> bscClient.queryTransactionStatus(txHash);
+			default -> throw new WithdrawalException(400, "unsupported withdrawal network");
+		};
+	}
+
+	private int requiredConfirmationsFor(String network) {
+		return switch (network) {
+			case "TRC20" -> tronProperties.getRequiredConfirmations();
+			case "ERC20" -> ethereumProperties.getRequiredConfirmations();
+			case "BEP20" -> bscProperties.getRequiredConfirmations();
+			default -> throw new WithdrawalException(400, "unsupported withdrawal network");
+		};
 	}
 }

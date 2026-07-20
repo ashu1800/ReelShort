@@ -13,18 +13,23 @@ public class WithdrawalPayoutCoordinator {
 	private final WithdrawalRequestRepository withdrawalRepository;
 	private final EthereumClient ethereumClient;
 	private final TronClient tronClient;
+	private final BscClient bscClient;
 	private final EthereumProperties ethereumProperties;
 	private final TronProperties tronProperties;
+	private final BscProperties bscProperties;
 
 	public WithdrawalPayoutCoordinator(WithdrawalPayoutTransactionService transactionService,
 			WithdrawalRequestRepository withdrawalRepository, EthereumClient ethereumClient, TronClient tronClient,
-			EthereumProperties ethereumProperties, TronProperties tronProperties) {
+			BscClient bscClient, EthereumProperties ethereumProperties, TronProperties tronProperties,
+			BscProperties bscProperties) {
 		this.transactionService = transactionService;
 		this.withdrawalRepository = withdrawalRepository;
 		this.ethereumClient = ethereumClient;
 		this.tronClient = tronClient;
+		this.bscClient = bscClient;
 		this.ethereumProperties = ethereumProperties;
 		this.tronProperties = tronProperties;
+		this.bscProperties = bscProperties;
 	}
 
 	public WithdrawalPayoutAttempt prepareAndBroadcast(UUID withdrawalId, String privateKey, String createdBy) {
@@ -58,6 +63,14 @@ public class WithdrawalPayoutCoordinator {
 			BigInteger observedNonce = ethereumClient.queryPendingNonce(hotWalletAddress);
 			BigInteger gasPrice = ethereumClient.queryGasPrice();
 			attempt = transactionService.reserveEthereum(withdrawalId, signingOwner, hotWalletAddress,
+					observedNonce, gasPrice, createdBy);
+		}
+		else if ("BEP20".equals(withdrawal.network())) {
+			String hotWalletAddress = bscClient.addressFromPrivateKey(privateKey);
+			requireConfiguredWallet(bscProperties.getHotWalletAddress(), hotWalletAddress, true);
+			BigInteger observedNonce = bscClient.queryPendingNonce(hotWalletAddress);
+			BigInteger gasPrice = bscClient.queryGasPrice();
+			attempt = transactionService.reserveBep20(withdrawalId, signingOwner, hotWalletAddress,
 					observedNonce, gasPrice, createdBy);
 		}
 		else {
@@ -96,12 +109,22 @@ public class WithdrawalPayoutCoordinator {
 			requireIntentUsesConfiguredWallet(attempt, tronProperties.getHotWalletAddress(), false);
 			signed = tronClient.prepareTransfer(privateKey, attempt.destinationAddress(), attempt.tokenAmount());
 		}
-		else {
+		else if ("ERC20".equals(attempt.network())) {
 			String derivedAddress = ethereumClient.addressFromPrivateKey(privateKey);
 			requireConfiguredWallet(ethereumProperties.getHotWalletAddress(), derivedAddress, true);
 			requireIntentUsesConfiguredWallet(attempt, ethereumProperties.getHotWalletAddress(), true);
 			signed = ethereumClient.signTransfer(privateKey, attempt.destinationAddress(), attempt.tokenAmount(),
 					attempt.nonce(), attempt.gasPrice());
+		}
+		else if ("BEP20".equals(attempt.network())) {
+			String derivedAddress = bscClient.addressFromPrivateKey(privateKey);
+			requireConfiguredWallet(bscProperties.getHotWalletAddress(), derivedAddress, true);
+			requireIntentUsesConfiguredWallet(attempt, bscProperties.getHotWalletAddress(), true);
+			signed = bscClient.signTransfer(privateKey, attempt.destinationAddress(), attempt.tokenAmount(),
+					attempt.nonce(), attempt.gasPrice());
+		}
+		else {
+			throw new WithdrawalException(400, "unsupported withdrawal network");
 		}
 		WithdrawalPayoutAttempt prepared = transactionService.completeSigning(attempt.id(), signingOwner, signed);
 		return replay(prepared);
@@ -118,11 +141,21 @@ public class WithdrawalPayoutCoordinator {
 				|| attempt.status() == WithdrawalPayoutStatus.FAILED_RETRYABLE) {
 			return attempt;
 		}
-		PayoutBroadcastResult result = "TRC20".equals(attempt.network())
-				? tronClient.broadcastSignedTransaction(attempt.signedRawTransaction(), attempt.txHash())
-				: ethereumClient.broadcastSignedTransaction(attempt.signedRawTransaction(), attempt.txHash());
-		if (result.disposition() == PayoutBroadcastDisposition.EXPIRED && "TRC20".equals(attempt.network())) {
-			return reconcileExpiredTron(attempt, result.detail());
+		PayoutBroadcastResult result;
+		if ("TRC20".equals(attempt.network())) {
+			result = tronClient.broadcastSignedTransaction(attempt.signedRawTransaction(), attempt.txHash());
+			if (result.disposition() == PayoutBroadcastDisposition.EXPIRED) {
+				return reconcileExpiredTron(attempt, result.detail());
+			}
+		}
+		else if ("ERC20".equals(attempt.network())) {
+			result = ethereumClient.broadcastSignedTransaction(attempt.signedRawTransaction(), attempt.txHash());
+		}
+		else if ("BEP20".equals(attempt.network())) {
+			result = bscClient.broadcastSignedTransaction(attempt.signedRawTransaction(), attempt.txHash());
+		}
+		else {
+			throw new WithdrawalException(400, "unsupported withdrawal network");
 		}
 		return transactionService.recordBroadcastResult(attempt.id(), result);
 	}

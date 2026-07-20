@@ -42,7 +42,7 @@ class WithdrawalPayoutLockOrderTests {
 		EthereumProperties ethereum = new EthereumProperties();
 		return new WithdrawalPayoutTransactionService(withdrawalRepository, attemptRepository,
 				mock(HotWalletNonceAllocator.class), mock(PointAccountRepository.class),
-				mock(PointTransactionRepository.class), ethereum, new TronProperties(),
+				mock(PointTransactionRepository.class), ethereum, new TronProperties(), new BscProperties(),
 				new WithdrawalPayoutProperties());
 	}
 

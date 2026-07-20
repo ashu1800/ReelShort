@@ -9,6 +9,7 @@ import java.util.List;
 public record BatchWithdrawalPreviewResponse(
 		String tronHotWalletAddress,
 		String ethHotWalletAddress,
+		String bepHotWalletAddress,
 		String totalUsdt,
 		int itemCount,
 		List<PreviewItem> items) {
