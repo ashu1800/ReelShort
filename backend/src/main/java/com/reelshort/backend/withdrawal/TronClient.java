@@ -565,11 +565,7 @@ public class TronClient {
 	 * Encode the transfer(address,uint256) parameters as ABI hex: 32-byte address + 32-byte amount.
 	 */
 	private String encodeTransferParams(String toBase58Address, BigInteger amount) {
-		byte[] addressBytes = base58Decode(toBase58Address);
-		// address is 21 bytes (0x41 prefix + 20 bytes); take last 20, pad to 32
-		byte[] addr20 = Arrays.copyOfRange(addressBytes, addressBytes.length - 20, addressBytes.length);
-		byte[] paddedAddr = new byte[32];
-		System.arraycopy(addr20, 0, paddedAddr, 32 - 20, 20);
+		byte[] paddedAddr = abiAddress(toBase58Address);
 
 		byte[] amountBytes = amount.toByteArray();
 		byte[] paddedAmount = new byte[32];

@@ -25,7 +25,7 @@
 ## 打款安全边界
 
 - `REELSHORT_TRON_HOT_WALLET_ADDRESS`、`REELSHORT_ETH_HOT_WALLET_ADDRESS` 与 `REELSHORT_BSC_HOT_WALLET_ADDRESS` 可选配置受控热钱包公开地址。未配置时使用本次提交私钥派生出的地址创建打款 attempt；配置后若私钥派生地址不匹配，则在创建 attempt 前拒绝请求。签名阶段始终复核私钥派生地址与已持久化 intent 地址一致。
-- TRON 节点返回的 `raw_data_hex` 使用 Trident generated protobuf 解析。签名前严格核对唯一 `TriggerSmartContract`、owner、USDT 合约、零 `callValue`、零 `callTokenValue`、零 `tokenId`、`transfer(address,uint256)` selector、收款人、金额、`feeLimit`、timestamp 和 expiration；节点返回的 JSON 字段不作为信任依据。首次字段不匹配时只向节点重建一次未签名交易，第二次仍不匹配则返回字段级安全原因码并终止；HTTP、节点业务错误、缺失 `raw_data_hex` 和 `txID` 不匹配不重试。日志只记录原因码，不记录私钥、签名或完整 `raw_data_hex`。
+- TRON `transfer(address,uint256)` 请求参数只使用 Base58Check payload 去掉 `0x41` 网络前缀后的 20 字节地址，不包含 4 字节 checksum。节点返回的 `raw_data_hex` 使用 Trident generated protobuf 解析。签名前严格核对唯一 `TriggerSmartContract`、owner、USDT 合约、零 `callValue`、零 `callTokenValue`、零 `tokenId`、selector、收款人、金额、`feeLimit`、timestamp 和 expiration；节点返回的 JSON 字段不作为信任依据。首次字段不匹配时只向节点重建一次未签名交易，第二次仍不匹配则返回字段级安全原因码并终止；HTTP、节点业务错误、缺失 `raw_data_hex` 和 `txID` 不匹配不重试。日志只记录原因码，不记录私钥、签名或完整 `raw_data_hex`。
 - ERC20 nonce 的数据库行可在独立事务中初始化，但锁定、递增与保存 `SIGNING` intent 位于同一事务；intent 保存失败不会消耗 nonce。
 - 所有 attempt mutation 固定按 withdrawal -> payout attempt 顺序加悲观锁，避免状态确认与广播更新之间形成反向锁顺序。
 - TRON 交易过期后，即使配置节点单次返回 `NOT_FOUND`，也进入 `MANUAL_REVIEW` 并保留 active slot，禁止自动释放后重新签名。
