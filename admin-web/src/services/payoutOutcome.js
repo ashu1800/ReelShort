@@ -1,4 +1,10 @@
 const SUBMITTED_STATUSES = new Set(['BROADCASTED', 'CONFIRMED'])
+const EXECUTABLE_PAYOUT_STATUSES = new Set(['SIGNING', 'FAILED_RETRYABLE'])
+
+export function isPayoutEligibleForExecution(withdrawal) {
+  return withdrawal.status === 'PENDING'
+    && (!withdrawal.payoutStatus || EXECUTABLE_PAYOUT_STATUSES.has(withdrawal.payoutStatus))
+}
 
 export function isSubmittedPayoutStatus(status) {
   return SUBMITTED_STATUSES.has(status)

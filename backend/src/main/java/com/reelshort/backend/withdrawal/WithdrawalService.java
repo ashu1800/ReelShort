@@ -8,6 +8,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,11 +45,13 @@ public class WithdrawalService {
 	private final TotpService totpService;
 	private final AdminUserRepository adminUserRepository;
 	private final WithdrawalPayoutCoordinator payoutCoordinator;
+	private final PayoutBalancePreflightService balancePreflight;
 	private final WithdrawalPayoutAttemptRepository payoutAttemptRepository;
 	private final EthereumProperties ethereumProperties;
 	private final TronProperties tronProperties;
 	private final BscProperties bscProperties;
 	private final AdminAuditService adminAuditService;
+	private final ReentrantLock payoutExecutionLock = new ReentrantLock();
 
 	public WithdrawalService(WithdrawalRequestRepository withdrawalRequestRepository,
 			UserWalletRepository userWalletRepository, PointAccountRepository pointAccountRepository,
@@ -55,6 +59,7 @@ public class WithdrawalService {
 			UserActionLocks userActionLocks, UserAccountRepository userAccountRepository,
 			TotpService totpService,
 			AdminUserRepository adminUserRepository, WithdrawalPayoutCoordinator payoutCoordinator,
+			PayoutBalancePreflightService balancePreflight,
 			WithdrawalPayoutAttemptRepository payoutAttemptRepository,
 			EthereumProperties ethereumProperties, TronProperties tronProperties, BscProperties bscProperties,
 			AdminAuditService adminAuditService) {
@@ -67,6 +72,7 @@ public class WithdrawalService {
 		this.totpService = totpService;
 		this.adminUserRepository = adminUserRepository;
 		this.payoutCoordinator = payoutCoordinator;
+		this.balancePreflight = balancePreflight;
 		this.payoutAttemptRepository = payoutAttemptRepository;
 		this.ethereumProperties = ethereumProperties;
 		this.tronProperties = tronProperties;
@@ -193,10 +199,20 @@ public class WithdrawalService {
 					"status=TOTP_REJECTED");
 			throw new AdminException(403, "2FA verification failed");
 		}
+		return withPayoutExecutionLock(() -> approveLocked(withdrawalId, tronPrivateKey, ethPrivateKey,
+				bepPrivateKey, adminUsername));
+	}
+
+	private WithdrawalResponse approveLocked(UUID withdrawalId, String tronPrivateKey, String ethPrivateKey,
+			String bepPrivateKey, String adminUsername) {
 		WithdrawalRequest request = null;
 		WithdrawalPayoutAttempt attempt;
 		try {
 			request = withdrawal(withdrawalId);
+			if (requiresBalancePreflight(request)) {
+				balancePreflight.requireSufficient(
+						List.of(request), tronPrivateKey, ethPrivateKey, bepPrivateKey);
+			}
 			String privateKey = selectPrivateKey(request.network(), tronPrivateKey, ethPrivateKey, bepPrivateKey);
 			attempt = payoutCoordinator.prepareAndBroadcast(withdrawalId, privateKey,
 					adminUsername);
@@ -279,9 +295,8 @@ public class WithdrawalService {
 			if (req == null) {
 				throw new AdminException(404, "withdrawal not found");
 			}
-			if (req.status() == WithdrawalStatus.PENDING) {
-				total = total.add(req.usdtAmount());
-			}
+			requireBatchPayoutEligible(req);
+			total = total.add(req.usdtAmount());
 			items.add(new BatchWithdrawalPreviewResponse.PreviewItem(
 					req.id().toString(), userAccount(req.userId()), decimal(req.usdtAmount()),
 					req.network(), req.walletAddress(), req.status()));
@@ -308,17 +323,29 @@ public class WithdrawalService {
 			}
 			throw new AdminException(403, "2FA verification failed");
 		}
+		return withPayoutExecutionLock(() -> batchApproveLocked(withdrawalIds, tronPrivateKey,
+				ethPrivateKey, bepPrivateKey, admin));
+	}
+
+	private BatchWithdrawalResponse batchApproveLocked(List<UUID> withdrawalIds, String tronPrivateKey,
+			String ethPrivateKey, String bepPrivateKey, AdminUser admin) {
+		List<WithdrawalRequest> requests = new ArrayList<>();
+		for (UUID withdrawalId : withdrawalIds) {
+			WithdrawalRequest request = withdrawal(withdrawalId);
+			requireBatchPayoutEligible(request);
+			requests.add(request);
+		}
+		balancePreflight.requireSufficient(requests, tronPrivateKey, ethPrivateKey, bepPrivateKey);
 		List<BatchWithdrawalResponse.ItemResult> results = new ArrayList<>();
 		int succeeded = 0;
 		int pendingCount = 0;
 		int firstFailureIndex = -1;
 		String firstFailureMessage = null;
 		int index = 0;
-		for (UUID withdrawalId : withdrawalIds) {
-			WithdrawalRequest request = null;
+		for (WithdrawalRequest request : requests) {
+			UUID withdrawalId = request.id();
 			WithdrawalPayoutAttempt attempt;
 			try {
-				request = withdrawal(withdrawalId);
 				String privateKey = selectPrivateKey(request.network(), tronPrivateKey, ethPrivateKey, bepPrivateKey);
 				attempt = payoutCoordinator.prepareAndBroadcast(
 						withdrawalId, privateKey, admin.username());
@@ -329,8 +356,7 @@ public class WithdrawalService {
 						withdrawalId.toString(), "FAILED", null, 0, errorMessage, false,
 						errorMessage));
 				String auditSummary = request == null
-						? "status=FAILED"
-						: payoutAuditSummary(request, "FAILED", null);
+						? "status=FAILED" : payoutAuditSummary(request, "FAILED", null);
 				recordAuditSafely(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", withdrawalId, auditSummary);
 				if (firstFailureIndex < 0) {
 					firstFailureIndex = index;
@@ -365,6 +391,40 @@ public class WithdrawalService {
 		}
 		return new BatchWithdrawalResponse(succeeded, results.size() - succeeded - pendingCount, pendingCount,
 				firstFailureIndex, firstFailureMessage, results);
+	}
+
+	private void requireBatchPayoutEligible(WithdrawalRequest request) {
+		if (request.status() != WithdrawalStatus.PENDING) {
+			throw new AdminException(409, "withdrawal is not eligible for batch payout: " + request.id());
+		}
+		payoutAttemptRepository.findFirstByWithdrawalRequestIdOrderByAttemptNumberDesc(request.id())
+				.map(WithdrawalPayoutAttempt::status)
+				.filter(status -> status != WithdrawalPayoutStatus.SIGNING
+						&& status != WithdrawalPayoutStatus.FAILED_RETRYABLE)
+				.ifPresent(status -> {
+					throw new AdminException(409, "withdrawal is not eligible for batch payout: "
+							+ request.id() + " (" + status + ")");
+				});
+	}
+
+	private boolean requiresBalancePreflight(WithdrawalRequest request) {
+		return payoutAttemptRepository.findFirstByWithdrawalRequestIdOrderByAttemptNumberDesc(request.id())
+				.map(WithdrawalPayoutAttempt::status)
+				.map(status -> status == WithdrawalPayoutStatus.SIGNING
+						|| status == WithdrawalPayoutStatus.FAILED_RETRYABLE)
+				.orElse(true);
+	}
+
+	private <T> T withPayoutExecutionLock(Supplier<T> action) {
+		if (!payoutExecutionLock.tryLock()) {
+			throw new AdminException(409, "another payout execution is already in progress");
+		}
+		try {
+			return action.get();
+		}
+		finally {
+			payoutExecutionLock.unlock();
+		}
 	}
 
 	private String payoutAuditSummary(WithdrawalRequest request, String status, String txHash) {

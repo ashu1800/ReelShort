@@ -12,7 +12,7 @@ import {
 } from '../services/adminApi'
 import type { BatchWithdrawalPreview, BatchWithdrawalResult, WithdrawalRequest, WithdrawalStatus } from '../services/adminApi'
 import { backendErrorMessage, isRequestTimeout } from '../services/http'
-import { buildSinglePayoutResult } from '../services/payoutOutcome.js'
+import { buildSinglePayoutResult, isPayoutEligibleForExecution } from '../services/payoutOutcome.js'
 import { clearWithdrawalSecrets } from '../services/withdrawalSecrets.js'
 
 const loading = ref(false)
@@ -30,7 +30,7 @@ const batchResult = ref<BatchWithdrawalResult | null>(null)
 const totpEnabled = ref(false)
 
 const selectedPendingIds = computed(() =>
-  selectedRows.value.filter((w) => w.status === 'PENDING').map((w) => w.id),
+  selectedRows.value.filter(isPayoutEligibleForExecution).map((w) => w.id),
 )
 const needsTronKey = computed(() => preview.value?.items.some((item) => item.network === 'TRC20') ?? false)
 const needsEthKey = computed(() => preview.value?.items.some((item) => item.network === 'ERC20') ?? false)
@@ -88,6 +88,10 @@ function clearSecrets() {
 }
 
 async function openPayoutDialog(row?: WithdrawalRequest) {
+  if (row && !isPayoutEligibleForExecution(row)) {
+    ElMessage.warning('该提现当前打款状态不可执行，请先刷新列表核对状态')
+    return
+  }
   activePayoutIds.value = row ? [row.id] : [...selectedPendingIds.value]
   if (activePayoutIds.value.length === 0) {
     ElMessage.warning('请先勾选待处理的提现申请')
@@ -276,7 +280,7 @@ onBeforeRouteLeave(() => clearSecrets())
     </div>
 
     <el-table :data="withdrawals" border @selection-change="handleSelectionChange">
-      <el-table-column type="selection" width="45" :selectable="(row: WithdrawalRequest) => row.status === 'PENDING'" />
+      <el-table-column type="selection" width="45" :selectable="isPayoutEligibleForExecution" />
       <el-table-column label="申请 ID" min-width="240">
         <template #default="{ row }">
           <span class="mono">{{ row.id }}</span>
@@ -329,7 +333,13 @@ onBeforeRouteLeave(() => clearSecrets())
       <el-table-column align="right" fixed="right" label="操作" width="150">
         <template #default="{ row }">
           <template v-if="row.status === 'PENDING'">
-            <el-button :loading="operationLoading" type="primary" text @click="openPayoutDialog(row)">执行打款</el-button>
+            <el-button
+              v-if="isPayoutEligibleForExecution(row)"
+              :loading="operationLoading"
+              type="primary"
+              text
+              @click="openPayoutDialog(row)"
+            >执行打款</el-button>
             <el-button :loading="operationLoading" type="danger" text @click="reject(row)">拒绝</el-button>
           </template>
           <span v-else class="muted">已处理</span>

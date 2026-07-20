@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { clearWithdrawalSecrets } from '../src/services/withdrawalSecrets.js'
-import { buildSinglePayoutResult } from '../src/services/payoutOutcome.js'
+import { buildSinglePayoutResult, isPayoutEligibleForExecution } from '../src/services/payoutOutcome.js'
 
 test('batch preview request never contains private keys', () => {
   const source = readFileSync(new URL('../src/services/adminApi.ts', import.meta.url), 'utf8')
@@ -19,18 +19,39 @@ test('credential cleanup clears both chain keys and TOTP in place', () => {
   const credentials = {
     tronPrivateKey: 'tron-secret',
     ethPrivateKey: 'eth-secret',
+    bepPrivateKey: 'bep-secret',
     totpCode: '123456',
   }
 
   clearWithdrawalSecrets(credentials)
 
-  assert.deepEqual(credentials, { tronPrivateKey: '', ethPrivateKey: '', totpCode: '' })
+  assert.deepEqual(credentials, {
+    tronPrivateKey: '',
+    ethPrivateKey: '',
+    bepPrivateKey: '',
+    totpCode: '',
+  })
 })
 
 test('single payout UI never hard-codes a successful result', () => {
   const source = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
 
   assert.doesNotMatch(source, /succeeded:\s*1/)
+})
+
+test('payout execution eligibility excludes in-flight and terminal attempts', () => {
+  const base = { status: 'PENDING' }
+  assert.equal(isPayoutEligibleForExecution({ ...base, payoutStatus: null }), true)
+  assert.equal(isPayoutEligibleForExecution({ ...base, payoutStatus: 'SIGNING' }), true)
+  assert.equal(isPayoutEligibleForExecution({ ...base, payoutStatus: 'FAILED_RETRYABLE' }), true)
+  for (const payoutStatus of ['PREPARED', 'BROADCASTED', 'MANUAL_REVIEW', 'CONFIRMED']) {
+    assert.equal(isPayoutEligibleForExecution({ ...base, payoutStatus }), false, payoutStatus)
+  }
+  assert.equal(isPayoutEligibleForExecution({ status: 'APPROVED', payoutStatus: null }), false)
+
+  const source = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
+  assert.match(source, /:selectable="isPayoutEligibleForExecution"/)
+  assert.match(source, /selectedRows\.value\.filter\(isPayoutEligibleForExecution\)/)
 })
 
 test('single payout result treats only submitted statuses as success', () => {

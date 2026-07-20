@@ -36,6 +36,8 @@
 - `POST /api/admin/withdrawals/batch-preview` 同时要求 `WITHDRAWAL_READ` 和 `WITHDRAWAL_WRITE`，请求体仅包含最多 10 个 `withdrawalIds`。响应展示配置的热钱包公开地址、待打款总额、网络、目标地址和提现状态；预览不接收私钥，也不查询由私钥派生的钱包余额。
 - `POST /api/admin/withdrawals/{id}/approve` 请求按网络提交 `tronPrivateKey` 或 `ethPrivateKey`，并提交 6 位数字 `totpCode`。私钥必须为空或 64 位 hex，可带 `0x`/`0X` 前缀；coordinator 会统一剥离前缀，非法格式统一返回 400。私钥只传入 payout coordinator，不持久化、不审计、不记录日志，也不进入响应。
 - `POST /api/admin/withdrawals/batch-approve` 使用相同的私钥与 TOTP 边界，最多逐笔执行 10 笔，并返回 `succeeded`、`pending`、`failed` 和每笔 attempt 状态。只有 `BROADCASTED`、`CONFIRMED` 计为已提交，`PREPARED` 单独计为待广播；`FAILED_RETRYABLE` 和 `MANUAL_REVIEW` 均为非成功结果，后者要求人工核对且禁止重复生成交易。单笔审计写入失败只记录 WARN，不改变该笔结果或阻断后续提现。
+- 单笔和批量执行在创建 payout attempt、签名或广播前执行余额预检：按网络聚合本次 USDT 总额，并检查派生热钱包的 USDT 余额以及 TRX、ETH 或 BNB 手续费余额。批量任一网络余额不足会整体拒绝，不创建任何 attempt。预检到创建 attempt 由进程内执行锁串行化，降低并发打款同时通过余额检查的风险；链上余额变化仍以节点在签名/广播时的最终结果为准。
+- 后台列表只允许申请状态为 `PENDING` 且没有活动 attempt，或最新 attempt 为 `SIGNING`、`FAILED_RETRYABLE` 的记录进入批量勾选和执行按钮；`PREPARED`、`BROADCASTED`、`MANUAL_REVIEW`、`CONFIRMED` 会被禁用，避免重复生成交易。
 - 执行、执行失败和拒绝操作均写管理员审计。失败审计使用独立事务，摘要只包含提现 ID、网络、金额、状态和可用的交易哈希，不记录异常请求体或签名材料。
 
 ## 钱包写操作

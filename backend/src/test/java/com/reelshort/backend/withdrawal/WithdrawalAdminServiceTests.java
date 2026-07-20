@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +43,7 @@ class WithdrawalAdminServiceTests {
 	private final TotpService totpService = mock(TotpService.class);
 	private final AdminUserRepository adminRepository = mock(AdminUserRepository.class);
 	private final WithdrawalPayoutCoordinator payoutCoordinator = mock(WithdrawalPayoutCoordinator.class);
+	private final PayoutBalancePreflightService balancePreflight = mock(PayoutBalancePreflightService.class);
 	private final WithdrawalPayoutAttemptRepository attemptRepository = mock(WithdrawalPayoutAttemptRepository.class);
 	private final AdminAuditService auditService = mock(AdminAuditService.class);
 	private final EthereumProperties ethereumProperties = new EthereumProperties();
@@ -52,8 +54,44 @@ class WithdrawalAdminServiceTests {
 	void setUp() {
 		service = new WithdrawalService(withdrawalRepository, walletRepository, pointAccountRepository,
 				configService, new UserActionLocks(), userRepository, totpService, adminRepository,
-				payoutCoordinator, attemptRepository, ethereumProperties, tronProperties, new BscProperties(),
+				payoutCoordinator, balancePreflight, attemptRepository,
+				ethereumProperties, tronProperties, new BscProperties(),
 				auditService);
+	}
+
+	@Test
+	void batchBalanceFailureStopsBeforeCreatingAnyPayoutAttempt() {
+		UUID adminId = configuredAdmin();
+		UUID withdrawalId = UUID.randomUUID();
+		WithdrawalRequest withdrawal = payoutWithdrawal(withdrawalId);
+		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
+		doThrow(new WithdrawalException(409,
+				"ERC20 USDT balance insufficient: required=12.5, available=0"))
+				.when(balancePreflight).requireSufficient(List.of(withdrawal), null, "eth-key", null);
+
+		assertThatThrownBy(() -> service.batchApprove(
+				List.of(withdrawalId), null, "eth-key", null, "123456", adminId))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("balance insufficient");
+		verify(payoutCoordinator, never()).prepareAndBroadcast(any(), any(), any());
+	}
+
+	@Test
+	void batchRejectsPreparedAttemptBeforePayoutExecution() {
+		UUID adminId = configuredAdmin();
+		UUID withdrawalId = UUID.randomUUID();
+		WithdrawalRequest withdrawal = payoutWithdrawal(withdrawalId);
+		WithdrawalPayoutAttempt attempt = preparedAttempt(withdrawalId);
+		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
+		when(attemptRepository.findFirstByWithdrawalRequestIdOrderByAttemptNumberDesc(withdrawalId))
+				.thenReturn(Optional.of(attempt));
+
+		assertThatThrownBy(() -> service.batchApprove(
+				List.of(withdrawalId), null, "eth-key", null, "123456", adminId))
+				.isInstanceOf(com.reelshort.backend.admin.AdminException.class)
+				.hasMessageContaining("not eligible for batch payout");
+		verify(balancePreflight, never()).requireSufficient(any(), any(), any(), any());
+		verify(payoutCoordinator, never()).prepareAndBroadcast(any(), any(), any());
 	}
 
 	@Test
@@ -66,6 +104,8 @@ class WithdrawalAdminServiceTests {
 		when(adminRepository.findById(adminId)).thenReturn(Optional.of(admin));
 		when(totpService.verify("secret", "123456")).thenReturn(true);
 		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
+		when(withdrawal.id()).thenReturn(withdrawalId);
+		when(withdrawal.status()).thenReturn(WithdrawalStatus.PENDING);
 		when(withdrawal.network()).thenReturn("ERC20");
 		when(withdrawal.usdtAmount()).thenReturn(new BigDecimal("12.5"));
 		when(payoutCoordinator.prepareAndBroadcast(eq(withdrawalId), eq("eth-key"), any()))
@@ -85,7 +125,7 @@ class WithdrawalAdminServiceTests {
 		UUID firstId = UUID.randomUUID();
 		UUID secondId = UUID.randomUUID();
 		WithdrawalRequest first = withdrawal(firstId, "TRC20", "TReceiver", "2.5", WithdrawalStatus.PENDING);
-		WithdrawalRequest second = withdrawal(secondId, "ERC20", "0xReceiver", "3.5", WithdrawalStatus.REJECTED);
+		WithdrawalRequest second = withdrawal(secondId, "ERC20", "0xReceiver", "3.5", WithdrawalStatus.PENDING);
 		tronProperties.setHotWalletAddress(" THotWallet ");
 		ethereumProperties.setHotWalletAddress(" 0xHotWallet ");
 		when(withdrawalRepository.findAllById(List.of(firstId, secondId))).thenReturn(List.of(second, first));
@@ -94,11 +134,11 @@ class WithdrawalAdminServiceTests {
 
 		assertThat(response.tronHotWalletAddress()).isEqualTo("THotWallet");
 		assertThat(response.ethHotWalletAddress()).isEqualTo("0xHotWallet");
-		assertThat(response.totalUsdt()).isEqualTo("2.5");
+		assertThat(response.totalUsdt()).isEqualTo("6");
 		assertThat(response.items()).extracting(BatchWithdrawalPreviewResponse.PreviewItem::withdrawalId)
 				.containsExactly(firstId.toString(), secondId.toString());
 		assertThat(response.items()).extracting(BatchWithdrawalPreviewResponse.PreviewItem::status)
-				.containsExactly(WithdrawalStatus.PENDING, WithdrawalStatus.REJECTED);
+				.containsExactly(WithdrawalStatus.PENDING, WithdrawalStatus.PENDING);
 	}
 
 	@Test
@@ -111,6 +151,8 @@ class WithdrawalAdminServiceTests {
 		when(adminRepository.findById(adminId)).thenReturn(Optional.of(admin));
 		when(totpService.verify("secret", "123456")).thenReturn(true);
 		when(withdrawalRepository.findById(withdrawalId)).thenReturn(Optional.of(withdrawal));
+		when(withdrawal.id()).thenReturn(withdrawalId);
+		when(withdrawal.status()).thenReturn(WithdrawalStatus.PENDING);
 		when(withdrawal.network()).thenReturn("ERC20");
 		when(withdrawal.usdtAmount()).thenReturn(BigDecimal.ONE);
 		when(payoutCoordinator.prepareAndBroadcast(eq(withdrawalId), eq("eth-key"), any()))

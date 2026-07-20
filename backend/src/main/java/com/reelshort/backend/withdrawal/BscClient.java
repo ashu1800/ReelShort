@@ -22,6 +22,7 @@ import org.web3j.protocol.core.methods.request.Transaction;
 import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.http.HttpService;
 import org.web3j.utils.Numeric;
+import org.web3j.utils.Convert;
 
 import jakarta.annotation.PreDestroy;
 
@@ -82,6 +83,22 @@ public class BscClient {
 		}
 		catch (Exception exception) {
 			throw new WithdrawalException(503, "USDT balance query failed: " + exception.getMessage());
+		}
+	}
+
+	public BigDecimal getBnbBalance(String address) {
+		try {
+			var response = web3j.ethGetBalance(address, DefaultBlockParameterName.LATEST).send();
+			if (response.hasError() || response.getBalance() == null) {
+				throw new WithdrawalException(503, "BNB balance query failed");
+			}
+			return Convert.fromWei(new BigDecimal(response.getBalance()), Convert.Unit.ETHER);
+		}
+		catch (WithdrawalException exception) {
+			throw exception;
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "BNB balance query failed: " + exception.getMessage());
 		}
 	}
 
