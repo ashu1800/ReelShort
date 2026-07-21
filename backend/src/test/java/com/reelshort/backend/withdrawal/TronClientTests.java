@@ -216,6 +216,34 @@ class TronClientTests {
 	}
 
 	@Test
+	void rejectsZeroTransferFeePrices() throws Exception {
+		TronClient client = feeEstimateClient(new TronProperties(),
+				"{\"result\":{\"result\":true},\"energy_used\":130285}",
+				"{\"chainParameter\":[{\"key\":\"getEnergyFee\",\"value\":0},"
+						+ "{\"key\":\"getTransactionFee\",\"value\":0}]}", validResources());
+
+		assertThatThrownBy(() -> client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(withdrawal(DESTINATION, "1"))))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("missing chain parameter getEnergyFee");
+	}
+
+	@Test
+	void rejectsSuccessfulJsonFromFailedHttpResponse() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/getaccount", exchange -> respond(exchange, 500,
+				"{\"balance\":20000000}"));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+
+		assertThatThrownBy(() -> client.getTrxBalance(DESTINATION))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("TronGrid HTTP status 500");
+	}
+
+	@Test
 	void rejectsTransferFeeEstimateWithInvalidResources() throws Exception {
 		TronClient client = feeEstimateClient(new TronProperties(),
 				"{\"result\":{\"result\":true},\"energy_used\":130285}",
@@ -663,9 +691,13 @@ class TronClientTests {
 	}
 
 	private void respond(com.sun.net.httpserver.HttpExchange exchange, String body) throws IOException {
+		respond(exchange, 200, body);
+	}
+
+	private void respond(com.sun.net.httpserver.HttpExchange exchange, int status, String body) throws IOException {
 		byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
 		exchange.getResponseHeaders().add("Content-Type", "application/json");
-		exchange.sendResponseHeaders(200, bytes.length);
+		exchange.sendResponseHeaders(status, bytes.length);
 		exchange.getResponseBody().write(bytes);
 		exchange.close();
 	}

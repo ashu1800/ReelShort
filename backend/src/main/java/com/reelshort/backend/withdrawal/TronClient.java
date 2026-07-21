@@ -208,7 +208,7 @@ public class TronClient {
 		}
 		for (JsonNode parameter : parameters) {
 			if (key.equals(parameter.path("key").asText()) && parameter.path("value").isIntegralNumber()
-					&& parameter.path("value").canConvertToLong() && parameter.path("value").asLong() >= 0) {
+					&& parameter.path("value").canConvertToLong() && parameter.path("value").asLong() > 0) {
 				return parameter.path("value").asLong();
 			}
 		}
@@ -782,6 +782,9 @@ public class TronClient {
 				builder.header("TRON-PRO-API-KEY", properties.getApiKey());
 			}
 			HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+			if (response.statusCode() < 200 || response.statusCode() >= 300) {
+				throw new WithdrawalException(503, "TronGrid HTTP status " + response.statusCode());
+			}
 			return objectMapper.readTree(responseBody(response, "RPC request"));
 		}
 		catch (Exception exception) {
