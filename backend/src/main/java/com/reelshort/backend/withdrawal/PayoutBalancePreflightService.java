@@ -60,7 +60,11 @@ public class PayoutBalancePreflightService {
 			int count = counts.get(network);
 			if ("TRC20".equals(network)) {
 				checkAtLeast("TRC20 USDT", entry.getValue(), tronClient.getUsdtBalance(address));
-				checkAtLeast("TRX", estimateFee(network, count).estimatedAmount(),
+				List<WithdrawalRequest> tronWithdrawals = withdrawals.stream()
+						.filter(withdrawal -> network.equals(withdrawal.network()))
+						.toList();
+				TronFeeQuote quote = tronClient.estimateTransferFees(address, tronWithdrawals);
+				checkAtLeast("TRX 预计手续费", quote.requiredTrx(),
 						tronClient.getTrxBalance(address));
 			}
 			else if ("ERC20".equals(network)) {
@@ -117,7 +121,9 @@ public class PayoutBalancePreflightService {
 		}
 		if (available.compareTo(required) < 0) {
 			BigDecimal missing = required.subtract(available);
-			throw new WithdrawalException(409, asset + " 余额不足：本次需要 "
+			String balanceLabel = asset.endsWith("手续费") ? asset + "余额" : asset + " 余额";
+			String requiredLabel = asset.endsWith("手续费") ? "本次预计需要 " : "本次需要 ";
+			throw new WithdrawalException(409, balanceLabel + "不足：" + requiredLabel
 					+ decimal(required) + "，当前余额 " + decimal(available)
 					+ "，还差 " + decimal(missing));
 		}

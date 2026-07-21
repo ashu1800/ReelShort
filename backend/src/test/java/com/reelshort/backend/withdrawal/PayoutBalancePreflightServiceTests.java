@@ -3,6 +3,7 @@ package com.reelshort.backend.withdrawal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -44,19 +45,38 @@ class PayoutBalancePreflightServiceTests {
 
 	@Test
 	void rejectsTronBatchWhenNativeFeeBalanceIsInsufficient() {
-		WithdrawalRequest request = withdrawal("TRC20", "1.000000");
+		WithdrawalRequest first = withdrawal("TRC20", "1.000000");
+		WithdrawalRequest second = withdrawal("TRC20", "1.000000");
 		when(tronClient.addressFromPrivateKey("tron-key")).thenReturn("THotWallet");
-		when(tronClient.getUsdtBalance("THotWallet")).thenReturn(new BigDecimal("2.000000"));
-		when(tronClient.getTrxBalance("THotWallet")).thenReturn(new BigDecimal("1.000000"));
+		when(tronClient.getUsdtBalance("THotWallet")).thenReturn(new BigDecimal("20.000000"));
+		when(tronClient.estimateTransferFees("THotWallet", List.of(first, second)))
+				.thenReturn(new TronFeeQuote(new BigDecimal("31.269000"), 260570L, 0L, 20));
+		when(tronClient.getTrxBalance("THotWallet")).thenReturn(new BigDecimal("19.969158"));
 
-		assertThatThrownBy(() -> service.requireSufficient(List.of(request), "tron-key", null, null))
+		assertThatThrownBy(() -> service.requireSufficient(
+				List.of(first, second), "tron-key", null, null))
 				.isInstanceOf(WithdrawalException.class)
-				.hasMessage("TRX 余额不足：本次需要 100，当前余额 1，还差 99");
+				.hasMessage("TRX 预计手续费余额不足：本次预计需要 31.269，当前余额 19.969158，还差 11.299842");
+		verify(tronClient).estimateTransferFees("THotWallet", List.of(first, second));
+	}
+
+	@Test
+	void allowsTronBatchWhenDynamicFeeBalanceIsSufficient() {
+		WithdrawalRequest first = withdrawal("TRC20", "1.000000");
+		WithdrawalRequest second = withdrawal("TRC20", "1.000000");
+		when(tronClient.addressFromPrivateKey("tron-key")).thenReturn("THotWallet");
+		when(tronClient.getUsdtBalance("THotWallet")).thenReturn(new BigDecimal("20.000000"));
+		when(tronClient.estimateTransferFees("THotWallet", List.of(first, second)))
+				.thenReturn(new TronFeeQuote(new BigDecimal("31.269000"), 260570L, 0L, 20));
+		when(tronClient.getTrxBalance("THotWallet")).thenReturn(new BigDecimal("32.000000"));
+
+		service.requireSufficient(List.of(first, second), "tron-key", null, null);
+
+		verify(tronClient).estimateTransferFees("THotWallet", List.of(first, second));
 	}
 
 	@Test
 	void estimatesNativeFeesByNetworkAndTransactionCount() {
-		tronProperties.setFeeLimit(20_000_000L);
 		ethereumProperties.setGasLimit(100_000L);
 		bscProperties.setGasLimit(100_000L);
 		when(ethereumClient.queryGasPrice()).thenReturn(new BigInteger("20000000000"));
@@ -69,7 +89,7 @@ class PayoutBalancePreflightServiceTests {
 				withdrawal("TRC20", "1")));
 
 		assertThat(estimates).containsExactly(
-				new PayoutFeeEstimate("TRC20", "TRX", 2, new BigDecimal("40"), "MAXIMUM"),
+				new PayoutFeeEstimate("TRC20", "TRX", 2, new BigDecimal("200"), "MAXIMUM"),
 				new PayoutFeeEstimate("ERC20", "ETH", 1, new BigDecimal("0.002000000000000000"), "ESTIMATE"),
 				new PayoutFeeEstimate("BEP20", "BNB", 1, new BigDecimal("0.000300000000000000"), "ESTIMATE"));
 	}
