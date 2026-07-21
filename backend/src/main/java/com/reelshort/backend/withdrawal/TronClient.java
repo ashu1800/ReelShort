@@ -148,7 +148,8 @@ public class TronClient {
 								"parameter", encodeTransferParams(withdrawal.walletAddress(), rawAmount),
 								"visible", true));
 				if (!simulation.path("result").path("result").asBoolean(false)
-						|| !simulation.has("energy_used") || !simulation.path("energy_used").canConvertToLong()
+						|| !simulation.path("energy_used").isIntegralNumber()
+						|| !simulation.path("energy_used").canConvertToLong()
 						|| simulation.path("energy_used").asLong() < 0) {
 					throw new IllegalStateException("invalid transfer simulation response");
 				}
@@ -201,7 +202,7 @@ public class TronClient {
 			throw new IllegalStateException("missing chain parameters");
 		}
 		for (JsonNode parameter : parameters) {
-			if (key.equals(parameter.path("key").asText()) && parameter.has("value")
+			if (key.equals(parameter.path("key").asText()) && parameter.path("value").isIntegralNumber()
 					&& parameter.path("value").canConvertToLong() && parameter.path("value").asLong() >= 0) {
 				return parameter.path("value").asLong();
 			}
@@ -220,7 +221,7 @@ public class TronClient {
 			return 0L;
 		}
 		JsonNode value = response.path(field);
-		if (!value.canConvertToLong() || value.asLong() < 0) {
+		if (!value.isIntegralNumber() || !value.canConvertToLong() || value.asLong() < 0) {
 			throw new IllegalStateException("invalid account resource " + field);
 		}
 		return value.asLong();

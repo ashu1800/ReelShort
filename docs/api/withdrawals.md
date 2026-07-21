@@ -37,14 +37,14 @@
 - `POST /api/admin/withdrawals/batch-preview` 同时要求 `WITHDRAWAL_READ` 和 `WITHDRAWAL_WRITE`，请求体仅包含最多 10 个 `withdrawalIds`。响应展示配置的热钱包公开地址、待打款总额、网络、目标地址、提现状态及 `feeEstimates`；预览不接收私钥，也不查询由私钥派生的钱包余额。
 - `POST /api/admin/withdrawals/{id}/approve` 请求按网络提交 `tronPrivateKey` 或 `ethPrivateKey`，并提交 6 位数字 `totpCode`。私钥必须为空或 64 位 hex，可带 `0x`/`0X` 前缀；coordinator 会统一剥离前缀，非法格式统一返回 400。私钥只传入 payout coordinator，不持久化、不审计、不记录日志，也不进入响应。
 - `POST /api/admin/withdrawals/batch-approve` 使用相同的私钥与 TOTP 边界，最多逐笔执行 10 笔，并返回 `succeeded`、`pending`、`failed` 和每笔 attempt 状态。只有 `BROADCASTED`、`CONFIRMED` 计为已提交，`PREPARED` 单独计为待广播；`FAILED_RETRYABLE` 和 `MANUAL_REVIEW` 均为非成功结果，后者要求人工核对且禁止重复生成交易。单笔审计写入失败只记录 WARN，不改变该笔结果或阻断后续提现。
-- 单笔和批量执行在创建 payout attempt、签名或广播前执行余额预检：按网络聚合本次 USDT 总额，并检查派生热钱包的 USDT 余额以及 TRX、ETH 或 BNB 手续费余额。批量任一网络余额不足会整体拒绝，不创建任何 attempt。预检到创建 attempt 由进程内执行锁串行化，降低并发打款同时通过余额检查的风险；链上余额变化仍以节点在签名/广播时的最终结果为准。
+- 单笔和批量执行在创建 payout attempt、签名或广播前执行余额预检：按网络聚合本次 USDT 总额，并检查派生热钱包的 USDT 余额以及 TRX、ETH 或 BNB 手续费余额。TRC20 最终执行会用每笔真实收款地址和金额调用 `triggerconstantcontract` 只读模拟，汇总 `energy_used`，按当前链上 Energy/带宽价格扣除热钱包可用资源后增加 20% 安全余量；`feeLimit` 仍作为每笔交易最大链上费用保护，但不再按 `feeLimit × 笔数` 要求钱包余额。批量任一网络余额不足会整体拒绝，不创建任何 attempt。预检到创建 attempt 由进程内执行锁串行化，降低并发打款同时通过余额检查的风险；链上余额变化仍以节点在签名/广播时的最终结果为准。
 - 余额不足响应使用中文明确返回资产、本次需要、当前余额和差额。后台在提现安全确认弹窗内持久显示该错误，不再仅依赖短暂顶部消息；请求结束后仍立即清空私钥和 2FA，重新提交、返回预览或关闭弹窗时清除旧错误。
 - 后台列表只允许申请状态为 `PENDING` 且没有活动 attempt，或最新 attempt 为 `SIGNING`、`FAILED_RETRYABLE` 的记录进入批量勾选和执行按钮；`PREPARED`、`BROADCASTED`、`MANUAL_REVIEW`、`CONFIRMED` 会被禁用，避免重复生成交易。
 - 执行、执行失败和拒绝操作均写管理员审计。失败审计使用独立事务，摘要只包含提现 ID、网络、金额、状态和可用的交易哈希，不记录异常请求体或签名材料。
 
 ## 手续费展示
 
-- 预计手续费按预览中同一网络的笔数聚合，只使用链原生币展示，不换算为 USDT 或人民币。TRC20 使用配置的 `feeLimit × 笔数`，`estimateType=MAXIMUM`，后台标为“预计上限”；ERC20/BEP20 使用预览时的 `gasPrice × gasLimit × 笔数`，`estimateType=ESTIMATE`。
+- 预计手续费按预览中同一网络的笔数聚合，只使用链原生币展示，不换算为 USDT 或人民币。由于预览不接收私钥且热钱包公开地址可选，TRC20 预览仍使用配置的 `feeLimit × 笔数`，`estimateType=MAXIMUM`，后台标为“预计上限”；最终执行余额预检改用精确转账模拟、当前链参数和钱包资源计算的动态预计费用。ERC20/BEP20 使用预览时的 `gasPrice × gasLimit × 笔数`，`estimateType=ESTIMATE`。
 - TRON 实际手续费读取 transaction info 顶层 `fee`，从 sun 换算为 TRX。ERC20/BEP20 使用 receipt 的 `gasUsed × effectiveGasPrice` 换算为 ETH/BNB；receipt 缺少 `effectiveGasPrice` 时只允许使用该 attempt 已持久化的 gas price，不查询当前 gas price 代替历史值。
 - V26 在 `withdrawal_payout_attempts` 新增可空的 `actual_fee_amount numeric(36,18)` 与 `actual_fee_asset varchar(8)`，数据库约束要求两个字段同时为空或金额非负且资产存在。重复观察同一费用幂等，冲突值拒绝覆盖。
 - `POST /api/admin/withdrawals/batch-approve` 的 item 同样包含可空 `actualFeeAmount` 和 `actualFeeAsset`。后台列表和结果表仅在字段存在时显示 `金额 + TRX/ETH/BNB`，否则显示 `-`。

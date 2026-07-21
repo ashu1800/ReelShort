@@ -166,6 +166,18 @@ class TronClientTests {
 	}
 
 	@Test
+	void rejectsFractionalTransferEnergyUsage() throws Exception {
+		TronClient client = feeEstimateClient(new TronProperties(),
+				"{\"result\":{\"result\":true},\"energy_used\":130285.9}",
+				validChainParameters(), validResources());
+
+		assertThatThrownBy(() -> client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(withdrawal(DESTINATION, "1"))))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("invalid transfer simulation response");
+	}
+
+	@Test
 	void rejectsTransferFeeEstimateWithoutEnergyPrice() throws Exception {
 		TronClient client = feeEstimateClient(new TronProperties(),
 				"{\"result\":{\"result\":true},\"energy_used\":130285}",
