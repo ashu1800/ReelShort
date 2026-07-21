@@ -34,13 +34,7 @@
 
 ### `POST /api/admin/withdrawals/{id}/manual-confirm`
 
-要求 `WITHDRAWAL_WRITE` 和已启用的管理员 TOTP。请求体：
-
-```json
-{
-  "totpCode": "123456"
-}
-```
+要求 `WITHDRAWAL_WRITE`。该接口没有请求体；管理员须已完成后台登录，但不要求再次输入 TOTP。
 
 仅可确认 `PENDING` 的 ERC20 申请；重复确认幂等。成功后系统扣除该申请全部冻结积分，将申请标记为 `APPROVED`，并写入 `WITHDRAWAL_MANUAL_CONFIRMED` 审计记录。管理员必须在调用前完成外部钱包转账；该接口不接收或校验交易哈希。
 

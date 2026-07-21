@@ -138,7 +138,7 @@ class WalletWithdrawalTransferControllerTests {
 	}
 
 	@Test
-	void manualErc20ConfirmationApprovesWithdrawalAndConsumesFrozenPointsWithoutHash() throws Exception {
+	void manualErc20ConfirmationApprovesWithdrawalWithoutSecondFactorAndConsumesFrozenPoints() throws Exception {
 		String adminToken = adminLogin();
 		RegisteredUser user = createUser("manual-erc20-confirm");
 		adjustPoints(adminToken, user.userId(), 4000, "seed manual payout");
@@ -151,17 +151,13 @@ class WalletWithdrawalTransferControllerTests {
 				.andReturn().getResponse().getContentAsString(), "$.data.id");
 
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/manual-confirm", UUID.fromString(withdrawalId))
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"totpCode\":\"" + validTotpCode() + "\"}"))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("APPROVED"))
 				.andExpect(jsonPath("$.data.payoutStatus").value("MANUAL_CONFIRMED"));
 
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/manual-confirm", UUID.fromString(withdrawalId))
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"totpCode\":\"" + validTotpCode() + "\"}"))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("APPROVED"));
 
@@ -171,6 +167,12 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(jsonPath("$.data.balance").value(400))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
 				.andExpect(jsonPath("$.data.availablePoints").value(400));
+	}
+
+	@Test
+	void manualErc20ConfirmationStillRequiresAnAuthenticatedAdminSession() throws Exception {
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/manual-confirm", UUID.randomUUID()))
+				.andExpect(status().isUnauthorized());
 	}
 
 	@Test

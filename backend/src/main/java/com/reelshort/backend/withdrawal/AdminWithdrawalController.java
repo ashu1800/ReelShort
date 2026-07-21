@@ -65,10 +65,9 @@ public class AdminWithdrawalController {
 	@PostMapping("/{withdrawalId}/manual-confirm")
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
 	public ApiResponse<WithdrawalResponse> manualConfirm(CurrentAdmin currentAdmin,
-			@PathVariable UUID withdrawalId, @Valid @RequestBody ManualWithdrawalConfirmRequest confirmRequest,
-			HttpServletRequest request) {
-		return ApiResponse.success(withdrawalService.manualConfirm(withdrawalId, confirmRequest.totpCode(),
-				currentAdmin.adminUserId(), currentAdmin.username()), requestId(request));
+			@PathVariable UUID withdrawalId, HttpServletRequest request) {
+		return ApiResponse.success(withdrawalService.manualConfirm(withdrawalId, currentAdmin.username()),
+				requestId(request));
 	}
 
 	@PostMapping("/{withdrawalId}/reject")

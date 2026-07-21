@@ -445,10 +445,8 @@ export async function fetchWithdrawalStats(range: WithdrawalStatsRange) {
 	return response.data.data
 }
 
-export async function manualConfirmWithdrawal(withdrawalId: string, totpCode: string) {
-	const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/manual-confirm`, {
-		totpCode,
-	})
+export async function manualConfirmWithdrawal(withdrawalId: string) {
+	const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/manual-confirm`)
 	return response.data.data
 }
 

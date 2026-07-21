@@ -236,15 +236,7 @@ public class WithdrawalService {
 	}
 
 	@Transactional
-	public WithdrawalResponse manualConfirm(UUID withdrawalId, String totpCode, UUID adminUserId,
-			String adminUsername) {
-		AdminUser admin = adminUserRepository.findById(adminUserId)
-				.orElseThrow(() -> new AdminException(404, "admin not found"));
-		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
-			recordAuditSafely(adminUsername, "WITHDRAWAL_MANUAL_CONFIRM_FAILED", withdrawalId,
-					"status=TOTP_REJECTED");
-			throw new AdminException(403, "2FA verification failed");
-		}
+	public WithdrawalResponse manualConfirm(UUID withdrawalId, String adminUsername) {
 		return withPayoutExecutionLock(() -> manualConfirmLocked(withdrawalId, adminUsername));
 	}
 

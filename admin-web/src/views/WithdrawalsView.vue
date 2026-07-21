@@ -4,7 +4,6 @@ import { computed, onMounted, ref } from 'vue'
 import {
   fetchWithdrawalStats,
   fetchWithdrawals,
-  get2faStatus,
   manualConfirmWithdrawal,
   rejectWithdrawal,
 } from '../services/adminApi'
@@ -24,11 +23,8 @@ const stats = ref<WithdrawalStats | null>(null)
 const statsLoading = ref(false)
 const statsError = ref('')
 const statsRange = ref<WithdrawalStatsRange>('TODAY')
-const totpEnabled = ref(false)
-
 const confirmDialogVisible = ref(false)
 const confirmingWithdrawal = ref<WithdrawalRequest | null>(null)
-const totpCode = ref('')
 const confirmError = ref('')
 
 const statRanges: Array<{ label: string; value: WithdrawalStatsRange }> = [
@@ -88,15 +84,6 @@ async function selectStatsRange(range: WithdrawalStatsRange) {
   await loadStats()
 }
 
-async function loadTotpStatus() {
-  try {
-    const status = await get2faStatus()
-    totpEnabled.value = status.enabled
-  } catch {
-    // The confirmation request remains protected by the server even if this hint cannot load.
-  }
-}
-
 function canManuallyConfirm(withdrawal: WithdrawalRequest) {
   return withdrawal.status === 'PENDING'
     && withdrawal.network === 'ERC20'
@@ -108,30 +95,20 @@ function openManualConfirm(row: WithdrawalRequest) {
     ElMessage.warning('该提现当前状态不能手动确认，请刷新列表核对')
     return
   }
-  if (!totpEnabled.value) {
-    ElMessage.warning('请先在「两步验证」页面绑定 2FA')
-    return
-  }
   confirmingWithdrawal.value = row
-  totpCode.value = ''
   confirmError.value = ''
   confirmDialogVisible.value = true
 }
 
 async function confirmExternalPayout() {
   if (!confirmingWithdrawal.value) return
-  if (!/^\d{6}$/.test(totpCode.value)) {
-    ElMessage.warning('请输入 6 位 2FA 验证码')
-    return
-  }
   operationLoading.value = true
   confirmError.value = ''
   try {
-    await manualConfirmWithdrawal(confirmingWithdrawal.value.id, totpCode.value)
+    await manualConfirmWithdrawal(confirmingWithdrawal.value.id)
     ElMessage.success('已确认外部打款，冻结积分已扣除')
     confirmDialogVisible.value = false
     confirmingWithdrawal.value = null
-    totpCode.value = ''
     await Promise.all([loadWithdrawals(), loadStats()])
   } catch (requestError) {
     confirmError.value = backendErrorMessage(requestError, '外部打款确认失败')
@@ -143,7 +120,6 @@ async function confirmExternalPayout() {
 function closeConfirmDialog() {
   confirmDialogVisible.value = false
   confirmingWithdrawal.value = null
-  totpCode.value = ''
   confirmError.value = ''
 }
 
@@ -185,7 +161,6 @@ function statusType(status: WithdrawalStatus) {
 onMounted(() => {
   void loadWithdrawals()
   void loadStats()
-  void loadTotpStatus()
 })
 </script>
 
@@ -308,17 +283,6 @@ onMounted(() => {
           :closable="false"
           style="margin-top: 16px"
         />
-        <div style="margin-top: 16px">
-          <div style="margin-bottom: 4px; font-weight: 600">2FA 验证码</div>
-          <el-input
-            v-model="totpCode"
-            placeholder="6 位 2FA 验证码"
-            maxlength="6"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            style="max-width: 200px"
-          />
-        </div>
       </template>
       <template #footer>
         <el-button @click="closeConfirmDialog">取消</el-button>
