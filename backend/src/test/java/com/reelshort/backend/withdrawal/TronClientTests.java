@@ -142,7 +142,7 @@ class TronClientTests {
 		TronFeeQuote quote = client.estimateTransferFees(
 				client.addressFromPrivateKey(PRIVATE_KEY), List.of(first, second));
 
-		assertThat(quote.requiredTrx()).isEqualByComparingTo("25.268400");
+		assertThat(quote.requiredTrx()).isEqualByComparingTo("26.428400");
 		assertThat(quote.totalEnergy()).isEqualTo(260570L);
 		assertThat(quote.availableEnergy()).isEqualTo(50000L);
 		assertThat(quote.marginPercent()).isEqualTo(20);
@@ -178,6 +178,31 @@ class TronClientTests {
 	}
 
 	@Test
+	void rejectsZeroTransferEnergyUsage() throws Exception {
+		TronClient client = feeEstimateClient(new TronProperties(),
+				"{\"result\":{\"result\":true},\"energy_used\":0}",
+				validChainParameters(), validResources());
+
+		assertThatThrownBy(() -> client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(withdrawal(DESTINATION, "1"))))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("invalid transfer simulation response");
+	}
+
+	@Test
+	void appliesSafetyMarginBeforeDeductingAvailableEnergy() throws Exception {
+		TronClient client = feeEstimateClient(new TronProperties(),
+				"{\"result\":{\"result\":true},\"energy_used\":100000}",
+				validChainParameters(),
+				"{\"EnergyLimit\":95000,\"EnergyUsed\":0,\"freeNetLimit\":480,\"freeNetUsed\":0}");
+
+		TronFeeQuote quote = client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(withdrawal(DESTINATION, "1")));
+
+		assertThat(quote.requiredTrx()).isEqualByComparingTo("2.500000");
+	}
+
+	@Test
 	void rejectsTransferFeeEstimateWithoutEnergyPrice() throws Exception {
 		TronClient client = feeEstimateClient(new TronProperties(),
 				"{\"result\":{\"result\":true},\"energy_used\":130285}",
@@ -208,6 +233,20 @@ class TronClientTests {
 		properties.setFeeLimit(10_000_000L);
 		TronClient client = feeEstimateClient(properties,
 				"{\"result\":{\"result\":true},\"energy_used\":130285}",
+				validChainParameters(), validResources());
+
+		assertThatThrownBy(() -> client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(withdrawal(DESTINATION, "1"))))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("simulated transfer fee exceeds configured fee limit");
+	}
+
+	@Test
+	void rejectsBufferedTransferFeeAboveConfiguredFeeLimit() throws Exception {
+		TronProperties properties = new TronProperties();
+		properties.setFeeLimit(10_000_000L);
+		TronClient client = feeEstimateClient(properties,
+				"{\"result\":{\"result\":true},\"energy_used\":90000}",
 				validChainParameters(), validResources());
 
 		assertThatThrownBy(() -> client.estimateTransferFees(

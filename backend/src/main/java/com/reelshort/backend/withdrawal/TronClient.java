@@ -150,7 +150,7 @@ public class TronClient {
 				if (!simulation.path("result").path("result").asBoolean(false)
 						|| !simulation.path("energy_used").isIntegralNumber()
 						|| !simulation.path("energy_used").canConvertToLong()
-						|| simulation.path("energy_used").asLong() < 0) {
+						|| simulation.path("energy_used").asLong() <= 0) {
 					throw new IllegalStateException("invalid transfer simulation response");
 				}
 				energyByTransfer.add(simulation.path("energy_used").asLong());
@@ -172,21 +172,20 @@ public class TronClient {
 			BigInteger energyPriceValue = BigInteger.valueOf(energyPrice);
 			BigInteger feeLimit = BigInteger.valueOf(properties.getFeeLimit());
 			for (long energy : energyByTransfer) {
-				if (BigInteger.valueOf(energy).multiply(energyPriceValue).compareTo(feeLimit) > 0) {
+				if (applyFeeMargin(BigInteger.valueOf(energy)).multiply(energyPriceValue)
+						.compareTo(feeLimit) > 0) {
 					throw new IllegalStateException("simulated transfer fee exceeds configured fee limit");
 				}
 			}
-			BigInteger chargeableEnergy = totalEnergy.subtract(BigInteger.valueOf(availableEnergy))
+			BigInteger bufferedEnergy = applyFeeMargin(totalEnergy);
+			BigInteger chargeableEnergy = bufferedEnergy.subtract(BigInteger.valueOf(availableEnergy))
 					.max(BigInteger.ZERO);
 			BigInteger estimatedBandwidth = BigInteger.valueOf(withdrawals.size())
 					.multiply(BigInteger.valueOf(ESTIMATED_TRANSACTION_BYTES));
-			BigInteger chargeableBandwidth = estimatedBandwidth
+			BigInteger chargeableBandwidth = applyFeeMargin(estimatedBandwidth)
 					.subtract(BigInteger.valueOf(availableBandwidth)).max(BigInteger.ZERO);
-			BigInteger baseSun = chargeableEnergy.multiply(energyPriceValue)
+			BigInteger requiredSun = chargeableEnergy.multiply(energyPriceValue)
 					.add(chargeableBandwidth.multiply(BigInteger.valueOf(bandwidthPrice)));
-			BigInteger requiredSun = baseSun.multiply(FEE_MARGIN_NUMERATOR)
-					.add(FEE_MARGIN_DENOMINATOR.subtract(BigInteger.ONE))
-					.divide(FEE_MARGIN_DENOMINATOR);
 			BigDecimal requiredTrx = new BigDecimal(requiredSun)
 					.divide(new BigDecimal(SUN_PER_TRX), 6, RoundingMode.UNNECESSARY);
 			return new TronFeeQuote(requiredTrx, totalEnergy.longValueExact(), availableEnergy, 20);
@@ -194,6 +193,12 @@ public class TronClient {
 		catch (Exception exception) {
 			throw new WithdrawalException(503, "failed to estimate TRON payout fee: " + exception.getMessage());
 		}
+	}
+
+	private BigInteger applyFeeMargin(BigInteger value) {
+		return value.multiply(FEE_MARGIN_NUMERATOR)
+				.add(FEE_MARGIN_DENOMINATOR.subtract(BigInteger.ONE))
+				.divide(FEE_MARGIN_DENOMINATOR);
 	}
 
 	private long chainParameter(JsonNode response, String key) {
