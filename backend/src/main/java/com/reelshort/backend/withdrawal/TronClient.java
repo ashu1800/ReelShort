@@ -53,6 +53,10 @@ public class TronClient {
 	private static final ECDomainParameters DOMAIN =
 			new ECDomainParameters(SECP256K1.getCurve(), SECP256K1.getG(), SECP256K1.getN(), SECP256K1.getH());
 	private static final BigDecimal USDT_DECIMALS = new BigDecimal("1000000"); // 6 decimals
+	private static final BigInteger SUN_PER_TRX = BigInteger.valueOf(1_000_000L);
+	private static final BigInteger FEE_MARGIN_NUMERATOR = BigInteger.valueOf(120L);
+	private static final BigInteger FEE_MARGIN_DENOMINATOR = BigInteger.valueOf(100L);
+	private static final long ESTIMATED_TRANSACTION_BYTES = 400L;
 	private static final byte[] TRANSFER_SELECTOR = HexFormat.of().parseHex("a9059cbb");
 	private static final long MAX_TRANSACTION_LIFETIME_MILLIS = Duration.ofMinutes(5).toMillis();
 	private static final long MAX_TIMESTAMP_SKEW_MILLIS = Duration.ofMinutes(1).toMillis();
@@ -126,6 +130,100 @@ public class TronClient {
 		catch (Exception exception) {
 			throw new WithdrawalException(503, "failed to query TRX balance: " + exception.getMessage());
 		}
+	}
+
+	public TronFeeQuote estimateTransferFees(String ownerAddress, List<WithdrawalRequest> withdrawals) {
+		try {
+			if (withdrawals == null || withdrawals.isEmpty()) {
+				throw new IllegalArgumentException("withdrawals are required");
+			}
+			List<Long> energyByTransfer = new ArrayList<>();
+			for (WithdrawalRequest withdrawal : withdrawals) {
+				BigInteger rawAmount = withdrawal.usdtAmount().movePointRight(6).toBigIntegerExact();
+				JsonNode simulation = postJson(properties.getNodeUrl() + "/wallet/triggerconstantcontract",
+						Map.of(
+								"owner_address", ownerAddress,
+								"contract_address", properties.getUsdtContract(),
+								"function_selector", "transfer(address,uint256)",
+								"parameter", encodeTransferParams(withdrawal.walletAddress(), rawAmount),
+								"visible", true));
+				if (!simulation.path("result").path("result").asBoolean(false)
+						|| !simulation.has("energy_used") || !simulation.path("energy_used").canConvertToLong()
+						|| simulation.path("energy_used").asLong() < 0) {
+					throw new IllegalStateException("invalid transfer simulation response");
+				}
+				energyByTransfer.add(simulation.path("energy_used").asLong());
+			}
+
+			JsonNode chainParameters = postJson(properties.getNodeUrl() + "/wallet/getchainparameters", Map.of());
+			long energyPrice = chainParameter(chainParameters, "getEnergyFee");
+			long bandwidthPrice = chainParameter(chainParameters, "getTransactionFee");
+			JsonNode resources = postJson(properties.getNodeUrl() + "/wallet/getaccountresource",
+					Map.of("address", ownerAddress, "visible", true));
+			long availableEnergy = availableResource(resources, "EnergyLimit", "EnergyUsed");
+			long availableBandwidth = Math.addExact(
+					availableResource(resources, "freeNetLimit", "freeNetUsed"),
+					availableResource(resources, "NetLimit", "NetUsed"));
+
+			BigInteger totalEnergy = energyByTransfer.stream()
+					.map(BigInteger::valueOf)
+					.reduce(BigInteger.ZERO, BigInteger::add);
+			BigInteger energyPriceValue = BigInteger.valueOf(energyPrice);
+			BigInteger feeLimit = BigInteger.valueOf(properties.getFeeLimit());
+			for (long energy : energyByTransfer) {
+				if (BigInteger.valueOf(energy).multiply(energyPriceValue).compareTo(feeLimit) > 0) {
+					throw new IllegalStateException("simulated transfer fee exceeds configured fee limit");
+				}
+			}
+			BigInteger chargeableEnergy = totalEnergy.subtract(BigInteger.valueOf(availableEnergy))
+					.max(BigInteger.ZERO);
+			BigInteger estimatedBandwidth = BigInteger.valueOf(withdrawals.size())
+					.multiply(BigInteger.valueOf(ESTIMATED_TRANSACTION_BYTES));
+			BigInteger chargeableBandwidth = estimatedBandwidth
+					.subtract(BigInteger.valueOf(availableBandwidth)).max(BigInteger.ZERO);
+			BigInteger baseSun = chargeableEnergy.multiply(energyPriceValue)
+					.add(chargeableBandwidth.multiply(BigInteger.valueOf(bandwidthPrice)));
+			BigInteger requiredSun = baseSun.multiply(FEE_MARGIN_NUMERATOR)
+					.add(FEE_MARGIN_DENOMINATOR.subtract(BigInteger.ONE))
+					.divide(FEE_MARGIN_DENOMINATOR);
+			BigDecimal requiredTrx = new BigDecimal(requiredSun)
+					.divide(new BigDecimal(SUN_PER_TRX), 6, RoundingMode.UNNECESSARY);
+			return new TronFeeQuote(requiredTrx, totalEnergy.longValueExact(), availableEnergy, 20);
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "failed to estimate TRON payout fee: " + exception.getMessage());
+		}
+	}
+
+	private long chainParameter(JsonNode response, String key) {
+		JsonNode parameters = response.path("chainParameter");
+		if (!parameters.isArray()) {
+			throw new IllegalStateException("missing chain parameters");
+		}
+		for (JsonNode parameter : parameters) {
+			if (key.equals(parameter.path("key").asText()) && parameter.has("value")
+					&& parameter.path("value").canConvertToLong() && parameter.path("value").asLong() >= 0) {
+				return parameter.path("value").asLong();
+			}
+		}
+		throw new IllegalStateException("missing chain parameter " + key);
+	}
+
+	private long availableResource(JsonNode response, String limitField, String usedField) {
+		long limit = nonNegativeLong(response, limitField);
+		long used = nonNegativeLong(response, usedField);
+		return Math.max(0L, limit - used);
+	}
+
+	private long nonNegativeLong(JsonNode response, String field) {
+		if (!response.has(field)) {
+			return 0L;
+		}
+		JsonNode value = response.path(field);
+		if (!value.canConvertToLong() || value.asLong() < 0) {
+			throw new IllegalStateException("invalid account resource " + field);
+		}
+		return value.asLong();
 	}
 
 	/**

@@ -2,6 +2,8 @@ package com.reelshort.backend.withdrawal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -9,8 +11,10 @@ import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.time.OffsetDateTime;
@@ -106,6 +110,126 @@ class TronClientTests {
 		assertThatThrownBy(() -> client.getUsdtBalance(DESTINATION))
 				.isInstanceOf(WithdrawalException.class)
 				.hasMessageContaining("failed to query USDT balance");
+	}
+
+	@Test
+	void estimatesExactTronTransferFeesFromEnergyAndResources() throws Exception {
+		List<String> simulationBodies = new ArrayList<>();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/triggerconstantcontract", exchange -> {
+			simulationBodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+			respond(exchange, "{\"result\":{\"result\":true},\"energy_used\":130285}"
+			);
+		});
+		server.createContext("/wallet/getchainparameters", exchange -> respond(exchange, """
+				{"chainParameter":[
+				 {"key":"getEnergyFee","value":100},
+				 {"key":"getTransactionFee","value":1000}
+				]}
+				"""));
+		server.createContext("/wallet/getaccountresource", exchange -> respond(exchange, """
+				{"EnergyLimit":100000,"EnergyUsed":50000,
+				 "freeNetLimit":600,"freeNetUsed":100,
+				 "NetLimit":1000,"NetUsed":700}
+				"""));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+		WithdrawalRequest first = withdrawal(DESTINATION, "1.250000");
+		WithdrawalRequest second = withdrawal("TJRabPrwbZy45sbavfcjinPJC18kjpRTv8", "2.500000");
+
+		TronFeeQuote quote = client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(first, second));
+
+		assertThat(quote.requiredTrx()).isEqualByComparingTo("25.268400");
+		assertThat(quote.totalEnergy()).isEqualTo(260570L);
+		assertThat(quote.availableEnergy()).isEqualTo(50000L);
+		assertThat(quote.marginPercent()).isEqualTo(20);
+		assertThat(simulationBodies).hasSize(2);
+		JsonNode firstRequest = objectMapper.readTree(simulationBodies.get(0));
+		assertThat(firstRequest.path("function_selector").asText()).isEqualTo("transfer(address,uint256)");
+		assertThat(firstRequest.path("parameter").asText())
+				.isEqualTo(abiParams(DESTINATION, new BigInteger("1250000")));
+	}
+
+	@Test
+	void rejectsTransferFeeEstimateWithoutEnergyUsage() throws Exception {
+		TronClient client = feeEstimateClient(new TronProperties(),
+				"{\"result\":{\"result\":true}}", validChainParameters(), validResources());
+
+		assertThatThrownBy(() -> client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(withdrawal(DESTINATION, "1"))))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("failed to estimate TRON payout fee")
+				.hasMessageContaining("invalid transfer simulation response");
+	}
+
+	@Test
+	void rejectsTransferFeeEstimateWithoutEnergyPrice() throws Exception {
+		TronClient client = feeEstimateClient(new TronProperties(),
+				"{\"result\":{\"result\":true},\"energy_used\":130285}",
+				"{\"chainParameter\":[{\"key\":\"getTransactionFee\",\"value\":1000}]}",
+				validResources());
+
+		assertThatThrownBy(() -> client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(withdrawal(DESTINATION, "1"))))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("missing chain parameter getEnergyFee");
+	}
+
+	@Test
+	void rejectsTransferFeeEstimateWithInvalidResources() throws Exception {
+		TronClient client = feeEstimateClient(new TronProperties(),
+				"{\"result\":{\"result\":true},\"energy_used\":130285}",
+				validChainParameters(), "{\"EnergyLimit\":-1}");
+
+		assertThatThrownBy(() -> client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(withdrawal(DESTINATION, "1"))))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("invalid account resource EnergyLimit");
+	}
+
+	@Test
+	void rejectsSimulatedTransferAboveConfiguredFeeLimit() throws Exception {
+		TronProperties properties = new TronProperties();
+		properties.setFeeLimit(10_000_000L);
+		TronClient client = feeEstimateClient(properties,
+				"{\"result\":{\"result\":true},\"energy_used\":130285}",
+				validChainParameters(), validResources());
+
+		assertThatThrownBy(() -> client.estimateTransferFees(
+				client.addressFromPrivateKey(PRIVATE_KEY), List.of(withdrawal(DESTINATION, "1"))))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("simulated transfer fee exceeds configured fee limit");
+	}
+
+	private TronClient feeEstimateClient(TronProperties properties, String simulation,
+			String chainParameters, String resources) throws IOException {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/triggerconstantcontract", exchange -> respond(exchange, simulation));
+		server.createContext("/wallet/getchainparameters", exchange -> respond(exchange, chainParameters));
+		server.createContext("/wallet/getaccountresource", exchange -> respond(exchange, resources));
+		server.start();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		return new TronClient(properties, objectMapper);
+	}
+
+	private String validChainParameters() {
+		return "{\"chainParameter\":[{\"key\":\"getEnergyFee\",\"value\":100},"
+				+ "{\"key\":\"getTransactionFee\",\"value\":1000}]}";
+	}
+
+	private String validResources() {
+		return "{\"EnergyLimit\":0,\"EnergyUsed\":0,\"freeNetLimit\":0,"
+				+ "\"freeNetUsed\":0,\"NetLimit\":0,\"NetUsed\":0}";
+	}
+
+	private WithdrawalRequest withdrawal(String address, String amount) {
+		WithdrawalRequest request = mock(WithdrawalRequest.class);
+		when(request.walletAddress()).thenReturn(address);
+		when(request.usdtAmount()).thenReturn(new BigDecimal(amount));
+		return request;
 	}
 
 	@Test
