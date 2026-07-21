@@ -89,17 +89,25 @@ public class TronClient {
 	 */
 	public BigDecimal getUsdtBalance(String address) {
 		try {
-			JsonNode account = getAccount(address);
-			JsonNode trc20 = account.path("trc20");
-			if (trc20.isArray()) {
-				for (JsonNode token : trc20) {
-					String key = properties.getUsdtContract();
-					if (token.has(key)) {
-						return new BigDecimal(token.get(key).asText()).divide(USDT_DECIMALS, 6, RoundingMode.DOWN);
-					}
-				}
+			JsonNode response = postJson(properties.getNodeUrl() + "/wallet/triggerconstantcontract", Map.of(
+					"owner_address", address,
+					"contract_address", properties.getUsdtContract(),
+					"function_selector", "balanceOf(address)",
+					"parameter", bytesToHex(abiAddress(address)),
+					"visible", true));
+			if (!response.path("result").path("result").asBoolean(false)) {
+				throw new IllegalStateException("TRON node rejected balance query");
 			}
-			return BigDecimal.ZERO;
+			JsonNode constantResults = response.path("constant_result");
+			String rawBalance = constantResults.isArray() && !constantResults.isEmpty()
+					&& constantResults.get(0).isTextual()
+					? constantResults.get(0).textValue()
+					: "";
+			if (rawBalance.length() != 64 || !rawBalance.matches("[0-9a-fA-F]{64}")) {
+				throw new IllegalStateException("missing or invalid constant_result");
+			}
+			return new BigDecimal(new BigInteger(rawBalance, 16))
+					.divide(USDT_DECIMALS, 6, RoundingMode.DOWN);
 		}
 		catch (Exception exception) {
 			throw new WithdrawalException(503, "failed to query USDT balance: " + exception.getMessage());

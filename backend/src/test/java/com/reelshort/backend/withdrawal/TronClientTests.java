@@ -44,6 +44,71 @@ class TronClientTests {
 	}
 
 	@Test
+	void queriesUsdtBalanceDirectlyFromContract() throws Exception {
+		AtomicReference<String> requestBody = new AtomicReference<>();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/triggerconstantcontract", exchange -> {
+			requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+			respond(exchange, "{\"result\":{\"result\":true},\"constant_result\":[\""
+					+ "0".repeat(57) + "1312d00\"]}");
+		});
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+
+		assertThat(client.getUsdtBalance(DESTINATION)).isEqualByComparingTo("20.000000");
+		JsonNode request = objectMapper.readTree(requestBody.get());
+		assertThat(request.path("function_selector").asText()).isEqualTo("balanceOf(address)");
+		assertThat(request.path("parameter").asText()).isEqualTo(abiAddress(DESTINATION));
+	}
+
+	@Test
+	void rejectsUsdtBalanceResponseWithoutContractResult() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/triggerconstantcontract", exchange ->
+				respond(exchange, "{\"result\":{\"result\":true}}"));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+
+		assertThatThrownBy(() -> client.getUsdtBalance(DESTINATION))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("failed to query USDT balance");
+	}
+
+	@Test
+	void rejectsNonTextualUsdtContractResult() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/triggerconstantcontract", exchange ->
+				respond(exchange, "{\"result\":{\"result\":true},\"constant_result\":[20000000]}"));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+
+		assertThatThrownBy(() -> client.getUsdtBalance(DESTINATION))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("failed to query USDT balance");
+	}
+
+	@Test
+	void rejectsShortUsdtContractResult() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/triggerconstantcontract", exchange ->
+				respond(exchange, "{\"result\":{\"result\":true},\"constant_result\":[\"1\"]}"));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		TronClient client = new TronClient(properties, objectMapper);
+
+		assertThatThrownBy(() -> client.getUsdtBalance(DESTINATION))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("failed to query USDT balance");
+	}
+
+	@Test
 	void signatureUsesRThenSThenRecoveryId() throws Exception {
 		AtomicReference<String> broadcastBody = new AtomicReference<>();
 		ClientFixture fixture = client(broadcastBody, null, null, null);
@@ -399,6 +464,11 @@ class TronClientTests {
 		byte[] payload = addressPayload(destination);
 		return "0".repeat(24) + HexFormat.of().formatHex(Arrays.copyOfRange(payload, 1, 21))
 				+ String.format("%064x", amount);
+	}
+
+	private String abiAddress(String address) {
+		byte[] payload = addressPayload(address);
+		return "0".repeat(24) + HexFormat.of().formatHex(Arrays.copyOfRange(payload, 1, 21));
 	}
 
 	private byte[] addressPayload(String address) {
