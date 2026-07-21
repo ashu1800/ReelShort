@@ -129,6 +129,9 @@ class WithdrawalAdminServiceTests {
 		tronProperties.setHotWalletAddress(" THotWallet ");
 		ethereumProperties.setHotWalletAddress(" 0xHotWallet ");
 		when(withdrawalRepository.findAllById(List.of(firstId, secondId))).thenReturn(List.of(second, first));
+		when(balancePreflight.estimateFees(List.of(first, second))).thenReturn(List.of(
+				new PayoutFeeEstimate("TRC20", "TRX", 1, new BigDecimal("100"), "MAXIMUM"),
+				new PayoutFeeEstimate("ERC20", "ETH", 1, new BigDecimal("0.002"), "ESTIMATE")));
 
 		BatchWithdrawalPreviewResponse response = service.batchPreview(List.of(firstId, secondId));
 
@@ -139,6 +142,9 @@ class WithdrawalAdminServiceTests {
 				.containsExactly(firstId.toString(), secondId.toString());
 		assertThat(response.items()).extracting(BatchWithdrawalPreviewResponse.PreviewItem::status)
 				.containsExactly(WithdrawalStatus.PENDING, WithdrawalStatus.PENDING);
+		assertThat(response.feeEstimates()).containsExactly(
+				new BatchWithdrawalPreviewResponse.FeeEstimate("TRC20", "TRX", 1, "100", "MAXIMUM"),
+				new BatchWithdrawalPreviewResponse.FeeEstimate("ERC20", "ETH", 1, "0.002", "ESTIMATE"));
 	}
 
 	@Test

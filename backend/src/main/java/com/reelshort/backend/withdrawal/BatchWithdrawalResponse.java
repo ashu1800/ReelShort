@@ -21,6 +21,8 @@ public record BatchWithdrawalResponse(
 			int confirmationCount,
 			String failureReason,
 			boolean manualReview,
+			String actualFeeAmount,
+			String actualFeeAsset,
 			String errorMessage) {
 	}
 }

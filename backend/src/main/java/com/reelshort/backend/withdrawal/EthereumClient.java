@@ -172,6 +172,10 @@ public class EthereumClient {
 	}
 
 	public PayoutChainStatus queryTransactionStatus(String txHash) {
+		return queryTransactionStatus(txHash, null);
+	}
+
+	public PayoutChainStatus queryTransactionStatus(String txHash, BigInteger fallbackGasPrice) {
 		try {
 			var response = web3j.ethGetTransactionReceipt(txHash).send();
 			if (response.hasError()) {
@@ -187,7 +191,13 @@ public class EthereumClient {
 			BigInteger latest = web3j.ethBlockNumber().send().getBlockNumber();
 			int confirmations = latest.subtract(receipt.getBlockNumber()).add(BigInteger.ONE)
 					.max(BigInteger.ZERO).min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue();
-			return PayoutChainStatus.of(PayoutChainState.CONFIRMED, confirmations);
+			String effectiveGasPrice = receipt.getEffectiveGasPrice();
+			BigInteger gasPrice = effectiveGasPrice == null || effectiveGasPrice.isBlank()
+					? fallbackGasPrice : Numeric.decodeQuantity(effectiveGasPrice);
+			BigDecimal actualFee = gasPrice == null || receipt.getGasUsed() == null ? null
+					: new BigDecimal(receipt.getGasUsed().multiply(gasPrice))
+							.divide(BigDecimal.TEN.pow(18), 18, RoundingMode.DOWN);
+			return PayoutChainStatus.confirmed(confirmations, actualFee, actualFee == null ? null : "ETH");
 		}
 		catch (Exception exception) {
 			return PayoutChainStatus.unknown(exception.getMessage());

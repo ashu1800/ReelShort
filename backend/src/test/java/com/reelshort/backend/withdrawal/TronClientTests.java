@@ -101,6 +101,22 @@ class TronClientTests {
 	}
 
 	@Test
+	void successfulTransactionInfoReportsActualTrxFee() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/gettransactioninfobyid", exchange -> respond(exchange,
+				"{\"id\":\"tx\",\"blockNumber\":100,\"fee\":13742000,\"result\":\"SUCCESS\",\"receipt\":{\"result\":\"SUCCESS\"}}"));
+		server.createContext("/wallet/getnowblock", exchange -> respond(exchange,
+				"{\"block_header\":{\"raw_data\":{\"number\":100}}}"));
+		server.start();
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		PayoutChainStatus status = new TronClient(properties, objectMapper).queryTransactionStatus("tx");
+
+		assertThat(status.actualFeeAmount()).isEqualByComparingTo("13.742");
+		assertThat(status.actualFeeAsset()).isEqualTo("TRX");
+	}
+
+	@Test
 	void rejectsRawTransactionWhoseRecipientDiffersFromClaimedJson() throws Exception {
 		TronClient client = client(new AtomicReference<>(),
 				"TJRabPrwbZy45sbavfcjinPJC18kjpRTv8", null, null).client();

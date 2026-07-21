@@ -60,26 +60,49 @@ public class PayoutBalancePreflightService {
 			int count = counts.get(network);
 			if ("TRC20".equals(network)) {
 				checkAtLeast("TRC20 USDT", entry.getValue(), tronClient.getUsdtBalance(address));
-				BigDecimal requiredTrx = BigDecimal.valueOf(tronProperties.getFeeLimit())
-						.divide(TRX_PER_SUN).multiply(BigDecimal.valueOf(count));
-				checkAtLeast("TRX", requiredTrx, tronClient.getTrxBalance(address));
+				checkAtLeast("TRX", estimateFee(network, count).estimatedAmount(),
+						tronClient.getTrxBalance(address));
 			}
 			else if ("ERC20".equals(network)) {
 				checkAtLeast("ERC20 USDT", entry.getValue(), ethereumClient.getUsdtBalance(address));
-				BigInteger gasPrice = ethereumClient.queryGasPrice();
-				BigDecimal requiredEth = nativeFee(gasPrice, ethereumProperties.getGasLimit(), count);
-				checkAtLeast("ETH", requiredEth, ethereumClient.getEthBalance(address));
+				checkAtLeast("ETH", estimateFee(network, count).estimatedAmount(),
+						ethereumClient.getEthBalance(address));
 			}
 			else if ("BEP20".equals(network)) {
 				checkAtLeast("BEP20 USDT", entry.getValue(), bscClient.getUsdtBalance(address));
-				BigInteger gasPrice = bscClient.queryGasPrice();
-				BigDecimal requiredBnb = nativeFee(gasPrice, bscProperties.getGasLimit(), count);
-				checkAtLeast("BNB", requiredBnb, bscClient.getBnbBalance(address));
+				checkAtLeast("BNB", estimateFee(network, count).estimatedAmount(),
+						bscClient.getBnbBalance(address));
 			}
 			else {
 				throw new WithdrawalException(400, "unsupported withdrawal network: " + network);
 			}
 		}
+	}
+
+	public List<PayoutFeeEstimate> estimateFees(List<WithdrawalRequest> withdrawals) {
+		Map<String, Integer> counts = new LinkedHashMap<>();
+		for (WithdrawalRequest withdrawal : withdrawals) {
+			counts.merge(withdrawal.network(), 1, Integer::sum);
+		}
+		return List.of("TRC20", "ERC20", "BEP20").stream()
+				.filter(counts::containsKey)
+				.map(network -> estimateFee(network, counts.get(network)))
+				.toList();
+	}
+
+	private PayoutFeeEstimate estimateFee(String network, int count) {
+		return switch (network) {
+			case "TRC20" -> new PayoutFeeEstimate(network, "TRX", count,
+					BigDecimal.valueOf(tronProperties.getFeeLimit()).divide(TRX_PER_SUN)
+							.multiply(BigDecimal.valueOf(count)), "MAXIMUM");
+			case "ERC20" -> new PayoutFeeEstimate(network, "ETH", count,
+					nativeFee(ethereumClient.queryGasPrice(), ethereumProperties.getGasLimit(), count),
+					"ESTIMATE");
+			case "BEP20" -> new PayoutFeeEstimate(network, "BNB", count,
+					nativeFee(bscClient.queryGasPrice(), bscProperties.getGasLimit(), count),
+					"ESTIMATE");
+			default -> throw new WithdrawalException(400, "unsupported withdrawal network: " + network);
+		};
 	}
 
 	private BigDecimal nativeFee(BigInteger gasPrice, long gasLimit, int count) {

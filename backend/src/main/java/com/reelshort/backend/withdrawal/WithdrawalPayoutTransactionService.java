@@ -155,6 +155,7 @@ public class WithdrawalPayoutTransactionService {
 	@Transactional
 	public WithdrawalPayoutAttempt recordChainObservation(UUID attemptId, PayoutChainStatus chainStatus) {
 		WithdrawalPayoutAttempt attempt = lockAttemptAfterWithdrawal(attemptId);
+		attempt.recordActualFee(chainStatus.actualFeeAmount(), chainStatus.actualFeeAsset());
 		if (attempt.status() == WithdrawalPayoutStatus.CONFIRMED
 				|| attempt.status() == WithdrawalPayoutStatus.FAILED_RETRYABLE
 				|| attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW) {
@@ -186,8 +187,12 @@ public class WithdrawalPayoutTransactionService {
 	}
 
 	@Transactional
-	public WithdrawalPayoutAttempt settleConfirmed(UUID attemptId, int confirmations) {
+	public WithdrawalPayoutAttempt settleConfirmed(UUID attemptId, PayoutChainStatus chainStatus) {
+		if (chainStatus.state() != PayoutChainState.CONFIRMED) {
+			throw new IllegalArgumentException("only a confirmed chain status can settle a payout");
+		}
 		WithdrawalPayoutAttempt attempt = lockAttemptAfterWithdrawal(attemptId);
+		attempt.recordActualFee(chainStatus.actualFeeAmount(), chainStatus.actualFeeAsset());
 		if (attempt.status() == WithdrawalPayoutStatus.CONFIRMED) {
 			return attempt;
 		}
@@ -199,7 +204,7 @@ public class WithdrawalPayoutTransactionService {
 				.orElseThrow(() -> new WithdrawalException(404, "withdrawal not found"));
 		String idempotencyKey = "withdrawal:" + withdrawal.id();
 		if (withdrawal.status() == WithdrawalStatus.APPROVED) {
-			attempt.markConfirmed(confirmations);
+			attempt.markConfirmed(chainStatus.confirmations());
 			return attemptRepository.save(attempt);
 		}
 		requirePending(withdrawal);
@@ -218,7 +223,7 @@ public class WithdrawalPayoutTransactionService {
 		}
 		withdrawal.approve(attempt.txHash(), "confirmed " + attempt.network() + " payout", attempt.createdBy());
 		withdrawalRepository.save(withdrawal);
-		attempt.markConfirmed(confirmations);
+		attempt.markConfirmed(chainStatus.confirmations());
 		return attemptRepository.save(attempt);
 	}
 

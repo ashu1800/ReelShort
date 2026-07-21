@@ -325,6 +325,14 @@ onBeforeRouteLeave(() => clearSecrets())
       <el-table-column align="right" label="确认数" width="90">
         <template #default="{ row }">{{ row.confirmationCount }}</template>
       </el-table-column>
+      <el-table-column align="right" label="实际手续费" width="150">
+        <template #default="{ row }">
+          <span v-if="row.actualFeeAmount && row.actualFeeAsset">
+            {{ row.actualFeeAmount }} {{ row.actualFeeAsset }}
+          </span>
+          <span v-else class="muted">-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="链上 tx hash" min-width="210">
         <template #default="{ row }">
           <span v-if="row.payoutTxHash || row.txHash" class="mono">{{ row.payoutTxHash || row.txHash }}</span>
@@ -380,6 +388,16 @@ onBeforeRouteLeave(() => clearSecrets())
           </el-descriptions-item>
           <el-descriptions-item label="提现笔数">{{ preview.itemCount }}</el-descriptions-item>
         </el-descriptions>
+        <el-table :data="preview.feeEstimates" border size="small" style="margin-top: 12px">
+          <el-table-column label="链" prop="network" width="90" />
+          <el-table-column label="笔数" prop="transactionCount" width="70" />
+          <el-table-column label="预计手续费" min-width="180">
+            <template #default="{ row }">
+              {{ row.estimateType === 'MAXIMUM' ? '预计上限' : '预计' }}：
+              <strong>{{ row.estimatedAmount }} {{ row.asset }}</strong>
+            </template>
+          </el-table-column>
+        </el-table>
         <el-table :data="preview.items" border size="small" style="margin-top: 12px" max-height="200">
           <el-table-column label="链" prop="network" width="70" />
           <el-table-column label="USDT" prop="usdtAmount" width="100" />
@@ -474,6 +492,14 @@ onBeforeRouteLeave(() => clearSecrets())
               </template>
             </el-table-column>
             <el-table-column label="确认数" prop="confirmationCount" width="80" />
+            <el-table-column align="right" label="实际手续费" width="150">
+              <template #default="{ row }">
+                <span v-if="row.actualFeeAmount && row.actualFeeAsset">
+                  {{ row.actualFeeAmount }} {{ row.actualFeeAsset }}
+                </span>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="tx hash" prop="txHash" min-width="200" />
             <el-table-column label="失败 / 人工核对" min-width="220">
               <template #default="{ row }">

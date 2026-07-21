@@ -289,6 +289,7 @@ public class WithdrawalService {
 			requestsById.put(request.id(), request);
 		}
 		BigDecimal total = BigDecimal.ZERO;
+		List<WithdrawalRequest> selectedRequests = new ArrayList<>();
 		List<BatchWithdrawalPreviewResponse.PreviewItem> items = new ArrayList<>();
 		for (UUID withdrawalId : withdrawalIds) {
 			WithdrawalRequest req = requestsById.get(withdrawalId);
@@ -296,6 +297,7 @@ public class WithdrawalService {
 				throw new AdminException(404, "withdrawal not found");
 			}
 			requireBatchPayoutEligible(req);
+			selectedRequests.add(req);
 			total = total.add(req.usdtAmount());
 			items.add(new BatchWithdrawalPreviewResponse.PreviewItem(
 					req.id().toString(), userAccount(req.userId()), decimal(req.usdtAmount()),
@@ -303,7 +305,12 @@ public class WithdrawalService {
 		}
 		return new BatchWithdrawalPreviewResponse(
 				tronAddress, ethAddress, bepAddress,
-				decimal(total), items.size(), items);
+				decimal(total), items.size(), items,
+				balancePreflight.estimateFees(selectedRequests).stream()
+						.map(estimate -> new BatchWithdrawalPreviewResponse.FeeEstimate(
+								estimate.network(), estimate.asset(), estimate.transactionCount(),
+								decimal(estimate.estimatedAmount()), estimate.estimateType()))
+						.toList());
 	}
 
 	/**
@@ -354,7 +361,7 @@ public class WithdrawalService {
 				String errorMessage = payoutErrorMessage(exception);
 				results.add(new BatchWithdrawalResponse.ItemResult(
 						withdrawalId.toString(), "FAILED", null, 0, errorMessage, false,
-						errorMessage));
+						null, null, errorMessage));
 				String auditSummary = request == null
 						? "status=FAILED" : payoutAuditSummary(request, "FAILED", null);
 				recordAuditSafely(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", withdrawalId, auditSummary);
@@ -376,6 +383,10 @@ public class WithdrawalService {
 					withdrawalId.toString(), attempt.status().name(), attempt.txHash(),
 					attempt.confirmationCount(), failureReason,
 					attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW,
+					attempt.status() == WithdrawalPayoutStatus.CONFIRMED
+							? decimal(attempt.actualFeeAmount()) : null,
+					attempt.status() == WithdrawalPayoutStatus.CONFIRMED
+							? attempt.actualFeeAsset() : null,
 					submitted ? null : failureReason));
 			if (submitted) {
 				succeeded++;

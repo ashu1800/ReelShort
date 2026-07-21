@@ -83,6 +83,33 @@ class EthereumClientTests {
 		assertThat(status.confirmations()).isZero();
 	}
 
+	@Test
+	void successfulReceiptReportsActualEthFeeFromEffectiveGasPrice() throws Exception {
+		EthereumClient client = clientRespondingByMethod(
+				"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"transactionHash\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"blockNumber\":\"0x10\",\"status\":\"0x1\",\"gasUsed\":\"0x5208\",\"effectiveGasPrice\":\"0x3b9aca00\"}}",
+				"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x10\"}");
+
+		PayoutChainStatus status = client.queryTransactionStatus(
+				"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+		assertThat(status.state()).isEqualTo(PayoutChainState.CONFIRMED);
+		assertThat(status.actualFeeAmount()).isEqualByComparingTo("0.000021");
+		assertThat(status.actualFeeAsset()).isEqualTo("ETH");
+	}
+
+	@Test
+	void successfulReceiptUsesPersistedGasPriceWhenEffectiveGasPriceIsMissing() throws Exception {
+		EthereumClient client = clientRespondingByMethod(
+				"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"transactionHash\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"blockNumber\":\"0x10\",\"status\":\"0x1\",\"gasUsed\":\"0x5208\"}}",
+				"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x10\"}");
+
+		PayoutChainStatus status = client.queryTransactionStatus(
+				"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", BigInteger.valueOf(2_000_000_000L));
+
+		assertThat(status.actualFeeAmount()).isEqualByComparingTo("0.000042");
+		assertThat(status.actualFeeAsset()).isEqualTo("ETH");
+	}
+
 	private EthereumClient clientResponding(String response) throws IOException {
 		return clientResponding(new AtomicReference<>(), response);
 	}
@@ -91,6 +118,24 @@ class EthereumClientTests {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/", exchange -> {
 			requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+			byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().add("Content-Type", "application/json");
+			exchange.sendResponseHeaders(200, bytes.length);
+			exchange.getResponseBody().write(bytes);
+			exchange.close();
+		});
+		server.start();
+		EthereumProperties properties = new EthereumProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		properties.setApiKey("");
+		return new EthereumClient(properties);
+	}
+
+	private EthereumClient clientRespondingByMethod(String receiptResponse, String blockResponse) throws IOException {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/", exchange -> {
+			String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+			String response = request.contains("eth_blockNumber") ? blockResponse : receiptResponse;
 			byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
 			exchange.sendResponseHeaders(200, bytes.length);

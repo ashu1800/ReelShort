@@ -84,7 +84,7 @@ public class WithdrawalPayoutConfirmationService {
 		int requiredConfirmations = requiredConfirmationsFor(attempt.network());
 		if (chainStatus.state() == PayoutChainState.CONFIRMED
 				&& chainStatus.confirmations() >= requiredConfirmations) {
-			transactionService.settleConfirmed(attempt.id(), chainStatus.confirmations());
+			transactionService.settleConfirmed(attempt.id(), chainStatus);
 		}
 		else {
 			transactionService.recordChainObservation(attempt.id(), chainStatus);
@@ -95,8 +95,8 @@ public class WithdrawalPayoutConfirmationService {
 		String txHash = attempt.txHash();
 		return switch (attempt.network()) {
 			case "TRC20" -> tronClient.queryTransactionStatus(txHash);
-			case "ERC20" -> ethereumClient.queryTransactionStatus(txHash);
-			case "BEP20" -> bscClient.queryTransactionStatus(txHash);
+			case "ERC20" -> ethereumClient.queryTransactionStatus(txHash, attempt.gasPrice());
+			case "BEP20" -> bscClient.queryTransactionStatus(txHash, attempt.gasPrice());
 			default -> throw new WithdrawalException(400, "unsupported withdrawal network");
 		};
 	}

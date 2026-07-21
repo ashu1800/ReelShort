@@ -46,6 +46,10 @@ public class WithdrawalPayoutAttempt {
 	private BigInteger nonce;
 	@Column(name = "gas_price", precision = 38, scale = 0)
 	private BigInteger gasPrice;
+	@Column(name = "actual_fee_amount", precision = 36, scale = 18)
+	private BigDecimal actualFeeAmount;
+	@Column(name = "actual_fee_asset", length = 8)
+	private String actualFeeAsset;
 	@Column(name = "signed_raw_transaction", columnDefinition = "text")
 	private String signedRawTransaction;
 	@Column(name = "tx_hash", length = 128, unique = true)
@@ -217,6 +221,33 @@ public class WithdrawalPayoutAttempt {
 		clearUnknown();
 	}
 
+	public void recordActualFee(BigDecimal amount, String asset) {
+		if (amount == null && asset == null) {
+			return;
+		}
+		if (amount == null || asset == null || amount.signum() < 0) {
+			throw new IllegalArgumentException("actual payout fee must be a non-negative amount/asset pair");
+		}
+		String expectedAsset = switch (network) {
+			case "TRC20" -> "TRX";
+			case "ERC20" -> "ETH";
+			case "BEP20" -> "BNB";
+			default -> throw new IllegalStateException("unsupported payout network: " + network);
+		};
+		if (!expectedAsset.equals(asset)) {
+			throw new IllegalArgumentException("actual payout fee asset does not match network");
+		}
+		if (actualFeeAmount == null) {
+			actualFeeAmount = amount;
+			actualFeeAsset = asset;
+			updatedAt = OffsetDateTime.now();
+			return;
+		}
+		if (actualFeeAmount.compareTo(amount) != 0 || !actualFeeAsset.equals(asset)) {
+			throw new IllegalStateException("actual payout fee conflicts with the persisted value");
+		}
+	}
+
 	public void markConfirmed(int confirmations) {
 		if (status == WithdrawalPayoutStatus.CONFIRMED) {
 			return;
@@ -268,6 +299,8 @@ public class WithdrawalPayoutAttempt {
 	public long chainId() { return chainId; }
 	public BigInteger nonce() { return nonce; }
 	public BigInteger gasPrice() { return gasPrice; }
+	public BigDecimal actualFeeAmount() { return actualFeeAmount; }
+	public String actualFeeAsset() { return actualFeeAsset; }
 	public String signedRawTransaction() { return signedRawTransaction; }
 	public String txHash() { return txHash; }
 	public WithdrawalPayoutStatus status() { return status; }

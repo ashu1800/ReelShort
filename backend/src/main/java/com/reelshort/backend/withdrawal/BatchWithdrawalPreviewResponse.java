@@ -12,7 +12,8 @@ public record BatchWithdrawalPreviewResponse(
 		String bepHotWalletAddress,
 		String totalUsdt,
 		int itemCount,
-		List<PreviewItem> items) {
+		List<PreviewItem> items,
+		List<FeeEstimate> feeEstimates) {
 
 	public record PreviewItem(
 			String withdrawalId,
@@ -21,5 +22,13 @@ public record BatchWithdrawalPreviewResponse(
 			String network,
 			String walletAddress,
 			WithdrawalStatus status) {
+	}
+
+	public record FeeEstimate(
+			String network,
+			String asset,
+			int transactionCount,
+			String estimatedAmount,
+			String estimateType) {
 	}
 }

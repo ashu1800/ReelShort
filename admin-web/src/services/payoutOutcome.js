@@ -32,6 +32,8 @@ export function buildSinglePayoutResult(withdrawal) {
       confirmationCount: withdrawal.confirmationCount,
       failureReason,
       manualReview,
+      actualFeeAmount: withdrawal.actualFeeAmount ?? null,
+      actualFeeAsset: withdrawal.actualFeeAsset ?? null,
       errorMessage: submitted || pending ? null : failureReason,
     }],
   }

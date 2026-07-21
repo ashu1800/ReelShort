@@ -361,7 +361,10 @@ public class TronClient {
 			long latestBlock = currentBlock.path("block_header").path("raw_data").path("number").asLong(blockNumber);
 			long depth = Math.max(0, latestBlock - blockNumber + 1);
 			int confirmations = (int) Math.min(Integer.MAX_VALUE, depth);
-			return PayoutChainStatus.of(PayoutChainState.CONFIRMED, confirmations);
+			BigDecimal actualFee = transactionInfo.has("fee") && !transactionInfo.path("fee").isNull()
+					? BigDecimal.valueOf(transactionInfo.path("fee").asLong()).movePointLeft(6)
+					: null;
+			return PayoutChainStatus.confirmed(confirmations, actualFee, actualFee == null ? null : "TRX");
 		}
 		catch (Exception exception) {
 			return PayoutChainStatus.unknown(exception.getMessage());

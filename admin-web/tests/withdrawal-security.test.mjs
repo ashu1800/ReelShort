@@ -64,6 +64,8 @@ test('single payout result treats only submitted statuses as success', () => {
     confirmationCount: 0,
     failureReason: 'node rejected transaction',
     manualReview: false,
+	actualFeeAmount: null,
+	actualFeeAsset: null,
   }
 
   assert.deepEqual(buildSinglePayoutResult(withdrawal), {
@@ -79,6 +81,8 @@ test('single payout result treats only submitted statuses as success', () => {
       confirmationCount: 0,
       failureReason: 'node rejected transaction',
       manualReview: false,
+	  actualFeeAmount: null,
+	  actualFeeAsset: null,
       errorMessage: 'node rejected transaction',
     }],
   })
@@ -155,6 +159,20 @@ test('payout balance failures stay visible inside the dialog', () => {
   assert.match(source, /title="打款未执行"/)
   assert.match(source, /:description="payoutError"/)
   assert.match(source, /payoutError\.value = ''/)
+})
+
+test('payout preview and confirmed results display native-chain fees', () => {
+  const apiSource = readFileSync(new URL('../src/services/adminApi.ts', import.meta.url), 'utf8')
+  const viewSource = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
+
+  assert.match(apiSource, /feeEstimates:/)
+  assert.match(apiSource, /actualFeeAmount:/)
+  assert.match(apiSource, /actualFeeAsset:/)
+  assert.match(viewSource, /preview\.feeEstimates/)
+  assert.match(viewSource, /预计上限/)
+  assert.match(viewSource, /实际手续费/)
+  assert.match(viewSource, /actualFeeAmount/)
+  assert.match(viewSource, /actualFeeAsset/)
 })
 
 test('compose and host nginx keep payout execution routes open for 150 seconds', () => {

@@ -1,10 +1,12 @@
 package com.reelshort.backend.withdrawal;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.UUID;
 
@@ -50,6 +52,26 @@ class PayoutBalancePreflightServiceTests {
 		assertThatThrownBy(() -> service.requireSufficient(List.of(request), "tron-key", null, null))
 				.isInstanceOf(WithdrawalException.class)
 				.hasMessage("TRX 余额不足：本次需要 100，当前余额 1，还差 99");
+	}
+
+	@Test
+	void estimatesNativeFeesByNetworkAndTransactionCount() {
+		tronProperties.setFeeLimit(20_000_000L);
+		ethereumProperties.setGasLimit(100_000L);
+		bscProperties.setGasLimit(100_000L);
+		when(ethereumClient.queryGasPrice()).thenReturn(new BigInteger("20000000000"));
+		when(bscClient.queryGasPrice()).thenReturn(new BigInteger("3000000000"));
+
+		List<PayoutFeeEstimate> estimates = service.estimateFees(List.of(
+				withdrawal("BEP20", "1"),
+				withdrawal("TRC20", "1"),
+				withdrawal("ERC20", "1"),
+				withdrawal("TRC20", "1")));
+
+		assertThat(estimates).containsExactly(
+				new PayoutFeeEstimate("TRC20", "TRX", 2, new BigDecimal("40"), "MAXIMUM"),
+				new PayoutFeeEstimate("ERC20", "ETH", 1, new BigDecimal("0.002000000000000000"), "ESTIMATE"),
+				new PayoutFeeEstimate("BEP20", "BNB", 1, new BigDecimal("0.000300000000000000"), "ESTIMATE"));
 	}
 
 	private WithdrawalRequest withdrawal(String network, String amount) {

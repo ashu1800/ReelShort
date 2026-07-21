@@ -78,7 +78,7 @@ class WithdrawalPayoutIntegrationTests {
 	@Test
 	void confirmationDoesNotDeductFrozenPointsBeforeRequiredDepth() {
 		Fixture fixture = fixture();
-		when(ethereumClient.queryTransactionStatus(fixture.attempt().txHash()))
+		when(ethereumClient.queryTransactionStatus(fixture.attempt().txHash(), fixture.attempt().gasPrice()))
 				.thenReturn(PayoutChainStatus.of(PayoutChainState.CONFIRMED, 1));
 
 		confirmationService.processAttempt(fixture.attempt().id());
@@ -93,7 +93,7 @@ class WithdrawalPayoutIntegrationTests {
 	@Test
 	void confirmedAttemptSettlesFrozenPointsAndLedgerExactlyOnce() {
 		Fixture fixture = fixture();
-		when(ethereumClient.queryTransactionStatus(fixture.attempt().txHash()))
+		when(ethereumClient.queryTransactionStatus(fixture.attempt().txHash(), fixture.attempt().gasPrice()))
 				.thenReturn(PayoutChainStatus.of(PayoutChainState.CONFIRMED, 2));
 
 		confirmationService.processAttempt(fixture.attempt().id());
@@ -110,9 +110,30 @@ class WithdrawalPayoutIntegrationTests {
 	}
 
 	@Test
+	void confirmedAttemptPersistsActualFeeIdempotentlyAndRejectsConflictingFee() {
+		Fixture fixture = fixture();
+		PayoutChainStatus confirmed = PayoutChainStatus.confirmed(2, new BigDecimal("0.000021"), "ETH");
+
+		transactionService.settleConfirmed(fixture.attempt().id(), confirmed);
+		transactionService.recordChainObservation(fixture.attempt().id(), confirmed);
+
+		WithdrawalPayoutAttempt stored = attemptRepository.findById(fixture.attempt().id()).orElseThrow();
+		assertThat(stored.actualFeeAmount()).isEqualByComparingTo("0.000021");
+		assertThat(stored.actualFeeAsset()).isEqualTo("ETH");
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> transactionService.recordChainObservation(
+				fixture.attempt().id(), PayoutChainStatus.confirmed(3, new BigDecimal("0.000099"), "ETH")))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("conflicts");
+		WithdrawalPayoutAttempt unchanged = attemptRepository.findById(fixture.attempt().id()).orElseThrow();
+		assertThat(unchanged.actualFeeAmount()).isEqualByComparingTo("0.000021");
+		assertThat(unchanged.actualFeeAsset()).isEqualTo("ETH");
+	}
+
+	@Test
 	void revertedReceiptReleasesActiveSlotForANewAttemptWithoutDeductingPoints() {
 		Fixture fixture = fixture();
-		when(ethereumClient.queryTransactionStatus(fixture.attempt().txHash()))
+		when(ethereumClient.queryTransactionStatus(fixture.attempt().txHash(), fixture.attempt().gasPrice()))
 				.thenReturn(PayoutChainStatus.of(PayoutChainState.FAILED, 0));
 
 		confirmationService.processAttempt(fixture.attempt().id());
@@ -306,7 +327,7 @@ class WithdrawalPayoutIntegrationTests {
 				fixture.withdrawal().walletAddress(), fixture.withdrawal().usdtAmount(), signed, "admin");
 		attempt.markBroadcasted();
 		attemptRepository.saveAndFlush(attempt);
-		when(bscClient.queryTransactionStatus(signed.txHash()))
+		when(bscClient.queryTransactionStatus(signed.txHash(), attempt.gasPrice()))
 				.thenReturn(PayoutChainStatus.of(PayoutChainState.CONFIRMED, 2));
 
 		confirmationService.processAttempt(attempt.id());
@@ -318,7 +339,7 @@ class WithdrawalPayoutIntegrationTests {
 		assertThat(withdrawalRepository.findById(fixture.withdrawal().id()).orElseThrow().status())
 				.isEqualTo(WithdrawalStatus.APPROVED);
 		// 确认走的是 bscClient 而非 ethereumClient（第二次 processAttempt 因已 CONFIRMED 提前返回，不再查链）。
-		verify(bscClient, times(1)).queryTransactionStatus(signed.txHash());
+		verify(bscClient, times(1)).queryTransactionStatus(signed.txHash(), attempt.gasPrice());
 	}
 
 	@Test

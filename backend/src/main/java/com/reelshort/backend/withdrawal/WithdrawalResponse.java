@@ -23,7 +23,9 @@ public record WithdrawalResponse(
 		String payoutTxHash,
 		int confirmationCount,
 		String failureReason,
-		boolean manualReview) {
+		boolean manualReview,
+		String actualFeeAmount,
+		String actualFeeAsset) {
 
 	public static WithdrawalResponse from(WithdrawalRequest request) {
 		return from(request, null);
@@ -45,7 +47,18 @@ public record WithdrawalResponse(
 				attempt == null ? null : attempt.txHash(),
 				attempt == null ? 0 : attempt.confirmationCount(),
 				attempt == null ? null : attempt.failureReason(),
-				attempt != null && attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW);
+				attempt != null && attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW,
+				confirmedFeeAmount(attempt), confirmedFeeAsset(attempt));
+	}
+
+	private static String confirmedFeeAmount(WithdrawalPayoutAttempt attempt) {
+		return attempt != null && attempt.status() == WithdrawalPayoutStatus.CONFIRMED
+				? decimal(attempt.actualFeeAmount()) : null;
+	}
+
+	private static String confirmedFeeAsset(WithdrawalPayoutAttempt attempt) {
+		return attempt != null && attempt.status() == WithdrawalPayoutStatus.CONFIRMED
+				? attempt.actualFeeAsset() : null;
 	}
 
 	private static String decimal(java.math.BigDecimal value) {

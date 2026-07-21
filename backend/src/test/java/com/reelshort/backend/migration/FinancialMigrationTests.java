@@ -201,6 +201,21 @@ class FinancialMigrationTests {
 	}
 
 	@Test
+	void databaseRejectsHalfPopulatedActualPayoutFee() {
+		JdbcTemplate jdbc = migratedDatabase("financial-migration-payout-actual-fee-pair");
+		UUID userId = insertUser(jdbc, "payout-fee-user");
+		UUID firstAttemptId = insertPayoutAttempt(jdbc, insertWithdrawal(jdbc, userId), 1, "CONFIRMED", null);
+		assertThatThrownBy(() -> jdbc.update(
+				"update withdrawal_payout_attempts set actual_fee_asset = 'ETH' where id = ?", firstAttemptId))
+				.hasMessageContaining("ck_withdrawal_actual_fee_pair");
+
+		UUID secondAttemptId = insertPayoutAttempt(jdbc, insertWithdrawal(jdbc, userId), 1, "CONFIRMED", null);
+		assertThatThrownBy(() -> jdbc.update(
+				"update withdrawal_payout_attempts set actual_fee_amount = 0.1 where id = ?", secondAttemptId))
+				.hasMessageContaining("ck_withdrawal_actual_fee_pair");
+	}
+
+	@Test
 	void retryablePayoutReleasesSlotWhileManualReviewRetainsIt() {
 		JdbcTemplate jdbc = migratedDatabase("financial-migration-payout-retry-slot");
 		UUID userId = insertUser(jdbc, "payout-retry-user");
@@ -279,17 +294,19 @@ class FinancialMigrationTests {
 		return withdrawalId;
 	}
 
-	private void insertPayoutAttempt(JdbcTemplate jdbc, UUID withdrawalId, int attemptNumber,
+	private UUID insertPayoutAttempt(JdbcTemplate jdbc, UUID withdrawalId, int attemptNumber,
 			String status, String activeSlot) {
+		UUID attemptId = UUID.randomUUID();
 		jdbc.update("""
 				insert into withdrawal_payout_attempts (
 				    id, withdrawal_request_id, attempt_number, network, hot_wallet_address,
 				    destination_address, token_contract_address, token_amount, chain_id, nonce,
 				    signed_raw_transaction, tx_hash, status, active_slot, created_by, created_at, updated_at
 				) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-				""", UUID.randomUUID(), withdrawalId, attemptNumber, "ERC20", "0xHot", "0xDestination", "0xUsdt",
+				""", attemptId, withdrawalId, attemptNumber, "ERC20", "0xHot", "0xDestination", "0xUsdt",
 				"9.000000", 1L, attemptNumber, "0xsigned", withdrawalId + "-" + attemptNumber,
 				status, activeSlot, "admin", now(), now());
+		return attemptId;
 	}
 
 	private Timestamp now() {

@@ -64,6 +64,32 @@ class BscClientTests {
 	}
 
 	@Test
+	void successfulReceiptReportsActualBnbFee() throws Exception {
+		BscClient client = clientRespondingByMethod(
+				"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"transactionHash\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"blockNumber\":\"0x10\",\"status\":\"0x1\",\"gasUsed\":\"0x5208\",\"effectiveGasPrice\":\"0x12a05f200\"}}",
+				"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x10\"}");
+
+		PayoutChainStatus status = client.queryTransactionStatus(
+				"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+		assertThat(status.actualFeeAmount()).isEqualByComparingTo("0.000105");
+		assertThat(status.actualFeeAsset()).isEqualTo("BNB");
+	}
+
+	@Test
+	void successfulReceiptUsesPersistedGasPriceWhenEffectiveGasPriceIsMissing() throws Exception {
+		BscClient client = clientRespondingByMethod(
+				"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"transactionHash\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"blockNumber\":\"0x10\",\"status\":\"0x1\",\"gasUsed\":\"0x5208\"}}",
+				"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x10\"}");
+
+		PayoutChainStatus status = client.queryTransactionStatus(
+				"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", BigInteger.valueOf(2_000_000_000L));
+
+		assertThat(status.actualFeeAmount()).isEqualByComparingTo("0.000042");
+		assertThat(status.actualFeeAsset()).isEqualTo("BNB");
+	}
+
+	@Test
 	void nonceQueryFailureDoesNotFallBackToZero() throws Exception {
 		BscClient client = clientResponding("{\"jsonrpc\":\"2.0\",\"id\":1,"
 				+ "\"error\":{\"code\":-32000,\"message\":\"node unavailable\"}}");
@@ -95,6 +121,24 @@ class BscClientTests {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/", exchange -> {
 			requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+			byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().add("Content-Type", "application/json");
+			exchange.sendResponseHeaders(200, bytes.length);
+			exchange.getResponseBody().write(bytes);
+			exchange.close();
+		});
+		server.start();
+		BscProperties properties = new BscProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + server.getAddress().getPort());
+		properties.setApiKey("");
+		return new BscClient(properties);
+	}
+
+	private BscClient clientRespondingByMethod(String receiptResponse, String blockResponse) throws IOException {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/", exchange -> {
+			String request = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+			String response = request.contains("eth_blockNumber") ? blockResponse : receiptResponse;
 			byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
 			exchange.getResponseHeaders().add("Content-Type", "application/json");
 			exchange.sendResponseHeaders(200, bytes.length);

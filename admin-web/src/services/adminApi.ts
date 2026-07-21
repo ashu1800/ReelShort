@@ -99,6 +99,8 @@ export type WithdrawalRequest = {
   confirmationCount: number
   failureReason: string | null
   manualReview: boolean
+  actualFeeAmount: string | null
+  actualFeeAsset: string | null
 }
 
 export type ContentCacheStatus = {
@@ -487,6 +489,13 @@ export type BatchWithdrawalPreview = {
     walletAddress: string
     status: WithdrawalStatus
   }[]
+  feeEstimates: {
+    network: string
+    asset: string
+    transactionCount: number
+    estimatedAmount: string
+    estimateType: 'MAXIMUM' | 'ESTIMATE'
+  }[]
 }
 
 export type BatchWithdrawalResult = {
@@ -502,6 +511,8 @@ export type BatchWithdrawalResult = {
     confirmationCount: number
     failureReason: string | null
     manualReview: boolean
+    actualFeeAmount: string | null
+    actualFeeAsset: string | null
     errorMessage: string | null
   }[]
 }
