@@ -1,192 +1,52 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { clearWithdrawalSecrets } from '../src/services/withdrawalSecrets.js'
-import { buildSinglePayoutResult, isPayoutEligibleForExecution } from '../src/services/payoutOutcome.js'
+const apiSource = readFileSync(new URL('../src/services/adminApi.ts', import.meta.url), 'utf8')
+const viewSource = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
 
-test('batch preview request never contains private keys', () => {
-  const source = readFileSync(new URL('../src/services/adminApi.ts', import.meta.url), 'utf8')
-  const match = source.match(
-    /export async function batchPreviewWithdrawals[\s\S]*?return response\.data\.data\s*\n}/,
+test('manual withdrawal confirmation sends only the required two-factor code', () => {
+  const match = apiSource.match(
+    /export async function manualConfirmWithdrawal[\s\S]*?return response\.data\.data\s*\n}/,
   )
 
-  assert.ok(match, 'batchPreviewWithdrawals function must exist')
-  assert.doesNotMatch(match[0], /PrivateKey/)
+  assert.ok(match, 'manual confirmation API must exist')
+  assert.match(match[0], /\/withdrawals\/\$\{withdrawalId\}\/manual-confirm/)
+  assert.match(match[0], /\{\s*totpCode,?\s*\}/)
+  assert.doesNotMatch(match[0], /PrivateKey|txHash|batch/i)
 })
 
-test('credential cleanup clears both chain keys and TOTP in place', () => {
-  const credentials = {
-    tronPrivateKey: 'tron-secret',
-    ethPrivateKey: 'eth-secret',
-    bepPrivateKey: 'bep-secret',
-    totpCode: '123456',
+test('withdrawal page removes all automatic signing and batch payout controls', () => {
+  for (const forbidden of [
+    /batchPreviewWithdrawals/,
+    /batchApproveWithdrawals/,
+    /approveWithdrawal/,
+    /PrivateKey/,
+    /确认并签名打款/,
+    /批量打款/,
+    /链上 tx hash/,
+  ]) {
+    assert.doesNotMatch(viewSource, forbidden)
   }
-
-  clearWithdrawalSecrets(credentials)
-
-  assert.deepEqual(credentials, {
-    tronPrivateKey: '',
-    ethPrivateKey: '',
-    bepPrivateKey: '',
-    totpCode: '',
-  })
+  assert.match(viewSource, /确认已外部打款/)
+  assert.match(viewSource, /manualConfirmWithdrawal/)
+  assert.match(viewSource, /6 位 2FA 验证码/)
 })
 
-test('single payout UI never hard-codes a successful result', () => {
-  const source = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
+test('withdrawal stats API supports all preset time ranges', () => {
+  assert.match(apiSource, /export type WithdrawalStatsRange = 'TODAY' \| 'YESTERDAY' \| 'THIS_WEEK' \| 'THIS_MONTH' \| 'LAST_MONTH'/)
+  assert.match(apiSource, /export async function fetchWithdrawalStats\(range: WithdrawalStatsRange\)/)
+  assert.match(apiSource, /params: \{ range \}/)
 
-  assert.doesNotMatch(source, /succeeded:\s*1/)
-})
-
-test('payout execution eligibility excludes in-flight and terminal attempts', () => {
-  const base = { status: 'PENDING' }
-  assert.equal(isPayoutEligibleForExecution({ ...base, payoutStatus: null }), true)
-  assert.equal(isPayoutEligibleForExecution({ ...base, payoutStatus: 'SIGNING' }), true)
-  assert.equal(isPayoutEligibleForExecution({ ...base, payoutStatus: 'FAILED_RETRYABLE' }), true)
-  for (const payoutStatus of ['PREPARED', 'BROADCASTED', 'MANUAL_REVIEW', 'CONFIRMED']) {
-    assert.equal(isPayoutEligibleForExecution({ ...base, payoutStatus }), false, payoutStatus)
+  for (const label of ['今天', '昨天', '本周', '本月', '上月']) {
+    assert.match(viewSource, new RegExp(label))
   }
-  assert.equal(isPayoutEligibleForExecution({ status: 'APPROVED', payoutStatus: null }), false)
-
-  const source = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
-  assert.match(source, /:selectable="isPayoutEligibleForExecution"/)
-  assert.match(source, /selectedRows\.value\.filter\(isPayoutEligibleForExecution\)/)
+  assert.match(viewSource, /打款笔数/)
+  assert.match(viewSource, /打款金额（USDT）/)
 })
 
-test('single payout result treats only submitted statuses as success', () => {
-  const withdrawal = {
-    id: 'withdrawal-1',
-    status: 'PENDING',
-    payoutStatus: 'FAILED_RETRYABLE',
-    payoutTxHash: '0xfailed',
-    txHash: null,
-    confirmationCount: 0,
-    failureReason: 'node rejected transaction',
-    manualReview: false,
-	actualFeeAmount: null,
-	actualFeeAsset: null,
-  }
-
-  assert.deepEqual(buildSinglePayoutResult(withdrawal), {
-    succeeded: 0,
-    failed: 1,
-    pending: 0,
-    stoppedAtIndex: 0,
-    errorMessage: 'node rejected transaction',
-    items: [{
-      withdrawalId: 'withdrawal-1',
-      payoutStatus: 'FAILED_RETRYABLE',
-      txHash: '0xfailed',
-      confirmationCount: 0,
-      failureReason: 'node rejected transaction',
-      manualReview: false,
-	  actualFeeAmount: null,
-	  actualFeeAsset: null,
-      errorMessage: 'node rejected transaction',
-    }],
-  })
-
-  withdrawal.payoutStatus = 'CONFIRMED'
-  withdrawal.failureReason = null
-  assert.equal(buildSinglePayoutResult(withdrawal).succeeded, 1)
-})
-
-test('single manual-review result is visible and never successful', () => {
-  const result = buildSinglePayoutResult({
-    id: 'withdrawal-2',
-    status: 'PENDING',
-    payoutStatus: 'MANUAL_REVIEW',
-    payoutTxHash: '0xunknown',
-    txHash: null,
-    confirmationCount: 0,
-    failureReason: 'chain state is ambiguous',
-    manualReview: true,
-  })
-
-  assert.equal(result.succeeded, 0)
-  assert.equal(result.failed, 1)
-  assert.equal(result.items[0].manualReview, true)
-})
-
-test('prepared payout is pending rather than submitted or failed', () => {
-  const result = buildSinglePayoutResult({
-    id: 'withdrawal-3',
-    status: 'PENDING',
-    payoutStatus: 'PREPARED',
-    payoutTxHash: '0xprepared',
-    txHash: null,
-    confirmationCount: 0,
-    failureReason: null,
-    manualReview: false,
-  })
-
-  assert.equal(result.succeeded, 0)
-  assert.equal(result.failed, 0)
-  assert.equal(result.pending, 1)
-  assert.equal(result.items[0].errorMessage, null)
-})
-
-test('batch preview requires both withdrawal read and write permissions', () => {
-  const source = readFileSync(
-    new URL('../../backend/src/main/java/com/reelshort/backend/withdrawal/AdminWithdrawalController.java', import.meta.url),
-    'utf8',
-  )
-  const match = source.match(/@PostMapping\("\/batch-preview"\)[\s\S]*?public ApiResponse/)
-
-  assert.ok(match, 'batch preview endpoint must exist')
-  assert.match(match[0], /WITHDRAWAL_READ/)
-  assert.match(match[0], /WITHDRAWAL_WRITE/)
-})
-
-test('admin HTTP client allows long-running payout requests and handles timeout as uncertain', () => {
-  const httpSource = readFileSync(new URL('../src/services/http.ts', import.meta.url), 'utf8')
-  const viewSource = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
-
-  assert.match(httpSource, /timeout:\s*120000/)
-  assert.match(httpSource, /502/)
-  assert.match(httpSource, /504/)
-  assert.match(viewSource, /isRequestTimeout/)
-  assert.match(viewSource, /后台可能仍在处理/)
-})
-
-test('payout balance failures stay visible inside the dialog', () => {
-  const source = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
-
-  assert.match(source, /const payoutError = ref\(''\)/)
-  assert.match(source, /payoutError\.value = backendErrorMessage/)
-  assert.match(source, /v-if="payoutError"/)
-  assert.match(source, /title="打款未执行"/)
-  assert.match(source, /:description="payoutError"/)
-  assert.match(source, /payoutError\.value = ''/)
-})
-
-test('payout preview and confirmed results display native-chain fees', () => {
-  const apiSource = readFileSync(new URL('../src/services/adminApi.ts', import.meta.url), 'utf8')
-  const viewSource = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
-
-  assert.match(apiSource, /feeEstimates:/)
-  assert.match(apiSource, /actualFeeAmount:/)
-  assert.match(apiSource, /actualFeeAsset:/)
-  assert.match(viewSource, /preview\.feeEstimates/)
-  assert.match(viewSource, /预计上限/)
-  assert.match(viewSource, /实际手续费/)
-  assert.match(viewSource, /actualFeeAmount/)
-  assert.match(viewSource, /actualFeeAsset/)
-})
-
-test('compose and host nginx keep payout execution routes open for 150 seconds', () => {
-  const composeNginx = readFileSync(new URL('../nginx.conf', import.meta.url), 'utf8')
-  const hostTemplateUrl = new URL('../../infra/nginx/shortlink-payout-timeouts.conf.template', import.meta.url)
-  assert.ok(existsSync(hostTemplateUrl), 'host nginx payout timeout template must exist')
-  const hostNginx = readFileSync(hostTemplateUrl, 'utf8')
-
-  for (const source of [composeNginx, hostNginx]) {
-    const match = source.match(/location\s+~\s+[^\n]*withdrawals[^\{]*\{[\s\S]*?\n\s*}/)
-    assert.ok(match, 'payout-specific nginx location must exist')
-    assert.match(match[0], /batch-approve/)
-    assert.match(match[0], /approve/)
-    assert.match(match[0], /proxy_read_timeout\s+150s/)
-    assert.match(match[0], /proxy_send_timeout\s+150s/)
-  }
+test('manual confirmation remains guarded by the two-factor enrollment state', () => {
+  assert.match(viewSource, /get2faStatus/)
+  assert.match(viewSource, /totpEnabled\.value/)
+  assert.match(viewSource, /请先在「两步验证」页面绑定 2FA/)
 })

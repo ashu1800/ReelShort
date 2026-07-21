@@ -139,6 +139,9 @@ public class WithdrawalService {
 			}
 			UserWallet wallet = userWalletRepository.findByUserId(userId)
 					.orElseThrow(() -> new AdminException(400, "wallet required"));
+			if (!"ERC20".equals(wallet.network())) {
+				throw new AdminException(400, "only ERC20 withdrawals are supported");
+			}
 			PointAccount account = accountEntityForUpdate(userId);
 			// 扣减总额 = pointAmount（手续费含在其中）
 			if (!account.canUseAvailable(pointAmount)) {
@@ -230,6 +233,52 @@ public class WithdrawalService {
 		recordAuditSafely(adminUsername, action, withdrawalId,
 				payoutAuditSummary(request, attempt.status().name(), attempt.txHash()));
 		return adminResponse(request, attempt);
+	}
+
+	@Transactional
+	public WithdrawalResponse manualConfirm(UUID withdrawalId, String totpCode, UUID adminUserId,
+			String adminUsername) {
+		AdminUser admin = adminUserRepository.findById(adminUserId)
+				.orElseThrow(() -> new AdminException(404, "admin not found"));
+		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
+			recordAuditSafely(adminUsername, "WITHDRAWAL_MANUAL_CONFIRM_FAILED", withdrawalId,
+					"status=TOTP_REJECTED");
+			throw new AdminException(403, "2FA verification failed");
+		}
+		return withPayoutExecutionLock(() -> manualConfirmLocked(withdrawalId, adminUsername));
+	}
+
+	private WithdrawalResponse manualConfirmLocked(UUID withdrawalId, String adminUsername) {
+		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
+		if (!"ERC20".equals(request.network())) {
+			throw new AdminException(409, "only ERC20 withdrawals can be manually confirmed");
+		}
+		if (request.status() == WithdrawalStatus.APPROVED) {
+			return adminResponse(request);
+		}
+		if (request.status() != WithdrawalStatus.PENDING) {
+			throw new AdminException(409, "withdrawal is not pending");
+		}
+		WithdrawalPayoutAttempt active = payoutAttemptRepository
+				.findByWithdrawalRequestIdAndActiveSlot(request.id(), "ACTIVE").orElse(null);
+		if (active != null && active.status() != WithdrawalPayoutStatus.MANUAL_REVIEW) {
+			throw new AdminException(409, "automatic payout attempt is still active");
+		}
+		WithdrawalResponse response = userActionLocks.withUserLock(request.userId(), () -> {
+			PointAccount account = accountEntityForUpdate(request.userId());
+			try {
+				account.deductFrozen(request.totalDeductedPoints());
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(409, exception.getMessage());
+			}
+			pointAccountRepository.save(account);
+			request.approve(null, "manual external ERC20 payout confirmed", adminUsername);
+			return adminResponse(withdrawalRequestRepository.save(request), active);
+		});
+		recordAuditSafely(adminUsername, "WITHDRAWAL_MANUAL_CONFIRMED", withdrawalId,
+				payoutAuditSummary(request, "MANUAL_CONFIRMED", null));
+		return response;
 	}
 
 	@Transactional

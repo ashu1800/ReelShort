@@ -102,6 +102,24 @@ class WalletWithdrawalTransferControllerTests {
 	}
 
 	@Test
+	void walletBindRejectsTronNetworkAfterErc20OnlyCutover() throws Exception {
+		RegisteredUser user = createUser("wallet-tron-disabled");
+
+		mockMvc.perform(put("/api/app/wallet")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "network": "TRC20",
+						  "walletAddress": "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
+						  "password": "Password123"
+						}
+						"""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("only ERC20 wallets are supported"));
+	}
+
+	@Test
 	void walletBindRejectsInvalidTrcChecksum() throws Exception {
 		RegisteredUser user = createUser("wallet-invalid");
 
@@ -117,6 +135,61 @@ class WalletWithdrawalTransferControllerTests {
 						""".formatted(INVALID_ETH_ADDRESS)))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.message").value("invalid wallet address for ERC20"));
+	}
+
+	@Test
+	void manualErc20ConfirmationApprovesWithdrawalAndConsumesFrozenPointsWithoutHash() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = createUser("manual-erc20-confirm");
+		adjustPoints(adminToken, user.userId(), 4000, "seed manual payout");
+		bindWallet(user.token(), VALID_ETH_ADDRESS);
+		String withdrawalId = JsonPath.read(mockMvc.perform(post("/api/app/withdrawals")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"pointAmount\":3600}"))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString(), "$.data.id");
+
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/manual-confirm", UUID.fromString(withdrawalId))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"totpCode\":\"" + validTotpCode() + "\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.status").value("APPROVED"))
+				.andExpect(jsonPath("$.data.payoutStatus").value("MANUAL_CONFIRMED"));
+
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/manual-confirm", UUID.fromString(withdrawalId))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"totpCode\":\"" + validTotpCode() + "\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.status").value("APPROVED"));
+
+		mockMvc.perform(get("/api/app/withdrawals/summary")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.balance").value(400))
+				.andExpect(jsonPath("$.data.frozenPoints").value(0))
+				.andExpect(jsonPath("$.data.availablePoints").value(400));
+	}
+
+	@Test
+	void withdrawalStatsUsesPresetRangeAndRejectsUnsupportedRange() throws Exception {
+		String adminToken = adminLogin();
+
+		mockMvc.perform(get("/api/admin/withdrawals/stats")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.param("range", "THIS_MONTH"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.range").value("THIS_MONTH"))
+				.andExpect(jsonPath("$.data.payoutCount").isNumber())
+				.andExpect(jsonPath("$.data.totalUsdt").isString());
+
+		mockMvc.perform(get("/api/admin/withdrawals/stats")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.param("range", "YEAR_TO_DATE"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.message").value("unsupported withdrawal stats range"));
 	}
 
 	@Test
@@ -154,8 +227,7 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(jsonPath("$.data.frozenPoints").value(3600))
 				.andExpect(jsonPath("$.data.availablePoints").value(400));
 
-		// C1 fix: approve 现在走 approveWithTransfer（链上打款），测试环境无法实际广播。
-		// 验证 approve 在缺少 2FA 时拒绝（验证 2FA 校验路径正确）。
+		// 自动打款接口已停用，确认不再接收私钥或触发链上广播。
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", UUID.fromString(withdrawalId))
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
 				.contentType(MediaType.APPLICATION_JSON)
@@ -166,7 +238,8 @@ class WalletWithdrawalTransferControllerTests {
 						  "totpCode": "000000"
 						}
 						"""))
-				.andExpect(status().isForbidden());
+				.andExpect(status().isGone())
+				.andExpect(jsonPath("$.message").value("automatic payout is disabled"));
 
 		// 验证 reject 释放冻结积分（这条路径不涉及链上操作）
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/reject", UUID.fromString(withdrawalId))
@@ -394,20 +467,54 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(jsonPath("$.message").value("bad request"));
 	}
 
+	@Test
+	void automaticPayoutEndpointsAreGone() throws Exception {
+		String adminToken = adminLogin();
+		UUID withdrawalId = UUID.randomUUID();
+		String privateKey = "a".repeat(64);
+
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", withdrawalId)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "ethPrivateKey": "%s",
+						  "totpCode": "123456"
+						}
+						""".formatted(privateKey)))
+				.andExpect(status().isGone())
+				.andExpect(jsonPath("$.message").value("automatic payout is disabled"));
+
+		mockMvc.perform(post("/api/admin/withdrawals/batch-approve")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "withdrawalIds": ["%s"],
+						  "ethPrivateKey": "%s",
+						  "totpCode": "123456"
+						}
+						""".formatted(withdrawalId, privateKey)))
+				.andExpect(status().isGone())
+				.andExpect(jsonPath("$.message").value("automatic payout is disabled"));
+	}
+
 	private RegisteredUser createUser(String seed) throws Exception {
 		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, seed, "Password123");
 		return new RegisteredUser(user.userId(), user.token(), user.username());
 	}
 
 	private String adminLogin() throws Exception {
+		AdminUser admin = adminUserRepository.findByUsername("admin").orElseThrow();
+		String totp = admin.totpEnabled() ? ",\"totpCode\":\"" + validTotpCode() + "\"" : "";
 		return JsonPath.read(mockMvc.perform(post("/api/admin/auth/login")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
 						  "username": "admin",
-						  "password": "Admin123"
+						  "password": "Admin123"%s
 						}
-						"""))
+						""".formatted(totp)))
 				.andExpect(status().isOk())
 				.andReturn()
 				.getResponse()

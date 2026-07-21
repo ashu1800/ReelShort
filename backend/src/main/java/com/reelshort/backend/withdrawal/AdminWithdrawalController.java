@@ -8,9 +8,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.reelshort.backend.admin.AdminPermissions;
+import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.admin.CurrentAdmin;
 import com.reelshort.backend.admin.RequireAdminPermission;
 import com.reelshort.backend.admin.RequireAdminPermissions;
@@ -25,9 +27,12 @@ import jakarta.validation.Valid;
 public class AdminWithdrawalController {
 
 	private final WithdrawalService withdrawalService;
+	private final WithdrawalStatsService withdrawalStatsService;
 
-	public AdminWithdrawalController(WithdrawalService withdrawalService) {
+	public AdminWithdrawalController(WithdrawalService withdrawalService,
+			WithdrawalStatsService withdrawalStatsService) {
 		this.withdrawalService = withdrawalService;
+		this.withdrawalStatsService = withdrawalStatsService;
 	}
 
 	@GetMapping
@@ -40,8 +45,29 @@ public class AdminWithdrawalController {
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
 	public ApiResponse<WithdrawalResponse> approve(CurrentAdmin currentAdmin, @PathVariable UUID withdrawalId,
 			@Valid @RequestBody WithdrawalApprovalRequest approvalRequest, HttpServletRequest request) {
-		return ApiResponse.success(withdrawalService.approve(withdrawalId, approvalRequest.tronPrivateKey(),
-				approvalRequest.ethPrivateKey(), approvalRequest.bepPrivateKey(), approvalRequest.totpCode(),
+		throw new AdminException(410, "automatic payout is disabled");
+	}
+
+	@GetMapping("/stats")
+	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_READ)
+	public ApiResponse<WithdrawalStatsResponse> stats(
+			@RequestParam(defaultValue = "TODAY") String range, HttpServletRequest request) {
+		WithdrawalStatsRange parsed;
+		try {
+			parsed = WithdrawalStatsRange.valueOf(range.trim().toUpperCase(java.util.Locale.ROOT));
+		}
+		catch (RuntimeException exception) {
+			throw new AdminException(400, "unsupported withdrawal stats range");
+		}
+		return ApiResponse.success(withdrawalStatsService.stats(parsed), requestId(request));
+	}
+
+	@PostMapping("/{withdrawalId}/manual-confirm")
+	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
+	public ApiResponse<WithdrawalResponse> manualConfirm(CurrentAdmin currentAdmin,
+			@PathVariable UUID withdrawalId, @Valid @RequestBody ManualWithdrawalConfirmRequest confirmRequest,
+			HttpServletRequest request) {
+		return ApiResponse.success(withdrawalService.manualConfirm(withdrawalId, confirmRequest.totpCode(),
 				currentAdmin.adminUserId(), currentAdmin.username()), requestId(request));
 	}
 
@@ -57,16 +83,14 @@ public class AdminWithdrawalController {
 	@RequireAdminPermissions({ AdminPermissions.WITHDRAWAL_READ, AdminPermissions.WITHDRAWAL_WRITE })
 	public ApiResponse<BatchWithdrawalPreviewResponse> batchPreview(
 			@Valid @RequestBody BatchWithdrawalPreviewRequest previewRequest, HttpServletRequest request) {
-		return ApiResponse.success(withdrawalService.batchPreview(previewRequest.withdrawalIds()), requestId(request));
+		throw new AdminException(410, "automatic payout is disabled");
 	}
 
 	@PostMapping("/batch-approve")
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
 	public ApiResponse<BatchWithdrawalResponse> batchApprove(CurrentAdmin currentAdmin,
 			@Valid @RequestBody BatchWithdrawalRequest batchRequest, HttpServletRequest request) {
-		return ApiResponse.success(withdrawalService.batchApprove(batchRequest.withdrawalIds(),
-				batchRequest.tronPrivateKey(), batchRequest.ethPrivateKey(), batchRequest.bepPrivateKey(),
-				batchRequest.totpCode(), currentAdmin.adminUserId()), requestId(request));
+		throw new AdminException(410, "automatic payout is disabled");
 	}
 
 	private String requestId(HttpServletRequest request) {

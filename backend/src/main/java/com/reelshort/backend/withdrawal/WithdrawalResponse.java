@@ -37,17 +37,19 @@ public record WithdrawalResponse(
 
 	public static WithdrawalResponse from(WithdrawalRequest request, String userAccount,
 			WithdrawalPayoutAttempt attempt) {
+		boolean manualConfirmed = request.status() == WithdrawalStatus.APPROVED
+				&& (attempt == null || attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW);
 		return new WithdrawalResponse(request.id(), request.userId(), userAccount, request.pointAmount(),
 				request.usdtAmount().stripTrailingZeros().toPlainString(),
 				request.usdtPerPoint().stripTrailingZeros().toPlainString(), decimal(request.cnyPerPoint()),
 				decimal(request.cnyPerUsd()), decimal(request.minimumUsd()), request.network(),
 				request.walletAddress(), request.status(), request.txHash(), request.adminNote(),
 				request.createdAt(), request.reviewedAt(),
-				attempt == null ? null : attempt.status().name(),
+				manualConfirmed ? "MANUAL_CONFIRMED" : attempt == null ? null : attempt.status().name(),
 				attempt == null ? null : attempt.txHash(),
 				attempt == null ? 0 : attempt.confirmationCount(),
 				attempt == null ? null : attempt.failureReason(),
-				attempt != null && attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW,
+				!manualConfirmed && attempt != null && attempt.status() == WithdrawalPayoutStatus.MANUAL_REVIEW,
 				confirmedFeeAmount(attempt), confirmedFeeAsset(attempt));
 	}
 

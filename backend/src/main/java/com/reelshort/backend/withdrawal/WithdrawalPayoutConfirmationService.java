@@ -5,7 +5,6 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -38,20 +37,9 @@ public class WithdrawalPayoutConfirmationService {
 		this.bscProperties = bscProperties;
 	}
 
-	@Scheduled(fixedDelayString = "${reelshort.withdrawal.payout-confirmation-interval:30000}",
-			initialDelayString = "${reelshort.withdrawal.payout-confirmation-initial-delay:30000}")
+	/** Automatic payout confirmation is disabled; retained only for explicit historical diagnostics. */
 	public void processPending() {
-		attemptRepository.findByStatusInOrderByUpdatedAtAsc(List.of(
-				WithdrawalPayoutStatus.PREPARED, WithdrawalPayoutStatus.BROADCASTED))
-				.forEach(attempt -> {
-					try {
-						processAttempt(attempt.id());
-					}
-					catch (RuntimeException exception) {
-						log.warn("Payout confirmation scan failed for attempt {}: {}",
-								attempt.id(), exception.getMessage());
-					}
-				});
+		log.info("Automatic payout confirmation is disabled; no attempts were processed");
 	}
 
 	public void processAttempt(UUID attemptId) {

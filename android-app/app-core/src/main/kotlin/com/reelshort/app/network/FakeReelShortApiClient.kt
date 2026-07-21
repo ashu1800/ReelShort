@@ -117,13 +117,13 @@ class FakeReelShortApiClient : ReelShortApiClient {
         listOf(RechargeOrderSummary("RO202606270001", 990, 99, "CREATED"))
 
     override suspend fun getWallet(): WalletInfo =
-        WalletInfo("TRC20", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc", "2026-07-07T00:00:00Z", vipUntil = null, vipPriceUsdt = "15")
+        WalletInfo("ERC20", "0x1111111111111111111111111111111111111111", "2026-07-07T00:00:00Z", vipUntil = null, vipPriceUsdt = "15")
 
     override suspend fun bindWallet(network: String, walletAddress: String, password: String): WalletInfo =
         WalletInfo(network, walletAddress, "2026-07-07T00:00:00Z")
 
     override suspend fun unbindWallet(password: String): WalletInfo =
-        WalletInfo("TRC20", null, null)
+        WalletInfo("ERC20", null, null)
 
     override suspend fun createVipOrder(): VipOrder =
         VipOrder(
@@ -152,7 +152,7 @@ class FakeReelShortApiClient : ReelShortApiClient {
             availablePoints = 15,
             minimumPoints = 100,
             usdtPerPoint = "0.001",
-            walletAddress = "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc",
+            walletAddress = "0x1111111111111111111111111111111111111111",
             cnyPerPoint = "0.02",
             cnyPerUsd = "7.2",
             minimumUsd = "10",
@@ -165,8 +165,8 @@ class FakeReelShortApiClient : ReelShortApiClient {
                 pointAmount = 3,
                 usdtAmount = "0.003",
                 usdtPerPoint = "0.001",
-                network = "TRC20",
-                walletAddress = "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc",
+                network = "ERC20",
+                walletAddress = "0x1111111111111111111111111111111111111111",
                 status = "PENDING",
                 txHash = null,
                 adminNote = null,

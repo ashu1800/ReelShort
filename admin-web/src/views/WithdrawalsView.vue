@@ -1,44 +1,43 @@
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
 import {
-  approveWithdrawal,
-  batchApproveWithdrawals,
-  batchPreviewWithdrawals,
+  fetchWithdrawalStats,
   fetchWithdrawals,
   get2faStatus,
+  manualConfirmWithdrawal,
   rejectWithdrawal,
 } from '../services/adminApi'
-import type { BatchWithdrawalPreview, BatchWithdrawalResult, WithdrawalRequest, WithdrawalStatus } from '../services/adminApi'
-import { backendErrorMessage, isRequestTimeout } from '../services/http'
-import { buildSinglePayoutResult, isPayoutEligibleForExecution } from '../services/payoutOutcome.js'
-import { clearWithdrawalSecrets } from '../services/withdrawalSecrets.js'
+import type {
+  WithdrawalRequest,
+  WithdrawalStats,
+  WithdrawalStatsRange,
+  WithdrawalStatus,
+} from '../services/adminApi'
+import { backendErrorMessage } from '../services/http'
 
 const loading = ref(false)
 const operationLoading = ref(false)
 const error = ref('')
 const withdrawals = ref<WithdrawalRequest[]>([])
-const selectedRows = ref<WithdrawalRequest[]>([])
-const activePayoutIds = ref<string[]>([])
-
-const batchDialogVisible = ref(false)
-const batchStep = ref<'preview' | 'credentials' | 'result'>('preview')
-const credentials = reactive({ tronPrivateKey: '', ethPrivateKey: '', bepPrivateKey: '', totpCode: '' })
-const preview = ref<BatchWithdrawalPreview | null>(null)
-const batchResult = ref<BatchWithdrawalResult | null>(null)
-const payoutError = ref('')
+const stats = ref<WithdrawalStats | null>(null)
+const statsLoading = ref(false)
+const statsError = ref('')
+const statsRange = ref<WithdrawalStatsRange>('TODAY')
 const totpEnabled = ref(false)
 
-const selectedPendingIds = computed(() =>
-  selectedRows.value.filter(isPayoutEligibleForExecution).map((w) => w.id),
-)
-const needsTronKey = computed(() => preview.value?.items.some((item) => item.network === 'TRC20') ?? false)
-const needsEthKey = computed(() => preview.value?.items.some((item) => item.network === 'ERC20') ?? false)
-const needsBepKey = computed(() => preview.value?.items.some((item) => item.network === 'BEP20') ?? false)
-const payoutDialogTitle = computed(() =>
-  activePayoutIds.value.length === 1 ? '执行提现打款' : `批量执行 ${activePayoutIds.value.length} 笔提现`,
-)
+const confirmDialogVisible = ref(false)
+const confirmingWithdrawal = ref<WithdrawalRequest | null>(null)
+const totpCode = ref('')
+const confirmError = ref('')
+
+const statRanges: Array<{ label: string; value: WithdrawalStatsRange }> = [
+  { label: '今天', value: 'TODAY' },
+  { label: '昨天', value: 'YESTERDAY' },
+  { label: '本周', value: 'THIS_WEEK' },
+  { label: '本月', value: 'THIS_MONTH' },
+  { label: '上月', value: 'LAST_MONTH' },
+]
 
 const pendingCount = computed(() =>
   withdrawals.value.filter((withdrawal) => withdrawal.status === 'PENDING').length,
@@ -55,7 +54,7 @@ const totalPendingPoints = computed(() =>
 const metrics = computed(() => [
   { label: '申请总数', value: withdrawals.value.length },
   { label: '待处理', value: pendingCount.value },
-  { label: '已通过', value: approvedCount.value },
+  { label: '已确认', value: approvedCount.value },
   { label: '冻结积分', value: totalPendingPoints.value },
 ])
 
@@ -71,135 +70,81 @@ async function loadWithdrawals() {
   }
 }
 
+async function loadStats() {
+  statsLoading.value = true
+  statsError.value = ''
+  try {
+    stats.value = await fetchWithdrawalStats(statsRange.value)
+  } catch {
+    statsError.value = '打款统计加载失败'
+  } finally {
+    statsLoading.value = false
+  }
+}
+
+async function selectStatsRange(range: WithdrawalStatsRange) {
+  if (statsRange.value === range && stats.value) return
+  statsRange.value = range
+  await loadStats()
+}
+
 async function loadTotpStatus() {
   try {
     const status = await get2faStatus()
     totpEnabled.value = status.enabled
   } catch {
-    // ignore
+    // The confirmation request remains protected by the server even if this hint cannot load.
   }
 }
 
-function handleSelectionChange(rows: WithdrawalRequest[]) {
-  selectedRows.value = rows
+function canManuallyConfirm(withdrawal: WithdrawalRequest) {
+  return withdrawal.status === 'PENDING'
+    && withdrawal.network === 'ERC20'
+    && (!withdrawal.payoutStatus || withdrawal.payoutStatus === 'MANUAL_REVIEW')
 }
 
-function clearSecrets() {
-  clearWithdrawalSecrets(credentials)
-}
-
-async function openPayoutDialog(row?: WithdrawalRequest) {
-  if (row && !isPayoutEligibleForExecution(row)) {
-    ElMessage.warning('该提现当前打款状态不可执行，请先刷新列表核对状态')
-    return
-  }
-  activePayoutIds.value = row ? [row.id] : [...selectedPendingIds.value]
-  if (activePayoutIds.value.length === 0) {
-    ElMessage.warning('请先勾选待处理的提现申请')
+function openManualConfirm(row: WithdrawalRequest) {
+  if (!canManuallyConfirm(row)) {
+    ElMessage.warning('该提现当前状态不能手动确认，请刷新列表核对')
     return
   }
   if (!totpEnabled.value) {
     ElMessage.warning('请先在「两步验证」页面绑定 2FA')
     return
   }
-  clearSecrets()
-  payoutError.value = ''
-  preview.value = null
-  batchResult.value = null
-  batchStep.value = 'preview'
-  batchDialogVisible.value = true
-  await doPreview()
+  confirmingWithdrawal.value = row
+  totpCode.value = ''
+  confirmError.value = ''
+  confirmDialogVisible.value = true
 }
 
-async function doPreview() {
-  operationLoading.value = true
-  try {
-    preview.value = await batchPreviewWithdrawals(activePayoutIds.value)
-    batchStep.value = 'preview'
-  } catch (error) {
-    ElMessage.error(backendErrorMessage(error, '提现预览失败'))
-    batchDialogVisible.value = false
-  } finally {
-    operationLoading.value = false
-  }
-}
-
-async function doPayout() {
-  if (needsTronKey.value && !credentials.tronPrivateKey.trim()) {
-    ElMessage.warning('请输入 TRC20 热钱包私钥')
-    return
-  }
-  if (needsEthKey.value && !credentials.ethPrivateKey.trim()) {
-    ElMessage.warning('请输入 ERC20 热钱包私钥')
-    return
-  }
-  if (needsBepKey.value && !credentials.bepPrivateKey.trim()) {
-    ElMessage.warning('请输入 BEP20 热钱包私钥')
-    return
-  }
-  if (!/^\d{6}$/.test(credentials.totpCode)) {
+async function confirmExternalPayout() {
+  if (!confirmingWithdrawal.value) return
+  if (!/^\d{6}$/.test(totpCode.value)) {
     ElMessage.warning('请输入 6 位 2FA 验证码')
     return
   }
-  payoutError.value = ''
   operationLoading.value = true
+  confirmError.value = ''
   try {
-    const tronKey = credentials.tronPrivateKey.trim() || undefined
-    const ethKey = credentials.ethPrivateKey.trim() || undefined
-    const bepKey = credentials.bepPrivateKey.trim() || undefined
-    if (activePayoutIds.value.length === 1) {
-      const withdrawal = await approveWithdrawal(
-        activePayoutIds.value[0],
-        tronKey,
-        ethKey,
-        bepKey,
-        credentials.totpCode,
-      )
-      batchResult.value = buildSinglePayoutResult(withdrawal)
-    } else {
-      batchResult.value = await batchApproveWithdrawals(
-        activePayoutIds.value,
-        tronKey,
-        ethKey,
-        bepKey,
-        credentials.totpCode,
-      )
-    }
-    if (batchResult.value.succeeded > 0) {
-      ElMessage.success(`已提交 ${batchResult.value.succeeded} 笔打款`)
-    }
-    if (batchResult.value.items.some((item) => item.manualReview)) {
-      ElMessage.warning('打款状态需要人工核对，请勿重复生成交易')
-    } else if (batchResult.value.pending > 0) {
-      ElMessage.warning(`${batchResult.value.pending} 笔已签名，等待广播确认，请刷新列表核对状态`)
-    } else if (batchResult.value.failed > 0) {
-      ElMessage.error(`${batchResult.value.failed} 笔提交失败，请查看逐笔结果`)
-    }
-    batchStep.value = 'result'
-    await loadWithdrawals()
-  } catch (error) {
-    if (isRequestTimeout(error)) {
-      await loadWithdrawals()
-      batchDialogVisible.value = false
-      ElMessage.warning('请求超时，后台可能仍在处理，请刷新列表核对打款状态')
-    } else {
-      payoutError.value = backendErrorMessage(error, '打款提交失败')
-    }
+    await manualConfirmWithdrawal(confirmingWithdrawal.value.id, totpCode.value)
+    ElMessage.success('已确认外部打款，冻结积分已扣除')
+    confirmDialogVisible.value = false
+    confirmingWithdrawal.value = null
+    totpCode.value = ''
+    await Promise.all([loadWithdrawals(), loadStats()])
+  } catch (requestError) {
+    confirmError.value = backendErrorMessage(requestError, '外部打款确认失败')
   } finally {
     operationLoading.value = false
-    clearSecrets()
   }
 }
 
-function closeBatchDialog() {
-  batchDialogVisible.value = false
-  payoutError.value = ''
-  clearSecrets()
-}
-
-function showPreviewStep() {
-  payoutError.value = ''
-  batchStep.value = 'preview'
+function closeConfirmDialog() {
+  confirmDialogVisible.value = false
+  confirmingWithdrawal.value = null
+  totpCode.value = ''
+  confirmError.value = ''
 }
 
 async function reject(row: WithdrawalRequest) {
@@ -220,9 +165,9 @@ async function reject(row: WithdrawalRequest) {
   try {
     await rejectWithdrawal(row.id, reason)
     ElMessage.success('提现申请已拒绝，冻结积分已释放')
-    await loadWithdrawals()
-  } catch (error) {
-    ElMessage.error(backendErrorMessage(error, '提现拒绝失败'))
+    await Promise.all([loadWithdrawals(), loadStats()])
+  } catch (requestError) {
+    ElMessage.error(backendErrorMessage(requestError, '提现拒绝失败'))
   } finally {
     operationLoading.value = false
   }
@@ -237,27 +182,11 @@ function statusType(status: WithdrawalStatus) {
   return types[status]
 }
 
-function resultAlertType(result: BatchWithdrawalResult) {
-  if (result.items.some((item) => item.manualReview)) return 'warning'
-  if (result.failed > 0) return 'error'
-  if (result.pending > 0) return 'warning'
-  return 'success'
-}
-
-function resultSummary(result: BatchWithdrawalResult) {
-  const summary = `已提交 ${result.succeeded} 笔，待广播 ${result.pending} 笔，失败 ${result.failed} 笔`
-  return result.items.some((item) => item.manualReview)
-    ? `${summary}；含需人工核对项，请勿重复生成交易`
-    : summary
-}
-
 onMounted(() => {
-  loadWithdrawals()
-  loadTotpStatus()
+  void loadWithdrawals()
+  void loadStats()
+  void loadTotpStatus()
 })
-
-onUnmounted(clearSecrets)
-onBeforeRouteLeave(() => clearSecrets())
 </script>
 
 <template>
@@ -265,18 +194,9 @@ onBeforeRouteLeave(() => clearSecrets())
     <div class="page-header">
       <div>
         <h1>提现申请</h1>
-        <p>预览收款地址和金额后，由本次请求提交对应链私钥与 2FA，链上确认进度会持续回写。</p>
+        <p>管理员完成外部 ERC20 转账后，在此确认打款。系统不签名、不广播，也不要求填写交易哈希。</p>
       </div>
-      <div style="display: flex; gap: 8px">
-        <el-button
-          type="primary"
-          :disabled="selectedPendingIds.length === 0"
-          @click="openPayoutDialog()"
-        >
-          批量打款 ({{ selectedPendingIds.length }})
-        </el-button>
-        <el-button @click="loadWithdrawals">刷新</el-button>
-      </div>
+      <el-button @click="loadWithdrawals">刷新</el-button>
     </div>
 
     <el-alert v-if="error" :title="error" show-icon type="error" />
@@ -288,75 +208,74 @@ onBeforeRouteLeave(() => clearSecrets())
       </div>
     </div>
 
-    <el-table :data="withdrawals" border @selection-change="handleSelectionChange">
-      <el-table-column type="selection" width="45" :selectable="isPayoutEligibleForExecution" />
+    <div class="stats-panel" v-loading="statsLoading">
+      <div class="stats-header">
+        <h2>打款统计</h2>
+        <el-radio-group :model-value="statsRange" size="small" @change="selectStatsRange">
+          <el-radio-button v-for="range in statRanges" :key="range.value" :value="range.value">
+            {{ range.label }}
+          </el-radio-button>
+        </el-radio-group>
+      </div>
+      <el-alert v-if="statsError" :title="statsError" show-icon type="error" :closable="false" />
+      <div v-else class="stats-values">
+        <div>
+          <div class="metric-label">打款笔数</div>
+          <div class="metric-value">{{ stats?.payoutCount ?? 0 }}</div>
+        </div>
+        <div>
+          <div class="metric-label">打款金额（USDT）</div>
+          <div class="metric-value">{{ stats?.totalUsdt ?? '0' }}</div>
+        </div>
+        <div class="stats-period">
+          <div class="metric-label">统计区间（上海时间）</div>
+          <div>{{ stats ? `${stats.from} 至 ${stats.to}` : '-' }}</div>
+        </div>
+      </div>
+    </div>
+
+    <el-table :data="withdrawals" border>
       <el-table-column label="申请 ID" min-width="240">
-        <template #default="{ row }">
-          <span class="mono">{{ row.id }}</span>
-        </template>
+        <template #default="{ row }"><span class="mono">{{ row.id }}</span></template>
       </el-table-column>
       <el-table-column label="手机号账号" min-width="180">
-        <template #default="{ row }">
-          <span class="mono">{{ row.userAccount || '-' }}</span>
-        </template>
+        <template #default="{ row }"><span class="mono">{{ row.userAccount || '-' }}</span></template>
       </el-table-column>
       <el-table-column align="right" label="积分" prop="pointAmount" width="100" />
       <el-table-column align="right" label="USDT" width="110">
         <template #default="{ row }">{{ row.usdtAmount }}</template>
       </el-table-column>
-      <el-table-column label="钱包地址" min-width="260">
-        <template #default="{ row }">
-          <span class="mono">{{ row.network }} · {{ row.walletAddress }}</span>
-        </template>
+      <el-table-column label="钱包地址" min-width="280">
+        <template #default="{ row }"><span class="mono">{{ row.network }} · {{ row.walletAddress }}</span></template>
       </el-table-column>
       <el-table-column label="状态" width="120">
-        <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" effect="plain">{{ row.status }}</el-tag>
-        </template>
+        <template #default="{ row }"><el-tag :type="statusType(row.status)" effect="plain">{{ row.status }}</el-tag></template>
       </el-table-column>
-      <el-table-column label="打款状态" width="150">
+      <el-table-column label="打款状态" width="170">
         <template #default="{ row }">
-          <el-tag v-if="row.payoutStatus" :type="row.manualReview ? 'danger' : 'info'" effect="plain">
+          <el-tag v-if="row.payoutStatus" :type="row.manualReview ? 'warning' : 'info'" effect="plain">
             {{ row.payoutStatus }}
           </el-tag>
-          <span v-else class="muted">尚未执行</span>
+          <span v-else class="muted">尚未确认</span>
         </template>
       </el-table-column>
-      <el-table-column align="right" label="确认数" width="90">
-        <template #default="{ row }">{{ row.confirmationCount }}</template>
-      </el-table-column>
-      <el-table-column align="right" label="实际手续费" width="150">
-        <template #default="{ row }">
-          <span v-if="row.actualFeeAmount && row.actualFeeAsset">
-            {{ row.actualFeeAmount }} {{ row.actualFeeAsset }}
-          </span>
-          <span v-else class="muted">-</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="链上 tx hash" min-width="210">
-        <template #default="{ row }">
-          <span v-if="row.payoutTxHash || row.txHash" class="mono">{{ row.payoutTxHash || row.txHash }}</span>
-          <span v-else class="muted">尚未生成</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="失败 / 人工核对" min-width="190">
-        <template #default="{ row }">
-          <span v-if="row.manualReview" class="muted">需要人工核对</span>
-          <span v-else-if="row.failureReason">{{ row.failureReason }}</span>
-          <span v-else class="muted">-</span>
-        </template>
+      <el-table-column label="备注" min-width="220">
+        <template #default="{ row }"><span>{{ row.failureReason || row.adminNote || '-' }}</span></template>
       </el-table-column>
       <el-table-column label="申请时间" min-width="220" prop="createdAt" />
-      <el-table-column align="right" fixed="right" label="操作" width="150">
+      <el-table-column label="确认时间" min-width="220">
+        <template #default="{ row }">{{ row.reviewedAt || '-' }}</template>
+      </el-table-column>
+      <el-table-column align="right" fixed="right" label="操作" width="190">
         <template #default="{ row }">
           <template v-if="row.status === 'PENDING'">
             <el-button
-              v-if="isPayoutEligibleForExecution(row)"
+              v-if="canManuallyConfirm(row)"
               :loading="operationLoading"
               type="primary"
               text
-              @click="openPayoutDialog(row)"
-            >执行打款</el-button>
+              @click="openManualConfirm(row)"
+            >确认已外部打款</el-button>
             <el-button :loading="operationLoading" type="danger" text @click="reject(row)">拒绝</el-button>
           </template>
           <span v-else class="muted">已处理</span>
@@ -365,102 +284,34 @@ onBeforeRouteLeave(() => clearSecrets())
     </el-table>
 
     <el-dialog
-      v-model="batchDialogVisible"
+      v-model="confirmDialogVisible"
       v-loading="operationLoading"
-      :title="payoutDialogTitle"
-      width="640px"
+      title="确认外部 ERC20 打款"
+      width="520px"
       :close-on-click-modal="false"
-      @close="closeBatchDialog"
+      @close="closeConfirmDialog"
     >
-      <div v-if="batchStep === 'preview' && preview">
-        <el-descriptions :column="1" border>
-          <el-descriptions-item v-if="preview.tronHotWalletAddress" label="TRC20 热钱包地址">
-            <span class="mono">{{ preview.tronHotWalletAddress }}</span>
-          </el-descriptions-item>
-          <el-descriptions-item v-if="preview.ethHotWalletAddress" label="ERC20 热钱包地址">
-            <span class="mono">{{ preview.ethHotWalletAddress }}</span>
-          </el-descriptions-item>
-          <el-descriptions-item v-if="preview.bepHotWalletAddress" label="BEP20 热钱包地址">
-            <span class="mono">{{ preview.bepHotWalletAddress }}</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="本次提现总计 USDT">
-            <strong>{{ preview.totalUsdt }}</strong>
-          </el-descriptions-item>
-          <el-descriptions-item label="提现笔数">{{ preview.itemCount }}</el-descriptions-item>
-        </el-descriptions>
-        <el-table :data="preview.feeEstimates" border size="small" style="margin-top: 12px">
-          <el-table-column label="链" prop="network" width="90" />
-          <el-table-column label="笔数" prop="transactionCount" width="70" />
-          <el-table-column label="预计手续费" min-width="180">
-            <template #default="{ row }">
-              {{ row.estimateType === 'MAXIMUM' ? '预计上限' : '预计' }}：
-              <strong>{{ row.estimatedAmount }} {{ row.asset }}</strong>
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-table :data="preview.items" border size="small" style="margin-top: 12px" max-height="200">
-          <el-table-column label="链" prop="network" width="70" />
-          <el-table-column label="USDT" prop="usdtAmount" width="100" />
-          <el-table-column label="钱包地址" prop="walletAddress" min-width="240" />
-          <el-table-column label="账号" prop="userAccount" min-width="140" />
-          <el-table-column label="状态" prop="status" width="100" />
-        </el-table>
-        <div style="margin-top: 16px; text-align: right">
-          <el-button @click="closeBatchDialog">取消</el-button>
-          <el-button type="primary" @click="batchStep = 'credentials'">下一步：安全确认</el-button>
-        </div>
-      </div>
-
-      <div v-if="batchStep === 'credentials'">
+      <template v-if="confirmingWithdrawal">
         <el-alert type="warning" show-icon :closable="false" style="margin-bottom: 16px">
-          私钥只随本次执行请求发送，不用于预览，不会出现在响应或审计日志中。
+          请先在外部钱包完成 ERC20 转账。确认后系统立即扣除该申请冻结的积分，且不会广播或核验链上交易。
         </el-alert>
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="打款金额">{{ confirmingWithdrawal.usdtAmount }} USDT</el-descriptions-item>
+          <el-descriptions-item label="收款地址"><span class="mono">{{ confirmingWithdrawal.walletAddress }}</span></el-descriptions-item>
+        </el-descriptions>
         <el-alert
-          v-if="payoutError"
-          title="打款未执行"
-          :description="payoutError"
+          v-if="confirmError"
+          title="确认未完成"
+          :description="confirmError"
           type="error"
           show-icon
           :closable="false"
-          style="margin-bottom: 16px"
+          style="margin-top: 16px"
         />
-        <div v-if="needsTronKey" style="margin-bottom: 12px">
-          <div style="margin-bottom: 4px; font-weight: 600">TRC20 热钱包私钥</div>
-          <el-input
-            v-model="credentials.tronPrivateKey"
-            type="password"
-            maxlength="66"
-            placeholder="Tron 私钥（hex，不含 0x 前缀）"
-            show-password
-            autocomplete="off"
-          />
-        </div>
-        <div v-if="needsEthKey" style="margin-bottom: 12px">
-          <div style="margin-bottom: 4px; font-weight: 600">ERC20 热钱包私钥</div>
-          <el-input
-            v-model="credentials.ethPrivateKey"
-            type="password"
-            maxlength="66"
-            placeholder="Ethereum 私钥（hex，不含 0x 前缀）"
-            show-password
-            autocomplete="off"
-          />
-        </div>
-        <div v-if="needsBepKey" style="margin-bottom: 12px">
-          <div style="margin-bottom: 4px; font-weight: 600">BEP20 热钱包私钥</div>
-          <el-input
-            v-model="credentials.bepPrivateKey"
-            type="password"
-            maxlength="66"
-            placeholder="BSC 私钥（hex，不含 0x 前缀）"
-            show-password
-            autocomplete="off"
-          />
-        </div>
-        <div style="margin-bottom: 12px">
+        <div style="margin-top: 16px">
           <div style="margin-bottom: 4px; font-weight: 600">2FA 验证码</div>
           <el-input
-            v-model="credentials.totpCode"
+            v-model="totpCode"
             placeholder="6 位 2FA 验证码"
             maxlength="6"
             inputmode="numeric"
@@ -468,49 +319,40 @@ onBeforeRouteLeave(() => clearSecrets())
             style="max-width: 200px"
           />
         </div>
-        <div style="margin-top: 16px; text-align: right">
-          <el-button @click="showPreviewStep">上一步</el-button>
-          <el-button type="danger" :loading="operationLoading" @click="doPayout">确认并签名打款</el-button>
-        </div>
-      </div>
-
-      <div v-if="batchStep === 'result' && batchResult">
-          <el-alert
-            :type="resultAlertType(batchResult)"
-            show-icon
-            :closable="false"
-            style="margin-bottom: 12px"
-          >
-            {{ resultSummary(batchResult) }}
-          </el-alert>
-          <el-table :data="batchResult.items" border size="small" max-height="250">
-            <el-table-column label="打款状态" width="150">
-              <template #default="{ row }">
-                <el-tag :type="row.manualReview || row.payoutStatus === 'FAILED' ? 'danger' : 'info'" effect="plain">
-                  {{ row.payoutStatus }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="确认数" prop="confirmationCount" width="80" />
-            <el-table-column align="right" label="实际手续费" width="150">
-              <template #default="{ row }">
-                <span v-if="row.actualFeeAmount && row.actualFeeAsset">
-                  {{ row.actualFeeAmount }} {{ row.actualFeeAsset }}
-                </span>
-                <span v-else class="muted">-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="tx hash" prop="txHash" min-width="200" />
-            <el-table-column label="失败 / 人工核对" min-width="220">
-              <template #default="{ row }">
-                {{ row.manualReview ? '需要人工核对' : row.failureReason || row.errorMessage || '-' }}
-              </template>
-            </el-table-column>
-          </el-table>
-          <div style="margin-top: 16px; text-align: right">
-            <el-button type="primary" @click="closeBatchDialog">完成</el-button>
-          </div>
-      </div>
+      </template>
+      <template #footer>
+        <el-button @click="closeConfirmDialog">取消</el-button>
+        <el-button type="primary" :loading="operationLoading" @click="confirmExternalPayout">确认已外部打款</el-button>
+      </template>
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+.stats-panel {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--el-border-color-light);
+}
+
+.stats-header,
+.stats-values {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.stats-header {
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.stats-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.stats-period {
+  min-width: 260px;
+}
+</style>

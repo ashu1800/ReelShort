@@ -256,7 +256,7 @@ internal fun AccountScreen(
                     AccountMenuRow(
                         icon = Icons.Rounded.MonetizationOn,
                         title = copy.accountWalletTitle,
-                        subtitle = wallet?.let { "${it.network} · ${it.walletAddress}" } ?: "ERC20 / TRC20 / BEP20",
+                        subtitle = wallet?.let { "${it.network} · ${it.walletAddress}" } ?: "仅支持 ERC20 钱包",
                         onClick = { walletSheetVisible = true },
                     )
                     AccountMenuDivider()
@@ -943,17 +943,17 @@ private fun WalletBottomSheet(
 ) {
     val copy = strings(language)
     var walletAddress by remember(wallet) { mutableStateOf(wallet?.walletAddress.orEmpty()) }
-    var selectedNetwork by remember(wallet) { mutableStateOf(wallet?.network ?: "ERC20") }
+    var selectedNetwork by remember { mutableStateOf("ERC20") }
     var password by remember { mutableStateOf("") }
     AccountFormBottomSheet(onDismiss = onDismiss) {
         SheetForm(title = copy.accountWalletTitle) {
             Text(wallet?.walletAddress ?: copy.accountWalletNoBound, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            // 网络类型选择器（TRC20 / ERC20 / BEP20）
+            // 提现与钱包绑定仅支持 ERC20。
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                listOf("TRC20", "ERC20", "BEP20").forEach { network ->
+                listOf("ERC20").forEach { network ->
                     FilterChip(
                         selected = selectedNetwork == network,
                         onClick = { selectedNetwork = network },

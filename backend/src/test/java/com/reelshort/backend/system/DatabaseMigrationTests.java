@@ -3,6 +3,7 @@ package com.reelshort.backend.system;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -149,6 +150,43 @@ class DatabaseMigrationTests {
 				""", Integer.class, "ADMIN", "RECOMMEND", "ENGLISH", "SUCCESS");
 
 		assertThat(count).isEqualTo(1);
+	}
+
+	@Test
+	void erc20CutoverRejectsLegacyPendingWithdrawalsAndReleasesFrozenPoints() {
+		DriverManagerDataSource dataSource = new DriverManagerDataSource();
+		dataSource.setDriverClassName("org.h2.Driver");
+		dataSource.setUrl("jdbc:h2:mem:flyway-erc20-cutover;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1");
+		dataSource.setUsername("sa");
+		dataSource.setPassword("");
+		Flyway baseline = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
+				.target(MigrationVersion.fromVersion("26")).load();
+		baseline.migrate();
+		JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+		UUID userId = UUID.randomUUID();
+		UUID withdrawalId = UUID.randomUUID();
+		Timestamp now = Timestamp.from(OffsetDateTime.now().toInstant());
+		jdbc.update("insert into users (id, username, password_hash, status, created_at) values (?, ?, ?, ?, ?)",
+				userId, "erc20-cutover-user", "hash", "ACTIVE", now);
+		jdbc.update("insert into point_accounts (id, user_id, balance, frozen_points, fractional_part, updated_at) "
+				+ "values (?, ?, ?, ?, ?, ?)", UUID.randomUUID(), userId, 5000, 3600, 0, now);
+		jdbc.update("""
+				insert into withdrawal_requests (
+					id, user_id, point_amount, fee_amount, usdt_amount, usdt_per_point,
+					cny_per_point, cny_per_usd, minimum_usd, network, wallet_address,
+					status, created_at
+				) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""", withdrawalId, userId, 3600, 0, new BigDecimal("10"), new BigDecimal("0.01"),
+				new BigDecimal("0.02"), new BigDecimal("7.2"), new BigDecimal("10"), "TRC20",
+				"TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE", "PENDING", now);
+
+		Flyway upgrade = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load();
+		upgrade.migrate();
+
+		assertThat(jdbc.queryForObject("select frozen_points from point_accounts where user_id = ?", Integer.class,
+				userId)).isZero();
+		assertThat(jdbc.queryForObject("select status from withdrawal_requests where id = ?", String.class,
+				withdrawalId)).isEqualTo("REJECTED");
 	}
 
 	private List<String> existingTables() {

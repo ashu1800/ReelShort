@@ -103,6 +103,16 @@ export type WithdrawalRequest = {
   actualFeeAsset: string | null
 }
 
+export type WithdrawalStatsRange = 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'LAST_MONTH'
+
+export type WithdrawalStats = {
+  range: WithdrawalStatsRange
+  from: string
+  to: string
+  totalUsdt: string
+  payoutCount: number
+}
+
 export type ContentCacheStatus = {
   bookCount: number
   episodeCacheCount: number
@@ -424,97 +434,29 @@ export async function fetchOrders() {
 }
 
 export async function fetchWithdrawals() {
-  const response = await http.get<ApiResponse<WithdrawalRequest[]>>('/withdrawals')
-  return response.data.data
+	const response = await http.get<ApiResponse<WithdrawalRequest[]>>('/withdrawals')
+	return response.data.data
 }
 
-export async function approveWithdrawal(
-  withdrawalId: string,
-  tronPrivateKey: string | undefined,
-  ethPrivateKey: string | undefined,
-  bepPrivateKey: string | undefined,
-  totpCode: string,
-) {
-  const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/approve`, {
-    tronPrivateKey,
-    ethPrivateKey,
-    bepPrivateKey,
-    totpCode,
-  })
-  return response.data.data
+export async function fetchWithdrawalStats(range: WithdrawalStatsRange) {
+	const response = await http.get<ApiResponse<WithdrawalStats>>('/withdrawals/stats', {
+		params: { range },
+	})
+	return response.data.data
+}
+
+export async function manualConfirmWithdrawal(withdrawalId: string, totpCode: string) {
+	const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/manual-confirm`, {
+		totpCode,
+	})
+	return response.data.data
 }
 
 export async function rejectWithdrawal(withdrawalId: string, reason: string) {
-  const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/reject`, {
-    reason,
-  })
-  return response.data.data
-}
-
-export async function batchPreviewWithdrawals(withdrawalIds: string[]) {
-  const response = await http.post<ApiResponse<BatchWithdrawalPreview>>('/withdrawals/batch-preview', {
-    withdrawalIds,
-  })
-  return response.data.data
-}
-
-export async function batchApproveWithdrawals(
-  withdrawalIds: string[],
-  tronPrivateKey: string | undefined,
-  ethPrivateKey: string | undefined,
-  bepPrivateKey: string | undefined,
-  totpCode: string,
-) {
-  const response = await http.post<ApiResponse<BatchWithdrawalResult>>('/withdrawals/batch-approve', {
-    withdrawalIds,
-    tronPrivateKey,
-    ethPrivateKey,
-    bepPrivateKey,
-    totpCode,
-  })
-  return response.data.data
-}
-
-export type BatchWithdrawalPreview = {
-  tronHotWalletAddress: string | null
-  ethHotWalletAddress: string | null
-  bepHotWalletAddress: string | null
-  totalUsdt: string
-  itemCount: number
-  items: {
-    withdrawalId: string
-    userAccount: string
-    usdtAmount: string
-    network: string
-    walletAddress: string
-    status: WithdrawalStatus
-  }[]
-  feeEstimates: {
-    network: string
-    asset: string
-    transactionCount: number
-    estimatedAmount: string
-    estimateType: 'MAXIMUM' | 'ESTIMATE'
-  }[]
-}
-
-export type BatchWithdrawalResult = {
-  succeeded: number
-  failed: number
-  pending: number
-  stoppedAtIndex: number
-  errorMessage: string | null
-  items: {
-    withdrawalId: string
-    payoutStatus: string
-    txHash: string | null
-    confirmationCount: number
-    failureReason: string | null
-    manualReview: boolean
-    actualFeeAmount: string | null
-    actualFeeAsset: string | null
-    errorMessage: string | null
-  }[]
+	const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/reject`, {
+		reason,
+	})
+	return response.data.data
 }
 
 export async function get2faStatus() {
