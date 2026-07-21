@@ -1,5 +1,7 @@
 package com.reelshort.backend.withdrawal;
 
+import java.time.Duration;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -27,6 +29,14 @@ public class TronProperties {
 
 	/** Maximum bytes accepted from a TronGrid response. */
 	private int maxResponseBytes = 5 * 1024 * 1024;
+
+	private Duration requestInterval = Duration.ofMillis(250);
+
+	private int rateLimitRetries = 3;
+
+	private Duration retryInitialDelay = Duration.ofSeconds(1);
+
+	private Duration chainParameterCacheTtl = Duration.ofMinutes(5);
 
 	public String getNodeUrl() {
 		return nodeUrl;
@@ -99,5 +109,52 @@ public class TronProperties {
 			throw new IllegalArgumentException("reelshort.tron.max-response-bytes is out of range");
 		}
 		this.maxResponseBytes = maxResponseBytes;
+	}
+
+	public Duration getRequestInterval() {
+		return requestInterval;
+	}
+
+	public void setRequestInterval(Duration requestInterval) {
+		if (requestInterval == null || requestInterval.isNegative()
+				|| requestInterval.compareTo(Duration.ofSeconds(10)) > 0) {
+			throw new IllegalArgumentException("reelshort.tron.request-interval is out of range");
+		}
+		this.requestInterval = requestInterval;
+	}
+
+	public int getRateLimitRetries() {
+		return rateLimitRetries;
+	}
+
+	public void setRateLimitRetries(int rateLimitRetries) {
+		if (rateLimitRetries < 0 || rateLimitRetries > 5) {
+			throw new IllegalArgumentException("reelshort.tron.rate-limit-retries must be between 0 and 5");
+		}
+		this.rateLimitRetries = rateLimitRetries;
+	}
+
+	public Duration getRetryInitialDelay() {
+		return retryInitialDelay;
+	}
+
+	public void setRetryInitialDelay(Duration retryInitialDelay) {
+		if (retryInitialDelay == null || retryInitialDelay.isNegative()
+				|| retryInitialDelay.compareTo(Duration.ofMinutes(1)) > 0) {
+			throw new IllegalArgumentException("reelshort.tron.retry-initial-delay is out of range");
+		}
+		this.retryInitialDelay = retryInitialDelay;
+	}
+
+	public Duration getChainParameterCacheTtl() {
+		return chainParameterCacheTtl;
+	}
+
+	public void setChainParameterCacheTtl(Duration chainParameterCacheTtl) {
+		if (chainParameterCacheTtl == null || chainParameterCacheTtl.isNegative()
+				|| chainParameterCacheTtl.compareTo(Duration.ofHours(1)) > 0) {
+			throw new IllegalArgumentException("reelshort.tron.chain-parameter-cache-ttl is out of range");
+		}
+		this.chainParameterCacheTtl = chainParameterCacheTtl;
 	}
 }

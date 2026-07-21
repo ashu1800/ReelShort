@@ -19,6 +19,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.HexFormat;
+import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
 
 import org.bouncycastle.asn1.sec.SECNamedCurves;
 import org.bouncycastle.asn1.x9.X9ECParameters;
@@ -26,6 +28,7 @@ import org.bouncycastle.crypto.params.ECDomainParameters;
 import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
 import org.bouncycastle.crypto.signers.ECDSASigner;
 import org.bouncycastle.math.ec.ECPoint;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,11 +67,25 @@ public class TronClient {
 	private final TronProperties properties;
 	private final ObjectMapper objectMapper;
 	private final HttpClient httpClient;
+	private final LongSupplier nanoTime;
+	private final LongConsumer sleepMillis;
+	private final Object requestScheduleLock = new Object();
+	private final Object chainFeeCacheLock = new Object();
+	private long nextRequestNanos;
+	private volatile ChainFeePrices cachedChainFeePrices;
 
+	@Autowired
 	public TronClient(TronProperties properties, ObjectMapper objectMapper) {
+		this(properties, objectMapper, System::nanoTime, TronClient::sleep);
+	}
+
+	TronClient(TronProperties properties, ObjectMapper objectMapper,
+			LongSupplier nanoTime, LongConsumer sleepMillis) {
 		this.properties = properties;
 		this.objectMapper = objectMapper;
 		this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+		this.nanoTime = nanoTime;
+		this.sleepMillis = sleepMillis;
 	}
 
 	/**
@@ -156,9 +173,9 @@ public class TronClient {
 				energyByTransfer.add(simulation.path("energy_used").asLong());
 			}
 
-			JsonNode chainParameters = postJson(properties.getNodeUrl() + "/wallet/getchainparameters", Map.of());
-			long energyPrice = chainParameter(chainParameters, "getEnergyFee");
-			long bandwidthPrice = chainParameter(chainParameters, "getTransactionFee");
+			ChainFeePrices feePrices = chainFeePrices();
+			long energyPrice = feePrices.energyPrice();
+			long bandwidthPrice = feePrices.bandwidthPrice();
 			JsonNode resources = postJson(properties.getNodeUrl() + "/wallet/getaccountresource",
 					Map.of("address", ownerAddress, "visible", true));
 			long availableEnergy = availableResource(resources, "EnergyLimit", "EnergyUsed");
@@ -201,6 +218,28 @@ public class TronClient {
 				.divide(FEE_MARGIN_DENOMINATOR);
 	}
 
+	private ChainFeePrices chainFeePrices() {
+		long now = nanoTime.getAsLong();
+		ChainFeePrices cached = cachedChainFeePrices;
+		if (cached != null && now < cached.expiresAtNanos()) {
+			return cached;
+		}
+		synchronized (chainFeeCacheLock) {
+			now = nanoTime.getAsLong();
+			cached = cachedChainFeePrices;
+			if (cached != null && now < cached.expiresAtNanos()) {
+				return cached;
+			}
+			JsonNode response = postJson(properties.getNodeUrl() + "/wallet/getchainparameters", Map.of());
+			long energyPrice = chainParameter(response, "getEnergyFee");
+			long bandwidthPrice = chainParameter(response, "getTransactionFee");
+			long expiresAt = Math.addExact(now, properties.getChainParameterCacheTtl().toNanos());
+			ChainFeePrices refreshed = new ChainFeePrices(energyPrice, bandwidthPrice, expiresAt);
+			cachedChainFeePrices = refreshed;
+			return refreshed;
+		}
+	}
+
 	private long chainParameter(JsonNode response, String key) {
 		JsonNode parameters = response.path("chainParameter");
 		if (!parameters.isArray()) {
@@ -230,6 +269,9 @@ public class TronClient {
 			throw new IllegalStateException("invalid account resource " + field);
 		}
 		return value.asLong();
+	}
+
+	private record ChainFeePrices(long energyPrice, long bandwidthPrice, long expiresAtNanos) {
 	}
 
 	/**
@@ -430,7 +472,7 @@ public class TronClient {
 			if (!expectedTxHash.equalsIgnoreCase(transaction.path("txID").asText())) {
 				return PayoutBroadcastResult.unknown("signed transaction hash mismatch");
 			}
-			JsonNode result = postJson(properties.getNodeUrl() + "/wallet/broadcasttransaction", transaction);
+			JsonNode result = postJsonOnce(properties.getNodeUrl() + "/wallet/broadcasttransaction", transaction);
 			if (result.path("result").asBoolean(false)) {
 				return PayoutBroadcastResult.accepted();
 			}
@@ -454,7 +496,7 @@ public class TronClient {
 
 	public PayoutChainStatus queryTransactionStatus(String txHash) {
 		try {
-			JsonNode transactionInfo = postJson(properties.getNodeUrl() + "/wallet/gettransactioninfobyid",
+			JsonNode transactionInfo = postJsonQuery(properties.getNodeUrl() + "/wallet/gettransactioninfobyid",
 					Map.of("value", txHash));
 			if (transactionInfo == null || transactionInfo.isEmpty()) {
 				return PayoutChainStatus.of(PayoutChainState.NOT_FOUND, 0);
@@ -469,7 +511,7 @@ public class TronClient {
 			if (blockNumber < 0) {
 				return PayoutChainStatus.of(PayoutChainState.PENDING, 0);
 			}
-			JsonNode currentBlock = postJson(properties.getNodeUrl() + "/wallet/getnowblock", Map.of());
+			JsonNode currentBlock = postJsonQuery(properties.getNodeUrl() + "/wallet/getnowblock", Map.of());
 			long latestBlock = currentBlock.path("block_header").path("raw_data").path("number").asLong(blockNumber);
 			long depth = Math.max(0, latestBlock - blockNumber + 1);
 			int confirmations = (int) Math.min(Integer.MAX_VALUE, depth);
@@ -528,21 +570,11 @@ public class TronClient {
 		try {
 			String cursor = fingerprint == null || fingerprint.isBlank() ? ""
 					: "&fingerprint=" + URLEncoder.encode(fingerprint, StandardCharsets.UTF_8);
-			HttpRequest.Builder builder = HttpRequest.newBuilder()
-					.uri(URI.create(String.format("%s/v1/accounts/%s/transactions/trc20"
+			String url = String.format("%s/v1/accounts/%s/transactions/trc20"
 							+ "?limit=%d&contract_address=%s&only_to=true&only_confirmed=true"
 							+ "&order_by=block_timestamp,desc%s",
-							properties.getNodeUrl(), address, limit, contract, cursor)))
-					.timeout(Duration.ofSeconds(15))
-					.header("Accept", "application/json");
-			if (!properties.getApiKey().isBlank()) {
-				builder.header("TRON-PRO-API-KEY", properties.getApiKey());
-			}
-			HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				throw new WithdrawalException(503, "TronGrid transfer query failed with HTTP " + response.statusCode());
-			}
-			JsonNode root = objectMapper.readTree(responseBody(response, "transfer query"));
+							properties.getNodeUrl(), address, limit, contract, cursor);
+			JsonNode root = retrySafeRequest(() -> sendGet(url), "transfer query", false);
 			JsonNode data = root.path("data");
 			List<IncomingTransfer> transfers = new ArrayList<>();
 			if (data.isArray()) {
@@ -660,16 +692,7 @@ public class TronClient {
 	}
 
 	private JsonNode getJson(String url) throws Exception {
-		HttpRequest.Builder builder = HttpRequest.newBuilder().uri(URI.create(url))
-				.timeout(Duration.ofSeconds(15)).header("Accept", "application/json").GET();
-		if (!properties.getApiKey().isBlank()) {
-			builder.header("TRON-PRO-API-KEY", properties.getApiKey());
-		}
-		HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-		if (response.statusCode() < 200 || response.statusCode() >= 300) {
-			throw new WithdrawalException(503, "TronGrid event query failed with HTTP " + response.statusCode());
-		}
-		return objectMapper.readTree(responseBody(response, "event query"));
+		return retrySafeRequest(() -> sendGet(url), "event query", false);
 	}
 
 	public record IncomingTransferPage(List<IncomingTransfer> transfers, String nextFingerprint) {
@@ -771,7 +794,53 @@ public class TronClient {
 	// --- HTTP ---
 
 	private JsonNode postJson(String url, Object body) {
+		return retrySafeRequest(() -> sendJson(url, body), "RPC request", true);
+	}
+
+	private JsonNode postJsonQuery(String url, Object body) {
+		return retrySafeRequest(() -> sendJson(url, body), "RPC request", false);
+	}
+
+	private JsonNode retrySafeRequest(ResponseSupplier request, String operation,
+			boolean payoutNotExecuted) {
+		for (int attempt = 0; attempt <= properties.getRateLimitRetries(); attempt++) {
+			HttpResponse<byte[]> response = request.get();
+			if (response.statusCode() == 429) {
+				if (attempt == properties.getRateLimitRetries()) {
+					throw new WithdrawalException(503,
+							"TRON 节点请求过于频繁，请稍后重试"
+									+ (payoutNotExecuted ? "；打款未执行" : ""));
+				}
+				sleepMillis.accept(retryDelayMillis(response, attempt));
+				continue;
+			}
+			return parseSuccessfulResponse(response, operation);
+		}
+		throw new IllegalStateException("TRON retry loop exhausted");
+	}
+
+	private JsonNode postJsonOnce(String url, Object body) {
+		return parseSuccessfulResponse(sendJson(url, body), "RPC request");
+	}
+
+	private HttpResponse<byte[]> sendGet(String url) {
 		try {
+			awaitRequestSlot();
+			HttpRequest.Builder builder = HttpRequest.newBuilder().uri(URI.create(url))
+					.timeout(Duration.ofSeconds(15)).header("Accept", "application/json").GET();
+			if (!properties.getApiKey().isBlank()) {
+				builder.header("TRON-PRO-API-KEY", properties.getApiKey());
+			}
+			return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "TronGrid request failed: " + exception.getMessage());
+		}
+	}
+
+	private HttpResponse<byte[]> sendJson(String url, Object body) {
+		try {
+			awaitRequestSlot();
 			HttpRequest.Builder builder = HttpRequest.newBuilder()
 					.uri(URI.create(url))
 					.timeout(Duration.ofSeconds(30))
@@ -781,15 +850,68 @@ public class TronClient {
 			if (!properties.getApiKey().isBlank()) {
 				builder.header("TRON-PRO-API-KEY", properties.getApiKey());
 			}
-			HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
-			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				throw new WithdrawalException(503, "TronGrid HTTP status " + response.statusCode());
-			}
-			return objectMapper.readTree(responseBody(response, "RPC request"));
+			return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
 		}
 		catch (Exception exception) {
 			throw new WithdrawalException(503, "TronGrid request failed: " + exception.getMessage());
 		}
+	}
+
+	private JsonNode parseSuccessfulResponse(HttpResponse<byte[]> response, String operation) {
+		try {
+			if (response.statusCode() < 200 || response.statusCode() >= 300) {
+				throw new WithdrawalException(503, "TronGrid HTTP status " + response.statusCode());
+			}
+			return objectMapper.readTree(responseBody(response, operation));
+		}
+		catch (WithdrawalException exception) {
+			throw exception;
+		}
+		catch (Exception exception) {
+			throw new WithdrawalException(503, "TronGrid request failed: " + exception.getMessage());
+		}
+	}
+
+	private long retryDelayMillis(HttpResponse<byte[]> response, int attempt) {
+		String retryAfter = response.headers().firstValue("Retry-After").orElse("").trim();
+		try {
+			long seconds = Long.parseLong(retryAfter);
+			if (seconds > 0 && seconds <= 60) {
+				return Math.multiplyExact(seconds, 1_000L);
+			}
+		}
+		catch (Exception ignored) {
+			// Fall back to bounded exponential delay.
+		}
+		return Math.multiplyExact(properties.getRetryInitialDelay().toMillis(), 1L << attempt);
+	}
+
+	private void awaitRequestSlot() {
+		synchronized (requestScheduleLock) {
+			long now = nanoTime.getAsLong();
+			long slot = Math.max(now, nextRequestNanos);
+			long waitNanos = Math.max(0L, slot - now);
+			if (waitNanos > 0) {
+				sleepMillis.accept(Math.floorDiv(waitNanos - 1L, 1_000_000L) + 1L);
+				now = nanoTime.getAsLong();
+			}
+			nextRequestNanos = Math.addExact(now, properties.getRequestInterval().toNanos());
+		}
+	}
+
+	private static void sleep(long millis) {
+		try {
+			Thread.sleep(millis);
+		}
+		catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("interrupted while waiting for TronGrid", exception);
+		}
+	}
+
+	@FunctionalInterface
+	private interface ResponseSupplier {
+		HttpResponse<byte[]> get();
 	}
 
 	private String responseBody(HttpResponse<byte[]> response, String operation) {

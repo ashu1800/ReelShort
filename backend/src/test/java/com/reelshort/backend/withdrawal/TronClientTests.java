@@ -11,11 +11,13 @@ import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.time.OffsetDateTime;
 
@@ -241,6 +243,197 @@ class TronClientTests {
 		assertThatThrownBy(() -> client.getTrxBalance(DESTINATION))
 				.isInstanceOf(WithdrawalException.class)
 				.hasMessageContaining("TronGrid HTTP status 500");
+	}
+
+	@Test
+	void retriesReplaySafeRequestAfterRateLimit() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		List<Long> delays = new ArrayList<>();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/getaccount", exchange -> {
+			if (requests.getAndIncrement() == 0) {
+				exchange.getResponseHeaders().add("Retry-After", "3");
+				respond(exchange, 429, "{\"error\":\"rate limited\"}");
+			}
+			else {
+				respond(exchange, "{\"balance\":20000000}");
+			}
+		});
+		server.start();
+		TronProperties properties = retryProperties(server);
+		TronClient client = new TronClient(properties, objectMapper,
+				System::nanoTime, delays::add);
+
+		assertThat(client.getTrxBalance(DESTINATION)).isEqualByComparingTo("20.000000");
+		assertThat(requests).hasValue(2);
+		assertThat(delays).contains(3_000L);
+	}
+
+	@Test
+	void reportsChineseMessageAfterRateLimitRetriesExhausted() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/getaccount", exchange -> {
+			requests.incrementAndGet();
+			respond(exchange, 429, "{\"error\":\"rate limited\"}");
+		});
+		server.start();
+		TronProperties properties = retryProperties(server);
+		properties.setRateLimitRetries(2);
+		TronClient client = new TronClient(properties, objectMapper,
+				System::nanoTime, ignored -> { });
+
+		assertThatThrownBy(() -> client.getTrxBalance(DESTINATION))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("TRON 节点请求过于频繁，请稍后重试；打款未执行");
+		assertThat(requests).hasValue(3);
+	}
+
+	@Test
+	void rateLimitedStatusQueryDoesNotClaimPayoutWasNotExecuted() throws Exception {
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/gettransactioninfobyid", exchange ->
+				respond(exchange, 429, "{\"error\":\"rate limited\"}"));
+		server.start();
+		TronProperties properties = retryProperties(server);
+		properties.setRateLimitRetries(0);
+
+		PayoutChainStatus status = new TronClient(properties, objectMapper,
+				System::nanoTime, ignored -> { }).queryTransactionStatus("tx");
+
+		assertThat(status.state()).isEqualTo(PayoutChainState.UNKNOWN);
+		assertThat(status.detail()).contains("TRON 节点请求过于频繁，请稍后重试")
+				.doesNotContain("打款未执行");
+	}
+
+	@Test
+	void doesNotRetryRateLimitedBroadcast() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/broadcasttransaction", exchange -> {
+			requests.incrementAndGet();
+			respond(exchange, 429, "{\"error\":\"rate limited\"}");
+		});
+		server.start();
+		TronProperties properties = retryProperties(server);
+		TronClient client = new TronClient(properties, objectMapper,
+				System::nanoTime, ignored -> { });
+
+		PayoutBroadcastResult result = client.broadcastSignedTransaction(
+				"{\"txID\":\"tx\",\"signature\":[\"00\"]}", "tx");
+
+		assertThat(result.disposition()).isEqualTo(PayoutBroadcastDisposition.UNKNOWN);
+		assertThat(requests).hasValue(1);
+	}
+
+	@Test
+	void spacesConsecutiveTronRpcRequests() throws Exception {
+		AtomicLong nowNanos = new AtomicLong();
+		List<Long> delays = new ArrayList<>();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/getaccount", exchange -> respond(exchange,
+				"{\"balance\":20000000}"));
+		server.start();
+		TronProperties properties = retryProperties(server);
+		properties.setRequestInterval(Duration.ofMillis(250));
+		TronClient client = new TronClient(properties, objectMapper, nowNanos::get, delay -> {
+			delays.add(delay);
+			nowNanos.addAndGet(Duration.ofMillis(delay).toNanos());
+		});
+
+		client.getTrxBalance(DESTINATION);
+		client.getTrxBalance(DESTINATION);
+
+		assertThat(delays).containsExactly(250L);
+	}
+
+	@Test
+	void cachesChainPricesButRefreshesSimulationsAndResources() throws Exception {
+		AtomicInteger simulations = new AtomicInteger();
+		AtomicInteger chainParameters = new AtomicInteger();
+		AtomicInteger resources = new AtomicInteger();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/wallet/triggerconstantcontract", exchange -> {
+			simulations.incrementAndGet();
+			respond(exchange, "{\"result\":{\"result\":true},\"energy_used\":130285}");
+		});
+		server.createContext("/wallet/getchainparameters", exchange -> {
+			chainParameters.incrementAndGet();
+			respond(exchange, validChainParameters());
+		});
+		server.createContext("/wallet/getaccountresource", exchange -> {
+			resources.incrementAndGet();
+			respond(exchange, validResources());
+		});
+		server.start();
+		TronProperties properties = retryProperties(server);
+		properties.setChainParameterCacheTtl(Duration.ofMinutes(5));
+		TronClient client = new TronClient(properties, objectMapper,
+				System::nanoTime, ignored -> { });
+		List<WithdrawalRequest> withdrawals = List.of(withdrawal(DESTINATION, "1"));
+
+		client.estimateTransferFees(client.addressFromPrivateKey(PRIVATE_KEY), withdrawals);
+		client.estimateTransferFees(client.addressFromPrivateKey(PRIVATE_KEY), withdrawals);
+
+		assertThat(simulations).hasValue(2);
+		assertThat(chainParameters).hasValue(1);
+		assertThat(resources).hasValue(2);
+	}
+
+	@Test
+	void retriesReplaySafeEventGetAfterRateLimit() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/v1/transactions/", exchange -> {
+			if (requests.getAndIncrement() == 0) {
+				respond(exchange, 429, "{\"error\":\"rate limited\"}");
+			}
+			else {
+				respond(exchange, "{\"data\":[]}");
+			}
+		});
+		server.start();
+		TronProperties properties = retryProperties(server);
+		TronClient client = new TronClient(properties, objectMapper,
+				System::nanoTime, ignored -> { });
+
+		assertThatThrownBy(() -> client.fetchIncomingUsdtTransfer(
+				"a".repeat(64), DESTINATION, properties.getUsdtContract(), AMOUNT))
+				.isInstanceOf(WithdrawalException.class)
+				.hasMessageContaining("transaction has no matching TRC20 transfer event");
+		assertThat(requests).hasValue(2);
+	}
+
+	@Test
+	void retriesReplaySafeTransferPageGetAfterRateLimit() throws Exception {
+		AtomicInteger requests = new AtomicInteger();
+		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/v1/accounts/", exchange -> {
+			if (requests.getAndIncrement() == 0) {
+				respond(exchange, 429, "{\"error\":\"rate limited\"}");
+			}
+			else {
+				respond(exchange, "{\"data\":[]}");
+			}
+		});
+		server.start();
+		TronProperties properties = retryProperties(server);
+		TronClient client = new TronClient(properties, objectMapper,
+				System::nanoTime, ignored -> { });
+
+		TronClient.IncomingTransferPage page = client.fetchIncomingUsdtTransferPage(
+				DESTINATION, properties.getUsdtContract(), 20, null);
+
+		assertThat(page.transfers()).isEmpty();
+		assertThat(requests).hasValue(2);
+	}
+
+	private TronProperties retryProperties(HttpServer httpServer) {
+		TronProperties properties = new TronProperties();
+		properties.setNodeUrl("http://127.0.0.1:" + httpServer.getAddress().getPort());
+		properties.setRequestInterval(Duration.ZERO);
+		properties.setRetryInitialDelay(Duration.ofSeconds(1));
+		return properties;
 	}
 
 	@Test
