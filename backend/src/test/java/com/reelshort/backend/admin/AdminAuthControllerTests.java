@@ -21,8 +21,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.auth.TokenHasher;
-import com.reelshort.backend.auth.PasswordHasher;
-import com.reelshort.backend.system.security.TotpService;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -42,12 +40,6 @@ class AdminAuthControllerTests {
 
 	@Autowired
 	private TokenHasher tokenHasher;
-
-	@Autowired
-	private PasswordHasher passwordHasher;
-
-	@Autowired
-	private TotpService totpService;
 
 	@Test
 	void adminLoginReturnsAdminToken() throws Exception {
@@ -79,24 +71,10 @@ class AdminAuthControllerTests {
 	}
 
 	@Test
-	@Transactional
-	void totpEnabledAdminMustProvideValidCodeAtLogin() throws Exception {
-		String username = "totp-login-" + java.util.UUID.randomUUID();
-		AdminUser admin = AdminUser.create(username, passwordHasher.hash("TotpAdmin123"), AdminUserStatus.ACTIVE);
-		admin.enableTotp("JBSWY3DPEHPK3PXP");
-		adminUserRepository.save(admin);
-
-		mockMvc.perform(post("/api/admin/auth/login")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"username\":\"%s\",\"password\":\"TotpAdmin123\"}".formatted(username)))
-				.andExpect(status().isUnauthorized());
-
-		String code = totpService.generateCurrentCode(admin.totpSecret());
-		mockMvc.perform(post("/api/admin/auth/login")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"username\":\"%s\",\"password\":\"TotpAdmin123\",\"totpCode\":\"%s\"}"
-						.formatted(username, code)))
-				.andExpect(status().isOk());
+	void authenticatedAdminCannotAccessRemovedTwoFactorRoutes() throws Exception {
+		mockMvc.perform(get("/api/admin/2fa/status")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminLogin()))
+				.andExpect(status().isNotFound());
 	}
 
 	@Test

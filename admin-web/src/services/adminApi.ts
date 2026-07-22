@@ -287,11 +287,10 @@ export type SystemAlert = {
   resolvedAt: string | null
 }
 
-export async function login(username: string, password: string, totpCode?: string) {
+export async function login(username: string, password: string) {
   const response = await http.post<ApiResponse<AdminLoginResponse>>('/auth/login', {
     username,
     password,
-    totpCode: totpCode || undefined,
   })
   return response.data.data
 }
@@ -452,30 +451,6 @@ export async function rejectWithdrawal(withdrawalId: string, reason: string) {
 	return response.data.data
 }
 
-export async function get2faStatus() {
-  const response = await http.get<ApiResponse<{ enabled: boolean }>>('/2fa/status')
-  return response.data.data
-}
-
-export async function setup2fa() {
-  const response = await http.post<ApiResponse<{ secret: string; otpauthUri: string }>>('/2fa/setup')
-  return response.data.data
-}
-
-export async function enable2fa(secret: string, code: string) {
-  const response = await http.post<ApiResponse<{ enabled: boolean }>>('/2fa/enable', { secret, code })
-  return response.data.data
-}
-
-export async function rebind2fa(oldCode: string, newSecret: string, newCode: string) {
-  const response = await http.post<ApiResponse<{ secret: string; otpauthUri: string | null }>>('/2fa/rebind', {
-    oldCode,
-    newSecret,
-    newCode,
-  })
-  return response.data.data
-}
-
 export async function fetchPaymentEvents(filters: PaymentEventFilters = {}) {
   const response = await http.get<ApiResponse<PaymentEvent[]>>('/payments/events', {
     params: filters,
@@ -488,10 +463,9 @@ export async function fetchVipOrders() {
   return response.data.data
 }
 
-export async function confirmVipOrder(orderId: string, txHash: string, totpCode: string) {
+export async function confirmVipOrder(orderId: string, txHash: string) {
   const response = await http.post<ApiResponse<VipOrder>>(`/vip/orders/${orderId}/confirm`, {
     txHash,
-    totpCode,
   })
   return response.data.data
 }

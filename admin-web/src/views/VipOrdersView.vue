@@ -45,7 +45,6 @@ async function loadOrders() {
 
 async function confirm(row: VipOrder) {
   let txHash = ''
-  let totpCode = ''
   try {
     const result = await ElMessageBox.prompt('请输入链上转账 tx hash', '确认 VIP 订单', {
       confirmButtonText: '确认',
@@ -54,19 +53,12 @@ async function confirm(row: VipOrder) {
       inputErrorMessage: '请输入 64 位十六进制 tx hash',
     })
     txHash = result.value.trim()
-    const totpResult = await ElMessageBox.prompt('请输入管理员 6 位动态验证码', '二次验证', {
-      confirmButtonText: '验证并确认',
-      cancelButtonText: '取消',
-      inputPattern: /^\d{6}$/,
-      inputErrorMessage: '请输入 6 位数字验证码',
-    })
-    totpCode = totpResult.value.trim()
   } catch {
     return
   }
   operationLoading.value = true
   try {
-    await confirmVipOrder(row.id, txHash, totpCode)
+    await confirmVipOrder(row.id, txHash)
     ElMessage.success('VIP 订单已确认')
     await loadOrders()
   } catch (error) {

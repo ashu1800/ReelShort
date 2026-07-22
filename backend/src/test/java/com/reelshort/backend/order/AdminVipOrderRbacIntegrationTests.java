@@ -29,7 +29,6 @@ import com.reelshort.backend.admin.AdminUser;
 import com.reelshort.backend.admin.AdminUserRepository;
 import com.reelshort.backend.admin.AdminUserStatus;
 import com.reelshort.backend.auth.PasswordHasher;
-import com.reelshort.backend.system.security.TotpService;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -41,7 +40,6 @@ class AdminVipOrderRbacIntegrationTests {
 	@Autowired private AdminRoleRepository roles;
 	@Autowired private AdminUserRepository admins;
 	@Autowired private PasswordHasher passwordHasher;
-	@Autowired private TotpService totpService;
 
 	@MockitoBean
 	private VipOrderService vipOrderService;
@@ -49,15 +47,13 @@ class AdminVipOrderRbacIntegrationTests {
 	@Test
 	void writeOnlyCanMutateWhileReadOnlyCannotConfirmOrReject() throws Exception {
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
-		AdminUser writer = admin("vip-writer-" + suffix, AdminPermissions.ORDER_WRITE, true);
-		AdminUser reader = admin("vip-reader-" + suffix, AdminPermissions.ORDER_READ, false);
-		String writerCode = totpService.generateCurrentCode(writer.totpSecret());
-		String writerToken = login(writer.username(), writerCode);
-		String readerToken = login(reader.username(), null);
+		AdminUser writer = admin("vip-writer-" + suffix, AdminPermissions.ORDER_WRITE);
+		AdminUser reader = admin("vip-reader-" + suffix, AdminPermissions.ORDER_READ);
+		String writerToken = login(writer.username());
+		String readerToken = login(reader.username());
 		UUID confirmId = UUID.randomUUID();
 		UUID rejectId = UUID.randomUUID();
 		String txHash = "a".repeat(64);
-		String code = totpService.generateCurrentCode(writer.totpSecret());
 		VipOrder confirmed = order("VIP-rbac-confirm-" + suffix);
 		confirmed.confirm(txHash, writer.username());
 		VipOrder rejected = order("VIP-rbac-reject-" + suffix);
@@ -68,7 +64,7 @@ class AdminVipOrderRbacIntegrationTests {
 		mockMvc.perform(post("/api/admin/vip/orders/{id}/confirm", confirmId)
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + writerToken)
 				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"txHash\":\"%s\",\"totpCode\":\"%s\"}".formatted(txHash, code)))
+				.content("{\"txHash\":\"%s\"}".formatted(txHash)))
 				.andExpect(status().isOk());
 		mockMvc.perform(post("/api/admin/vip/orders/{id}/reject", rejectId)
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + writerToken))
@@ -77,32 +73,27 @@ class AdminVipOrderRbacIntegrationTests {
 		mockMvc.perform(post("/api/admin/vip/orders/{id}/confirm", confirmId)
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + readerToken)
 				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"txHash\":\"%s\",\"totpCode\":\"000000\"}".formatted(txHash)))
+				.content("{\"txHash\":\"%s\"}".formatted(txHash)))
 				.andExpect(status().isForbidden());
 		mockMvc.perform(post("/api/admin/vip/orders/{id}/reject", rejectId)
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + readerToken))
 				.andExpect(status().isForbidden());
 	}
 
-	private AdminUser admin(String username, String permissionCode, boolean totp) {
+	private AdminUser admin(String username, String permissionCode) {
 		AdminPermission permission = permissions.findByCode(permissionCode).orElseThrow();
 		AdminRole role = AdminRole.create("ROLE-" + username, username);
 		role.grant(permission);
 		roles.save(role);
 		AdminUser admin = AdminUser.create(username, passwordHasher.hash("VipAdmin123"), AdminUserStatus.ACTIVE);
 		admin.assignRole(role);
-		if (totp) {
-			admin.enableTotp("JBSWY3DPEHPK3PXP");
-		}
 		return admins.save(admin);
 	}
 
-	private String login(String username, String totpCode) throws Exception {
-		String totpJson = totpCode == null ? "" : ",\"totpCode\":\"" + totpCode + "\"";
+	private String login(String username) throws Exception {
 		MvcResult result = mockMvc.perform(post("/api/admin/auth/login")
 				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"username\":\"%s\",\"password\":\"VipAdmin123\"%s}"
-						.formatted(username, totpJson)))
+				.content("{\"username\":\"%s\",\"password\":\"VipAdmin123\"}".formatted(username)))
 				.andExpect(status().isOk()).andReturn();
 		return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("token").asText();
 	}

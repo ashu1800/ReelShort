@@ -36,7 +36,7 @@ class VipReceiptContractTests {
 	}
 
 	@Test
-	void manualOrderMutationsRequireWritePermissionAndTotp() throws Exception {
+	void manualOrderMutationsRequireWritePermissionWithoutSecondFactor() throws Exception {
 		RequireAdminPermission confirmPermission = AdminVipOrderController.class
 				.getMethod("confirm", com.reelshort.backend.admin.CurrentAdmin.class, java.util.UUID.class,
 						AdminVipOrderController.VipConfirmRequest.class, jakarta.servlet.http.HttpServletRequest.class)
@@ -52,7 +52,7 @@ class VipReceiptContractTests {
 		assertThat(confirmPermission.value()).isEqualTo("ORDER_WRITE");
 		assertThat(rejectPermission.value()).isEqualTo("ORDER_WRITE");
 		assertThat(AdminPermissions.ALL).contains("ORDER_WRITE");
-		assertThat(requestFields).contains("txHash", "totpCode");
+		assertThat(requestFields).containsExactly("txHash");
 	}
 
 	@Test

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Key, Lock, User } from '@element-plus/icons-vue'
+import { Lock, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -13,7 +13,6 @@ const loading = ref(false)
 const form = reactive({
   username: 'admin',
   password: '',
-  totpCode: '',
 })
 
 async function submit() {
@@ -21,18 +20,14 @@ async function submit() {
     ElMessage.warning('请输入管理员账号和密码')
     return
   }
-  if (form.totpCode && !/^\d{6}$/.test(form.totpCode)) {
-    ElMessage.warning('动态验证码必须为 6 位数字')
-    return
-  }
   loading.value = true
   try {
-    const response = await login(form.username.trim(), form.password, form.totpCode)
+    const response = await login(form.username.trim(), form.password)
     session.setSession(response.username, response.token)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     router.push(redirect)
   } catch {
-    ElMessage.error('登录失败，请检查账号、密码或动态验证码')
+    ElMessage.error('登录失败，请检查账号和密码')
   } finally {
     loading.value = false
   }
@@ -54,18 +49,6 @@ async function submit() {
             autocomplete="username"
             placeholder="管理员账号"
             size="large"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-input
-            v-model="form.totpCode"
-            :prefix-icon="Key"
-            autocomplete="one-time-code"
-            inputmode="numeric"
-            maxlength="6"
-            placeholder="动态验证码（已启用时填写）"
-            size="large"
-            @keyup.enter="submit"
           />
         </el-form-item>
         <el-form-item>

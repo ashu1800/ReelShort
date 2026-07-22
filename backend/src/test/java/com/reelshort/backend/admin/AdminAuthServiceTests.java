@@ -38,7 +38,7 @@ class AdminAuthServiceTests {
 
 	@Test
 	void loginRejectsUnknownAdminUsername() {
-		assertThatThrownBy(() -> adminAuthService.login("unknown-admin", "Admin123", null))
+		assertThatThrownBy(() -> adminAuthService.login("unknown-admin", "Admin123"))
 				.isInstanceOf(AuthException.class)
 				.hasMessage("invalid username or password");
 	}
@@ -50,7 +50,7 @@ class AdminAuthServiceTests {
 		admin.assignRole(superAdmin);
 		adminUserRepository.saveAndFlush(admin);
 
-		AdminAuthTokenResponse response = adminAuthService.login("ops-admin", "OpsAdmin123", null);
+		AdminAuthTokenResponse response = adminAuthService.login("ops-admin", "OpsAdmin123");
 
 		AdminToken token = adminTokenRepository.findByTokenHash(tokenHasher.hash(response.token())).orElseThrow();
 		assertThat(response.username()).isEqualTo("ops-admin");
@@ -65,7 +65,7 @@ class AdminAuthServiceTests {
 		AdminUser admin = AdminUser.create("logout-admin", passwordHasher.hash("OpsAdmin123"), AdminUserStatus.ACTIVE);
 		admin.assignRole(superAdmin);
 		adminUserRepository.saveAndFlush(admin);
-		AdminAuthTokenResponse response = adminAuthService.login("logout-admin", "OpsAdmin123", null);
+		AdminAuthTokenResponse response = adminAuthService.login("logout-admin", "OpsAdmin123");
 
 		adminAuthService.logout(response.token());
 

@@ -26,7 +26,7 @@ public class AdminAuthController {
 	@PostMapping("/login")
 	public ApiResponse<AdminAuthTokenResponse> login(@Valid @RequestBody AdminLoginRequest request,
 			HttpServletRequest httpRequest) {
-		return ApiResponse.success(adminAuthService.login(request.username(), request.password(), request.totpCode()),
+		return ApiResponse.success(adminAuthService.login(request.username(), request.password()),
 				requestId(httpRequest));
 	}
 

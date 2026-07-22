@@ -5,7 +5,6 @@ import {
   Document,
   FolderOpened,
   GoldMedal,
-  Lock,
   Monitor,
   Notebook,
   Warning,
@@ -57,10 +56,6 @@ async function logout() {
         <el-menu-item index="/vip-orders">
           <el-icon><GoldMedal /></el-icon>
           <span>VIP 订单</span>
-        </el-menu-item>
-        <el-menu-item index="/2fa">
-          <el-icon><Lock /></el-icon>
-          <span>两步验证</span>
         </el-menu-item>
         <el-menu-item index="/content-cache">
           <el-icon><FolderOpened /></el-icon>

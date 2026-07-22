@@ -21,12 +21,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import com.reelshort.backend.TestAppUsers;
-import com.reelshort.backend.admin.AdminUser;
-import com.reelshort.backend.admin.AdminUserRepository;
 import com.reelshort.backend.admin.AdminAuditLogRepository;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
-import com.reelshort.backend.system.security.TotpService;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -45,18 +42,10 @@ class WalletWithdrawalTransferControllerTests {
 	private SystemConfigService systemConfigService;
 
 	@Autowired
-	private AdminUserRepository adminUserRepository;
-
-	@Autowired
-	private TotpService totpService;
-
-	@Autowired
 	private AdminAuditLogRepository adminAuditLogRepository;
 
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
-
-	private static final String TEST_TOTP_SECRET = "JBSWY3DPEHPK3PXP";
 
 	@Test
 	void withdrawalSummaryReturnsZeroBalanceBeforePointAccountExists() throws Exception {
@@ -235,15 +224,7 @@ class WalletWithdrawalTransferControllerTests {
 
 		// 自动打款接口已停用，确认不再接收私钥或触发链上广播。
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", UUID.fromString(withdrawalId))
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "tronPrivateKey": "",
-						  "ethPrivateKey": "",
-						  "totpCode": "000000"
-						}
-						"""))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isGone())
 				.andExpect(jsonPath("$.message").value("automatic payout is disabled"));
 
@@ -415,93 +396,17 @@ class WalletWithdrawalTransferControllerTests {
 	}
 
 	@Test
-	void adminPayoutExecutionRejectsNonNumericTotpBeforeServiceInvocation() throws Exception {
-		String adminToken = adminLogin();
-		UUID withdrawalId = UUID.randomUUID();
-
-		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", withdrawalId)
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "ethPrivateKey": "request-only-key",
-						  "totpCode": "abcdef"
-						}
-						"""))
-				.andExpect(status().isBadRequest());
-
-		mockMvc.perform(post("/api/admin/withdrawals/batch-approve")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "withdrawalIds": ["%s"],
-						  "ethPrivateKey": "request-only-key",
-						  "totpCode": "abcdef"
-						}
-						""".formatted(withdrawalId)))
-				.andExpect(status().isBadRequest());
-	}
-
-	@Test
-	void adminPayoutExecutionRejectsMalformedPrivateKeysWithBadRequest() throws Exception {
-		String adminToken = adminLogin();
-		UUID withdrawalId = UUID.randomUUID();
-
-		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", withdrawalId)
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "ethPrivateKey": "not-hex",
-						  "totpCode": "123456"
-						}
-						"""))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("bad request"));
-
-		mockMvc.perform(post("/api/admin/withdrawals/batch-approve")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "withdrawalIds": ["%s"],
-						  "ethPrivateKey": "%s",
-						  "totpCode": "123456"
-						}
-						""".formatted(withdrawalId, "a".repeat(67))))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.message").value("bad request"));
-	}
-
-	@Test
 	void automaticPayoutEndpointsAreGone() throws Exception {
 		String adminToken = adminLogin();
 		UUID withdrawalId = UUID.randomUUID();
-		String privateKey = "a".repeat(64);
 
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", withdrawalId)
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "ethPrivateKey": "%s",
-						  "totpCode": "123456"
-						}
-						""".formatted(privateKey)))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isGone())
 				.andExpect(jsonPath("$.message").value("automatic payout is disabled"));
 
 		mockMvc.perform(post("/api/admin/withdrawals/batch-approve")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-						{
-						  "withdrawalIds": ["%s"],
-						  "ethPrivateKey": "%s",
-						  "totpCode": "123456"
-						}
-						""".formatted(withdrawalId, privateKey)))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isGone())
 				.andExpect(jsonPath("$.message").value("automatic payout is disabled"));
 	}
@@ -512,30 +417,18 @@ class WalletWithdrawalTransferControllerTests {
 	}
 
 	private String adminLogin() throws Exception {
-		AdminUser admin = adminUserRepository.findByUsername("admin").orElseThrow();
-		String totp = admin.totpEnabled() ? ",\"totpCode\":\"" + validTotpCode() + "\"" : "";
 		return JsonPath.read(mockMvc.perform(post("/api/admin/auth/login")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
 						  "username": "admin",
-						  "password": "Admin123"%s
+						  "password": "Admin123"
 						}
-						""".formatted(totp)))
+						"""))
 				.andExpect(status().isOk())
 				.andReturn()
 				.getResponse()
 				.getContentAsString(), "$.data.token");
-	}
-
-	/** H1: 单笔提现现在需要 2FA，测试中为 admin 启用 TOTP 并生成验证码 */
-	private String validTotpCode() {
-		AdminUser admin = adminUserRepository.findByUsername("admin").orElseThrow();
-		if (!admin.totpEnabled()) {
-			admin.enableTotp(TEST_TOTP_SECRET);
-			adminUserRepository.save(admin);
-		}
-		return totpService.generateCurrentCode(TEST_TOTP_SECRET);
 	}
 
 	private void adjustPoints(String adminToken, UUID userId, int amount, String reason) throws Exception {

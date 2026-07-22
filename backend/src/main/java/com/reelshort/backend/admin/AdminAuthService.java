@@ -10,7 +10,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.reelshort.backend.auth.AuthException;
 import com.reelshort.backend.auth.PasswordHasher;
 import com.reelshort.backend.auth.TokenHasher;
-import com.reelshort.backend.system.security.TotpService;
 
 @Service
 public class AdminAuthService {
@@ -22,29 +21,23 @@ public class AdminAuthService {
 	private final AdminTokenRepository adminTokenRepository;
 	private final PasswordHasher passwordHasher;
 	private final TokenHasher tokenHasher;
-	private final TotpService totpService;
 
 	public AdminAuthService(AdminProperties adminProperties, AdminUserRepository adminUserRepository,
-			AdminTokenRepository adminTokenRepository, PasswordHasher passwordHasher, TokenHasher tokenHasher,
-			TotpService totpService) {
+			AdminTokenRepository adminTokenRepository, PasswordHasher passwordHasher, TokenHasher tokenHasher) {
 		this.adminProperties = adminProperties;
 		this.adminUserRepository = adminUserRepository;
 		this.adminTokenRepository = adminTokenRepository;
 		this.passwordHasher = passwordHasher;
 		this.tokenHasher = tokenHasher;
-		this.totpService = totpService;
 	}
 
 	@Transactional
-	public AdminAuthTokenResponse login(String username, String password, String totpCode) {
+	public AdminAuthTokenResponse login(String username, String password) {
 		String normalizedUsername = username.trim();
 		AdminUser admin = adminUserRepository.findByUsername(normalizedUsername)
 				.orElseThrow(() -> new AuthException(401, "invalid username or password"));
 		if (admin.status() != AdminUserStatus.ACTIVE || !passwordHasher.matches(password, admin.passwordHash())) {
 			throw new AuthException(401, "invalid username or password");
-		}
-		if (admin.totpEnabled() && !totpService.verify(admin.totpSecret(), totpCode)) {
-			throw new AuthException(401, "invalid verification code");
 		}
 		byte[] tokenBytes = new byte[32];
 		secureRandom.nextBytes(tokenBytes);

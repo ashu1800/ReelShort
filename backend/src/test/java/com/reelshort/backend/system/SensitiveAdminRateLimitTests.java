@@ -23,16 +23,11 @@ import com.reelshort.backend.admin.AdminAuditLogRepository;
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
 		"reelshort.rate-limit.enabled=true",
-		"reelshort.rate-limit.rules[0].name=admin-2fa",
+		"reelshort.rate-limit.rules[0].name=admin-vip-mutation",
 		"reelshort.rate-limit.rules[0].method=POST",
-		"reelshort.rate-limit.rules[0].path=/api/admin/2fa/**",
+		"reelshort.rate-limit.rules[0].path=/api/admin/vip/orders/**",
 		"reelshort.rate-limit.rules[0].limit=1",
-		"reelshort.rate-limit.rules[0].window=60s",
-		"reelshort.rate-limit.rules[1].name=admin-vip-mutation",
-		"reelshort.rate-limit.rules[1].method=POST",
-		"reelshort.rate-limit.rules[1].path=/api/admin/vip/orders/**",
-		"reelshort.rate-limit.rules[1].limit=1",
-		"reelshort.rate-limit.rules[1].window=60s"
+		"reelshort.rate-limit.rules[0].window=60s"
 })
 class SensitiveAdminRateLimitTests {
 
@@ -41,39 +36,18 @@ class SensitiveAdminRateLimitTests {
 	@Autowired private AdminAuditLogRepository auditLogs;
 
 	@Test
-	void repeatedTwoFactorEnableFailureIsRateLimited() throws Exception {
-		String token = adminLogin();
-		String ip = "203.0.113.31";
-		String body = "{\"secret\":\"JBSWY3DPEHPK3PXP\",\"code\":\"000000\"}";
-
-		mockMvc.perform(post("/api/admin/2fa/enable")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-				.header("X-Forwarded-For", ip)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content(body))
-				.andExpect(status().isBadRequest());
-
-		mockMvc.perform(post("/api/admin/2fa/enable")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-				.header("X-Forwarded-For", ip)
-				.contentType(MediaType.APPLICATION_JSON)
-				.content(body))
-				.andExpect(status().isTooManyRequests());
-	}
-
-	@Test
 	void rateLimitedVipFailureDoesNotCreateAnotherAuditRecord() throws Exception {
 		String token = adminLogin();
 		String ip = "203.0.113.32";
 		UUID orderId = UUID.randomUUID();
-		String body = "{\"txHash\":\"%s\",\"totpCode\":\"000000\"}".formatted("a".repeat(64));
+		String body = "{\"txHash\":\"%s\"}".formatted("a".repeat(64));
 
 		mockMvc.perform(post("/api/admin/vip/orders/{orderId}/confirm", orderId)
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
 				.header("X-Forwarded-For", ip)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(body))
-				.andExpect(status().isForbidden());
+				.andExpect(status().isNotFound());
 
 		mockMvc.perform(post("/api/admin/vip/orders/{orderId}/confirm", orderId)
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)

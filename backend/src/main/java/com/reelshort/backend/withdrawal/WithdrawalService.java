@@ -18,14 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.admin.AdminAuditService;
-import com.reelshort.backend.admin.AdminUser;
-import com.reelshort.backend.admin.AdminUserRepository;
 import com.reelshort.backend.points.PointAccount;
 import com.reelshort.backend.points.PointAccountRepository;
 import com.reelshort.backend.system.concurrency.UserActionLocks;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
-import com.reelshort.backend.system.security.TotpService;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.wallet.UserWallet;
@@ -42,8 +39,6 @@ public class WithdrawalService {
 	private final SystemConfigService systemConfigService;
 	private final UserActionLocks userActionLocks;
 	private final UserAccountRepository userAccountRepository;
-	private final TotpService totpService;
-	private final AdminUserRepository adminUserRepository;
 	private final WithdrawalPayoutCoordinator payoutCoordinator;
 	private final PayoutBalancePreflightService balancePreflight;
 	private final WithdrawalPayoutAttemptRepository payoutAttemptRepository;
@@ -57,8 +52,7 @@ public class WithdrawalService {
 			UserWalletRepository userWalletRepository, PointAccountRepository pointAccountRepository,
 			SystemConfigService systemConfigService,
 			UserActionLocks userActionLocks, UserAccountRepository userAccountRepository,
-			TotpService totpService,
-			AdminUserRepository adminUserRepository, WithdrawalPayoutCoordinator payoutCoordinator,
+			WithdrawalPayoutCoordinator payoutCoordinator,
 			PayoutBalancePreflightService balancePreflight,
 			WithdrawalPayoutAttemptRepository payoutAttemptRepository,
 			EthereumProperties ethereumProperties, TronProperties tronProperties, BscProperties bscProperties,
@@ -69,8 +63,6 @@ public class WithdrawalService {
 		this.systemConfigService = systemConfigService;
 		this.userActionLocks = userActionLocks;
 		this.userAccountRepository = userAccountRepository;
-		this.totpService = totpService;
-		this.adminUserRepository = adminUserRepository;
 		this.payoutCoordinator = payoutCoordinator;
 		this.balancePreflight = balancePreflight;
 		this.payoutAttemptRepository = payoutAttemptRepository;
@@ -190,14 +182,7 @@ public class WithdrawalService {
 	 * 与 batchApprove 共用同一条链上转账路径，确保积分扣减和链上广播的原子性。
 	 */
 	public WithdrawalResponse approve(UUID withdrawalId, String tronPrivateKey, String ethPrivateKey,
-			String bepPrivateKey, String totpCode, UUID adminUserId, String adminUsername) {
-		AdminUser admin = adminUserRepository.findById(adminUserId)
-				.orElseThrow(() -> new AdminException(404, "admin not found"));
-		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
-			recordAuditSafely(adminUsername, "WITHDRAWAL_PAYOUT_FAILED", withdrawalId,
-					"status=TOTP_REJECTED");
-			throw new AdminException(403, "2FA verification failed");
-		}
+			String bepPrivateKey, String adminUsername) {
 		return withPayoutExecutionLock(() -> approveLocked(withdrawalId, tronPrivateKey, ethPrivateKey,
 				bepPrivateKey, adminUsername));
 	}
@@ -351,28 +336,19 @@ public class WithdrawalService {
 	}
 
 	/**
-	 * Execute a batch payout: verify 2FA, then transfer USDT sequentially for each withdrawal.
+	 * Execute a batch payout by transferring USDT sequentially for each withdrawal.
 	 * H2 fix: 改为尽力而为模式——某条失败后继续处理剩余提现，而非立即中断放弃所有后续。
 	 * Private keys are used in-memory only, dispatched by withdrawal network.
 	 */
 	public BatchWithdrawalResponse batchApprove(List<UUID> withdrawalIds, String tronPrivateKey,
-			String ethPrivateKey, String bepPrivateKey, String totpCode, UUID adminUserId) {
+			String ethPrivateKey, String bepPrivateKey, String adminUsername) {
 		validateBatchIds(withdrawalIds);
-		AdminUser admin = adminUserRepository.findById(adminUserId)
-				.orElseThrow(() -> new AdminException(404, "admin not found"));
-		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), totpCode)) {
-			for (UUID withdrawalId : withdrawalIds) {
-				recordAuditSafely(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", withdrawalId,
-						"status=TOTP_REJECTED");
-			}
-			throw new AdminException(403, "2FA verification failed");
-		}
 		return withPayoutExecutionLock(() -> batchApproveLocked(withdrawalIds, tronPrivateKey,
-				ethPrivateKey, bepPrivateKey, admin));
+				ethPrivateKey, bepPrivateKey, adminUsername));
 	}
 
 	private BatchWithdrawalResponse batchApproveLocked(List<UUID> withdrawalIds, String tronPrivateKey,
-			String ethPrivateKey, String bepPrivateKey, AdminUser admin) {
+			String ethPrivateKey, String bepPrivateKey, String adminUsername) {
 		List<WithdrawalRequest> requests = new ArrayList<>();
 		for (UUID withdrawalId : withdrawalIds) {
 			WithdrawalRequest request = withdrawal(withdrawalId);
@@ -391,8 +367,7 @@ public class WithdrawalService {
 			WithdrawalPayoutAttempt attempt;
 			try {
 				String privateKey = selectPrivateKey(request.network(), tronPrivateKey, ethPrivateKey, bepPrivateKey);
-				attempt = payoutCoordinator.prepareAndBroadcast(
-						withdrawalId, privateKey, admin.username());
+				attempt = payoutCoordinator.prepareAndBroadcast(withdrawalId, privateKey, adminUsername);
 			}
 			catch (Exception exception) {
 				String errorMessage = payoutErrorMessage(exception);
@@ -401,7 +376,7 @@ public class WithdrawalService {
 						null, null, errorMessage));
 				String auditSummary = request == null
 						? "status=FAILED" : payoutAuditSummary(request, "FAILED", null);
-				recordAuditSafely(admin.username(), "WITHDRAWAL_PAYOUT_FAILED", withdrawalId, auditSummary);
+				recordAuditSafely(adminUsername, "WITHDRAWAL_PAYOUT_FAILED", withdrawalId, auditSummary);
 				if (firstFailureIndex < 0) {
 					firstFailureIndex = index;
 					firstFailureMessage = errorMessage;
@@ -413,7 +388,7 @@ public class WithdrawalService {
 			boolean pending = isPending(attempt.status());
 			String action = submitted ? "WITHDRAWAL_PAYOUT_EXECUTED"
 					: pending ? "WITHDRAWAL_PAYOUT_PENDING" : "WITHDRAWAL_PAYOUT_FAILED";
-			recordAuditSafely(admin.username(), action, withdrawalId,
+			recordAuditSafely(adminUsername, action, withdrawalId,
 					payoutAuditSummary(request, attempt.status().name(), attempt.txHash()));
 			String failureReason = submitted || pending ? attempt.failureReason() : attemptFailureReason(attempt);
 			results.add(new BatchWithdrawalResponse.ItemResult(

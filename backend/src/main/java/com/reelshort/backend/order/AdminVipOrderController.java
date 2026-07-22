@@ -13,12 +13,9 @@ import org.springframework.web.bind.annotation.RestController;
 import com.reelshort.backend.admin.AdminPermissions;
 import com.reelshort.backend.admin.AdminAuditService;
 import com.reelshort.backend.admin.AdminException;
-import com.reelshort.backend.admin.AdminUser;
-import com.reelshort.backend.admin.AdminUserRepository;
 import com.reelshort.backend.admin.CurrentAdmin;
 import com.reelshort.backend.admin.RequireAdminPermission;
 import com.reelshort.backend.system.api.ApiResponse;
-import com.reelshort.backend.system.security.TotpService;
 import com.reelshort.backend.system.web.RequestIdFilter;
 import com.reelshort.backend.withdrawal.WithdrawalException;
 
@@ -26,22 +23,16 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 
 @RestController
 @RequestMapping("/api/admin/vip/orders")
 public class AdminVipOrderController {
 
 	private final VipOrderService vipOrderService;
-	private final AdminUserRepository adminUserRepository;
-	private final TotpService totpService;
 	private final AdminAuditService adminAuditService;
 
-	public AdminVipOrderController(VipOrderService vipOrderService, AdminUserRepository adminUserRepository,
-			TotpService totpService, AdminAuditService adminAuditService) {
+	public AdminVipOrderController(VipOrderService vipOrderService, AdminAuditService adminAuditService) {
 		this.vipOrderService = vipOrderService;
-		this.adminUserRepository = adminUserRepository;
-		this.totpService = totpService;
 		this.adminAuditService = adminAuditService;
 	}
 
@@ -55,7 +46,6 @@ public class AdminVipOrderController {
 	@RequireAdminPermission(AdminPermissions.ORDER_WRITE)
 	public ApiResponse<VipOrderResponse> confirm(CurrentAdmin currentAdmin, @PathVariable UUID orderId,
 			@Valid @RequestBody VipConfirmRequest confirmRequest, HttpServletRequest request) {
-		verifyTotp(currentAdmin, confirmRequest.totpCode(), orderId);
 		try {
 			VipOrder confirmed = vipOrderService.manualConfirm(orderId, confirmRequest.txHash(), currentAdmin.username());
 			return ApiResponse.success(VipOrderResponse.from(confirmed), requestId(request));
@@ -82,22 +72,10 @@ public class AdminVipOrderController {
 		}
 	}
 
-	private void verifyTotp(CurrentAdmin currentAdmin, String code, UUID orderId) {
-		AdminUser admin = adminUserRepository.findById(currentAdmin.adminUserId())
-				.orElseThrow(() -> new AdminException(404, "admin not found"));
-		if (!admin.totpEnabled() || !totpService.verify(admin.totpSecret(), code)) {
-			adminAuditService.recordIndependent(currentAdmin.username(), "VIP_ORDER_CONFIRM_FAILED", "VIP_ORDER", orderId,
-					"status=TOTP_REJECTED");
-			throw new AdminException(403, "2FA verification failed");
-		}
-	}
-
 	private String requestId(HttpServletRequest request) {
 		return (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
 	}
 
-	public record VipConfirmRequest(
-			@NotBlank @Pattern(regexp = "(?i)[0-9a-f]{64}") String txHash,
-			@NotBlank @Size(min = 6, max = 6) @Pattern(regexp = "\\d{6}") String totpCode) {
+	public record VipConfirmRequest(@NotBlank @Pattern(regexp = "(?i)[0-9a-f]{64}") String txHash) {
 	}
 }

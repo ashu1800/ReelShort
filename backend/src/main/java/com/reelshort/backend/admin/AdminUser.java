@@ -35,12 +35,6 @@ public class AdminUser {
 	@Column(nullable = false, length = 24)
 	private AdminUserStatus status;
 
-	@Column(name = "totp_secret", length = 64)
-	private String totpSecret;
-
-	@Column(name = "totp_enabled", nullable = false)
-	private boolean totpEnabled;
-
 	@ManyToMany(fetch = FetchType.LAZY)
 	@JoinTable(name = "admin_user_roles",
 			joinColumns = @JoinColumn(name = "admin_user_id", nullable = false),
@@ -64,15 +58,6 @@ public class AdminUser {
 
 	public static AdminUser create(String username, String passwordHash, AdminUserStatus status) {
 		return new AdminUser(UUID.randomUUID(), username, passwordHash, status, OffsetDateTime.now());
-	}
-
-	public void enableTotp(String secret) {
-		this.totpSecret = secret;
-		this.totpEnabled = true;
-	}
-
-	public void rebindTotp(String newSecret) {
-		this.totpSecret = newSecret;
 	}
 
 	public UUID id() {
@@ -110,11 +95,4 @@ public class AdminUser {
 		return createdAt;
 	}
 
-	public String totpSecret() {
-		return totpSecret;
-	}
-
-	public boolean totpEnabled() {
-		return totpEnabled;
-	}
 }

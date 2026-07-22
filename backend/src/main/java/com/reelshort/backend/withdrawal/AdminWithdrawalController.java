@@ -43,8 +43,7 @@ public class AdminWithdrawalController {
 
 	@PostMapping("/{withdrawalId}/approve")
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
-	public ApiResponse<WithdrawalResponse> approve(CurrentAdmin currentAdmin, @PathVariable UUID withdrawalId,
-			@Valid @RequestBody WithdrawalApprovalRequest approvalRequest, HttpServletRequest request) {
+	public ApiResponse<WithdrawalResponse> approve(@PathVariable UUID withdrawalId, HttpServletRequest request) {
 		throw new AdminException(410, "automatic payout is disabled");
 	}
 
@@ -87,8 +86,7 @@ public class AdminWithdrawalController {
 
 	@PostMapping("/batch-approve")
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
-	public ApiResponse<BatchWithdrawalResponse> batchApprove(CurrentAdmin currentAdmin,
-			@Valid @RequestBody BatchWithdrawalRequest batchRequest, HttpServletRequest request) {
+	public ApiResponse<BatchWithdrawalResponse> batchApprove(HttpServletRequest request) {
 		throw new AdminException(410, "automatic payout is disabled");
 	}
 

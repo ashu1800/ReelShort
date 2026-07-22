@@ -139,6 +139,20 @@ class FinancialMigrationTests {
 	}
 
 	@Test
+	void latestMigrationRemovesAdministratorTotpColumns() {
+		DataSource dataSource = dataSource("admin-two-factor-removal");
+		Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+		JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+
+		Integer remaining = jdbc.queryForObject("""
+				select count(*) from information_schema.columns
+				where table_name = 'admin_users' and column_name in ('totp_secret', 'totp_enabled')
+				""", Integer.class);
+
+		assertThat(remaining).isZero();
+	}
+
+	@Test
 	void legacyPendingVipOrderWithoutCollectionSnapshotExpiresDuringUpgrade() {
 		DataSource dataSource = dataSource("financial-migration-expires-legacy-vip-order");
 		Flyway.configure()
