@@ -103,6 +103,33 @@ class AuthControllerTests {
 	}
 
 	@Test
+	void registerAndPasswordChangeRejectSevenCharacterPasswords() throws Exception {
+		mockMvc.perform(post("/api/app/auth/register")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "password-seven",
+						  "password": "1234567",
+						  "captchaId": "00000000-0000-0000-0000-000000000000",
+						  "captchaAnswer": "AAAA"
+						}
+						"""))
+				.andExpect(status().isBadRequest());
+
+		String token = TestAppUsers.token(mockMvc, objectMapper, "password-change-seven");
+		mockMvc.perform(post("/api/app/auth/password/change")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "oldPassword": "Password123",
+						  "newPassword": "1234567"
+						}
+						"""))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
 	void logoutRevokesCurrentBearerToken() throws Exception {
 		String token = TestAppUsers.token(mockMvc, objectMapper, "auth-controller-logout");
 

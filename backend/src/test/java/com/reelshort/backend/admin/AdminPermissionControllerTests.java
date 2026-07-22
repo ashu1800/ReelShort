@@ -71,6 +71,24 @@ class AdminPermissionControllerTests {
 	}
 
 	@Test
+	void userReadOnlyAdminCannotChangeVipEntitlement() throws Exception {
+		String adminToken = createLimitedAdminAndLogin();
+		RegisteredUser user = registerAppUser("limited-admin-vip-target");
+
+		mockMvc.perform(post("/api/admin/users/{userId}/vip", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "vipUntil": "2030-01-15T12:30:00+08:00"
+						}
+						"""))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value(403))
+				.andExpect(jsonPath("$.message").value("forbidden"));
+	}
+
+	@Test
 	void withdrawalWriteOnlyAdminCannotPreviewWithdrawalDetails() throws Exception {
 		String adminToken = createAdminAndLogin("withdrawal-writer", "WITHDRAWAL_WRITER",
 				AdminPermissions.WITHDRAWAL_WRITE);

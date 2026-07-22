@@ -50,6 +50,21 @@ public class AdminUserController {
 				requestId(request));
 	}
 
+	@PostMapping("/{userId}/vip")
+	@RequireAdminPermission(AdminPermissions.USER_WRITE)
+	public ApiResponse<AdminUserDetailResponse> setVip(CurrentAdmin currentAdmin, @PathVariable UUID userId,
+			@Valid @RequestBody AdminUserVipRequest vipRequest, HttpServletRequest request) {
+		return ApiResponse.success(adminUserService.setVip(currentAdmin.username(), userId, vipRequest.vipUntil()),
+				requestId(request));
+	}
+
+	@PostMapping("/{userId}/vip/cancel")
+	@RequireAdminPermission(AdminPermissions.USER_WRITE)
+	public ApiResponse<AdminUserDetailResponse> cancelVip(CurrentAdmin currentAdmin, @PathVariable UUID userId,
+			HttpServletRequest request) {
+		return ApiResponse.success(adminUserService.cancelVip(currentAdmin.username(), userId), requestId(request));
+	}
+
 	@PostMapping("/{userId}/points/adjust")
 	@RequireAdminPermission(AdminPermissions.POINTS_ADJUST)
 	public ApiResponse<AdminUserDetailResponse> adjustPoints(CurrentAdmin currentAdmin, @PathVariable UUID userId,

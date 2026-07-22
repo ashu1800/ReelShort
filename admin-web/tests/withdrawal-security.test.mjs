@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const apiSource = readFileSync(new URL('../src/services/adminApi.ts', import.meta.url), 'utf8')
 const viewSource = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
+const usersViewSource = readFileSync(new URL('../src/views/UsersView.vue', import.meta.url), 'utf8')
 const configLabelsSource = readFileSync(new URL('../src/views/systemConfigLabels.ts', import.meta.url), 'utf8')
 const configViewSource = readFileSync(new URL('../src/views/SystemConfigsView.vue', import.meta.url), 'utf8')
 
@@ -57,4 +58,23 @@ test('system config exposes direct USDT rate without legacy currency conversion'
   assert.match(configLabelsSource, /提现 · 每50积分USDT/)
   assert.doesNotMatch(configLabelsSource, /withdraw\.cny-per-point|withdraw\.cny-per-usd|withdraw\.minimum-usd/)
   assert.doesNotMatch(configViewSource, /withdraw\.cny-per-point|withdraw\.cny-per-usd|withdraw\.minimum-usd/)
+})
+
+test('user VIP operations only submit an expiry timestamp or an empty cancel request', () => {
+  const setMatch = apiSource.match(
+    /export async function setUserVip[\s\S]*?return response\.data\.data\s*\n}/,
+  )
+  const cancelMatch = apiSource.match(
+    /export async function cancelUserVip[\s\S]*?return response\.data\.data\s*\n}/,
+  )
+
+  assert.ok(setMatch, 'setUserVip API must exist')
+  assert.ok(cancelMatch, 'cancelUserVip API must exist')
+  assert.match(setMatch[0], /\/users\/\$\{userId\}\/vip/)
+  assert.match(setMatch[0], /\{ vipUntil \}/)
+  assert.match(cancelMatch[0], /\/users\/\$\{userId\}\/vip\/cancel/)
+  assert.doesNotMatch(`${setMatch[0]}${cancelMatch[0]}`, /totpCode|txHash|orderId|privateKey/i)
+  assert.match(usersViewSource, /setUserVip/)
+  assert.match(usersViewSource, /cancelUserVip/)
+  assert.match(usersViewSource, /type="datetime"/)
 })

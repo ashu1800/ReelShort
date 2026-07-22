@@ -147,6 +147,8 @@ Authorization: Bearer <admin-token>
 - `id`
 - `username`
 - `status`
+- `vip`
+- `vipUntil`
 - `pointBalance`
 - `createdAt`
 
@@ -159,6 +161,8 @@ Authorization: Bearer <admin-token>
 - `id`
 - `username`
 - `status`
+- `vip`
+- `vipUntil`
 - `pointBalance`
 - `watchRecordCount`
 - `pointRecordCount`
@@ -184,6 +188,22 @@ Authorization: Bearer <admin-token>
 用户禁用后，既有 App Token 后续访问 `/api/app/**` 会返回 `403`。
 
 该操作会写入后台审计日志，动作为 `USER_STATUS_CHANGED`。
+
+## `POST /api/admin/users/{userId}/vip`
+
+设置用户 VIP 到期时间。需要 `USER_WRITE` 权限；请求中的 `vipUntil` 必须是未来的 ISO 8601 时间。
+
+```json
+{
+  "vipUntil": "2030-01-15T12:30:00+08:00"
+}
+```
+
+成功后直接更新 `users.vip_until`，并写入审计日志 `USER_VIP_SET`。该操作不创建、不修改或确认 VIP 订单。
+
+## `POST /api/admin/users/{userId}/vip/cancel`
+
+取消用户当前 VIP 权益。需要 `USER_WRITE` 权限，请求体为空；成功后清空 `vipUntil` 并写入审计日志 `USER_VIP_CANCELLED`。该操作不修改任何历史、待支付或已确认 VIP 订单。
 
 ## `POST /api/admin/users/{userId}/points/adjust`
 

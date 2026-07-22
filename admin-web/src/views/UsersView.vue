@@ -3,12 +3,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { onMounted, reactive, ref, watch } from 'vue'
 import {
   adjustUserPoints,
+  cancelUserVip,
   fetchUserDetail,
   fetchUserPointRecords,
   fetchUserPointTransfers,
   fetchUserWithdrawals,
   fetchUsers,
   fetchUserWatchRecords,
+  setUserVip,
   updateUserStatus,
 } from '../services/adminApi'
 import type {
@@ -37,6 +39,9 @@ const pointsForm = reactive({
   amount: 0,
   reason: '',
   idempotencyKey: '',
+})
+const vipForm = reactive<{ vipUntil: Date | null }>({
+  vipUntil: null,
 })
 
 watch(
@@ -116,6 +121,68 @@ async function changeSelectedUserStatus(status: UserStatus) {
   }
 }
 
+function formatShanghaiDateTime(value: string | null) {
+  if (!value) return '未开通'
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    hour12: false,
+  }).format(new Date(value))
+}
+
+async function submitVip() {
+  if (!selectedUser.value || !vipForm.vipUntil || vipForm.vipUntil <= new Date()) {
+    ElMessage.warning('请选择未来的 VIP 到期时间')
+    return
+  }
+  const userId = selectedUser.value.id
+  try {
+    await ElMessageBox.confirm(
+      `确认将 ${selectedUser.value.username} 的 VIP 设置至 ${formatShanghaiDateTime(vipForm.vipUntil.toISOString())}？`,
+      '设置 VIP',
+      { confirmButtonText: '确认设置', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  operationLoading.value = true
+  try {
+    selectedUser.value = await setUserVip(userId, vipForm.vipUntil.toISOString())
+    vipForm.vipUntil = null
+    ElMessage.success('VIP 已设置')
+    await loadUsers()
+  } catch {
+    ElMessage.error('VIP 设置失败')
+  } finally {
+    operationLoading.value = false
+  }
+}
+
+async function cancelVip() {
+  if (!selectedUser.value || !selectedUser.value.vipUntil) return
+  const userId = selectedUser.value.id
+  try {
+    await ElMessageBox.confirm(
+      `确认取消 ${selectedUser.value.username} 当前的 VIP 权益？此操作不会修改任何 VIP 订单。`,
+      '取消 VIP',
+      { confirmButtonText: '确认取消', cancelButtonText: '返回', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  operationLoading.value = true
+  try {
+    selectedUser.value = await cancelUserVip(userId)
+    ElMessage.success('VIP 已取消')
+    await loadUsers()
+  } catch {
+    ElMessage.error('VIP 取消失败')
+  } finally {
+    operationLoading.value = false
+  }
+}
+
 async function submitPointAdjustment() {
   if (!selectedUser.value) return
   const userId = selectedUser.value.id
@@ -190,6 +257,14 @@ onMounted(loadUsers)
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="VIP" min-width="180">
+        <template #default="{ row }">
+          <el-tag :type="row.vip ? 'warning' : 'info'" effect="plain">
+            {{ row.vip ? 'VIP' : '非 VIP' }}
+          </el-tag>
+          <div v-if="row.vipUntil" class="muted">{{ formatShanghaiDateTime(row.vipUntil) }}</div>
+        </template>
+      </el-table-column>
       <el-table-column align="right" label="总积分" prop="pointBalance" width="110" />
       <el-table-column align="right" label="冻结" prop="frozenPoints" width="100" />
       <el-table-column align="right" label="可用" prop="availablePoints" width="100" />
@@ -216,6 +291,13 @@ onMounted(loadUsers)
               </el-tag>
             </div>
             <div>
+              <div class="muted">VIP 权益</div>
+              <el-tag :type="selectedUser.vip ? 'warning' : 'info'" effect="plain">
+                {{ selectedUser.vip ? 'VIP' : '非 VIP' }}
+              </el-tag>
+              <div class="muted">{{ formatShanghaiDateTime(selectedUser.vipUntil) }}</div>
+            </div>
+            <div>
               <div class="muted">总积分</div>
               <strong>{{ selectedUser.pointBalance }}</strong>
             </div>
@@ -237,6 +319,31 @@ onMounted(loadUsers)
           </div>
           <el-tabs>
             <el-tab-pane label="运营操作">
+              <section class="operation-block">
+                <div>
+                  <h2>VIP 权益</h2>
+                  <p>设置未来到期时间或取消当前权益，不会修改任何 VIP 订单。</p>
+                </div>
+                <el-form class="inline-form" @submit.prevent="submitVip">
+                  <el-date-picker
+                    v-model="vipForm.vipUntil"
+                    type="datetime"
+                    placeholder="选择 VIP 到期时间"
+                  />
+                  <el-button :loading="operationLoading" native-type="submit" type="primary">
+                    设置 VIP
+                  </el-button>
+                  <el-button
+                    :disabled="!selectedUser.vipUntil"
+                    :loading="operationLoading"
+                    type="danger"
+                    plain
+                    @click="cancelVip"
+                  >
+                    取消 VIP
+                  </el-button>
+                </el-form>
+              </section>
               <section class="operation-block">
                 <div>
                   <h2>用户状态</h2>

@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.time.OffsetDateTime;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,7 +59,7 @@ public class AdminUserService {
 				.sorted(Comparator.comparing(UserAccount::createdAt).reversed())
 				.map(user -> {
 					AccountSnapshot account = accountSnapshot(user.id());
-					return new AdminUserSummaryResponse(user.id(), user.username(), user.status(),
+					return new AdminUserSummaryResponse(user.id(), user.username(), user.status(), user.isVip(), vipUntil(user),
 							account.balance(), account.frozenPoints(), account.availablePoints(),
 							user.createdAt().toString());
 				})
@@ -78,6 +79,29 @@ public class AdminUserService {
 		UserAccount savedUser = userAccountRepository.save(user);
 		adminAuditService.record(adminUsername, "USER_STATUS_CHANGED", "USER", userId,
 				"Changed user status to " + status);
+		return detailResponse(savedUser);
+	}
+
+	@Transactional
+	public AdminUserDetailResponse setVip(String adminUsername, UUID userId, OffsetDateTime vipUntil) {
+		UserAccount user = userForUpdate(userId);
+		if (!vipUntil.isAfter(OffsetDateTime.now())) {
+			throw new AdminException(400, "vip expiry must be in the future");
+		}
+		user.grantVip(vipUntil);
+		UserAccount savedUser = userAccountRepository.save(user);
+		adminAuditService.record(adminUsername, "USER_VIP_SET", "USER", userId,
+				"Set user VIP until " + vipUntil);
+		return detailResponse(savedUser);
+	}
+
+	@Transactional
+	public AdminUserDetailResponse cancelVip(String adminUsername, UUID userId) {
+		UserAccount user = userForUpdate(userId);
+		user.clearVip();
+		UserAccount savedUser = userAccountRepository.save(user);
+		adminAuditService.record(adminUsername, "USER_VIP_CANCELLED", "USER", userId,
+				"Cancelled current user VIP entitlement");
 		return detailResponse(savedUser);
 	}
 
@@ -140,12 +164,16 @@ public class AdminUserService {
 	private AdminUserDetailResponse detailResponse(UserAccount user, int balance, int frozenPoints,
 			int availablePoints) {
 		UserWallet wallet = userWalletRepository.findByUserId(user.id()).orElse(null);
-		return new AdminUserDetailResponse(user.id(), user.username(), user.status(), balance, frozenPoints,
+		return new AdminUserDetailResponse(user.id(), user.username(), user.status(), user.isVip(), vipUntil(user), balance, frozenPoints,
 				availablePoints, wallet == null ? null : wallet.network(),
 				wallet == null ? null : wallet.walletAddress(),
 				wallet == null ? null : wallet.updatedAt().toString(),
 				watchRecordRepository.countByUserId(user.id()), pointTransactionRepository.countByUserId(user.id()),
 				withdrawalRequestRepository.countByUserId(user.id()), user.createdAt().toString());
+	}
+
+	private String vipUntil(UserAccount user) {
+		return user.vipUntil() == null ? null : user.vipUntil().toString();
 	}
 
 	private UserAccount user(UUID userId) {

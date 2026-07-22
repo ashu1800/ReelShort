@@ -14,7 +14,7 @@ import com.reelshort.backend.user.UserStatus;
 public class AuthService {
 
 	private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9_]{3,19}$");
-	private static final int PASSWORD_MIN_LENGTH = 6;
+	private static final int PASSWORD_MIN_LENGTH = 8;
 
 	private final UserAccountRepository userAccountRepository;
 	private final PasswordHasher passwordHasher;

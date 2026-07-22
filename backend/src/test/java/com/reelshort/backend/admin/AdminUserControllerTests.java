@@ -99,6 +99,53 @@ class AdminUserControllerTests {
 	}
 
 	@Test
+	void adminCanSetAndCancelUserVipAndWritesAuditLog() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = registerAppUser("admin-manual-vip");
+		String vipUntil = "2030-01-15T12:30:00+08:00";
+
+		mockMvc.perform(post("/api/admin/users/{userId}/vip", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "vipUntil": "%s"
+						}
+						""".formatted(vipUntil)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.vip").value(true))
+				.andExpect(jsonPath("$.data.vipUntil").value("2030-01-15T04:30Z"));
+
+		mockMvc.perform(post("/api/admin/users/{userId}/vip/cancel", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.vip").value(false))
+				.andExpect(jsonPath("$.data.vipUntil").doesNotExist());
+
+		mockMvc.perform(get("/api/admin/audit-logs")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[*].action", hasItem("USER_VIP_SET")))
+				.andExpect(jsonPath("$.data[*].action", hasItem("USER_VIP_CANCELLED")));
+	}
+
+	@Test
+	void adminCannotSetVipToPastTime() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = registerAppUser("admin-manual-vip-past");
+
+		mockMvc.perform(post("/api/admin/users/{userId}/vip", user.userId())
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "vipUntil": "2020-01-01T00:00:00Z"
+						}
+						"""))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
 	void adminCanQueryOneUsersWatchRecordsAndPointRecords() throws Exception {
 		String adminToken = adminLogin();
 		RegisteredUser first = registerAppUser("admin-activity-alice");

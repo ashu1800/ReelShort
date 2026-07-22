@@ -82,6 +82,10 @@ public class UserAccount {
 		this.vipUntil = until;
 	}
 
+	public void clearVip() {
+		this.vipUntil = null;
+	}
+
 	public boolean isVip() {
 		return vipUntil != null && vipUntil.isAfter(OffsetDateTime.now());
 	}

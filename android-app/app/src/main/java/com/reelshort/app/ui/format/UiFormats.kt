@@ -233,7 +233,7 @@ internal fun authRegisterEnabled(
 ): Boolean =
     !isLoading &&
         username.isNotBlank() &&
-        password.length >= 6 &&
+        password.length >= 8 &&
         password == confirmPassword &&
         captchaAnswer.isNotBlank() &&
         captchaLoaded

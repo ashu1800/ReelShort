@@ -1043,7 +1043,7 @@ private fun PasswordBottomSheet(
             LoginTextField(newPassword, { newPassword = it }, copy.accountPasswordNewLabel, enabled = true, isPassword = true)
             PrimaryActionButton(
                 text = copy.accountChangePasswordTitle,
-                enabled = !isSubmitting && oldPassword.isNotBlank() && newPassword.length >= 6,
+                enabled = !isSubmitting && oldPassword.isNotBlank() && newPassword.length >= 8,
                 onClick = {
                     onChangePassword(oldPassword, newPassword)
                     if (commercialSheetAutoDismissesAfterSubmit()) {

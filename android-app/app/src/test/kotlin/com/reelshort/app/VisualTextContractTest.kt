@@ -227,7 +227,7 @@ class VisualTextContractTest {
         assertEquals(
             AuthSheetCopy(
                 title = "Create your account",
-                subtitle = "Pick a username, set a password, and solve the captcha.",
+                subtitle = "Pick a username, set a password of at least 8 characters, and solve the captcha.",
                 primaryAction = "Create account",
                 secondaryAction = "Already have access? Sign in",
             ),
@@ -239,11 +239,18 @@ class VisualTextContractTest {
     fun captchaRegisterRequiresUsernamePasswordConfirmAndCaptcha() {
         assertEquals(false, authRegisterEnabled(isLoading = false, username = "", password = "Password123", confirmPassword = "Password123", captchaAnswer = "1234", captchaLoaded = true))
         assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "short", confirmPassword = "short", captchaAnswer = "1234", captchaLoaded = true))
+        assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "1234567", confirmPassword = "1234567", captchaAnswer = "1234", captchaLoaded = true))
         assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "Password123", confirmPassword = "different", captchaAnswer = "1234", captchaLoaded = true))
         assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "Password123", confirmPassword = "Password123", captchaAnswer = "", captchaLoaded = true))
         assertEquals(false, authRegisterEnabled(isLoading = false, username = "newuser", password = "Password123", confirmPassword = "Password123", captchaAnswer = "1234", captchaLoaded = false))
         assertEquals(true, authRegisterEnabled(isLoading = false, username = "newuser", password = "Password123", confirmPassword = "Password123", captchaAnswer = "1234", captchaLoaded = true))
         assertEquals(false, authRegisterEnabled(isLoading = true, username = "newuser", password = "Password123", confirmPassword = "Password123", captchaAnswer = "1234", captchaLoaded = true))
+    }
+
+    @Test
+    fun passwordEntryClearlyStatesTheEightCharacterMinimum() {
+        assertTrue(strings(AppLanguage.ENGLISH).authRegisterSubtitle.contains("at least 8 characters"))
+        assertTrue(strings(AppLanguage.ENGLISH).accountPasswordNewLabel.contains("8+ characters"))
     }
 
     @Test

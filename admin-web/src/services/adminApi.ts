@@ -21,6 +21,8 @@ export type AdminUserSummary = {
   username: string
   phoneE164: string | null
   status: UserStatus
+  vip: boolean
+  vipUntil: string | null
   pointBalance: number
   frozenPoints: number
   availablePoints: number
@@ -328,6 +330,16 @@ export async function updateUserStatus(userId: string, status: AdminUserSummary[
   const response = await http.post<ApiResponse<AdminUserDetail>>(`/users/${userId}/status`, {
     status,
   })
+  return response.data.data
+}
+
+export async function setUserVip(userId: string, vipUntil: string) {
+  const response = await http.post<ApiResponse<AdminUserDetail>>(`/users/${userId}/vip`, { vipUntil })
+  return response.data.data
+}
+
+export async function cancelUserVip(userId: string) {
+  const response = await http.post<ApiResponse<AdminUserDetail>>(`/users/${userId}/vip/cancel`)
   return response.data.data
 }
 
