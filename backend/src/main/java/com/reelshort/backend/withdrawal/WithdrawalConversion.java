@@ -5,50 +5,69 @@ import java.math.RoundingMode;
 
 final class WithdrawalConversion {
 
-	private static final int USDT_SCALE = 6;
+	private static final BigDecimal POINTS_PER_RATE_UNIT = BigDecimal.valueOf(50);
+	private static final BigDecimal MINIMUM_USDT = new BigDecimal("0.01");
+	private static final int USDT_SCALE = 2;
 
-	private final BigDecimal cnyPerPoint;
-	private final BigDecimal cnyPerUsd;
-	private final BigDecimal minimumUsd;
+	private final BigDecimal usdtPer50Points;
+	private final int feePercent;
 
-	WithdrawalConversion(BigDecimal cnyPerPoint, BigDecimal cnyPerUsd, BigDecimal minimumUsd) {
-		if (cnyPerPoint.signum() <= 0 || cnyPerUsd.signum() <= 0 || minimumUsd.signum() <= 0) {
+	WithdrawalConversion(BigDecimal usdtPer50Points, int feePercent) {
+		if (usdtPer50Points.signum() <= 0 || feePercent < 0 || feePercent >= 100) {
 			throw new IllegalArgumentException("withdrawal conversion values must be positive");
 		}
-		this.cnyPerPoint = cnyPerPoint;
-		this.cnyPerUsd = cnyPerUsd;
-		this.minimumUsd = minimumUsd;
+		this.usdtPer50Points = usdtPer50Points;
+		this.feePercent = feePercent;
 	}
 
 	int minimumPoints() {
-		BigDecimal points = minimumUsd.multiply(cnyPerUsd).divide(cnyPerPoint, 0, RoundingMode.CEILING);
-		if (points.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) {
+		long low = 1;
+		long high = Integer.MAX_VALUE;
+		if (usdtAmount((int) high).compareTo(MINIMUM_USDT) < 0) {
 			throw new IllegalArgumentException("minimum withdrawal points overflow");
 		}
-		return points.intValueExact();
+		while (low < high) {
+			long middle = low + (high - low) / 2;
+			if (usdtAmount((int) middle).compareTo(MINIMUM_USDT) >= 0) {
+				high = middle;
+			}
+			else {
+				low = middle + 1;
+			}
+		}
+		return (int) low;
 	}
 
 	BigDecimal usdtPerPoint() {
-		return cnyPerPoint.divide(cnyPerUsd, 8, RoundingMode.HALF_UP);
+		return usdtPer50Points.divide(POINTS_PER_RATE_UNIT);
 	}
 
-	BigDecimal usdtAmount(int points) {
-		if (points <= 0) {
+	BigDecimal usdtAmount(int pointAmount) {
+		if (pointAmount <= 0) {
 			throw new IllegalArgumentException("point amount must be positive");
 		}
-		return cnyPerPoint.multiply(BigDecimal.valueOf(points)).divide(cnyPerUsd, USDT_SCALE, RoundingMode.HALF_UP);
+		return usdtPer50Points.multiply(BigDecimal.valueOf(withdrawablePoints(pointAmount)))
+				.divide(POINTS_PER_RATE_UNIT, USDT_SCALE, RoundingMode.DOWN);
 	}
 
-	BigDecimal cnyPerPoint() {
-		return cnyPerPoint;
+	int feeAmount(int pointAmount) {
+		if (pointAmount <= 0) {
+			throw new IllegalArgumentException("point amount must be positive");
+		}
+		long rawFee = (long) pointAmount * feePercent;
+		return (int) ((rawFee + 99) / 100);
 	}
 
-	BigDecimal cnyPerUsd() {
-		return cnyPerUsd;
+	int withdrawablePoints(int pointAmount) {
+		return pointAmount - feeAmount(pointAmount);
 	}
 
-	BigDecimal minimumUsd() {
-		return minimumUsd;
+	BigDecimal usdtPer50Points() {
+		return usdtPer50Points;
+	}
+
+	BigDecimal minimumUsdt() {
+		return MINIMUM_USDT;
 	}
 
 	/**
@@ -58,16 +77,15 @@ final class WithdrawalConversion {
 	 */
 	public record Snapshot(
 			int minimumPoints,
+			String usdtPer50Points,
 			String usdtPerPoint,
-			String cnyPerPoint,
-			String cnyPerUsd,
-			String minimumUsd,
+			String minimumUsdt,
 			int feePercent) {
 	}
 
 	Snapshot toSnapshot(int feePercent) {
-		return new Snapshot(minimumPoints(), strip(usdtPerPoint()), strip(cnyPerPoint), strip(cnyPerUsd),
-				strip(minimumUsd), feePercent);
+		return new Snapshot(minimumPoints(), strip(usdtPer50Points), strip(usdtPerPoint()), strip(MINIMUM_USDT),
+				feePercent);
 	}
 
 	private static String strip(BigDecimal value) {

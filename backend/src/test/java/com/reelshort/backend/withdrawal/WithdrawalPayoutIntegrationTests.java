@@ -272,8 +272,10 @@ class WithdrawalPayoutIntegrationTests {
 				"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", 0L, BigInteger.ZERO,
 				"{\"txID\":\"tron-hash\"}", "tron-hash");
 		when(tronClient.addressFromPrivateKey(privateKey)).thenReturn(hotWallet);
-		when(tronClient.prepareTransfer(privateKey, fixture.withdrawal().walletAddress(),
-				fixture.withdrawal().usdtAmount())).thenAnswer(invocation -> {
+		when(tronClient.prepareTransfer(org.mockito.ArgumentMatchers.eq(privateKey),
+				org.mockito.ArgumentMatchers.eq(fixture.withdrawal().walletAddress()),
+				org.mockito.ArgumentMatchers.argThat(amount ->
+						amount.compareTo(fixture.withdrawal().usdtAmount()) == 0))).thenAnswer(invocation -> {
 				signingCount.incrementAndGet();
 				Thread.sleep(150);
 				return signed;
@@ -450,7 +452,7 @@ class WithdrawalPayoutIntegrationTests {
 		account.freeze(3600);
 		pointAccountRepository.saveAndFlush(account);
 		WithdrawalRequest withdrawal = WithdrawalRequest.create(userId, 3600, 0,
-				new WithdrawalConversion(new BigDecimal("0.02"), new BigDecimal("7.2"), new BigDecimal("10")),
+				new WithdrawalConversion(new BigDecimal("0.14"), 0),
 				network, walletAddress);
 		withdrawalRepository.saveAndFlush(withdrawal);
 		return new Fixture(userId, withdrawal, null);

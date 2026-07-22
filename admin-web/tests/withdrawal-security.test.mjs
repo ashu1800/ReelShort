@@ -4,6 +4,8 @@ import test from 'node:test'
 
 const apiSource = readFileSync(new URL('../src/services/adminApi.ts', import.meta.url), 'utf8')
 const viewSource = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
+const configLabelsSource = readFileSync(new URL('../src/views/systemConfigLabels.ts', import.meta.url), 'utf8')
+const configViewSource = readFileSync(new URL('../src/views/SystemConfigsView.vue', import.meta.url), 'utf8')
 
 test('manual withdrawal confirmation sends no second-factor data', () => {
   const match = apiSource.match(
@@ -48,4 +50,11 @@ test('manual confirmation remains an explicit external payout action', () => {
   assert.match(viewSource, /确认外部 ERC20 打款/)
   assert.match(viewSource, /确认已外部打款/)
   assert.match(viewSource, /不会广播或核验链上交易/)
+})
+
+test('system config exposes direct USDT rate without legacy currency conversion', () => {
+  assert.match(configLabelsSource, /withdraw\.usdt-per-50-points/)
+  assert.match(configLabelsSource, /提现 · 每50积分USDT/)
+  assert.doesNotMatch(configLabelsSource, /withdraw\.cny-per-point|withdraw\.cny-per-usd|withdraw\.minimum-usd/)
+  assert.doesNotMatch(configViewSource, /withdraw\.cny-per-point|withdraw\.cny-per-usd|withdraw\.minimum-usd/)
 })

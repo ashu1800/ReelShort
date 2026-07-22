@@ -191,10 +191,9 @@ data class WithdrawalSummaryDto(
     val availablePoints: Int,
     val minimumPoints: Int,
     val usdtPerPoint: String,
+    val usdtPer50Points: String,
+    val minimumUsdt: String,
     val walletAddress: String? = null,
-    val cnyPerPoint: String? = null,
-    val cnyPerUsd: String? = null,
-    val minimumUsd: String? = null,
     val feePercent: Int? = null,
 )
 

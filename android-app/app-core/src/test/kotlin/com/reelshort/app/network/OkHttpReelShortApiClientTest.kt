@@ -390,42 +390,28 @@ class OkHttpReelShortApiClientTest {
     }
 
     @Test
-    fun withdrawalSummaryMapsCurrencyConversionAndKeepsOldResponseCompatible() = runTest {
+    fun withdrawalSummaryMapsDirectUsdtConversion() = runTest {
         MockWebServer().use { server ->
             server.enqueue(successBody("""
                 {
                   "balance": 5000,
                   "frozenPoints": 200,
                   "availablePoints": 4800,
-                  "minimumPoints": 3600,
-                  "usdtPerPoint": "0.002777778",
-                  "cnyPerPoint": "0.02",
-                  "cnyPerUsd": "7.2",
-                  "minimumUsd": "10",
-                  "walletAddress": "TTest"
-                }
-            """.trimIndent()))
-            server.enqueue(successBody("""
-                {
-                  "balance": 100,
-                  "frozenPoints": 0,
-                  "availablePoints": 100,
-                  "minimumPoints": 50,
-                  "usdtPerPoint": "0.001",
+                  "minimumPoints": 5,
+                  "usdtPerPoint": "0.0028",
+                  "usdtPer50Points": "0.14",
+                  "minimumUsdt": "0.01",
                   "walletAddress": null
                 }
             """.trimIndent()))
             val client = client(server, token = "token-123")
 
             val current = client.getWithdrawalSummary()
-            val legacy = client.getWithdrawalSummary()
 
-            assertEquals("0.02", current.cnyPerPoint)
-            assertEquals("7.2", current.cnyPerUsd)
-            assertEquals("10", current.minimumUsd)
-            assertEquals(null, legacy.cnyPerPoint)
-            assertEquals(null, legacy.cnyPerUsd)
-            assertEquals(null, legacy.minimumUsd)
+            assertEquals(5, current.minimumPoints)
+            assertEquals("0.14", current.usdtPer50Points)
+            assertEquals("0.0028", current.usdtPerPoint)
+            assertEquals("0.01", current.minimumUsdt)
         }
     }
 

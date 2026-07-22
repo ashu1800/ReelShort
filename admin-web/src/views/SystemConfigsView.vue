@@ -35,13 +35,11 @@ function validateConfigValue(config: SystemConfig, value: string): string | null
     'points.fair-mode.enabled': { min: 0, max: 1, label: '公平模式' },
     'vip.free-episodes': { min: 0, max: 100, label: '免费集数' },
     'vip.order-timeout-minutes': { min: 1, max: 1440, label: '订单超时分钟' },
-    'withdraw.fee-percent': { min: 0, max: 100, label: '提现手续费百分比' },
+    'withdraw.fee-percent': { min: 0, max: 99, label: '提现手续费百分比' },
   }
   const DECIMAL_CONFIGS: Record<string, { min: number; label: string }> = {
     'vip.price-usdt': { min: 0.01, label: 'VIP 价格' },
-    'withdraw.cny-per-point': { min: 0.0001, label: '每积分人民币' },
-    'withdraw.cny-per-usd': { min: 0.01, label: '人民币每美元' },
-    'withdraw.minimum-usd': { min: 0.01, label: '最低提现美元' },
+    'withdraw.usdt-per-50-points': { min: 0.00000001, label: '每50积分USDT' },
   }
   if (config.key in INTEGER_CONFIGS) {
     const rule = INTEGER_CONFIGS[config.key]

@@ -58,19 +58,10 @@ public record SystemConfigDefinition(
 	}
 
 	private int decimalScale(String configKey) {
-		if ("withdraw.minimum-usd".equals(configKey)) {
-			return 2;
-		}
 		return "vip.price-usdt".equals(configKey) ? 6 : 8;
 	}
 
 	private BigDecimal decimalMaximum(String configKey) {
-		if ("withdraw.cny-per-usd".equals(configKey)) {
-			return BigDecimal.valueOf(1000);
-		}
-		if ("withdraw.minimum-usd".equals(configKey)) {
-			return BigDecimal.valueOf(1_000_000);
-		}
 		return BigDecimal.valueOf(100);
 	}
 

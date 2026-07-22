@@ -2265,7 +2265,8 @@ class AppStateControllerTest {
             calls += "withdrawal-summary"
             withdrawalSummaryError?.let { throw it }
             accountError?.let { throw it }
-            return WithdrawalSummary(pointBalance, 0, pointBalance, 100, "0.001", "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc")
+            return WithdrawalSummary(pointBalance, 0, pointBalance, 100, "0.001", "0.05", "0.01",
+                "TQ5nNnCnY5Yx7QJk3n4a9b4b8r8t9v1abc")
         }
 
         override suspend fun loadWithdrawals(): List<WithdrawalRecord> {

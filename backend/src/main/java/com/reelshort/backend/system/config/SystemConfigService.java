@@ -2,6 +2,7 @@ package com.reelshort.backend.system.config;
 
 import java.util.List;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.springframework.stereotype.Service;
@@ -60,35 +61,35 @@ public class SystemConfigService {
 	}
 
 	private void validateWithdrawalCombination(String changedKey, String changedValue) {
-		if (!changedKey.equals(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT)
-				&& !changedKey.equals(SystemConfigRegistry.WITHDRAW_CNY_PER_USD)
-				&& !changedKey.equals(SystemConfigRegistry.WITHDRAW_MINIMUM_USD)) {
+		if (!changedKey.equals(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS)
+				&& !changedKey.equals(SystemConfigRegistry.WITHDRAW_FEE_PERCENT)) {
 			return;
 		}
-		BigDecimal cnyPerPoint = withdrawalDecimal(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT, changedKey,
-				changedValue);
-		BigDecimal cnyPerUsd = withdrawalDecimal(SystemConfigRegistry.WITHDRAW_CNY_PER_USD, changedKey, changedValue);
-		BigDecimal minimumUsd = withdrawalDecimal(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, changedKey, changedValue);
-		BigDecimal minimumPoints = minimumUsd.multiply(cnyPerUsd).divide(cnyPerPoint, 0,
-				java.math.RoundingMode.CEILING);
-		if (minimumPoints.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) {
-			throw new AdminException(400, "withdrawal conversion would overflow point amount");
+		BigDecimal rate = new BigDecimal(configValue(
+				SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS, changedKey, changedValue));
+		int feePercent = Integer.parseInt(configValue(
+				SystemConfigRegistry.WITHDRAW_FEE_PERCENT, changedKey, changedValue));
+		if (feePercent >= 100) {
+			throw new AdminException(400, "withdrawal fee must be below 100 percent");
 		}
-		BigDecimal maxUsdtAmount = cnyPerPoint.multiply(BigDecimal.valueOf(Integer.MAX_VALUE)).divide(cnyPerUsd, 6,
-				java.math.RoundingMode.HALF_UP);
-		if (maxUsdtAmount.compareTo(new BigDecimal("999999999999.999999")) > 0) {
-			throw new AdminException(400, "withdrawal conversion would overflow usdt amount");
+		long pointAmount = Integer.MAX_VALUE;
+		long feeAmount = (pointAmount * feePercent + 99) / 100;
+		long withdrawablePoints = pointAmount - feeAmount;
+		BigDecimal maximumUsdt = rate.multiply(BigDecimal.valueOf(withdrawablePoints))
+				.divide(BigDecimal.valueOf(50), 2, RoundingMode.DOWN);
+		if (maximumUsdt.compareTo(new BigDecimal("0.01")) < 0) {
+			throw new AdminException(400, "withdrawal rate is too small");
 		}
 	}
 
-	private BigDecimal withdrawalDecimal(String key, String changedKey, String changedValue) {
+	private String configValue(String key, String changedKey, String changedValue) {
 		if (key.equals(changedKey)) {
-			return new BigDecimal(changedValue);
+			return changedValue;
 		}
 		SystemConfigDefinition definition = systemConfigRegistry.definition(key);
-		return new BigDecimal(systemConfigRepository.findById(key)
+		return systemConfigRepository.findById(key)
 				.map(SystemConfig::value)
-				.orElse(definition.defaultValue()));
+				.orElse(definition.defaultValue());
 	}
 
 	@Transactional(readOnly = true)

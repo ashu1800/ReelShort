@@ -26,6 +26,7 @@ class FinancialMigrationTests {
 		String v13 = migration("db/migration/V13__refactor_auth_vip.sql");
 		String v18 = migration("db/migration/V18__fair_mode_fractional_field.sql");
 		String v19 = migration("db/migration/V19__wallet_network_erc20.sql");
+		String v28 = migration("db/migration/V28__withdrawal_usdt_per_50_points.sql");
 
 		assertThat(v13)
 				.doesNotContain("delete from")
@@ -37,6 +38,7 @@ class FinancialMigrationTests {
 				.doesNotContain("update withdrawal_requests")
 				.doesNotContain("update watch_episode_reward_claims");
 		assertThat(v19).doesNotContain("update user_wallets");
+		assertThat(v28).doesNotContain("update withdrawal_requests");
 	}
 
 	@Test
@@ -97,6 +99,10 @@ class FinancialMigrationTests {
 				.isEqualTo(17);
 		assertThat(jdbc.queryForObject("select network from user_wallets where user_id = ?", String.class, userId))
 				.isEqualTo("TRC20");
+		assertThat(jdbc.queryForObject("select usdt_amount from withdrawal_requests where user_id = ?",
+				java.math.BigDecimal.class, userId)).isEqualByComparingTo("2.300000");
+		assertThat(jdbc.queryForObject("select usdt_per_50_points from withdrawal_requests where user_id = ?",
+				java.math.BigDecimal.class, userId)).isNull();
 	}
 
 	@Test

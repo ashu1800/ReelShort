@@ -84,14 +84,14 @@ public class WithdrawalService {
 	public WithdrawalSummaryResponse summary(UUID userId) {
 		PointAccount account = pointAccountRepository.findByUserId(userId).orElse(null);
 		UserWallet wallet = userWalletRepository.findByUserId(userId).orElse(null);
-		WithdrawalConversion conversion = conversion();
 		int balance = account == null ? 0 : account.balance();
 		int frozenPoints = account == null ? 0 : account.frozenPoints();
 		int availablePoints = account == null ? 0 : account.availablePoints();
 		int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
+		WithdrawalConversion conversion = conversion(feePercent);
 		return new WithdrawalSummaryResponse(balance, frozenPoints, availablePoints,
-				conversion.minimumPoints(), decimal(conversion.usdtPerPoint()), decimal(conversion.cnyPerPoint()),
-				decimal(conversion.cnyPerUsd()), decimal(conversion.minimumUsd()),
+				conversion.minimumPoints(), decimal(conversion.usdtPerPoint()), decimal(conversion.usdtPer50Points()),
+				decimal(conversion.minimumUsdt()),
 				wallet == null ? null : wallet.walletAddress(), feePercent);
 	}
 
@@ -101,7 +101,7 @@ public class WithdrawalService {
 	@Transactional(readOnly = true)
 	public WithdrawalConversion.Snapshot thresholds() {
 		int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
-		return conversion().toSnapshot(feePercent);
+		return conversion(feePercent).toSnapshot(feePercent);
 	}
 
 	@Transactional(readOnly = true)
@@ -121,19 +121,17 @@ public class WithdrawalService {
 	@Transactional
 	public WithdrawalResponse create(UUID userId, int pointAmount) {
 		return userActionLocks.withUserLock(userId, () -> {
-			WithdrawalConversion conversion = conversion();
+			int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
+			WithdrawalConversion conversion = conversion(feePercent);
 			// 需求2: pointAmount 是用户输入的扣除总额。手续费从中扣除，不再额外扣。
 			// 例如输入 1000、手续费 10%，则扣减 1000，实际提取 900。
 			int minimum = conversion.minimumPoints();
 			if (pointAmount < minimum) {
 				throw new AdminException(400, "withdrawal amount below minimum");
 			}
-			int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
-			// 手续费向上取整（long 防溢出）
-			long rawFee = (long) pointAmount * feePercent;
-			int feeAmount = (int) ((rawFee + 99) / 100);
+			int feeAmount = conversion.feeAmount(pointAmount);
 			// M1: 防止 feePercent 配置过高导致 withdrawable <= 0（用户全额被扣手续费）
-			int withdrawable = pointAmount - feeAmount;
+			int withdrawable = conversion.withdrawablePoints(pointAmount);
 			if (withdrawable <= 0) {
 				throw new AdminException(400, "fee percentage too high, no withdrawable points remain");
 			}
@@ -160,12 +158,10 @@ public class WithdrawalService {
 		});
 	}
 
-	private WithdrawalConversion conversion() {
+	private WithdrawalConversion conversion(int feePercent) {
 		try {
 			return new WithdrawalConversion(
-					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT),
-					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_CNY_PER_USD),
-					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_MINIMUM_USD));
+					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS), feePercent);
 		}
 		catch (IllegalArgumentException exception) {
 			throw new AdminException(400, exception.getMessage());
