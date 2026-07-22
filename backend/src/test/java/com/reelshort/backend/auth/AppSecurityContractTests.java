@@ -165,6 +165,12 @@ class AppSecurityContractTests {
 	}
 
 	@Test
+	void removedLegacyUpdatePathReturnsNotFoundInsteadOfUnauthorized() throws Exception {
+		mockMvc.perform(get("/api/app/update/latest"))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
 	void contentPlayStillRequiresBearerToken() throws Exception {
 		mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
 				.param("filteredTitle", "love-story")

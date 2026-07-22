@@ -59,6 +59,7 @@ public class SecurityConfig {
 							"/api/app/auth/captcha",
 							"/api/admin/auth/login",
 							"/api/internal/payments/recharge/callback",
+							"/api/app/update/latest",
 							"/api/system/health", "/actuator/health")
 							.permitAll()
 						.requestMatchers("/api/app/home/recommend",

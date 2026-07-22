@@ -74,6 +74,8 @@ Assert-Condition (-not $productionComposeContent.Contains('reelshort_dev')) "Pro
 Assert-Condition (-not ($nginxContent -match '(?ms)location\s+=\s+/api/internal\s*\{\s*return\s+404;\s*\}')) "Nginx must not reject the exact /api/internal path"
 Assert-Condition (-not ($nginxContent -match '(?ms)location\s+\^~\s+/api/internal/\s*\{\s*return\s+404;\s*\}')) "Nginx must not reject /api/internal/ before the general /api/ proxy"
 Assert-Condition ($nginxContent -match '(?ms)location\s+/api/\s*\{.*proxy_pass\s+http://backend:8080/api/;') "Nginx must proxy /api/ paths, including /api/internal, to backend"
+Assert-Condition ($nginxContent -match '(?ms)location\s+=\s+/downloads/android\s*\{\s*return\s+404;\s*\}') "Nginx must return 404 for the removed exact android download path"
+Assert-Condition ($nginxContent -match '(?ms)location\s+\^~\s+/downloads/android/\s*\{\s*return\s+404;\s*\}') "Nginx must return 404 for removed android download subpaths"
 
 & (Join-Path $repoRoot "infra\scripts\tests\backup-security-tests.ps1")
 
