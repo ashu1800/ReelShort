@@ -7,15 +7,16 @@
 默认配置：
 
 - `withdraw.usdt-per-50-points=0.14`，即 50 积分 = 0.14 USDT。
+- `withdraw.minimum-usdt=10`。
 - `withdraw.fee-percent=10`，手续费积分从用户提交的提现积分中扣除。
 
-手续费积分为 `ceil(pointAmount * feePercent / 100)`，实际可提现积分为 `pointAmount - feePoints`。到账金额为 `可提现积分 * usdtPer50Points / 50`，始终向下截断到 2 位小数，不四舍五入。实际到账必须至少为 `0.01 USDT`，最低提现积分由后端按当前比例和手续费动态计算；默认配置下是 5 积分。
+手续费积分为 `ceil(pointAmount * feePercent / 100)`，实际可提现积分为 `pointAmount - feePoints`。到账金额为 `可提现积分 * usdtPer50Points / 50`，始终向下截断到 2 位小数，不四舍五入。实际到账必须至少达到 `withdraw.minimum-usdt`；默认配置下最低到账为 `10 USDT`，最低提现积分为 3969 积分。
 
 ## App 接口
 
 ### `GET /api/app/withdrawals/summary`
 
-返回余额、冻结积分、可用积分、动态最低提现积分、`usdtPer50Points`、`usdtPerPoint`、`minimumUsdt=0.01`、手续费百分比和钱包地址，不再返回人民币或美元换算字段。
+返回余额、冻结积分、可用积分、动态最低提现积分、`usdtPer50Points`、`usdtPerPoint`、`minimumUsdt=10`、手续费百分比和钱包地址，不再返回人民币或美元换算字段。
 
 ### `POST /api/app/withdrawals`
 

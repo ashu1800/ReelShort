@@ -153,7 +153,8 @@ public class WithdrawalService {
 	private WithdrawalConversion conversion(int feePercent) {
 		try {
 			return new WithdrawalConversion(
-					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS), feePercent);
+					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS),
+					systemConfigService.decimalValue(SystemConfigRegistry.WITHDRAW_MINIMUM_USDT), feePercent);
 		}
 		catch (IllegalArgumentException exception) {
 			throw new AdminException(400, exception.getMessage());

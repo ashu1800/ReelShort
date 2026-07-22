@@ -63,11 +63,14 @@ public class SystemConfigService {
 
 	private void validateWithdrawalCombination(String changedKey, String changedValue) {
 		if (!changedKey.equals(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS)
+				&& !changedKey.equals(SystemConfigRegistry.WITHDRAW_MINIMUM_USDT)
 				&& !changedKey.equals(SystemConfigRegistry.WITHDRAW_FEE_PERCENT)) {
 			return;
 		}
 		BigDecimal rate = new BigDecimal(configValue(
 				SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS, changedKey, changedValue));
+		BigDecimal minimumUsdt = new BigDecimal(configValue(
+				SystemConfigRegistry.WITHDRAW_MINIMUM_USDT, changedKey, changedValue));
 		int feePercent = Integer.parseInt(configValue(
 				SystemConfigRegistry.WITHDRAW_FEE_PERCENT, changedKey, changedValue));
 		if (feePercent >= 100) {
@@ -81,7 +84,7 @@ public class SystemConfigService {
 		if (maximumUsdt.compareTo(MAX_WITHDRAWAL_USDT) > 0) {
 			throw new AdminException(400, "withdrawal conversion would overflow usdt amount");
 		}
-		if (maximumUsdt.compareTo(new BigDecimal("0.01")) < 0) {
+		if (maximumUsdt.compareTo(minimumUsdt) < 0) {
 			throw new AdminException(400, "withdrawal rate is too small");
 		}
 	}

@@ -42,7 +42,11 @@ public class ReleaseController {
 	 */
 	@GetMapping("/api/app/update/latest")
 	public ResponseEntity<UpdateManifestResponse> legacyLatest(HttpServletRequest request) {
-		return respond(request);
+		Optional<UpdateManifestResponse> manifest = releaseService.latestLegacyManifest();
+		if (manifest.isEmpty()) {
+			throw new ReleaseException(404, "no release available");
+		}
+		return ResponseEntity.ok(manifest.get());
 	}
 
 	private ResponseEntity<UpdateManifestResponse> respond(HttpServletRequest request) {

@@ -20,6 +20,7 @@ public class SystemConfigRegistry {
 	public static final String POINTS_FAIR_MODE_ENABLED = "points.fair-mode.enabled";
 	public static final String CONTENT_RECOMMENDATION_STRATEGY = "content.recommendation.strategy";
 	public static final String WITHDRAW_USDT_PER_50_POINTS = "withdraw.usdt-per-50-points";
+	public static final String WITHDRAW_MINIMUM_USDT = "withdraw.minimum-usdt";
 	public static final String WITHDRAW_FEE_PERCENT = "withdraw.fee-percent";
 	public static final String VIP_PRICE_USDT = "vip.price-usdt";
 	public static final String VIP_FREE_EPISODES = "vip.free-episodes";
@@ -41,6 +42,8 @@ public class SystemConfigRegistry {
 					ValueType.INTEGER, 0, 1, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_USDT_PER_50_POINTS, "0.14",
 					"USDT value of 50 points for withdrawals.", ValueType.DECIMAL, 0, 0, Set.of()),
+			new SystemConfigDefinition(WITHDRAW_MINIMUM_USDT, "10",
+					"Minimum USDT value required for withdrawal.", ValueType.DECIMAL, 0, 0, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_FEE_PERCENT, "10",
 					"Withdrawal fee percentage deducted from points.", ValueType.INTEGER, 0, 100, Set.of()),
 			new SystemConfigDefinition(VIP_PRICE_USDT, "15",

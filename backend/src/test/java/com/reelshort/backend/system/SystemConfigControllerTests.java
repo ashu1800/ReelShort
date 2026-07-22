@@ -51,6 +51,7 @@ class SystemConfigControllerTests {
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "35");
 		systemConfigService.update(SystemConfigRegistry.CONTENT_RECOMMENDATION_STRATEGY, "LATEST");
 		systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS, "0.14");
+		systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USDT, "10");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 		jdbcTemplate.update("delete from point_daily_earning_quotas");
 		jdbcTemplate.update("delete from point_daily_earning_rules");
@@ -63,12 +64,13 @@ class SystemConfigControllerTests {
 		mockMvc.perform(get("/api/admin/system/configs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data", hasSize(11)))
+				.andExpect(jsonPath("$.data", hasSize(12)))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.watch.seconds-per-point")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.maximum")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.fluctuation-percent")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("content.recommendation.strategy")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.usdt-per-50-points")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.minimum-usdt")))
 			.andExpect(jsonPath("$.data[*].key", hasItem("vip.price-usdt")))
 			.andExpect(jsonPath("$.data[*].key", hasItem("vip.free-episodes")))
 			.andExpect(jsonPath("$.data[*].key", hasItem("vip.collection-address")))
@@ -170,6 +172,14 @@ class SystemConfigControllerTests {
 				.andExpect(jsonPath("$.data.value").value("101.12345678"));
 
 		updateConfig(adminToken, "withdraw.usdt-per-50-points", "30000")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+
+		updateConfig(adminToken, "withdraw.minimum-usdt", "10")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.value").value("10"));
+
+		updateConfig(adminToken, "withdraw.minimum-usdt", "10.123456789")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value(400));
 

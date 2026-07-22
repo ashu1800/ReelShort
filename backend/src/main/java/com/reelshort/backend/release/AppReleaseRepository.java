@@ -10,4 +10,6 @@ public interface AppReleaseRepository extends JpaRepository<AppRelease, UUID> {
 	Optional<AppRelease> findTopByOrderByVersionCodeDescPublishedAtDesc();
 
 	Optional<AppRelease> findByVersionName(String versionName);
+
+	Optional<AppRelease> findByApkObjectKeyOrSha256ObjectKey(String apkObjectKey, String sha256ObjectKey);
 }

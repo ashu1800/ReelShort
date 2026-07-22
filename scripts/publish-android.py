@@ -43,6 +43,7 @@ ANDROID_DIR = REPO_ROOT / "android-app"
 OBJECT_KEY_PREFIX = "releases/android"
 PACKAGE_NAME = "com.reelshort.app"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+EXPECTED_RELEASE_CERT_SHA256 = "c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9"
 
 
 class PublishError(Exception):
@@ -55,7 +56,7 @@ def main() -> int:
         config = load_config()
         version_name, version_code, release_notes = resolve_inputs(args, config)
         apk_path = build_apk(version_name, version_code)
-        verify_apk(apk_path, version_name)
+        verify_apk(apk_path, version_name, version_code)
         sha256_hex, apk_size, sha256_path, sha256_size = compute_artifacts(apk_path)
         ensure_cos_dependency()
         upload_to_cos(config, version_name, apk_path, sha256_path)
@@ -164,7 +165,7 @@ def build_apk(version_name: str, version_code: int) -> Path:
     return apk
 
 
-def verify_apk(apk_path: Path, version_name: str) -> None:
+def verify_apk(apk_path: Path, version_name: str, version_code: int) -> None:
     """Verify the APK signature, package name and versionName using the Android build-tools."""
     print("\n=== Verifying APK metadata and signature ===")
     build_tools_dir = find_build_tools()
@@ -174,15 +175,42 @@ def verify_apk(apk_path: Path, version_name: str) -> None:
         apksigner = apksigner.with_suffix(".bat")
         aapt = aapt.with_suffix(".exe")
 
-    run_quiet([str(apksigner), "verify", "--verbose", "--print-certs", str(apk_path)],
-              "APK signature verification failed.")
+    signer_output = run_capture([str(apksigner), "verify", "--verbose", "--print-certs", str(apk_path)],
+                                "APK signature verification failed.")
+    verify_expected_certificate(signer_output)
     badging = subprocess.run([str(aapt), "dump", "badging", str(apk_path)],
                              capture_output=True, text=True, check=True).stdout
+    verify_badging(badging, version_name, version_code)
+    print("APK signature and metadata verified.")
+
+
+def verify_badging(badging: str, version_name: str, version_code: int) -> None:
     if f"package: name='{PACKAGE_NAME}'" not in badging:
         raise PublishError(f"APK package name is not {PACKAGE_NAME}.")
+    if f"versionCode='{version_code}'" not in badging:
+        raise PublishError(f"APK versionCode is not {version_code}.")
     if f"versionName='{version_name}'" not in badging:
         raise PublishError(f"APK versionName is not '{version_name}'.")
-    print("APK signature and metadata verified.")
+
+
+def verify_expected_certificate(apksigner_output: str) -> str:
+    match = re.search(r"Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F:]+)", apksigner_output)
+    if not match:
+        raise PublishError("APK signing certificate SHA-256 digest was not reported by apksigner.")
+    digest = normalize_sha256_digest(match.group(1))
+    if digest != EXPECTED_RELEASE_CERT_SHA256:
+        raise PublishError(
+            "APK signing certificate SHA-256 does not match the pinned ShortLink release certificate.\n"
+            f"Expected: {EXPECTED_RELEASE_CERT_SHA256}\n"
+            f"Actual:   {digest}")
+    return digest
+
+
+def normalize_sha256_digest(value: str) -> str:
+    digest = re.sub(r"[^0-9a-fA-F]", "", value).lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise PublishError("APK signing certificate SHA-256 digest is malformed.")
+    return digest
 
 
 def find_build_tools() -> Path:
@@ -284,6 +312,14 @@ def run_quiet(cmd: list[str], failure_msg: str) -> None:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise PublishError(f"{failure_msg}\n{result.stdout}\n{result.stderr}")
+
+
+def run_capture(cmd: list[str], failure_msg: str) -> str:
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    output = (result.stdout or "") + (result.stderr or "")
+    if result.returncode != 0:
+        raise PublishError(f"{failure_msg}\n{output}")
+    return output
 
 
 if __name__ == "__main__":

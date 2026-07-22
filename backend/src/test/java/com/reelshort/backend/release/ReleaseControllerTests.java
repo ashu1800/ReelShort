@@ -24,7 +24,7 @@ import com.reelshort.backend.auth.TokenHasher;
 import com.reelshort.backend.system.web.GlobalExceptionHandler;
 import com.reelshort.backend.system.web.RequestIdFilter;
 
-@WebMvcTest(controllers = {ReleaseController.class, InternalReleaseController.class})
+@WebMvcTest(controllers = {ReleaseController.class, InternalReleaseController.class, ReleaseDownloadController.class})
 @AutoConfigureMockMvc(addFilters = false)
 @TestPropertySource(properties = "reelshort.internal.super-token=test-super-token")
 class ReleaseControllerTests {
@@ -66,6 +66,51 @@ class ReleaseControllerTests {
 				.andExpect(jsonPath("$.sizeBytes").value(12345))
 				.andExpect(jsonPath("$.apkSha256")
 						.value("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"));
+	}
+
+	@Test
+	void legacyLatestReturnsFirstPartyDownloadUrls() throws Exception {
+		UpdateManifestResponse manifest = new UpdateManifestResponse("0.7.5", 28, "ShortLink v0.7.5", "Bug fixes",
+				"2026-07-22T10:00:00Z",
+				"https://shortlink.hjj888.cc/downloads/android/ShortLink-v0.7.5.apk",
+				"https://shortlink.hjj888.cc/downloads/android/ShortLink-v0.7.5.apk.sha256", 12345L, 81L,
+				"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", 1L, false);
+		when(releaseService.latestLegacyManifest()).thenReturn(Optional.of(manifest));
+
+		mockMvc.perform(get("/api/app/update/latest"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.versionName").value("0.7.5"))
+				.andExpect(jsonPath("$.apkUrl")
+						.value("https://shortlink.hjj888.cc/downloads/android/ShortLink-v0.7.5.apk"))
+				.andExpect(jsonPath("$.sha256Url")
+						.value("https://shortlink.hjj888.cc/downloads/android/ShortLink-v0.7.5.apk.sha256"));
+	}
+
+	@Test
+	void stableDownloadPathRedirectsToLatestPresignedAsset() throws Exception {
+		when(releaseService.legacyAssetDownloadUrl("ShortLink-v0.7.5.apk"))
+				.thenReturn(Optional.of("https://cos.example.com/signed-apk?token=abc"));
+		when(releaseService.legacyAssetDownloadUrl("ShortLink-v0.7.5.apk.sha256"))
+				.thenReturn(Optional.of("https://cos.example.com/signed-sha?token=def"));
+
+		mockMvc.perform(get("/downloads/android/ShortLink-v0.7.5.apk"))
+				.andExpect(status().isFound())
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+						.string("Location", "https://cos.example.com/signed-apk?token=abc"));
+
+		mockMvc.perform(get("/downloads/android/ShortLink-v0.7.5.apk.sha256"))
+				.andExpect(status().isFound())
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+						.string("Location", "https://cos.example.com/signed-sha?token=def"));
+	}
+
+	@Test
+	void stableDownloadPathRejectsUnexpectedFileName() throws Exception {
+		when(releaseService.legacyAssetDownloadUrl("ShortLink-v0.7.4.apk")).thenReturn(Optional.empty());
+
+		mockMvc.perform(get("/downloads/android/ShortLink-v0.7.4.apk"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value("release asset not found"));
 	}
 
 	@Test

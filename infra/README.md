@@ -2,7 +2,7 @@
 
 单机部署基础设施目录，当前使用 Docker Compose 编排以下服务：
 
-- `nginx`：唯一外部 HTTP 入口，托管后台 Web、ShortLink Android 更新文件并转发其他 `/api/` 请求到后端。
+- `nginx`：唯一外部 HTTP 入口，托管后台 Web，并转发 `/api/` 与旧版 ShortLink Android 下载路径到后端。
 - `backend`：Spring Boot 核心业务服务。
 - `content-provider`：Flask ReelShort 内容源服务，仅供后端内部访问。
 - `postgres`：核心业务数据库。
@@ -22,12 +22,13 @@ docker compose --env-file .env up -d --build
 
 ## Android 更新文件
 
-发布文件保存在仓库同级部署目录 `releases/android/`；生产部署对应 `/opt/reelshort/releases/android/`。Compose 将该目录只读挂载到 Nginx：
+发布文件由本地脚本上传到腾讯云 COS，并由后端写入 `app_releases` 表：
 
-- 版本清单：`/api/app/update/latest`
-- APK 与摘要：`/downloads/android/ShortLink-vX.Y.Z.apk[.sha256]`
+- 新版版本清单：`/api/app/release/latest`，直接返回 COS 预签名下载 URL。
+- 旧版兼容清单：`/api/app/update/latest`，返回 `/downloads/android/ShortLink-vX.Y.Z.apk[.sha256]` 稳定 URL。
+- 旧版下载路径：`/downloads/android/ShortLink-vX.Y.Z.apk[.sha256]`，由 Nginx 转发到后端，后端 302 到 COS 预签名 URL。
 
-下载按客户端 IP 限制为一个并发连接，每个响应前 2 MiB 不限速，之后限制为 1 MiB/s。APK 响应禁止 CDN 缓存，确保请求不会绕过源站限速；静态文件支持 HTTP Range 和断点续传，`latest.json` 必须在 APK 与摘要原子落盘后最后替换。
+COS 下载链接短时过期；旧版稳定路径只承担兼容跳转，不保存 APK 文件。
 
 需要从宿主机直接连接 PostgreSQL 或 Redis 调试时，显式叠加仅绑定 loopback 的 override：
 

@@ -14,6 +14,8 @@
 
 以下 App 内容接口都支持可选 `locale` 参数，当前仅允许 `en` 和 `zh-TW`，默认 `en`。PostgreSQL 内容缓存按 locale 分桶：同一 `bookId` 的英文和繁體中文标题、封面、简介、分集标题可以分别保存；观看记录、收藏、点赞和评论仍按 `bookId` 关联，不按语言拆分。
 
+点赞、收藏和评论接口使用本地社交表作为真实数据源；当某个 `bookId` 没有真实互动数据时，后端按 `bookId` 生成稳定的展示基线计数和少量伪评论，不落库，真实用户互动会叠加在展示基线之上。
+
 ### `GET /api/app/home/recommend?locale={locale}`
 
 返回推荐货架内容。后端优先读取 PostgreSQL 货架缓存；缓存不存在时才调用 Flask 内容源并写入 `content_shelf_cache` 和 `content_book_cache`。后台刷新接口负责主动更新片库元数据。

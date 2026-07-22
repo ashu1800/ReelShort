@@ -1,5 +1,6 @@
 package com.reelshort.backend.social;
 
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -55,7 +56,7 @@ class SocialControllerTests {
 		mockMvc.perform(post("/api/app/social/books/book-like/like")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
 				.andExpect(jsonPath("$.data.active").value(false))
-				.andExpect(jsonPath("$.data.count").value(0));
+				.andExpect(jsonPath("$.data.count", greaterThan(0)));
 	}
 
 	@Test
@@ -94,6 +95,14 @@ class SocialControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data", hasSize(1)))
 				.andExpect(jsonPath("$.data[0].content").value("nice drama"));
+	}
+
+	@Test
+	void emptyCommentsReturnDisplayFallbacks() throws Exception {
+		mockMvc.perform(get("/api/app/social/books/book-empty-comments/comments"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.length()", greaterThan(0)))
+				.andExpect(jsonPath("$.data[0].content").isNotEmpty());
 	}
 
 	@Test

@@ -452,7 +452,7 @@ class WithdrawalPayoutIntegrationTests {
 		account.freeze(3600);
 		pointAccountRepository.saveAndFlush(account);
 		WithdrawalRequest withdrawal = WithdrawalRequest.create(userId, 3600, 0,
-				new WithdrawalConversion(new BigDecimal("0.14"), 0),
+				new WithdrawalConversion(new BigDecimal("0.14"), new BigDecimal("10"), 0),
 				network, walletAddress);
 		withdrawalRepository.saveAndFlush(withdrawal);
 		return new Fixture(userId, withdrawal, null);

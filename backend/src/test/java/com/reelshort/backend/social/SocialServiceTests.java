@@ -27,6 +27,8 @@ class SocialServiceTests {
 	void toggleLikeFlipsStateAndCounts() {
 		UUID userId = UUID.randomUUID();
 		String bookId = "book-like-" + userId;
+		long baseline = socialService.likeStatus(userId, bookId).count();
+		assertThat(baseline).isPositive();
 
 		ToggleResponse on = socialService.toggleLike(userId, bookId);
 		assertThat(on.active()).isTrue();
@@ -34,10 +36,11 @@ class SocialServiceTests {
 
 		ToggleResponse status = socialService.likeStatus(userId, bookId);
 		assertThat(status.active()).isTrue();
+		assertThat(status.count()).isEqualTo(1);
 
 		ToggleResponse off = socialService.toggleLike(userId, bookId);
 		assertThat(off.active()).isFalse();
-		assertThat(off.count()).isZero();
+		assertThat(off.count()).isEqualTo(baseline);
 	}
 
 	@Test
@@ -45,9 +48,12 @@ class SocialServiceTests {
 		UUID userId = UUID.randomUUID();
 		String bookId = "book-fav-" + userId;
 		FavoriteRequest request = new FavoriteRequest("Love Story", "love-story", "http://cover", 12);
+		long baseline = socialService.favoriteStatus(userId, bookId).count();
+		assertThat(baseline).isPositive();
 
 		ToggleResponse on = socialService.toggleFavorite(userId, bookId, request);
 		assertThat(on.active()).isTrue();
+		assertThat(on.count()).isEqualTo(1);
 
 		List<FavoriteBookResponse> favorites = socialService.myFavorites(userId);
 		assertThat(favorites).hasSize(1);
@@ -56,6 +62,7 @@ class SocialServiceTests {
 
 		ToggleResponse off = socialService.toggleFavorite(userId, bookId, request);
 		assertThat(off.active()).isFalse();
+		assertThat(off.count()).isEqualTo(baseline);
 		assertThat(socialService.myFavorites(userId)).isEmpty();
 	}
 
@@ -70,5 +77,24 @@ class SocialServiceTests {
 		List<CommentResponse> list = socialService.listComments(bookId);
 		assertThat(list).extracting(CommentResponse::content).containsExactly("world", "hello");
 		assertThat(commentRepository.countByBookId(bookId)).isEqualTo(2);
+	}
+
+	@Test
+	void emptyBookReturnsStableDisplayFallbacks() {
+		UUID userId = UUID.randomUUID();
+		String bookId = "book-empty-" + userId;
+
+		ToggleResponse like = socialService.likeStatus(userId, bookId);
+		ToggleResponse favorite = socialService.favoriteStatus(userId, bookId);
+		List<CommentResponse> first = socialService.listComments(bookId);
+		List<CommentResponse> second = socialService.listComments(bookId);
+
+		assertThat(like.active()).isFalse();
+		assertThat(like.count()).isPositive();
+		assertThat(favorite.active()).isFalse();
+		assertThat(favorite.count()).isPositive();
+		assertThat(first).hasSizeBetween(3, 5);
+		assertThat(second).isEqualTo(first);
+		assertThat(commentRepository.countByBookId(bookId)).isZero();
 	}
 }

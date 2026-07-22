@@ -139,7 +139,7 @@ class WalletWithdrawalTransferControllerTests {
 		String withdrawalId = JsonPath.read(mockMvc.perform(post("/api/app/withdrawals")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
 				.contentType(MediaType.APPLICATION_JSON)
-				.content("{\"pointAmount\":3600}"))
+				.content("{\"pointAmount\":3969}"))
 				.andExpect(status().isOk())
 				.andReturn().getResponse().getContentAsString(), "$.data.id");
 
@@ -157,9 +157,9 @@ class WalletWithdrawalTransferControllerTests {
 		mockMvc.perform(get("/api/app/withdrawals/summary")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.balance").value(400))
+				.andExpect(jsonPath("$.data.balance").value(31))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
-				.andExpect(jsonPath("$.data.availablePoints").value(400));
+				.andExpect(jsonPath("$.data.availablePoints").value(31));
 	}
 
 	@Test
@@ -199,12 +199,12 @@ class WalletWithdrawalTransferControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "pointAmount": 3600
+						  "pointAmount": 3969
 						}
 						"""))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("PENDING"))
-				.andExpect(jsonPath("$.data.pointAmount").value(3600))
+				.andExpect(jsonPath("$.data.pointAmount").value(3969))
 				.andExpect(jsonPath("$.data.walletAddress").value(VALID_ETH_ADDRESS))
 				.andReturn()
 				.getResponse()
@@ -219,8 +219,8 @@ class WalletWithdrawalTransferControllerTests {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.balance").value(4000))
-				.andExpect(jsonPath("$.data.frozenPoints").value(3600))
-				.andExpect(jsonPath("$.data.availablePoints").value(400));
+				.andExpect(jsonPath("$.data.frozenPoints").value(3969))
+				.andExpect(jsonPath("$.data.availablePoints").value(31));
 
 		// 自动打款接口已停用，确认不再接收私钥或触发链上广播。
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/approve", UUID.fromString(withdrawalId))
@@ -273,7 +273,7 @@ class WalletWithdrawalTransferControllerTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 						{
-						  "pointAmount": 3600
+						  "pointAmount": 3969
 						}
 						"""))
 				.andExpect(status().isOk())

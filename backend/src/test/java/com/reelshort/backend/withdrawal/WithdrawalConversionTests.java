@@ -10,17 +10,19 @@ class WithdrawalConversionTests {
 
 	@Test
 	void calculatesMinimumPointsAfterFeeAndDirectUsdtValue() {
-		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.14"), 10);
+		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.14"), new BigDecimal("10"), 10);
 
-		assertThat(conversion.minimumPoints()).isEqualTo(5);
+		assertThat(conversion.minimumPoints()).isEqualTo(3969);
 		assertThat(conversion.usdtPer50Points()).isEqualByComparingTo("0.14");
 		assertThat(conversion.usdtPerPoint()).isEqualByComparingTo("0.0028");
-		assertThat(conversion.usdtAmount(5)).isEqualByComparingTo("0.01");
+		assertThat(conversion.minimumUsdt()).isEqualByComparingTo("10");
+		assertThat(conversion.usdtAmount(3968)).isEqualByComparingTo("9.99");
+		assertThat(conversion.usdtAmount(3969)).isEqualByComparingTo("10.00");
 	}
 
 	@Test
 	void roundsUsdtDownToCentsAfterFee() {
-		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.14"), 10);
+		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.14"), new BigDecimal("10"), 10);
 
 		assertThat(conversion.usdtAmount(4)).isEqualByComparingTo("0.00");
 		assertThat(conversion.usdtAmount(101)).isEqualByComparingTo("0.25");
@@ -29,13 +31,14 @@ class WithdrawalConversionTests {
 	@Test
 	void rejectsAConversionThatCannotProduceMinimumUsdt() {
 		org.assertj.core.api.Assertions.assertThatThrownBy(
-				() -> new WithdrawalConversion(new BigDecimal("0.14"), 100).minimumPoints())
+				() -> new WithdrawalConversion(new BigDecimal("0.14"), new BigDecimal("10"), 100).minimumPoints())
 				.isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	void preservesAllEightRateDecimalsWhenCalculatingAmount() {
-		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.00000003"), 10);
+		WithdrawalConversion conversion = new WithdrawalConversion(
+				new BigDecimal("0.00000003"), new BigDecimal("0.01"), 10);
 
 		int minimumPoints = conversion.minimumPoints();
 		assertThat(minimumPoints).isPositive();

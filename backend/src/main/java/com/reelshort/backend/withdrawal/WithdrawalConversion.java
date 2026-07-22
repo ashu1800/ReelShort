@@ -6,29 +6,30 @@ import java.math.RoundingMode;
 final class WithdrawalConversion {
 
 	private static final BigDecimal POINTS_PER_RATE_UNIT = BigDecimal.valueOf(50);
-	private static final BigDecimal MINIMUM_USDT = new BigDecimal("0.01");
 	private static final int USDT_SCALE = 2;
 
 	private final BigDecimal usdtPer50Points;
+	private final BigDecimal minimumUsdt;
 	private final int feePercent;
 
-	WithdrawalConversion(BigDecimal usdtPer50Points, int feePercent) {
-		if (usdtPer50Points.signum() <= 0 || feePercent < 0 || feePercent >= 100) {
+	WithdrawalConversion(BigDecimal usdtPer50Points, BigDecimal minimumUsdt, int feePercent) {
+		if (usdtPer50Points.signum() <= 0 || minimumUsdt.signum() <= 0 || feePercent < 0 || feePercent >= 100) {
 			throw new IllegalArgumentException("withdrawal conversion values must be positive");
 		}
 		this.usdtPer50Points = usdtPer50Points;
+		this.minimumUsdt = minimumUsdt;
 		this.feePercent = feePercent;
 	}
 
 	int minimumPoints() {
 		long low = 1;
 		long high = Integer.MAX_VALUE;
-		if (usdtAmount((int) high).compareTo(MINIMUM_USDT) < 0) {
+		if (usdtAmount((int) high).compareTo(minimumUsdt) < 0) {
 			throw new IllegalArgumentException("minimum withdrawal points overflow");
 		}
 		while (low < high) {
 			long middle = low + (high - low) / 2;
-			if (usdtAmount((int) middle).compareTo(MINIMUM_USDT) >= 0) {
+			if (usdtAmount((int) middle).compareTo(minimumUsdt) >= 0) {
 				high = middle;
 			}
 			else {
@@ -67,7 +68,7 @@ final class WithdrawalConversion {
 	}
 
 	BigDecimal minimumUsdt() {
-		return MINIMUM_USDT;
+		return minimumUsdt;
 	}
 
 	/**
@@ -84,7 +85,7 @@ final class WithdrawalConversion {
 	}
 
 	Snapshot toSnapshot(int feePercent) {
-		return new Snapshot(minimumPoints(), strip(usdtPer50Points), strip(usdtPerPoint()), strip(MINIMUM_USDT),
+		return new Snapshot(minimumPoints(), strip(usdtPer50Points), strip(usdtPerPoint()), strip(minimumUsdt),
 				feePercent);
 	}
 

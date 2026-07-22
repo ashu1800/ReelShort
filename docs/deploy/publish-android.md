@@ -17,6 +17,10 @@ App 启动
   → 后端查最新发布 → 用 COS Java SDK 生成短时预签名下载链接（默认 1 小时）
   → 返回 manifest（apkUrl / sha256Url 指向预签名链接）
   → App 下载 + SHA-256 校验 + 签名校验 + 系统安装器安装
+
+App 0.4.x 仍访问旧路径 `GET /api/app/update/latest`。后端对该路径返回
+`https://shortlink.hjj888.cc/downloads/android/ShortLink-vX.Y.Z.apk[.sha256]`
+一类稳定 URL，Compose Nginx 将 `/downloads/android/` 转发到后端，后端再 302 到短时 COS 预签名链接。
 ```
 
 密钥只在服务端，COS 下载链接短时过期，不暴露原始密钥。
@@ -67,7 +71,7 @@ python scripts/publish-android.py
 交互式提示输入版本号（`X.Y.Z`）、version code 和 release notes。脚本会自动：
 
 1. 用 Gradle 构建签名 release APK
-2. 用 `apksigner` / `aapt` 校验签名、包名（`com.reelshort.app`）和 versionName
+2. 用 `apksigner` / `aapt` 校验签名、正式证书 SHA-256、包名（`com.reelshort.app`）、versionName 和 versionCode
 3. 计算 APK 的 SHA-256 和文件大小，生成 `.sha256` 校验文件
 4. 自动安装 `cos-python-sdk-v5`（如未安装）
 5. 上传 APK 和校验文件到 COS（覆盖同版本号的旧文件）
@@ -112,3 +116,4 @@ curl -s https://shortlink.hjj888.cc/api/app/release/latest | python -m json.tool
 - 预签名下载链接短时（默认 1h）过期，按需生成，不持久化。
 - 发布接口由 `X-Internal-Super-Token` 保护，复用 `reelshort.internal.super-token`。
 - `gitleaks` 扫描全历史（push 与 PR），确保无密钥泄漏。
+- 发布脚本钉住当前正式签名证书 SHA-256；如果本地环境变量指向了错误 keystore，发布会在上传前失败。
