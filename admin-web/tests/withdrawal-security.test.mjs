@@ -78,3 +78,8 @@ test('user VIP operations only submit an expiry timestamp or an empty cancel req
   assert.match(usersViewSource, /cancelUserVip/)
   assert.match(usersViewSource, /type="datetime"/)
 })
+
+test('cancelled point transfers are absent from user detail contracts', () => {
+  assert.doesNotMatch(apiSource, /PointTransfer|fetchUserPointTransfers|point-transfers/)
+  assert.doesNotMatch(usersViewSource, /积分交易|pointTransfers|fetchUserPointTransfers|pointTransferRecordCount/)
+})

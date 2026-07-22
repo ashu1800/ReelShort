@@ -6,7 +6,6 @@ import {
   cancelUserVip,
   fetchUserDetail,
   fetchUserPointRecords,
-  fetchUserPointTransfers,
   fetchUserWithdrawals,
   fetchUsers,
   fetchUserWatchRecords,
@@ -17,7 +16,6 @@ import type {
   AdminUserDetail,
   AdminUserSummary,
   PointRecord,
-  PointTransfer,
   UserStatus,
   WatchRecord,
   WithdrawalRequest,
@@ -33,7 +31,6 @@ const operationLoading = ref(false)
 const selectedUser = ref<AdminUserDetail | null>(null)
 const watchRecords = ref<WatchRecord[]>([])
 const pointRecords = ref<PointRecord[]>([])
-const pointTransfers = ref<PointTransfer[]>([])
 const withdrawals = ref<WithdrawalRequest[]>([])
 const pointsForm = reactive({
   amount: 0,
@@ -75,20 +72,17 @@ async function loadUserDetail(userId: string) {
   selectedUser.value = null
   watchRecords.value = []
   pointRecords.value = []
-  pointTransfers.value = []
   withdrawals.value = []
   try {
-    const [detail, watches, points, transfers, userWithdrawals] = await Promise.all([
+    const [detail, watches, points, userWithdrawals] = await Promise.all([
       fetchUserDetail(userId),
       fetchUserWatchRecords(userId),
       fetchUserPointRecords(userId),
-      fetchUserPointTransfers(userId),
       fetchUserWithdrawals(userId),
     ])
     selectedUser.value = detail
     watchRecords.value = watches
     pointRecords.value = points
-    pointTransfers.value = transfers
     withdrawals.value = userWithdrawals
   } catch {
     ElMessage.error('用户详情加载失败')
@@ -420,25 +414,6 @@ onMounted(loadUsers)
                 </el-table-column>
                 <el-table-column label="tx hash" min-width="180">
                   <template #default="{ row }">{{ row.txHash || '-' }}</template>
-                </el-table-column>
-                <el-table-column label="时间" min-width="220" prop="createdAt" />
-              </el-table>
-            </el-tab-pane>
-            <el-tab-pane :label="`积分交易 ${selectedUser.pointTransferRecordCount}`">
-              <el-table :data="pointTransfers" border>
-                <el-table-column label="方向" width="90">
-                  <template #default="{ row }">
-                    <el-tag :type="row.direction === 'IN' ? 'success' : 'warning'" effect="plain">
-                      {{ row.direction === 'IN' ? '转入' : '转出' }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column align="right" label="积分" prop="pointAmount" width="90" />
-                <el-table-column label="发送方" min-width="160">
-                  <template #default="{ row }"><span class="mono">{{ row.senderAccount }}</span></template>
-                </el-table-column>
-                <el-table-column label="接收方" min-width="160">
-                  <template #default="{ row }"><span class="mono">{{ row.recipientAccount }}</span></template>
                 </el-table-column>
                 <el-table-column label="时间" min-width="220" prop="createdAt" />
               </el-table>

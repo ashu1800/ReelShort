@@ -38,7 +38,6 @@ export type AdminUserDetail = AdminUserSummary & {
   watchRecordCount: number
   pointRecordCount: number
   withdrawalRecordCount: number
-  pointTransferRecordCount: number
 }
 
 export type WatchRecord = {
@@ -65,15 +64,6 @@ export type PointRecord = {
   episodeNum: number | null
   stage: number | null
   reason: string | null
-  createdAt: string
-}
-
-export type PointTransfer = {
-  id: string
-  direction: 'IN' | 'OUT'
-  senderAccount: string
-  recipientAccount: string
-  pointAmount: number
   createdAt: string
 }
 
@@ -359,11 +349,6 @@ export async function fetchUserWatchRecords(userId: string) {
 
 export async function fetchUserPointRecords(userId: string) {
   const response = await http.get<ApiResponse<PointRecord[]>>(`/users/${userId}/point-records`)
-  return response.data.data
-}
-
-export async function fetchUserPointTransfers(userId: string) {
-  const response = await http.get<ApiResponse<PointTransfer[]>>(`/users/${userId}/point-transfers`)
   return response.data.data
 }
 

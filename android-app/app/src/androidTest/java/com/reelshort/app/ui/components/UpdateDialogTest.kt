@@ -1,7 +1,9 @@
 package com.reelshort.app.ui.components
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.update.DownloadProgress
@@ -28,11 +30,12 @@ class UpdateDialogTest {
     )
 
     @Test
-    fun availableReleaseShowsVersionNotesAndActions() {
+    fun availableReleaseHidesReleaseNotesAndShowsActions() {
         show(UpdateState.Available(release))
 
         composeRule.onNodeWithText("A new version is available").assertIsDisplayed()
-        composeRule.onNodeWithText("Faster and safer updates.").assertIsDisplayed()
+        composeRule.onAllNodesWithText("What's new").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Faster and safer updates.").assertCountEquals(0)
         composeRule.onNodeWithText("Update now").assertIsDisplayed()
         composeRule.onNodeWithText("Later").assertIsDisplayed()
     }

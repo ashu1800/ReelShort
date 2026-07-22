@@ -17,7 +17,6 @@ Authorization: Bearer <admin-token>
 | `points.daily-earned.fluctuation-percent` | `35` | 整数，`0..100` | 每账号每日随机向下浮动百分比的上限。 |
 | `withdraw.usdt-per-50-points` | `0.14` | 正数，最多 8 位小数，最大 `100` | 每 50 积分对应的 USDT 金额。 |
 | `withdraw.fee-percent` | `10` | 整数，`0..99` | 从用户提交积分中扣除的提现手续费百分比。 |
-| `points.transfer.minimum-points` | `1` | 整数，`1..1000000` | 用户积分交易最低积分。 |
 | `content.recommendation.strategy` | `LATEST` | `LATEST` / `POPULAR` | 首页推荐策略占位。 |
 
 ## `GET /api/admin/system/configs`

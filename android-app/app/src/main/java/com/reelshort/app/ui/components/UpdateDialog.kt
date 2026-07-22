@@ -77,10 +77,6 @@ internal fun UpdateDialog(
                     is UpdateState.Available -> {
                         Text("${copy.publishedLabel}: ${release.publishedAt}", color = TextSecondary)
                         Text("${copy.sizeLabel}: ${formatUpdateBytes(release.apkAsset.sizeBytes)}", color = TextSecondary)
-                        if (release.body.isNotBlank()) {
-                            Text(copy.releaseNotes, color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                            Text(release.body, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-                        }
                     }
                     is UpdateState.Downloading -> DownloadProgressContent(state, copy.downloading)
                     is UpdateState.Verifying -> {
