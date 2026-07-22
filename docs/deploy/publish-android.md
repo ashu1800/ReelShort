@@ -17,13 +17,10 @@ App 启动
   → 后端查最新发布 → 用 COS Java SDK 生成短时预签名下载链接（默认 1 小时）
   → 返回 manifest（apkUrl / sha256Url 指向预签名链接）
   → App 下载 + SHA-256 校验 + 签名校验 + 系统安装器安装
-
-App 0.4.x 仍访问旧路径 `GET /api/app/update/latest`。后端对该路径返回
-`https://shortlink.hjj888.cc/downloads/android/ShortLink-vX.Y.Z.apk[.sha256]`
-一类稳定 URL，Compose Nginx 将 `/downloads/android/` 转发到后端，后端再 302 到短时 COS 预签名链接。
 ```
 
 密钥只在服务端，COS 下载链接短时过期，不暴露原始密钥。
+旧版 `/api/app/update/latest` 与 `/downloads/android/` 兼容链路已删除，不再支持 0.4.x 旧包从首方稳定 URL 升级。
 
 ## 前置准备
 

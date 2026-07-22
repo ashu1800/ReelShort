@@ -10,8 +10,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReleaseService {
 
 	private static final DateTimeFormatter ISO_UTC = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
-	private static final String LEGACY_DOWNLOAD_BASE_URL = "https://shortlink.hjj888.cc/downloads/android/";
-	private static final String RELEASE_OBJECT_PREFIX = "releases/android/";
 
 	private final AppReleaseRepository releaseRepository;
 	private final CosPresignService cosPresignService;
@@ -50,27 +48,6 @@ public class ReleaseService {
 		return releaseRepository.findTopByOrderByVersionCodeDescPublishedAtDesc().map(this::toManifest);
 	}
 
-	public Optional<UpdateManifestResponse> latestLegacyManifest() {
-		return releaseRepository.findTopByOrderByVersionCodeDescPublishedAtDesc().map(this::toLegacyManifest);
-	}
-
-	public Optional<String> legacyAssetDownloadUrl(String fileName) {
-		if (fileName == null || fileName.isBlank() || fileName.contains("/") || fileName.contains("\\")) {
-			return Optional.empty();
-		}
-		String objectKey = RELEASE_OBJECT_PREFIX + fileName;
-		return releaseRepository.findByApkObjectKeyOrSha256ObjectKey(objectKey, objectKey)
-				.flatMap(release -> {
-					if (release.apkObjectKey().equals(objectKey)) {
-						return Optional.of(cosPresignService.presignDownload(release.apkObjectKey()));
-					}
-					if (release.sha256ObjectKey().equals(objectKey)) {
-						return Optional.of(cosPresignService.presignDownload(release.sha256ObjectKey()));
-					}
-					return Optional.empty();
-				});
-	}
-
 	private UpdateManifestResponse toManifest(AppRelease release) {
 		return new UpdateManifestResponse(release.versionName(), release.versionCode(), release.title(),
 				release.releaseNotes(), release.publishedAt().format(ISO_UTC),
@@ -79,17 +56,4 @@ public class ReleaseService {
 				release.sha256SizeBytes(), release.apkSha256(), release.minimumVersionCode(), release.mandatory());
 	}
 
-	private UpdateManifestResponse toLegacyManifest(AppRelease release) {
-		return new UpdateManifestResponse(release.versionName(), release.versionCode(), release.title(),
-				release.releaseNotes(), release.publishedAt().format(ISO_UTC),
-				legacyDownloadUrl(release.apkObjectKey()), legacyDownloadUrl(release.sha256ObjectKey()),
-				release.apkSizeBytes(), release.sha256SizeBytes(), release.apkSha256(), release.minimumVersionCode(),
-				release.mandatory());
-	}
-
-	private String legacyDownloadUrl(String objectKey) {
-		int separator = objectKey.lastIndexOf('/');
-		String fileName = separator >= 0 ? objectKey.substring(separator + 1) : objectKey;
-		return LEGACY_DOWNLOAD_BASE_URL + fileName;
-	}
 }

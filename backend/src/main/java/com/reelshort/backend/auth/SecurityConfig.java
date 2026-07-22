@@ -67,8 +67,7 @@ public class SecurityConfig {
 								"/api/app/content/books/*",
 								"/api/app/content/books/*/episodes",
 								"/api/app/social/books/*/comments",
-								"/api/app/release/latest",
-								"/api/app/update/latest")
+								"/api/app/release/latest")
 						.access((authentication, context) -> new AuthorizationDecision(
 								context.getRequest().getAttribute(BearerTokenAuthenticationFilter.AUTH_FAILURE_ATTRIBUTE)
 										== null))

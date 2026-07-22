@@ -1,7 +1,6 @@
 package com.reelshort.backend.release;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -49,39 +48,6 @@ class ReleaseServiceTests {
 		assertThat(body.apkSha256())
 				.isEqualTo("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789");
 		assertThat(body.publishedAt()).isNotBlank();
-	}
-
-	@Test
-	void latestLegacyManifestReturnsFirstPartyDownloadUrls() {
-		AppRelease release = AppRelease.create("0.7.5", 28, "releases/android/ShortLink-v0.7.5.apk",
-				"releases/android/ShortLink-v0.7.5.apk.sha256", 12345L, 81L,
-				"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", "ShortLink v0.7.5",
-				"Bug fixes", false, 1);
-		when(releaseRepository.findTopByOrderByVersionCodeDescPublishedAtDesc()).thenReturn(Optional.of(release));
-
-		Optional<UpdateManifestResponse> manifest = releaseService.latestLegacyManifest();
-
-		assertThat(manifest).isPresent();
-		assertThat(manifest.get().apkUrl())
-				.isEqualTo("https://shortlink.hjj888.cc/downloads/android/ShortLink-v0.7.5.apk");
-		assertThat(manifest.get().sha256Url())
-				.isEqualTo("https://shortlink.hjj888.cc/downloads/android/ShortLink-v0.7.5.apk.sha256");
-	}
-
-	@Test
-	void legacyAssetDownloadUrlPresignsMatchingStoredAsset() {
-		AppRelease release = AppRelease.create("0.7.4", 27, "releases/android/ShortLink-v0.7.4.apk",
-				"releases/android/ShortLink-v0.7.4.apk.sha256", 12345L, 81L,
-				"abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", "ShortLink v0.7.4",
-				"Bug fixes", false, 1);
-		when(releaseRepository.findByApkObjectKeyOrSha256ObjectKey(
-				"releases/android/ShortLink-v0.7.4.apk.sha256",
-				"releases/android/ShortLink-v0.7.4.apk.sha256")).thenReturn(Optional.of(release));
-		when(cosPresignService.presignDownload("releases/android/ShortLink-v0.7.4.apk.sha256"))
-				.thenReturn("https://cos.example.com/old-sha?token=abc");
-
-		assertThat(releaseService.legacyAssetDownloadUrl("ShortLink-v0.7.4.apk.sha256"))
-				.contains("https://cos.example.com/old-sha?token=abc");
 	}
 
 	@Test

@@ -2,7 +2,7 @@
 
 单机部署基础设施目录，当前使用 Docker Compose 编排以下服务：
 
-- `nginx`：唯一外部 HTTP 入口，托管后台 Web，并转发 `/api/` 与旧版 ShortLink Android 下载路径到后端。
+- `nginx`：唯一外部 HTTP 入口，托管后台 Web，并转发 `/api/` 到后端。
 - `backend`：Spring Boot 核心业务服务。
 - `content-provider`：Flask ReelShort 内容源服务，仅供后端内部访问。
 - `postgres`：核心业务数据库。
@@ -24,11 +24,9 @@ docker compose --env-file .env up -d --build
 
 发布文件由本地脚本上传到腾讯云 COS，并由后端写入 `app_releases` 表：
 
-- 新版版本清单：`/api/app/release/latest`，直接返回 COS 预签名下载 URL。
-- 旧版兼容清单：`/api/app/update/latest`，返回 `/downloads/android/ShortLink-vX.Y.Z.apk[.sha256]` 稳定 URL。
-- 旧版下载路径：`/downloads/android/ShortLink-vX.Y.Z.apk[.sha256]`，由 Nginx 转发到后端，后端 302 到 COS 预签名 URL。
+- 版本清单：`/api/app/release/latest`，直接返回 COS 预签名下载 URL。
 
-COS 下载链接短时过期；旧版稳定路径只承担兼容跳转，不保存 APK 文件。
+COS 下载链接短时过期；旧版 `/api/app/update/latest` 与 `/downloads/android/` 兼容链路已删除。
 
 需要从宿主机直接连接 PostgreSQL 或 Redis 调试时，显式叠加仅绑定 loopback 的 override：
 
