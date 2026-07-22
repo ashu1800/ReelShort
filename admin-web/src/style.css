@@ -149,6 +149,15 @@ h1 {
   background: #ffffff;
 }
 
+.detail-summary > * {
+  min-width: 0;
+}
+
+.detail-summary .mono {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 .muted {
   margin-bottom: 6px;
   color: #6b7280;

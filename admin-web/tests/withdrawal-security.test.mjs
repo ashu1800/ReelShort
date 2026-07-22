@@ -5,6 +5,7 @@ import test from 'node:test'
 const apiSource = readFileSync(new URL('../src/services/adminApi.ts', import.meta.url), 'utf8')
 const viewSource = readFileSync(new URL('../src/views/WithdrawalsView.vue', import.meta.url), 'utf8')
 const usersViewSource = readFileSync(new URL('../src/views/UsersView.vue', import.meta.url), 'utf8')
+const styleSource = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
 const configLabelsSource = readFileSync(new URL('../src/views/systemConfigLabels.ts', import.meta.url), 'utf8')
 const configViewSource = readFileSync(new URL('../src/views/SystemConfigsView.vue', import.meta.url), 'utf8')
 
@@ -82,4 +83,9 @@ test('user VIP operations only submit an expiry timestamp or an empty cancel req
 test('cancelled point transfers are absent from user detail contracts', () => {
   assert.doesNotMatch(apiSource, /PointTransfer|fetchUserPointTransfers|point-transfers/)
   assert.doesNotMatch(usersViewSource, /积分交易|pointTransfers|fetchUserPointTransfers|pointTransferRecordCount/)
+})
+
+test('user detail summary wraps long cold wallet addresses inside their grid cell', () => {
+  assert.match(styleSource, /\.detail-summary\s*>\s*\*\s*\{[^}]*min-width:\s*0/)
+  assert.match(styleSource, /\.detail-summary\s+\.mono\s*\{[^}]*overflow-wrap:\s*anywhere/)
 })
