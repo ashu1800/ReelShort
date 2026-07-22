@@ -9,20 +9,36 @@ import org.junit.jupiter.api.Test;
 class WithdrawalConversionTests {
 
 	@Test
-	void calculatesDefaultMinimumPointsAndUsdtValue() {
-		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.02"), new BigDecimal("7.2"),
-				new BigDecimal("10"));
+	void calculatesMinimumPointsAfterFeeAndDirectUsdtValue() {
+		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.14"), 10);
 
-		assertThat(conversion.minimumPoints()).isEqualTo(3600);
-		assertThat(conversion.usdtPerPoint()).isEqualByComparingTo("0.00277778");
-		assertThat(conversion.usdtAmount(3600)).isEqualByComparingTo("10.000000");
+		assertThat(conversion.minimumPoints()).isEqualTo(5);
+		assertThat(conversion.usdtPer50Points()).isEqualByComparingTo("0.14");
+		assertThat(conversion.usdtPerPoint()).isEqualByComparingTo("0.0028");
+		assertThat(conversion.usdtAmount(5)).isEqualByComparingTo("0.01");
 	}
 
 	@Test
-	void roundsStoredUsdtAmountToSixDecimalPlaces() {
-		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.02"), new BigDecimal("7.2"),
-				new BigDecimal("10"));
+	void roundsUsdtDownToCentsAfterFee() {
+		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.14"), 10);
 
-		assertThat(conversion.usdtAmount(1)).isEqualByComparingTo("0.002778");
+		assertThat(conversion.usdtAmount(4)).isEqualByComparingTo("0.00");
+		assertThat(conversion.usdtAmount(101)).isEqualByComparingTo("0.25");
+	}
+
+	@Test
+	void rejectsAConversionThatCannotProduceMinimumUsdt() {
+		org.assertj.core.api.Assertions.assertThatThrownBy(
+				() -> new WithdrawalConversion(new BigDecimal("0.14"), 100).minimumPoints())
+				.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void preservesAllEightRateDecimalsWhenCalculatingAmount() {
+		WithdrawalConversion conversion = new WithdrawalConversion(new BigDecimal("0.00000003"), 10);
+
+		int minimumPoints = conversion.minimumPoints();
+		assertThat(minimumPoints).isPositive();
+		assertThat(conversion.usdtAmount(minimumPoints)).isEqualByComparingTo("0.01");
 	}
 }

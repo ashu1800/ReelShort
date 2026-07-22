@@ -6,21 +6,20 @@
 
 默认配置：
 
-- `withdraw.cny-per-point=0.02`，即 50 积分 = 1 CNY。
-- `withdraw.cny-per-usd=7.2`，即 1 USD = 7.2 CNY。
-- `withdraw.minimum-usd=10`。
+- `withdraw.usdt-per-50-points=0.14`，即 50 积分 = 0.14 USDT。
+- `withdraw.fee-percent=10`，手续费积分从用户提交的提现积分中扣除。
 
-最低提现积分为 `ceil(minimumUsd * cnyPerUsd / cnyPerPoint)`，默认是 `3600` 积分。到账 USDT 为 `pointAmount * cnyPerPoint / cnyPerUsd`，按 6 位小数保存。
+手续费积分为 `ceil(pointAmount * feePercent / 100)`，实际可提现积分为 `pointAmount - feePoints`。到账金额为 `可提现积分 * usdtPer50Points / 50`，始终向下截断到 2 位小数，不四舍五入。实际到账必须至少为 `0.01 USDT`，最低提现积分由后端按当前比例和手续费动态计算；默认配置下是 5 积分。
 
 ## App 接口
 
 ### `GET /api/app/withdrawals/summary`
 
-返回余额、冻结积分、可用积分、动态最低提现积分、USDT 比例、人民币比例、汇率、最低美元金额和钱包地址。
+返回余额、冻结积分、可用积分、动态最低提现积分、`usdtPer50Points`、`usdtPerPoint`、`minimumUsdt=0.01`、手续费百分比和钱包地址，不再返回人民币或美元换算字段。
 
 ### `POST /api/app/withdrawals`
 
-请求只提交 `pointAmount`。后端按当前配置保存换算快照并冻结积分。只有当前绑定 ERC20 钱包的用户可以创建申请；历史非 ERC20 钱包必须重新绑定 ERC20 后再次申请。
+请求只提交 `pointAmount`。后端按当前配置计算手续费和 2 位 USDT 金额，保存 `usdt_per_50_points` 快照并冻结用户提交的全部积分。只有当前绑定 ERC20 钱包的用户可以创建申请；历史非 ERC20 钱包必须重新绑定 ERC20 后再次申请。
 
 ### 钱包写操作
 
@@ -55,3 +54,5 @@
 ## 数据迁移
 
 V27 将历史 `PENDING` 的非 ERC20 提现标记为 `REJECTED` 并释放对应冻结积分；历史已处理记录保持只读，不删除。
+
+V28 新增可空 `usdt_per_50_points` 快照列，只供新申请写入；历史提现的 `usdt_amount`、旧比例和旧人民币快照不回填、不重算。

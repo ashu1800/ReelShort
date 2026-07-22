@@ -46,7 +46,7 @@ class AdminWithdrawalControllerTests {
 	@Test
 	void withdrawalResponseOnlyExposesActualFeeForConfirmedAttempt() {
 		WithdrawalRequest request = WithdrawalRequest.create(UUID.randomUUID(), 3600, 0,
-				new WithdrawalConversion(new BigDecimal("0.02"), new BigDecimal("7.2"), new BigDecimal("10")),
+				new WithdrawalConversion(new BigDecimal("0.14"), 0),
 				"ERC20", "0x1111111111111111111111111111111111111111");
 		PreparedPayoutTransaction signed = new PreparedPayoutTransaction("ERC20",
 				"0x2222222222222222222222222222222222222222",

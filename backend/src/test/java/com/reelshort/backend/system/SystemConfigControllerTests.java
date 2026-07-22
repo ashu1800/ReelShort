@@ -50,9 +50,7 @@ class SystemConfigControllerTests {
 		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "35");
 		systemConfigService.update(SystemConfigRegistry.CONTENT_RECOMMENDATION_STRATEGY, "LATEST");
-		systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT, "0.02");
-		systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_USD, "7.2");
-		systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, "10");
+		systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS, "0.14");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 		jdbcTemplate.update("delete from point_daily_earning_quotas");
 		jdbcTemplate.update("delete from point_daily_earning_rules");
@@ -65,14 +63,12 @@ class SystemConfigControllerTests {
 		mockMvc.perform(get("/api/admin/system/configs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data", hasSize(13)))
+				.andExpect(jsonPath("$.data", hasSize(11)))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.watch.seconds-per-point")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.maximum")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("points.daily-earned.fluctuation-percent")))
 				.andExpect(jsonPath("$.data[*].key", hasItem("content.recommendation.strategy")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.cny-per-point")))
-				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.cny-per-usd")))
-			.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.minimum-usd")))
+				.andExpect(jsonPath("$.data[*].key", hasItem("withdraw.usdt-per-50-points")))
 			.andExpect(jsonPath("$.data[*].key", hasItem("vip.price-usdt")))
 			.andExpect(jsonPath("$.data[*].key", hasItem("vip.free-episodes")))
 			.andExpect(jsonPath("$.data[*].key", hasItem("vip.collection-address")))
@@ -154,20 +150,23 @@ class SystemConfigControllerTests {
 	}
 
 	@Test
-	void withdrawalConversionConfigsRejectInvalidValues() throws Exception {
+	void directWithdrawalRateRejectsInvalidValuesAndLegacyKeys() throws Exception {
 		String adminToken = adminLogin();
 
-		updateConfig(adminToken, "withdraw.cny-per-point", "0.123456789")
+		updateConfig(adminToken, "withdraw.usdt-per-50-points", "0.123456789")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value(400));
 
-		updateConfig(adminToken, "withdraw.cny-per-usd", "1001")
+		updateConfig(adminToken, "withdraw.fee-percent", "100")
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value(400));
 
-		updateConfig(adminToken, "withdraw.cny-per-point", "0.12345678")
+		updateConfig(adminToken, "withdraw.usdt-per-50-points", "0.14")
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.value").value("0.12345678"));
+				.andExpect(jsonPath("$.data.value").value("0.14"));
+
+		updateConfig(adminToken, "withdraw.cny-per-point", "0.02")
+				.andExpect(status().isNotFound());
 	}
 
 	@Test
@@ -182,15 +181,6 @@ class SystemConfigControllerTests {
 
 		assertThat(pointsService.awardWatchProgress(java.util.UUID.randomUUID(), "admin-snapshot-book", 1, 100, 1000)
 				.awardedPoints()).isEqualTo(1000);
-	}
-
-	@Test
-	void withdrawalConversionRejectsACombinationThatOverflowsMinimumPoints() throws Exception {
-		String adminToken = adminLogin();
-
-		updateConfig(adminToken, "withdraw.cny-per-point", "0.00000001")
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value(400));
 	}
 
 	@Test

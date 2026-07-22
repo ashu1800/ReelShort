@@ -15,9 +15,8 @@ Authorization: Bearer <admin-token>
 | `points.watch.seconds-per-point` | `60` | 整数，`1..86400` | 完成视频后每获得 1 积分所需秒数。 |
 | `points.daily-earned.maximum` | `1000` | 整数，`0..1000000` | 每账号每日自动获取积分上限，`0` 表示不限制。 |
 | `points.daily-earned.fluctuation-percent` | `35` | 整数，`0..100` | 每账号每日随机向下浮动百分比的上限。 |
-| `withdraw.cny-per-point` | `0.02` | 正数，最多 8 位小数，最大 `100` | 1 积分对应人民币金额。 |
-| `withdraw.cny-per-usd` | `7.2` | 正数，最多 8 位小数，最大 `1000` | 1 USD 对应人民币金额。 |
-| `withdraw.minimum-usd` | `10` | 正数，最多 2 位小数 | 最低提现美元价值。 |
+| `withdraw.usdt-per-50-points` | `0.14` | 正数，最多 8 位小数，最大 `100` | 每 50 积分对应的 USDT 金额。 |
+| `withdraw.fee-percent` | `10` | 整数，`0..99` | 从用户提交积分中扣除的提现手续费百分比。 |
 | `points.transfer.minimum-points` | `1` | 整数，`1..1000000` | 用户积分交易最低积分。 |
 | `content.recommendation.strategy` | `LATEST` | `LATEST` / `POPULAR` | 首页推荐策略占位。 |
 

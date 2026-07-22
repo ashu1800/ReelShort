@@ -84,9 +84,7 @@ export type WithdrawalRequest = {
   pointAmount: number
   usdtAmount: string
   usdtPerPoint: string
-  cnyPerPoint: string | null
-  cnyPerUsd: string | null
-  minimumUsd: string | null
+  usdtPer50Points: string | null
   network: string
   walletAddress: string
   status: WithdrawalStatus

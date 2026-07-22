@@ -594,7 +594,7 @@ private fun AccountPrimaryActions(
                 } else {
                     copy.accountGuestSignInSubtitle
                 },
-                trailing = withdrawalSummary?.usdtPerPoint?.let { "USDT $it" }.orEmpty(),
+                trailing = withdrawalSummary?.minimumUsdt?.let { "Min USDT $it" }.orEmpty(),
                 modifier = Modifier.weight(1f),
                 onClick = if (isLoggedIn) {
                     { openSheetForAction(copy.accountWithdrawTitle) }

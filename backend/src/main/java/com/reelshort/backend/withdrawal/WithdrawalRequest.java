@@ -34,6 +34,9 @@ public class WithdrawalRequest {
 	@Column(name = "usdt_per_point", nullable = false, precision = 18, scale = 8)
 	private BigDecimal usdtPerPoint;
 
+	@Column(name = "usdt_per_50_points", precision = 18, scale = 8)
+	private BigDecimal usdtPer50Points;
+
 	@Column(name = "cny_per_point", precision = 18, scale = 8)
 	private BigDecimal cnyPerPoint;
 
@@ -72,7 +75,8 @@ public class WithdrawalRequest {
 	}
 
 	private WithdrawalRequest(UUID id, UUID userId, int pointAmount, int feeAmount, BigDecimal usdtAmount,
-			BigDecimal usdtPerPoint, BigDecimal cnyPerPoint, BigDecimal cnyPerUsd, BigDecimal minimumUsd,
+			BigDecimal usdtPerPoint, BigDecimal usdtPer50Points, BigDecimal cnyPerPoint, BigDecimal cnyPerUsd,
+			BigDecimal minimumUsd,
 			String network, String walletAddress, OffsetDateTime createdAt) {
 		this.id = id;
 		this.userId = userId;
@@ -80,6 +84,7 @@ public class WithdrawalRequest {
 		this.feeAmount = feeAmount;
 		this.usdtAmount = usdtAmount;
 		this.usdtPerPoint = usdtPerPoint;
+		this.usdtPer50Points = usdtPer50Points;
 		this.cnyPerPoint = cnyPerPoint;
 		this.cnyPerUsd = cnyPerUsd;
 		this.minimumUsd = minimumUsd;
@@ -93,14 +98,10 @@ public class WithdrawalRequest {
 			WithdrawalConversion conversion, String network, String walletAddress) {
 		// L4: 用 HALF_UP 而非 UNNECESSARY，避免配置小数过多时抛 ArithmeticException
 		BigDecimal normalizedRate = conversion.usdtPerPoint().setScale(8, RoundingMode.HALF_UP);
-		// 需求2: pointAmount 是用户输入的扣除总额，实际提取 = pointAmount - feeAmount
-		// USDT 按实际可提取积分换算
-		int withdrawable = pointAmount - feeAmount;
 		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, feeAmount,
-				conversion.usdtAmount(withdrawable),
-				normalizedRate, conversion.cnyPerPoint().setScale(8, RoundingMode.HALF_UP),
-				conversion.cnyPerUsd().setScale(8, RoundingMode.HALF_UP),
-				conversion.minimumUsd().setScale(2, RoundingMode.HALF_UP), network, walletAddress,
+				conversion.usdtAmount(pointAmount), normalizedRate,
+				conversion.usdtPer50Points().setScale(8, RoundingMode.HALF_UP), null, null, null,
+				network, walletAddress,
 				OffsetDateTime.now());
 	}
 
@@ -162,6 +163,10 @@ public class WithdrawalRequest {
 
 	public BigDecimal usdtPerPoint() {
 		return usdtPerPoint;
+	}
+
+	public BigDecimal usdtPer50Points() {
+		return usdtPer50Points;
 	}
 
 	public BigDecimal cnyPerPoint() {

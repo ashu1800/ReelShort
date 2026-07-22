@@ -20,17 +20,9 @@ export const systemConfigLabels: Record<string, { name: string; description: str
     name: '公平模式',
     description: '开启后观看奖励按秒精确累积小数十分位（1=开启，0=关闭）。余额始终为真实整数，切换零风险。',
   },
-  'withdraw.cny-per-point': {
-    name: '提现 · 每积分人民币',
-    description: '提现时每个积分折合的人民币价值。',
-  },
-  'withdraw.cny-per-usd': {
-    name: '提现 · 人民币兑美元',
-    description: '提现换算时的人民币兑美元汇率。',
-  },
-  'withdraw.minimum-usd': {
-    name: '提现 · 最低 USD',
-    description: '申请提现所需的最低 USD 金额。',
+  'withdraw.usdt-per-50-points': {
+    name: '提现 · 每50积分USDT',
+    description: '提现时每 50 积分折合的 USDT 金额。',
   },
   'withdraw.fee-percent': {
     name: '提现手续费（%）',

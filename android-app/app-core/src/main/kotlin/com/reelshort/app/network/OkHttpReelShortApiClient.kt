@@ -439,10 +439,9 @@ class OkHttpReelShortApiClient(
             availablePoints = availablePoints,
             minimumPoints = minimumPoints,
             usdtPerPoint = usdtPerPoint,
+            usdtPer50Points = usdtPer50Points,
+            minimumUsdt = minimumUsdt,
             walletAddress = walletAddress,
-            cnyPerPoint = cnyPerPoint,
-            cnyPerUsd = cnyPerUsd,
-            minimumUsd = minimumUsd,
             feePercent = feePercent ?: 0,
         )
 

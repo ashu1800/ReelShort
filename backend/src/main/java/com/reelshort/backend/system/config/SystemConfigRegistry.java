@@ -19,9 +19,7 @@ public class SystemConfigRegistry {
 	public static final String POINTS_DAILY_EARNED_FLUCTUATION_PERCENT = "points.daily-earned.fluctuation-percent";
 	public static final String POINTS_FAIR_MODE_ENABLED = "points.fair-mode.enabled";
 	public static final String CONTENT_RECOMMENDATION_STRATEGY = "content.recommendation.strategy";
-	public static final String WITHDRAW_CNY_PER_POINT = "withdraw.cny-per-point";
-	public static final String WITHDRAW_CNY_PER_USD = "withdraw.cny-per-usd";
-	public static final String WITHDRAW_MINIMUM_USD = "withdraw.minimum-usd";
+	public static final String WITHDRAW_USDT_PER_50_POINTS = "withdraw.usdt-per-50-points";
 	public static final String WITHDRAW_FEE_PERCENT = "withdraw.fee-percent";
 	public static final String VIP_PRICE_USDT = "vip.price-usdt";
 	public static final String VIP_FREE_EPISODES = "vip.free-episodes";
@@ -41,12 +39,8 @@ public class SystemConfigRegistry {
 			new SystemConfigDefinition(POINTS_FAIR_MODE_ENABLED, "0",
 					"Fair mode: watch rewards accumulate fractional tenths for precise per-second calculation (1=on, 0=off). Balance is always real integer; toggling is risk-free.",
 					ValueType.INTEGER, 0, 1, Set.of()),
-			new SystemConfigDefinition(WITHDRAW_CNY_PER_POINT, "0.02",
-					"CNY value of one point for withdrawals.", ValueType.DECIMAL, 0, 0, Set.of()),
-			new SystemConfigDefinition(WITHDRAW_CNY_PER_USD, "7.2",
-					"CNY value of one USD for withdrawal conversion.", ValueType.DECIMAL, 0, 0, Set.of()),
-			new SystemConfigDefinition(WITHDRAW_MINIMUM_USD, "10",
-					"Minimum USD value required for withdrawal.", ValueType.DECIMAL, 0, 0, Set.of()),
+			new SystemConfigDefinition(WITHDRAW_USDT_PER_50_POINTS, "0.14",
+					"USDT value of 50 points for withdrawals.", ValueType.DECIMAL, 0, 0, Set.of()),
 			new SystemConfigDefinition(WITHDRAW_FEE_PERCENT, "10",
 					"Withdrawal fee percentage deducted from points.", ValueType.INTEGER, 0, 100, Set.of()),
 			new SystemConfigDefinition(VIP_PRICE_USDT, "15",

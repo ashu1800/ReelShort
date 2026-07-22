@@ -249,36 +249,24 @@ internal fun withdrawalConversionLines(
     if (summary == null) {
         return listOf(
             "${copy.accountWithdrawAvailableLabel} 0 ${copy.listPointsLabel} · " +
-                "${copy.accountWithdrawMinimumLabel} 0 · ${copy.accountWithdrawRateLabel} = - USDT",
+                "${copy.accountWithdrawMinimumLabel} 0 ${copy.listPointsLabel} / 0.01 USDT",
         )
     }
-    val cnyPerPoint = summary.cnyPerPoint.toPositiveDecimalOrNull()
-    val cnyPerUsd = summary.cnyPerUsd.toPositiveDecimalOrNull()
-    val minimumUsd = summary.minimumUsd.toPositiveDecimalOrNull()
-    if (cnyPerPoint == null || cnyPerUsd == null || minimumUsd == null) {
-        return listOf(
-            "${copy.accountWithdrawAvailableLabel} ${summary.availablePoints} ${copy.listPointsLabel} · " +
-                "${copy.accountWithdrawMinimumLabel} ${summary.minimumPoints} · " +
-                "${copy.accountWithdrawRateLabel} = ${summary.usdtPerPoint} USDT",
-        )
-    }
-
+    val minimumUsdt = summary.minimumUsdt.toPositiveDecimalOrNull() ?: BigDecimal("0.01")
     val lines = mutableListOf(
         "${copy.accountWithdrawAvailableLabel} ${summary.availablePoints} ${copy.listPointsLabel} · " +
             "${copy.accountWithdrawMinimumLabel} ${summary.minimumPoints} ${copy.listPointsLabel} / " +
-            "${minimumUsd.toUiDecimal()} USD",
-        "${copy.accountWithdrawRateLabel} = ${cnyPerPoint.toUiDecimal()} CNY · " +
-            "1 USD = ${cnyPerUsd.toUiDecimal()} CNY",
+            "${minimumUsdt.toUiDecimal()} USDT",
     )
     if (pointAmount > 0) {
         // M6: 用 Long 防溢出（pointAmount * feePercent 在大额时可能超过 Int.MAX_VALUE）
         val fee = if (summary.feePercent > 0) ((pointAmount.toLong() * summary.feePercent + 99) / 100).toInt() else 0
         val withdrawable = pointAmount - fee
-        val points = withdrawable.toBigDecimal()
-        val cnyAmount = points.multiply(cnyPerPoint)
-        val usdtAmount = points.multiply(cnyPerPoint).divide(cnyPerUsd, 6, RoundingMode.HALF_UP)
-        val estimateLabel = "Estimated"
-        lines += "$estimateLabel ${cnyAmount.toUiDecimal()} CNY ≈ ${usdtAmount.toUiDecimal()} USDT"
+        val usdtPerPoint = summary.usdtPerPoint.toPositiveDecimalOrNull()
+        val usdtAmount = usdtPerPoint?.multiply(withdrawable.toBigDecimal())?.setScale(2, RoundingMode.DOWN)
+        if (usdtAmount != null) {
+            lines += "Estimated ${usdtAmount.toUiDecimal()} USDT"
+        }
         if (fee > 0) {
             lines += "Fee: ${summary.feePercent}% ($fee pts) · You receive: $withdrawable pts · Total deduct: $pointAmount pts"
         }

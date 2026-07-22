@@ -152,10 +152,9 @@ class FakeReelShortApiClient : ReelShortApiClient {
             availablePoints = 15,
             minimumPoints = 100,
             usdtPerPoint = "0.001",
+            usdtPer50Points = "0.05",
+            minimumUsdt = "0.01",
             walletAddress = "0x1111111111111111111111111111111111111111",
-            cnyPerPoint = "0.02",
-            cnyPerUsd = "7.2",
-            minimumUsd = "10",
         )
 
     override suspend fun getWithdrawals(): List<WithdrawalRecord> =

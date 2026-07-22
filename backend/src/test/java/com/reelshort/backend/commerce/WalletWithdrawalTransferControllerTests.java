@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -51,6 +52,9 @@ class WalletWithdrawalTransferControllerTests {
 
 	@Autowired
 	private AdminAuditLogRepository adminAuditLogRepository;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
 
 	private static final String TEST_TOTP_SECRET = "JBSWY3DPEHPK3PXP";
 
@@ -327,12 +331,10 @@ class WalletWithdrawalTransferControllerTests {
 	}
 
 	@Test
-	void withdrawalUsdtAmountIsRoundedToStorageScale() throws Exception {
+	void withdrawalUsdtAmountIsRoundedDownToCents() throws Exception {
 		String adminToken = adminLogin();
 		try {
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT, "0.12345678");
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_USD, "1");
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, "1");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS, "6.22955556");
 			RegisteredUser user = createUser("wallet-rounding");
 			adjustPoints(adminToken, user.userId(), 200, "seed withdrawal balance");
 			bindWallet(user.token(), VALID_ETH_ADDRESS);
@@ -347,14 +349,17 @@ class WalletWithdrawalTransferControllerTests {
 							"""))
 					.andExpect(status().isOk())
 				// pointAmount=101, fee=ceil(101*10/100)=11, withdrawable=90
-				// usdt = 90 * 0.12345678 / 1 = 11.111110 → stripTrailingZeros → 11.11111
-				.andExpect(jsonPath("$.data.usdtAmount").value("11.11111"))
-					.andExpect(jsonPath("$.data.usdtPerPoint").value("0.12345678"));
+				// usdt = 90 * 6.22955556 / 50 = 11.213200008 → down to 11.21
+				.andExpect(jsonPath("$.data.usdtAmount").value("11.21"))
+					.andExpect(jsonPath("$.data.usdtPer50Points").value("6.22955556"));
+
+			org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+					"select usdt_per_50_points from withdrawal_requests where user_id = ?",
+					java.math.BigDecimal.class, user.userId()))
+					.isEqualByComparingTo("6.22955556");
 		}
 		finally {
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_POINT, "0.02");
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_CNY_PER_USD, "7.2");
-			systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USD, "10");
+			systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS, "0.14");
 		}
 	}
 
