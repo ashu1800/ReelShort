@@ -165,6 +165,14 @@ class SystemConfigControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.value").value("0.14"));
 
+		updateConfig(adminToken, "withdraw.usdt-per-50-points", "101.12345678")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.value").value("101.12345678"));
+
+		updateConfig(adminToken, "withdraw.usdt-per-50-points", "30000")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+
 		updateConfig(adminToken, "withdraw.cny-per-point", "0.02")
 				.andExpect(status().isNotFound());
 	}

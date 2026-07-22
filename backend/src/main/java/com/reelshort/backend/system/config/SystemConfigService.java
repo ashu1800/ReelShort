@@ -15,6 +15,7 @@ import com.reelshort.backend.admin.AdminException;
 @Service
 public class SystemConfigService {
 	private static final ReentrantLock CONFIG_UPDATE_LOCK = new ReentrantLock();
+	private static final BigDecimal MAX_WITHDRAWAL_USDT = new BigDecimal("999999999999.999999");
 
 	private final SystemConfigRepository systemConfigRepository;
 	private final SystemConfigRegistry systemConfigRegistry;
@@ -77,6 +78,9 @@ public class SystemConfigService {
 		long withdrawablePoints = pointAmount - feeAmount;
 		BigDecimal maximumUsdt = rate.multiply(BigDecimal.valueOf(withdrawablePoints))
 				.divide(BigDecimal.valueOf(50), 2, RoundingMode.DOWN);
+		if (maximumUsdt.compareTo(MAX_WITHDRAWAL_USDT) > 0) {
+			throw new AdminException(400, "withdrawal conversion would overflow usdt amount");
+		}
 		if (maximumUsdt.compareTo(new BigDecimal("0.01")) < 0) {
 			throw new AdminException(400, "withdrawal rate is too small");
 		}
