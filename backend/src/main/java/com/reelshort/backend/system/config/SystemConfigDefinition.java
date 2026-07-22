@@ -62,6 +62,9 @@ public record SystemConfigDefinition(
 	}
 
 	private BigDecimal decimalMaximum(String configKey) {
+		if ("withdraw.usdt-per-50-points".equals(configKey)) {
+			return new BigDecimal("9999999999.99999999");
+		}
 		return BigDecimal.valueOf(100);
 	}
 
