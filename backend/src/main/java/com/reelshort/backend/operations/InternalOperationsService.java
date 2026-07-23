@@ -1,8 +1,13 @@
 package com.reelshort.backend.operations;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 
 import com.reelshort.backend.admin.AdminAuditService;
 import com.reelshort.backend.auth.AuthException;
@@ -24,6 +29,7 @@ import com.reelshort.backend.watch.WatchRecord;
 import com.reelshort.backend.watch.WatchRecordRepository;
 import com.reelshort.backend.watch.WatchRecordResponse;
 import com.reelshort.backend.watch.WatchService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,13 +45,15 @@ public class InternalOperationsService {
 	private final WatchEpisodeRewardClaimRepository rewardClaimRepository;
 	private final ContentCacheService contentCacheService;
 	private final AdminAuditService adminAuditService;
+	private final Supplier<Random> bookOrderRandom;
 
 	public InternalOperationsService(UserAccountRepository userAccountRepository, PointsService pointsService,
 			WatchService watchService, WatchRecordRepository watchRecordRepository,
 			ContentBookCacheRepository contentBookCacheRepository,
 			ContentEpisodeRuntimeCacheRepository runtimeCacheRepository,
 			WatchEpisodeRewardClaimRepository rewardClaimRepository,
-			ContentCacheService contentCacheService, AdminAuditService adminAuditService) {
+			ContentCacheService contentCacheService, AdminAuditService adminAuditService,
+			ObjectProvider<Random> bookOrderRandomProvider) {
 		this.userAccountRepository = userAccountRepository;
 		this.pointsService = pointsService;
 		this.watchService = watchService;
@@ -55,6 +63,8 @@ public class InternalOperationsService {
 		this.rewardClaimRepository = rewardClaimRepository;
 		this.contentCacheService = contentCacheService;
 		this.adminAuditService = adminAuditService;
+		Random configuredRandom = bookOrderRandomProvider.getIfAvailable();
+		this.bookOrderRandom = configuredRandom == null ? ThreadLocalRandom::current : () -> configuredRandom;
 	}
 
 	public InternalPointsAccountResponse pointsAccount(UUID userId) {
@@ -117,8 +127,10 @@ public class InternalOperationsService {
 	private InternalWatchRewardTaskResponse taskFromContentCache(UUID userId) {
 		// 一次性预取该用户全部已领奖的 (bookId, episodeNum) 集合，避免逐集 N+1 查询。
 		Set<String> claimed = rewardClaimRepository.findClaimedKeysByUserId(userId);
-		for (ContentBookCache book : contentBookCacheRepository
-				.findByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale.ENGLISH, 0)) {
+		List<ContentBookCache> books = new ArrayList<>(contentBookCacheRepository
+				.findByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale.ENGLISH, 0));
+		Collections.shuffle(books, bookOrderRandom.get());
+		for (ContentBookCache book : books) {
 			// 通过 getEpisodes 获取剧集列表：episode_cache 命中则秒回，缺失时向上游 provider 现拉并回填，
 			// 使候选池覆盖全部 ENGLISH 剧，而非仅限已预热的少数剧集。
 			List<ContentEpisode> episodes;
