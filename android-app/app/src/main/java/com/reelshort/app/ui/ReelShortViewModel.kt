@@ -16,7 +16,6 @@ import com.reelshort.app.state.AppUiState
 import com.reelshort.app.BuildConfig
 import com.reelshort.app.AndroidSessionStore
 import com.reelshort.app.update.AndroidUpdateInstaller
-import com.reelshort.app.update.AndroidUpdatePackageVerifier
 import com.reelshort.app.update.InstallRequest
 import com.reelshort.app.update.OkHttpReleaseDownloader
 import com.reelshort.app.update.SemanticVersion
@@ -251,7 +250,6 @@ class ReelShortViewModel(
                             userAgent = "ShortLink-Android/${BuildConfig.VERSION_NAME}",
                         ),
                         downloader = OkHttpReleaseDownloader(updateHttpClient),
-                        packageVerifier = AndroidUpdatePackageVerifier.create(context),
                         currentVersion = currentVersion,
                     )
                     val updateInstaller = AndroidUpdateInstaller(context)

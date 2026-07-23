@@ -40,10 +40,6 @@ interface ReleaseDownloader {
     suspend fun fetchSha256(url: String): String
 }
 
-interface UpdatePackageVerifier {
-    suspend fun verify(apkFile: File)
-}
-
 sealed class ReleaseUpdateException(message: String, cause: Throwable? = null) : IOException(message, cause) {
     class Http(val statusCode: Int) : ReleaseUpdateException("Update service returned HTTP $statusCode")
     class InvalidRelease(reason: String) : ReleaseUpdateException("Invalid release: $reason")

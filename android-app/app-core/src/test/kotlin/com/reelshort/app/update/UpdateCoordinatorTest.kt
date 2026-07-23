@@ -53,18 +53,16 @@ class UpdateCoordinatorTest {
     }
 
     @Test
-    fun downloadsVerifiesAndPreparesInstall() = runTest {
+    fun downloadsChecksIntegrityAndPreparesInstall() = runTest {
         val cache = Files.createTempDirectory("update-coordinator").toFile()
         val downloader = FakeDownloader("apk".toByteArray())
-        val verifier = RecordingVerifier()
-        val coordinator = coordinator(downloader = downloader, verifier = verifier)
+        val coordinator = coordinator(downloader = downloader)
         coordinator.checkForUpdate(manual = false)
 
         coordinator.downloadAvailable(cache)
 
         val ready = assertIs<UpdateState.ReadyToInstall>(coordinator.state.value)
         assertEquals("ShortLink-v0.2.0.apk", ready.apkFile.name)
-        assertEquals(listOf(ready.apkFile), verifier.files)
         assertEquals(InstallRequest.RequestPermission, coordinator.prepareInstall(canRequestPackageInstalls = false))
         assertIs<UpdateState.PermissionRequired>(coordinator.state.value)
         assertEquals(InstallRequest.Install(ready.apkFile), coordinator.onInstallPermissionResult(granted = true))
@@ -124,11 +122,9 @@ class UpdateCoordinatorTest {
     private fun coordinator(
         client: ReleaseUpdateClient = FakeReleaseClient(release),
         downloader: ReleaseDownloader = FakeDownloader("apk".toByteArray()),
-        verifier: UpdatePackageVerifier = RecordingVerifier(),
     ) = UpdateCoordinator(
         releaseClient = client,
         downloader = downloader,
-        packageVerifier = verifier,
         currentVersion = SemanticVersion(0, 1, 0),
         availableBytes = { Long.MAX_VALUE },
     )
@@ -159,12 +155,5 @@ class UpdateCoordinatorTest {
         }
 
         override suspend fun fetchSha256(url: String): String = checksum
-    }
-
-    private class RecordingVerifier : UpdatePackageVerifier {
-        val files = mutableListOf<File>()
-        override suspend fun verify(apkFile: File) {
-            files += apkFile
-        }
     }
 }

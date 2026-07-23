@@ -43,7 +43,6 @@ sealed interface InstallRequest {
 class UpdateCoordinator(
     private val releaseClient: ReleaseUpdateClient,
     private val downloader: ReleaseDownloader,
-    private val packageVerifier: UpdatePackageVerifier,
     private val currentVersion: SemanticVersion,
     private val availableBytes: (File) -> Long = { it.usableSpace },
     private val maxApkBytes: Long = MAX_APK_BYTES,
@@ -102,7 +101,6 @@ class UpdateCoordinator(
                 throw ReleaseUpdateException.InvalidChecksum()
             }
             moveAtomically(partialFile, finalFile)
-            packageVerifier.verify(finalFile)
             mutableState.value = UpdateState.ReadyToInstall(release, finalFile)
         } catch (error: Throwable) {
             partialFile.delete()

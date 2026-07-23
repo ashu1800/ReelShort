@@ -16,7 +16,7 @@ App 启动
   → GET /api/app/release/latest（游客可访问）
   → 后端查最新发布 → 用 COS Java SDK 生成短时预签名下载链接（默认 1 小时）
   → 返回 manifest（apkUrl / sha256Url 指向预签名链接）
-  → App 下载 + SHA-256 校验 + 签名校验 + 系统安装器安装
+  → App 下载 + SHA-256 校验 + 系统安装器安装
 ```
 
 密钥只在服务端，COS 下载链接短时过期，不暴露原始密钥。
@@ -114,3 +114,4 @@ curl -s https://shortlink.hjj888.cc/api/app/release/latest | python -m json.tool
 - 发布接口由 `X-Internal-Super-Token` 保护，复用 `reelshort.internal.super-token`。
 - `gitleaks` 扫描全历史（push 与 PR），确保无密钥泄漏。
 - 发布脚本钉住当前正式签名证书 SHA-256；如果本地环境变量指向了错误 keystore，发布会在上传前失败。
+- App 下载后只做 SHA-256 完整性校验，包名、版本和签名错误由发布脚本上传前拦截，并由 Android 系统安装器在最终安装阶段兜底。
