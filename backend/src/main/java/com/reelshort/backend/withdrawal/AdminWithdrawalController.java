@@ -2,6 +2,8 @@ package com.reelshort.backend.withdrawal;
 
 import java.util.List;
 import java.util.UUID;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -50,13 +52,24 @@ public class AdminWithdrawalController {
 	@GetMapping("/stats")
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_READ)
 	public ApiResponse<WithdrawalStatsResponse> stats(
-			@RequestParam(defaultValue = "TODAY") String range, HttpServletRequest request) {
+			@RequestParam(defaultValue = "TODAY") String range,
+			@RequestParam(required = false) String fromDate,
+			@RequestParam(required = false) String toDate,
+			HttpServletRequest request) {
 		WithdrawalStatsRange parsed;
 		try {
 			parsed = WithdrawalStatsRange.valueOf(range.trim().toUpperCase(java.util.Locale.ROOT));
 		}
 		catch (RuntimeException exception) {
 			throw new AdminException(400, "unsupported withdrawal stats range");
+		}
+		if (parsed == WithdrawalStatsRange.CUSTOM) {
+			LocalDate parsedFromDate = parseStatsDate(fromDate);
+			LocalDate parsedToDate = parseStatsDate(toDate);
+			if (parsedToDate.isBefore(parsedFromDate)) {
+				throw new AdminException(400, "custom withdrawal stats end date must not be before start date");
+			}
+			return ApiResponse.success(withdrawalStatsService.stats(parsedFromDate, parsedToDate), requestId(request));
 		}
 		return ApiResponse.success(withdrawalStatsService.stats(parsed), requestId(request));
 	}
@@ -92,5 +105,17 @@ public class AdminWithdrawalController {
 
 	private String requestId(HttpServletRequest request) {
 		return (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
+	}
+
+	private LocalDate parseStatsDate(String value) {
+		if (value == null || value.isBlank()) {
+			throw new AdminException(400, "custom withdrawal stats dates are required");
+		}
+		try {
+			return LocalDate.parse(value);
+		}
+		catch (DateTimeParseException exception) {
+			throw new AdminException(400, "custom withdrawal stats dates must use yyyy-MM-dd");
+		}
 	}
 }

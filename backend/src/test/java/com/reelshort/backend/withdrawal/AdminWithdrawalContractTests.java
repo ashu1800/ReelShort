@@ -1,15 +1,22 @@
 package com.reelshort.backend.withdrawal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import com.reelshort.backend.admin.AdminException;
 
 class AdminWithdrawalControllerTests {
 
@@ -94,5 +101,37 @@ class AdminWithdrawalControllerTests {
 		assertThat(responseFields).contains("succeeded", "failed", "items");
 		assertThat(itemFields).contains("payoutStatus", "confirmationCount", "failureReason", "manualReview",
 				"actualFeeAmount", "actualFeeAsset");
+	}
+
+	@Test
+	void statsControllerPassesCustomDatesToStatsService() {
+		WithdrawalStatsService statsService = org.mockito.Mockito.mock(WithdrawalStatsService.class);
+		WithdrawalStatsResponse stats = new WithdrawalStatsResponse(WithdrawalStatsRange.CUSTOM,
+				"2026-07-01T00:00:00+08:00", "2026-07-04T00:00:00+08:00", "28", 4);
+		org.mockito.Mockito.when(statsService.stats(org.mockito.ArgumentMatchers.any(LocalDate.class),
+				org.mockito.ArgumentMatchers.any(LocalDate.class))).thenReturn(stats);
+		AdminWithdrawalController controller = new AdminWithdrawalController(
+				org.mockito.Mockito.mock(WithdrawalService.class), statsService);
+
+		controller.stats("CUSTOM", "2026-07-01", "2026-07-03",
+				org.mockito.Mockito.mock(HttpServletRequest.class));
+
+		ArgumentCaptor<LocalDate> from = ArgumentCaptor.forClass(LocalDate.class);
+		ArgumentCaptor<LocalDate> to = ArgumentCaptor.forClass(LocalDate.class);
+		org.mockito.Mockito.verify(statsService).stats(from.capture(), to.capture());
+		assertThat(from.getValue()).isEqualTo(LocalDate.parse("2026-07-01"));
+		assertThat(to.getValue()).isEqualTo(LocalDate.parse("2026-07-03"));
+	}
+
+	@Test
+	void statsControllerRejectsCustomEndDateBeforeStartDate() {
+		AdminWithdrawalController controller = new AdminWithdrawalController(
+				org.mockito.Mockito.mock(WithdrawalService.class),
+				org.mockito.Mockito.mock(WithdrawalStatsService.class));
+
+		assertThatThrownBy(() -> controller.stats("CUSTOM", "2026-07-03", "2026-07-01",
+				org.mockito.Mockito.mock(HttpServletRequest.class)))
+				.isInstanceOf(AdminException.class)
+				.hasMessage("custom withdrawal stats end date must not be before start date");
 	}
 }

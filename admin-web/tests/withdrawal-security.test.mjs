@@ -37,13 +37,16 @@ test('withdrawal page removes all automatic signing and batch payout controls', 
 })
 
 test('withdrawal stats API supports all preset time ranges', () => {
-  assert.match(apiSource, /export type WithdrawalStatsRange = 'TODAY' \| 'YESTERDAY' \| 'THIS_WEEK' \| 'THIS_MONTH' \| 'LAST_MONTH'/)
-  assert.match(apiSource, /export async function fetchWithdrawalStats\(range: WithdrawalStatsRange\)/)
-  assert.match(apiSource, /params: \{ range \}/)
+  assert.match(apiSource, /export type WithdrawalStatsRange = 'TODAY' \| 'YESTERDAY' \| 'THIS_WEEK' \| 'THIS_MONTH' \| 'LAST_MONTH' \| 'CUSTOM'/)
+  assert.match(apiSource, /export async function fetchWithdrawalStats\(range: WithdrawalStatsRange, customRange\?: WithdrawalStatsCustomRange\)/)
+  assert.match(apiSource, /params: \{ range, \.\.\.customRange \}/)
 
   for (const label of ['今天', '昨天', '本周', '本月', '上月']) {
     assert.match(viewSource, new RegExp(label))
   }
+  assert.match(viewSource, /type="daterange"/)
+  assert.match(viewSource, /fromDate/)
+  assert.match(viewSource, /toDate/)
   assert.match(viewSource, /打款笔数/)
   assert.match(viewSource, /打款金额（USDT）/)
 })

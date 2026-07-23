@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 
 import org.junit.jupiter.api.Test;
@@ -47,5 +48,25 @@ class WithdrawalStatsServiceTests {
 		assertThat(response.to()).isEqualTo("2026-07-01T00:00:00+08:00");
 		assertThat(response.totalUsdt()).isEqualTo("0");
 		assertThat(response.payoutCount()).isZero();
+	}
+
+	@Test
+	void customDateRangeUsesInclusiveShanghaiDates() {
+		WithdrawalRequestRepository repository = mock(WithdrawalRequestRepository.class);
+		WithdrawalStatsAggregate aggregate = mock(WithdrawalStatsAggregate.class);
+		when(repository.aggregateApprovedErc20(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+				.thenReturn(aggregate);
+		when(aggregate.getTotalUsdt()).thenReturn(new BigDecimal("28.000000"));
+		when(aggregate.getPayoutCount()).thenReturn(4L);
+
+		WithdrawalStatsResponse response = new WithdrawalStatsService(repository,
+				Clock.fixed(Instant.parse("2026-07-21T03:00:00Z"), ZoneOffset.UTC))
+				.stats(LocalDate.parse("2026-07-01"), LocalDate.parse("2026-07-03"));
+
+		assertThat(response.range()).isEqualTo(WithdrawalStatsRange.CUSTOM);
+		assertThat(response.from()).isEqualTo("2026-07-01T00:00:00+08:00");
+		assertThat(response.to()).isEqualTo("2026-07-04T00:00:00+08:00");
+		assertThat(response.totalUsdt()).isEqualTo("28");
+		assertThat(response.payoutCount()).isEqualTo(4);
 	}
 }

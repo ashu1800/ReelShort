@@ -5,5 +5,6 @@ public enum WithdrawalStatsRange {
 	YESTERDAY,
 	THIS_WEEK,
 	THIS_MONTH,
-	LAST_MONTH
+	LAST_MONTH,
+	CUSTOM
 }

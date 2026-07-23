@@ -93,7 +93,12 @@ export type WithdrawalRequest = {
   actualFeeAsset: string | null
 }
 
-export type WithdrawalStatsRange = 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'LAST_MONTH'
+export type WithdrawalStatsRange = 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM'
+
+export type WithdrawalStatsCustomRange = {
+  fromDate: string
+  toDate: string
+}
 
 export type WithdrawalStats = {
   range: WithdrawalStatsRange
@@ -432,9 +437,9 @@ export async function fetchWithdrawals() {
 	return response.data.data
 }
 
-export async function fetchWithdrawalStats(range: WithdrawalStatsRange) {
+export async function fetchWithdrawalStats(range: WithdrawalStatsRange, customRange?: WithdrawalStatsCustomRange) {
 	const response = await http.get<ApiResponse<WithdrawalStats>>('/withdrawals/stats', {
-		params: { range },
+		params: { range, ...customRange },
 	})
 	return response.data.data
 }

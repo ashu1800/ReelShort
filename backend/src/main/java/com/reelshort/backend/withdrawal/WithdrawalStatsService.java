@@ -55,10 +55,26 @@ public class WithdrawalStatsService {
 				endDate = today.withDayOfMonth(1);
 				startDate = endDate.minusMonths(1);
 			}
+			case CUSTOM -> throw new IllegalArgumentException("custom withdrawal stats range requires dates");
 			default -> throw new IllegalArgumentException("unsupported withdrawal stats range");
 		}
+		return statsBetween(range, startDate, endDate);
+	}
+
+	public WithdrawalStatsResponse stats(LocalDate fromDate, LocalDate toDate) {
+		if (fromDate == null || toDate == null) {
+			throw new IllegalArgumentException("custom withdrawal stats dates are required");
+		}
+		if (toDate.isBefore(fromDate)) {
+			throw new IllegalArgumentException("custom withdrawal stats end date must not be before start date");
+		}
+		return statsBetween(WithdrawalStatsRange.CUSTOM, fromDate, toDate.plusDays(1));
+	}
+
+	private WithdrawalStatsResponse statsBetween(WithdrawalStatsRange range, LocalDate startDate,
+			LocalDate exclusiveEndDate) {
 		OffsetDateTime from = startDate.atStartOfDay(ZONE).toOffsetDateTime();
-		OffsetDateTime to = endDate.atStartOfDay(ZONE).toOffsetDateTime();
+		OffsetDateTime to = exclusiveEndDate.atStartOfDay(ZONE).toOffsetDateTime();
 		WithdrawalStatsAggregate aggregate = repository.aggregateApprovedErc20(from, to);
 		BigDecimal total = aggregate == null || aggregate.getTotalUsdt() == null
 				? BigDecimal.ZERO : aggregate.getTotalUsdt();

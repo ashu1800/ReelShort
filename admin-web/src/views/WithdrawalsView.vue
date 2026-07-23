@@ -9,6 +9,7 @@ import {
 } from '../services/adminApi'
 import type {
   WithdrawalRequest,
+  WithdrawalStatsCustomRange,
   WithdrawalStats,
   WithdrawalStatsRange,
   WithdrawalStatus,
@@ -23,6 +24,7 @@ const stats = ref<WithdrawalStats | null>(null)
 const statsLoading = ref(false)
 const statsError = ref('')
 const statsRange = ref<WithdrawalStatsRange>('TODAY')
+const customStatsDates = ref<[string, string] | null>(null)
 const confirmDialogVisible = ref(false)
 const confirmingWithdrawal = ref<WithdrawalRequest | null>(null)
 const confirmError = ref('')
@@ -70,7 +72,10 @@ async function loadStats() {
   statsLoading.value = true
   statsError.value = ''
   try {
-    stats.value = await fetchWithdrawalStats(statsRange.value)
+    const customRange: WithdrawalStatsCustomRange | undefined = statsRange.value === 'CUSTOM' && customStatsDates.value
+      ? { fromDate: customStatsDates.value[0], toDate: customStatsDates.value[1] }
+      : undefined
+    stats.value = await fetchWithdrawalStats(statsRange.value, customRange)
   } catch {
     statsError.value = '打款统计加载失败'
   } finally {
@@ -81,6 +86,14 @@ async function loadStats() {
 async function selectStatsRange(range: WithdrawalStatsRange) {
   if (statsRange.value === range && stats.value) return
   statsRange.value = range
+  customStatsDates.value = null
+  await loadStats()
+}
+
+async function selectCustomStatsRange(value: [string, string] | null) {
+  customStatsDates.value = value
+  if (!value) return
+  statsRange.value = 'CUSTOM'
   await loadStats()
 }
 
@@ -186,11 +199,24 @@ onMounted(() => {
     <div class="stats-panel" v-loading="statsLoading">
       <div class="stats-header">
         <h2>打款统计</h2>
-        <el-radio-group :model-value="statsRange" size="small" @change="selectStatsRange">
-          <el-radio-button v-for="range in statRanges" :key="range.value" :value="range.value">
-            {{ range.label }}
-          </el-radio-button>
-        </el-radio-group>
+        <div class="stats-controls">
+          <el-radio-group :model-value="statsRange" size="small" @change="selectStatsRange">
+            <el-radio-button v-for="range in statRanges" :key="range.value" :value="range.value">
+              {{ range.label }}
+            </el-radio-button>
+          </el-radio-group>
+          <el-date-picker
+            v-model="customStatsDates"
+            end-placeholder="结束日期"
+            range-separator="至"
+            size="small"
+            start-placeholder="开始日期"
+            type="daterange"
+            unlink-panels
+            value-format="YYYY-MM-DD"
+            @change="selectCustomStatsRange"
+          />
+        </div>
       </div>
       <el-alert v-if="statsError" :title="statsError" show-icon type="error" :closable="false" />
       <div v-else class="stats-values">
@@ -309,6 +335,14 @@ onMounted(() => {
 .stats-header {
   justify-content: space-between;
   margin-bottom: 16px;
+}
+
+.stats-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .stats-header h2 {
