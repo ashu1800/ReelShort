@@ -108,7 +108,7 @@ class OkHttpReelShortApiClientTest {
 
             assertEquals("/api/app/auth/login", request.path)
             assertEquals("POST", request.method)
-            assertEquals("""{"username":"demo","password":"Password123"}""", request.body.readUtf8())
+            assertEquals("""{"username":"demo","password":"Password123","loginSource":"APP"}""", request.body.readUtf8())
             assertEquals("demo", session.username)
             assertEquals("token-123", session.token)
         }

@@ -16,6 +16,7 @@ Token 来源于：
 - `POST /api/app/auth/login`
 
 Token 默认为 7 天有效期，可通过 `reelshort.auth.session.access-token-ttl` 配置调整。
+`POST /api/app/auth/login` 必须提交 `loginSource`。App 客户端固定使用 `APP`，脚本使用 `SCRIPT`，且脚本登录前账号必须已经成功完成过一次 App 登录。
 
 ## 公开接口
 
@@ -96,4 +97,5 @@ Token 已撤销：
 - 当前 App Token 不提供 refresh token、多设备会话列表或 Redis blacklist；后续可在 `auth/session` 边界内扩展。
 - 管理员后台使用独立后台 Token 鉴权，不复用 App Token。
 - 管理员后台使用账号密码登录；管理员权限仍由后台会话和角色权限控制。
+- 脚本登录不使用独立 Token 类型；通过 `loginSource=SCRIPT` 进入同一登录接口，但在签发 Token 前要求用户记录存在 `first_app_login_at`。
 - 钱包绑定、更换和解绑属于资金敏感操作，必须提交当前 App 密码；服务端只校验密码，不保存请求明文。

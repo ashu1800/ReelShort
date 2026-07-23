@@ -176,23 +176,33 @@
 
 ## `POST /api/app/auth/login`
 
-手机号密码登录。
+手机号密码登录。请求必须声明登录来源：App 使用 `APP`，脚本使用 `SCRIPT`。脚本登录只允许已成功完成过一次 App 登录的账号。
 
 请求：
 
 ```json
 {
-  "countryCode": "+1",
-  "phoneNumber": "4155550101",
-  "password": "Password123"
+  "username": "+14155550101",
+  "password": "Password123",
+  "loginSource": "APP"
+}
+```
+
+脚本登录请求：
+
+```json
+{
+  "username": "+14155550101",
+  "password": "Password123",
+  "loginSource": "SCRIPT"
 }
 ```
 
 错误：
 
-- `400`：国家区号、手机号或密码参数错误。
+- `400`：账号、密码或 `loginSource` 参数错误；缺少 `loginSource` 会被拒绝。
 - `401`：手机号不存在或密码错误。
-- `403`：用户已禁用或拉黑。
+- `403`：用户已禁用或拉黑；脚本登录时账号尚未成功完成过一次 App 登录。
 
 ## `POST /api/app/auth/password/verification/send`
 
@@ -226,4 +236,5 @@
 - 密码使用 BCrypt 哈希保存，不保存明文密码。
 - 注册和修改密码的长度均不得少于 8 位；已有较短密码账号仍可登录，但改密后必须满足该规则。
 - 用户状态包含 `ACTIVE`、`DISABLED`、`BLACKLISTED`。
+- 登录来源只允许 `APP` 和 `SCRIPT`；`APP` 首次成功登录会记录 `first_app_login_at`，`SCRIPT` 登录必须在该字段已存在后才允许签发 Token。
 - 当前 Token 为不透明访问令牌；数据库只保存 Token 哈希，不保存原始 Token。

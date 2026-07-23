@@ -52,7 +52,7 @@ class AuthServiceTests {
 
 	@Test
 	void loginRejectsMissingUserWithGenericMessage() {
-		assertThatThrownBy(() -> authService.login("auth-test-missing", "Password123"))
+		assertThatThrownBy(() -> authService.login("auth-test-missing", "Password123", LoginSource.APP))
 				.isInstanceOf(AuthException.class)
 				.hasMessage("invalid username or password")
 				.extracting("statusCode")
@@ -64,11 +64,57 @@ class AuthServiceTests {
 		UserAccount disabled = userAccountRepository.save(UserAccount.create("auth-test-disabled",
 				passwordHasher.hash("Password123"), UserStatus.DISABLED));
 
-		assertThatThrownBy(() -> authService.login(disabled.username(), "wrong"))
+		assertThatThrownBy(() -> authService.login(disabled.username(), "wrong", LoginSource.APP))
 				.isInstanceOf(AuthException.class)
 				.hasMessage("user disabled")
 				.extracting("statusCode")
 				.isEqualTo(403);
+	}
+
+	@Test
+	void appLoginRecordsFirstAppLoginTimeOnce() {
+		AuthToken token = registerUser("auth-test-app-login", "Password123");
+
+		authService.login(token.username(), "Password123", LoginSource.APP);
+		UserAccount first = userAccountRepository.findByUsername(token.username()).orElseThrow();
+		assertThat(first.firstAppLoginAt()).isNotNull();
+
+		authService.login(token.username(), "Password123", LoginSource.APP);
+		UserAccount second = userAccountRepository.findByUsername(token.username()).orElseThrow();
+		assertThat(second.firstAppLoginAt()).isEqualTo(first.firstAppLoginAt());
+	}
+
+	@Test
+	void scriptLoginRequiresPriorAppLogin() {
+		AuthToken token = registerUser("auth-test-script-blocked", "Password123");
+
+		assertThatThrownBy(() -> authService.login(token.username(), "Password123", LoginSource.SCRIPT))
+				.isInstanceOf(AuthException.class)
+				.hasMessage("请先在 App 登录一次后再使用脚本登录")
+				.extracting("statusCode")
+				.isEqualTo(403);
+	}
+
+	@Test
+	void scriptLoginSucceedsAfterAppLogin() {
+		AuthToken token = registerUser("auth-test-script-after-app", "Password123");
+
+		authService.login(token.username(), "Password123", LoginSource.APP);
+		AuthToken scriptToken = authService.login(token.username(), "Password123", LoginSource.SCRIPT);
+
+		assertThat(scriptToken.username()).isEqualTo(token.username());
+		assertThat(scriptToken.token()).isNotBlank();
+	}
+
+	@Test
+	void scriptLoginWithWrongPasswordDoesNotRevealAppLoginRequirement() {
+		AuthToken token = registerUser("auth-test-script-wrong-password", "Password123");
+
+		assertThatThrownBy(() -> authService.login(token.username(), "wrong", LoginSource.SCRIPT))
+				.isInstanceOf(AuthException.class)
+				.hasMessage("invalid username or password")
+				.extracting("statusCode")
+				.isEqualTo(401);
 	}
 
 	private AuthToken registerUser(String usernameSeed, String password) {

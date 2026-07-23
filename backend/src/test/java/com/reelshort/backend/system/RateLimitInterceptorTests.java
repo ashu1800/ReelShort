@@ -64,7 +64,8 @@ class RateLimitInterceptorTests {
 				.content("""
 						{
 						  "username": "ratelimit-user",
-						  "password": "Password123"
+						  "password": "Password123",
+						  "loginSource": "APP"
 						}
 						"""));
 	}

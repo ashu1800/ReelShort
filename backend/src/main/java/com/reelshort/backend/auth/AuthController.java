@@ -34,7 +34,8 @@ public class AuthController {
 
 	@PostMapping("/login")
 	public ApiResponse<AuthToken> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-		return ApiResponse.success(authService.login(request.username(), request.password()), requestId(httpRequest));
+		return ApiResponse.success(authService.login(request.username(), request.password(), request.loginSource()),
+				requestId(httpRequest));
 	}
 
 	@GetMapping("/captcha")

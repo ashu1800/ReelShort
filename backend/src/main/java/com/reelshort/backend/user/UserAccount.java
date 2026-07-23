@@ -30,6 +30,9 @@ public class UserAccount {
 	@Column(name = "vip_until")
 	private OffsetDateTime vipUntil;
 
+	@Column(name = "first_app_login_at")
+	private OffsetDateTime firstAppLoginAt;
+
 	@Column(nullable = false)
 	private OffsetDateTime createdAt;
 
@@ -37,17 +40,18 @@ public class UserAccount {
 	}
 
 	private UserAccount(UUID id, String username, String passwordHash, UserStatus status,
-			OffsetDateTime vipUntil, OffsetDateTime createdAt) {
+			OffsetDateTime vipUntil, OffsetDateTime firstAppLoginAt, OffsetDateTime createdAt) {
 		this.id = id;
 		this.username = username;
 		this.passwordHash = passwordHash;
 		this.status = status;
 		this.vipUntil = vipUntil;
+		this.firstAppLoginAt = firstAppLoginAt;
 		this.createdAt = createdAt;
 	}
 
 	public static UserAccount create(String username, String passwordHash, UserStatus status) {
-		return new UserAccount(UUID.randomUUID(), username, passwordHash, status, null, OffsetDateTime.now());
+		return new UserAccount(UUID.randomUUID(), username, passwordHash, status, null, null, OffsetDateTime.now());
 	}
 
 	public UUID id() {
@@ -84,6 +88,16 @@ public class UserAccount {
 
 	public void clearVip() {
 		this.vipUntil = null;
+	}
+
+	public OffsetDateTime firstAppLoginAt() {
+		return firstAppLoginAt;
+	}
+
+	public void markFirstAppLogin() {
+		if (firstAppLoginAt == null) {
+			firstAppLoginAt = OffsetDateTime.now();
+		}
 	}
 
 	public boolean isVip() {

@@ -13,6 +13,7 @@ data class BackendApiResponse<T>(
 data class AuthRequestDto(
     val username: String,
     val password: String,
+    val loginSource: String,
 )
 
 @Serializable

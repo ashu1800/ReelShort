@@ -47,7 +47,7 @@ public class AuthService {
 	}
 
 	@Transactional
-	public AuthToken login(String username, String password) {
+	public AuthToken login(String username, String password, LoginSource loginSource) {
 		UserAccount user = userAccountRepository.findByUsername(username)
 				.orElseThrow(() -> new AuthException(401, "invalid username or password"));
 		if (user.status() != UserStatus.ACTIVE) {
@@ -55,6 +55,15 @@ public class AuthService {
 		}
 		if (!passwordHasher.matches(password, user.passwordHash())) {
 			throw new AuthException(401, "invalid username or password");
+		}
+		if (loginSource == LoginSource.APP) {
+			if (user.firstAppLoginAt() == null) {
+				user.markFirstAppLogin();
+				userAccountRepository.save(user);
+			}
+		}
+		else if (user.firstAppLoginAt() == null) {
+			throw new AuthException(403, "请先在 App 登录一次后再使用脚本登录");
 		}
 		return tokenService.issue(user);
 	}

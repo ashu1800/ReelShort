@@ -78,7 +78,7 @@ class OkHttpReelShortApiClient(
         ).toDomain()
 
     override suspend fun login(username: String, password: String): AuthSession =
-        post<AuthRequestDto, AuthSessionDto>("/auth/login", AuthRequestDto(username, password))
+        post<AuthRequestDto, AuthSessionDto>("/auth/login", AuthRequestDto(username, password, LOGIN_SOURCE_APP))
             .toDomain()
 
     override suspend fun register(
@@ -491,6 +491,7 @@ class OkHttpReelShortApiClient(
     )
 
     private companion object {
+        const val LOGIN_SOURCE_APP = "APP"
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }

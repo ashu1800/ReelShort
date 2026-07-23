@@ -2,6 +2,7 @@ package com.reelshort.backend.auth;
 
 import static org.hamcrest.Matchers.blankOrNullString;
 import static org.hamcrest.Matchers.not;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -23,6 +24,8 @@ import com.reelshort.backend.TestAppUsers;
 import com.reelshort.backend.content.ContentBook;
 import com.reelshort.backend.content.ContentLocale;
 import com.reelshort.backend.content.ContentProvider;
+import com.reelshort.backend.user.UserAccount;
+import com.reelshort.backend.user.UserAccountRepository;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -34,12 +37,35 @@ class AuthControllerTests {
 	@Autowired
 	private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
+	@Autowired
+	private UserAccountRepository userAccountRepository;
+
 	@MockitoBean
 	private ContentProvider contentProvider;
 
 	@Test
-	void loginReturnsTokenForValidCredentials() throws Exception {
+	void loginReturnsTokenForAppCredentials() throws Exception {
 		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, "auth-controller-login");
+
+		mockMvc.perform(post("/api/app/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "%s",
+						  "password": "Password123",
+						  "loginSource": "APP"
+						}
+						""".formatted(user.username())))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data.username").value(user.username()))
+				.andExpect(jsonPath("$.data.token", not(blankOrNullString())))
+				.andExpect(jsonPath("$.data.tokenType").value("Bearer"));
+	}
+
+	@Test
+	void loginRejectsMissingLoginSource() throws Exception {
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, "auth-controller-missing-source");
 
 		mockMvc.perform(post("/api/app/auth/login")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -49,11 +75,95 @@ class AuthControllerTests {
 						  "password": "Password123"
 						}
 						""".formatted(user.username())))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.code").value(0))
-				.andExpect(jsonPath("$.data.username").value(user.username()))
-				.andExpect(jsonPath("$.data.token", not(blankOrNullString())))
-				.andExpect(jsonPath("$.data.tokenType").value("Bearer"));
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.path").value("/api/app/auth/login"));
+	}
+
+	@Test
+	void loginRejectsUnknownLoginSource() throws Exception {
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, "auth-controller-unknown-source");
+
+		mockMvc.perform(post("/api/app/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "%s",
+						  "password": "Password123",
+						  "loginSource": "BATCH"
+						}
+						""".formatted(user.username())))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.path").value("/api/app/auth/login"));
+	}
+
+	@Test
+	void scriptLoginIsRejectedBeforeAppLogin() throws Exception {
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, "auth-controller-script-block");
+
+		mockMvc.perform(post("/api/app/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "%s",
+						  "password": "Password123",
+						  "loginSource": "SCRIPT"
+						}
+						""".formatted(user.username())))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value(403))
+				.andExpect(jsonPath("$.message").value("请先在 App 登录一次后再使用脚本登录"));
+	}
+
+	@Test
+	void appLoginMarksFirstAppLoginTimeOnce() throws Exception {
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, "auth-controller-first-app-login");
+
+		mockMvc.perform(post("/api/app/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "%s",
+						  "password": "Password123",
+						  "loginSource": "APP"
+						}
+						""".formatted(user.username())))
+				.andExpect(status().isOk());
+
+		UserAccount account = userAccountRepository.findByUsername(user.username()).orElseThrow();
+		assertThat(account.firstAppLoginAt()).isNotNull();
+	}
+
+	@Test
+	void secondAppLoginDoesNotOverwriteFirstAppLoginTime() throws Exception {
+		TestAppUsers.RegisteredUser user = TestAppUsers.register(mockMvc, objectMapper, "auth-controller-first-app-login-repeat");
+
+		mockMvc.perform(post("/api/app/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "%s",
+						  "password": "Password123",
+						  "loginSource": "APP"
+						}
+						""".formatted(user.username())))
+				.andExpect(status().isOk());
+
+		UserAccount first = userAccountRepository.findByUsername(user.username()).orElseThrow();
+		Object firstLoginAt = first.firstAppLoginAt();
+
+		mockMvc.perform(post("/api/app/auth/login")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "username": "%s",
+						  "password": "Password123",
+						  "loginSource": "APP"
+						}
+						""".formatted(user.username())))
+				.andExpect(status().isOk());
+
+		UserAccount second = userAccountRepository.findByUsername(user.username()).orElseThrow();
+		assertThat(second.firstAppLoginAt()).isEqualTo(firstLoginAt);
 	}
 
 	@Test
@@ -78,7 +188,8 @@ class AuthControllerTests {
 				.content("""
 						{
 						  "username": "%s",
-						  "password": "wrong"
+						  "password": "wrong",
+						  "loginSource": "APP"
 						}
 						""".formatted(user.username())))
 				.andExpect(status().isUnauthorized())
@@ -145,4 +256,5 @@ class AuthControllerTests {
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.message").value("token revoked"));
 	}
+
 }
