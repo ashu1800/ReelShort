@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -172,6 +174,7 @@ internal fun AccountScreen(
     var passwordSheetVisible by remember { mutableStateOf(false) }
     var bankCardSheetVisible by remember { mutableStateOf(false) }
     var vipSheetVisible by remember { mutableStateOf(false) }
+    var supportDialogVisible by remember { mutableStateOf(false) }
     var pendingConfirmation by remember { mutableStateOf<PendingAccountConfirmation?>(null) }
     val copy = strings(language)
     val updateCopy = updateStrings(language)
@@ -301,6 +304,13 @@ internal fun AccountScreen(
                     trailing = if (isCheckingForUpdate) updateCopy.checking else updateCopy.checkForUpdates,
                     onClick = if (isCheckingForUpdate) null else onCheckForUpdate,
                 )
+                AccountMenuDivider()
+                AccountMenuRow(
+                    icon = Icons.Rounded.Email,
+                    title = copy.accountContactSupportTitle,
+                    subtitle = copy.accountContactSupportEmail,
+                    onClick = { supportDialogVisible = true },
+                )
                 if (isLoggedIn) {
                     AccountMenuDivider()
                     AccountMenuRow(
@@ -388,6 +398,28 @@ internal fun AccountScreen(
             },
             onRefresh = onRefreshVipOrder,
             onDismiss = { vipSheetVisible = false },
+        )
+    }
+
+    if (supportDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { supportDialogVisible = false },
+            title = { Text(copy.accountContactSupportTitle) },
+            text = {
+                SelectionContainer {
+                    Text(
+                        copy.accountContactSupportEmail,
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { supportDialogVisible = false }) {
+                    Text(copy.accountContactSupportClose, color = PrimaryGold)
+                }
+            },
+            containerColor = Panel,
         )
     }
 

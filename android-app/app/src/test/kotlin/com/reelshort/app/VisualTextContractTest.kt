@@ -170,6 +170,15 @@ class VisualTextContractTest {
     }
 
     @Test
+    fun accountPageShowsFixedSupportEmail() {
+        val copy = strings(AppLanguage.ENGLISH)
+
+        assertEquals("Contact support", copy.accountContactSupportTitle)
+        assertEquals("shortlink@gmail.com", copy.accountContactSupportEmail)
+        assertEquals("Close", copy.accountContactSupportClose)
+    }
+
+    @Test
     fun authPromptTitleMatchesTriggerContext() {
         assertEquals("Sign in to keep watching", authPromptTitle(hasPendingPlayback = true))
         assertEquals("Sign in to view your account", authPromptTitle(hasPendingPlayback = false))
