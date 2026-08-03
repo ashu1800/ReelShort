@@ -2,6 +2,8 @@ package com.reelshort.app
 
 import com.reelshort.app.ui.format.AccountAction
 import com.reelshort.app.ui.format.accountActionRequiresConfirmation
+import com.reelshort.app.ui.format.strings
+import com.reelshort.app.ui.format.withdrawalPointAmountPlaceholder
 import com.reelshort.app.ui.format.withdrawalConversionLines
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.WithdrawalSummary
@@ -9,6 +11,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.nio.file.Files
+import java.nio.file.Path
 
 class AccountActionContractTest {
     @Test
@@ -62,5 +66,45 @@ class AccountActionContractTest {
         val lines = withdrawalConversionLines(summary, 101, AppLanguage.ENGLISH)
 
         assertEquals(true, lines.any { it.contains("Estimated 11.21 USDT") })
+    }
+
+    @Test
+    fun withdrawalAmountFieldShowsArrivalHintOnlyWhenEmptyAndUnfocused() {
+        assertEquals("Arrives in 1 day", strings(AppLanguage.ENGLISH).accountWithdrawArrivalHint)
+        assertEquals("Arrives in 1 day", withdrawalPointAmountPlaceholder("", isFocused = false, AppLanguage.ENGLISH))
+        assertEquals(null, withdrawalPointAmountPlaceholder("", isFocused = true, AppLanguage.ENGLISH))
+        assertEquals(null, withdrawalPointAmountPlaceholder("100", isFocused = false, AppLanguage.ENGLISH))
+    }
+
+    @Test
+    fun withdrawalAmountFieldDoesNotDependOnMaterialFocusedPlaceholder() {
+        val textFieldSource = readSourceFile(
+            "src/main/java/com/reelshort/app/ui/components/TextField.kt",
+            "app/src/main/java/com/reelshort/app/ui/components/TextField.kt",
+            "android-app/app/src/main/java/com/reelshort/app/ui/components/TextField.kt",
+        )
+        val accountSource = readSourceFile(
+            "src/main/java/com/reelshort/app/ui/screens/account/AccountScreen.kt",
+            "app/src/main/java/com/reelshort/app/ui/screens/account/AccountScreen.kt",
+            "android-app/app/src/main/java/com/reelshort/app/ui/screens/account/AccountScreen.kt",
+        )
+
+        assertTrue(textFieldSource.contains("idlePlaceholder: String? = null"))
+        assertTrue(textFieldSource.contains("val fieldLabel = idlePlaceholder ?: label"))
+        assertFalse(textFieldSource.contains("placeholder = placeholder"))
+        assertTrue(accountSource.contains("idlePlaceholder = withdrawalPointAmountPlaceholder(points, pointsFocused, language)"))
+    }
+
+    private fun readSourceFile(vararg candidates: String): String {
+        val roots = generateSequence(Path.of(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
+        roots.forEach { root ->
+            candidates.forEach { candidate ->
+                val path = root.resolve(candidate)
+                if (Files.exists(path)) {
+                    return String(Files.readAllBytes(path))
+                }
+            }
+        }
+        error("Could not find source file: ${candidates.joinToString()}")
     }
 }

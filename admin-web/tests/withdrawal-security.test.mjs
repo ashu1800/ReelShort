@@ -57,6 +57,14 @@ test('manual confirmation remains an explicit external payout action', () => {
   assert.match(viewSource, /不会广播或核验链上交易/)
 })
 
+test('withdrawal operations can copy wallet addresses without changing payout flow', () => {
+  assert.match(viewSource, /复制钱包地址/)
+  assert.match(viewSource, /navigator\.clipboard\.writeText\(row\.walletAddress\)/)
+  assert.match(viewSource, /钱包地址已复制/)
+  assert.match(viewSource, /钱包地址复制失败/)
+  assert.doesNotMatch(viewSource, /execCommand/)
+})
+
 test('system config exposes direct USDT rate without legacy currency conversion', () => {
   assert.match(configLabelsSource, /withdraw\.usdt-per-50-points/)
   assert.match(configLabelsSource, /提现 · 每50积分USDT/)

@@ -240,6 +240,17 @@ internal fun authRegisterEnabled(
 
 internal fun commercialSheetAutoDismissesAfterSubmit(): Boolean = false
 
+internal fun withdrawalPointAmountPlaceholder(
+    points: String,
+    isFocused: Boolean,
+    language: AppLanguage,
+): String? =
+    if (points.isBlank() && !isFocused) {
+        strings(language).accountWithdrawArrivalHint
+    } else {
+        null
+    }
+
 internal fun withdrawalConversionLines(
     summary: WithdrawalSummary?,
     pointAmount: Int,

@@ -108,14 +108,20 @@ internal fun LoginTextField(
     isPassword: Boolean = false,
     kind: TextFieldKind = if (isPassword) TextFieldKind.PASSWORD else TextFieldKind.TEXT,
     imeAction: ImeAction = ImeAction.Next,
+    idlePlaceholder: String? = null,
+    onFocusChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
+    val fieldLabel = idlePlaceholder ?: label
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label) },
-        modifier = modifier.fillMaxWidth().withAutofill(kind, onValueChange),
+        label = { Text(fieldLabel) },
+        modifier = modifier
+            .fillMaxWidth()
+            .withAutofill(kind, onValueChange)
+            .onFocusChanged { onFocusChanged(it.isFocused) },
         singleLine = true,
         enabled = enabled,
         visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,
@@ -125,7 +131,7 @@ internal fun LoginTextField(
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
                         imageVector = if (passwordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                        contentDescription = if (passwordVisible) "Hide $label" else "Show $label",
+                        contentDescription = if (passwordVisible) "Hide $fieldLabel" else "Show $fieldLabel",
                     )
                 }
             }

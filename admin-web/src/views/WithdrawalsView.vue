@@ -113,6 +113,15 @@ function openManualConfirm(row: WithdrawalRequest) {
   confirmDialogVisible.value = true
 }
 
+async function copyWalletAddress(row: WithdrawalRequest) {
+  try {
+    await navigator.clipboard.writeText(row.walletAddress)
+    ElMessage.success('钱包地址已复制')
+  } catch {
+    ElMessage.error('钱包地址复制失败')
+  }
+}
+
 async function confirmExternalPayout() {
   if (!confirmingWithdrawal.value) return
   operationLoading.value = true
@@ -267,19 +276,19 @@ onMounted(() => {
       <el-table-column label="确认时间" min-width="220">
         <template #default="{ row }">{{ row.reviewedAt || '-' }}</template>
       </el-table-column>
-      <el-table-column align="right" fixed="right" label="操作" width="190">
+      <el-table-column align="right" fixed="right" label="操作" width="290">
         <template #default="{ row }">
-          <template v-if="row.status === 'PENDING'">
+          <div class="operation-actions">
+            <el-button type="info" text @click="copyWalletAddress(row)">复制钱包地址</el-button>
             <el-button
-              v-if="canManuallyConfirm(row)"
+              v-if="row.status === 'PENDING' && canManuallyConfirm(row)"
               :loading="operationLoading"
               type="primary"
               text
               @click="openManualConfirm(row)"
             >确认已外部打款</el-button>
-            <el-button :loading="operationLoading" type="danger" text @click="reject(row)">拒绝</el-button>
-          </template>
-          <span v-else class="muted">已处理</span>
+            <el-button v-if="row.status === 'PENDING'" :loading="operationLoading" type="danger" text @click="reject(row)">拒绝</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -352,5 +361,16 @@ onMounted(() => {
 
 .stats-period {
   min-width: 260px;
+}
+
+.operation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 8px;
+}
+
+.operation-actions :deep(.el-button) {
+  margin-left: 0;
 }
 </style>

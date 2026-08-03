@@ -105,6 +105,7 @@ import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.updateStrings
 import com.reelshort.app.ui.format.walletSheetShouldDismiss
 import com.reelshort.app.ui.format.withdrawalConversionLines
+import com.reelshort.app.ui.format.withdrawalPointAmountPlaceholder
 import com.reelshort.app.ui.format.withdrawalRecordDetail
 import com.reelshort.app.ui.format.withdrawalStatusLabel
 import com.reelshort.app.ui.format.accountConfirmationBody
@@ -1037,6 +1038,7 @@ private fun WithdrawalBottomSheet(
 ) {
     val copy = strings(language)
     var points by remember { mutableStateOf("") }
+    var pointsFocused by remember { mutableStateOf(false) }
     val amount = points.toIntOrNull() ?: 0
     val minimumPoints = summary?.minimumPoints ?: Int.MAX_VALUE
     val availablePoints = summary?.availablePoints ?: 0
@@ -1057,7 +1059,15 @@ private fun WithdrawalBottomSheet(
                 color = if (summary?.walletAddress == null) DangerText else TextSecondary,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            LoginTextField(points, { points = it.filter(Char::isDigit) }, copy.accountWithdrawPointAmountLabel, enabled = true, kind = TextFieldKind.POINT_AMOUNT)
+            LoginTextField(
+                value = points,
+                onValueChange = { points = it.filter(Char::isDigit) },
+                label = copy.accountWithdrawPointAmountLabel,
+                enabled = true,
+                kind = TextFieldKind.POINT_AMOUNT,
+                idlePlaceholder = withdrawalPointAmountPlaceholder(points, pointsFocused, language),
+                onFocusChanged = { pointsFocused = it },
+            )
             PrimaryActionButton(
                 text = copy.accountWithdrawSubmitAction,
                 enabled = !isSubmitting && summary?.walletAddress != null && amount >= minimumPoints && amount <= availablePoints,
