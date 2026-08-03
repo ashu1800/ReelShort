@@ -10,6 +10,7 @@ import com.reelshort.app.ui.format.accountContinueWatchingLimit
 import com.reelshort.app.ui.format.accountContinueWatchingRowsAreClickable
 import com.reelshort.app.ui.format.accountContinueWatchingUsesPosterCards
 import com.reelshort.app.ui.format.accountDetailSheetTitle
+import com.reelshort.app.ui.format.accountEmptyDetailMessage
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.appBrandName
 import com.reelshort.app.ui.format.guestAccountEntryLabels
@@ -159,8 +160,15 @@ class VisualTextContractTest {
         val copy = strings(AppLanguage.ENGLISH)
 
         assertEquals("Withdrawal records", copy.accountWithdrawalRecordsTitle)
-        assertEquals("View withdrawal history", copy.accountWithdrawalRecordsSubtitle)
         assertEquals("No withdrawal records yet", copy.accountWithdrawalRecordsEmpty)
+    }
+
+    @Test
+    fun withdrawalRecordDetailSheetUsesDedicatedEmptyCopy() {
+        assertEquals(
+            "No withdrawal records yet",
+            accountEmptyDetailMessage(AccountDetailSheet.WITHDRAWALS, AppLanguage.ENGLISH),
+        )
     }
 
     @Test

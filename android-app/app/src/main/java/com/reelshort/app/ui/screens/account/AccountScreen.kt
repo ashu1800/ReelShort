@@ -95,6 +95,7 @@ import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.components.verticalGradient
 import com.reelshort.app.ui.format.AccountDetailSheet
 import com.reelshort.app.ui.format.accountDetailSheetTitle
+import com.reelshort.app.ui.format.accountEmptyDetailMessage
 import com.reelshort.app.ui.format.accountContinueWatchingLimit
 import com.reelshort.app.ui.format.accountPrimaryActionSheet
 import com.reelshort.app.ui.format.commercialSheetAutoDismissesAfterSubmit
@@ -913,14 +914,14 @@ private fun AccountDetailBottomSheet(
             when (sheet) {
                 AccountDetailSheet.POINT_RECORDS -> {
                     if (pointRecords.isEmpty()) {
-                        item { AccountEmptyDetail(copy.accountPointRecordsTitle) }
+                        item { AccountEmptyDetail(accountEmptyDetailMessage(sheet, language)) }
                     } else {
                         items(pointRecords) { PointRecordRow(it, language) }
                     }
                 }
                 AccountDetailSheet.WATCH_HISTORY -> {
                     if (records.isEmpty()) {
-                        item { AccountEmptyDetail(copy.accountRecentWatchSubtitle) }
+                        item { AccountEmptyDetail(accountEmptyDetailMessage(sheet, language)) }
                     } else {
                         items(records, key = { "${it.bookId}-${it.episode}" }) { record ->
                             ContinueWatchingRow(record = record, language = language, onClick = { onOpenWatchRecord(record) })
@@ -929,7 +930,7 @@ private fun AccountDetailBottomSheet(
                 }
                 AccountDetailSheet.ORDERS -> {
                     if (vipOrders.isEmpty()) {
-                        item { AccountEmptyDetail(copy.accountOrdersReserved) }
+                        item { AccountEmptyDetail(accountEmptyDetailMessage(sheet, language)) }
                     } else {
                         items(vipOrders, key = { it.id }) { order ->
                             VipOrderRow(order, language)
@@ -938,7 +939,7 @@ private fun AccountDetailBottomSheet(
                 }
                 AccountDetailSheet.WITHDRAWALS -> {
                     if (withdrawals.isEmpty()) {
-                        item { AccountEmptyDetail(copy.accountWithdrawalsTitle) }
+                        item { AccountEmptyDetail(accountEmptyDetailMessage(sheet, language)) }
                     } else {
                         items(withdrawals, key = { it.id }) { WithdrawalRow(it, language) }
                     }

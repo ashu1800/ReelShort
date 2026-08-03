@@ -87,6 +87,19 @@ internal fun accountDetailSheetTitle(
     }
 }
 
+internal fun accountEmptyDetailMessage(
+    sheet: AccountDetailSheet,
+    language: AppLanguage = AppLanguage.ENGLISH,
+): String {
+    val copy = strings(language)
+    return when (sheet) {
+        AccountDetailSheet.POINT_RECORDS -> copy.accountPointRecordsTitle
+        AccountDetailSheet.WATCH_HISTORY -> copy.accountRecentWatchSubtitle
+        AccountDetailSheet.ORDERS -> copy.accountOrdersReserved
+        AccountDetailSheet.WITHDRAWALS -> copy.accountWithdrawalRecordsEmpty
+    }
+}
+
 internal val AppScreen.navigationLabel: String
     get() = navigationLabel(AppLanguage.ENGLISH)
 
