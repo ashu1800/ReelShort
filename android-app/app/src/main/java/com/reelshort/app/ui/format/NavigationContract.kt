@@ -70,7 +70,6 @@ internal fun accountPrimaryActionSheet(label: String, language: AppLanguage = Ap
         copy.accountPointsTitle -> AccountDetailSheet.POINT_RECORDS
         copy.accountWatchHistoryTitle -> AccountDetailSheet.WATCH_HISTORY
         copy.accountOrdersTitle -> AccountDetailSheet.ORDERS
-        copy.accountWithdrawTitle -> AccountDetailSheet.WITHDRAWALS
         else -> null
     }
 }

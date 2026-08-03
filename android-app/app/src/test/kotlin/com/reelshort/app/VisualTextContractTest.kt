@@ -139,7 +139,7 @@ class VisualTextContractTest {
         assertEquals(null, accountPrimaryActionSheet("Favorites"))
         assertEquals(AccountDetailSheet.POINT_RECORDS, accountPrimaryActionSheet("Points"))
         assertEquals(AccountDetailSheet.WATCH_HISTORY, accountPrimaryActionSheet("Watch history"))
-        assertEquals(AccountDetailSheet.WITHDRAWALS, accountPrimaryActionSheet("Withdraw"))
+        assertEquals(null, accountPrimaryActionSheet("Withdraw"))
     }
 
     @Test
@@ -152,6 +152,15 @@ class VisualTextContractTest {
         assertEquals("Watch history", accountDetailSheetTitle(AccountDetailSheet.WATCH_HISTORY))
         assertEquals("VIP Orders", accountDetailSheetTitle(AccountDetailSheet.ORDERS))
         assertEquals("Withdrawals", accountDetailSheetTitle(AccountDetailSheet.WITHDRAWALS))
+    }
+
+    @Test
+    fun accountPageHasDedicatedWithdrawalRecordsEntryCopy() {
+        val copy = strings(AppLanguage.ENGLISH)
+
+        assertEquals("Withdrawal records", copy.accountWithdrawalRecordsTitle)
+        assertEquals("View withdrawal history", copy.accountWithdrawalRecordsSubtitle)
+        assertEquals("No withdrawal records yet", copy.accountWithdrawalRecordsEmpty)
     }
 
     @Test

@@ -175,6 +175,7 @@ internal fun AccountScreen(
     var bankCardSheetVisible by remember { mutableStateOf(false) }
     var vipSheetVisible by remember { mutableStateOf(false) }
     var supportDialogVisible by remember { mutableStateOf(false) }
+    var withdrawalFormVisible by remember { mutableStateOf(false) }
     var pendingConfirmation by remember { mutableStateOf<PendingAccountConfirmation?>(null) }
     val copy = strings(language)
     val updateCopy = updateStrings(language)
@@ -194,10 +195,10 @@ internal fun AccountScreen(
 
     LaunchedEffect(withdrawalSubmissionVersion) {
         if (
-            detailSheet == AccountDetailSheet.WITHDRAWALS &&
+            withdrawalFormVisible &&
             withdrawalSubmissionVersion > lastHandledWithdrawalSubmissionVersion
         ) {
-            detailSheet = null
+            withdrawalFormVisible = false
         }
         lastHandledWithdrawalSubmissionVersion = withdrawalSubmissionVersion
     }
@@ -231,6 +232,7 @@ internal fun AccountScreen(
                 onOpenFavorites = onOpenFavorites,
                 onShowAuthPrompt = onShowAuthPrompt,
                 onOpenDetailSheet = { detailSheet = it },
+                onOpenWithdrawalForm = { withdrawalFormVisible = true },
             )
         }
 
@@ -291,6 +293,17 @@ internal fun AccountScreen(
                         subtitle = if (vipOrders.isEmpty()) copy.accountOrdersReserved else "${vipOrders.size}",
                         onClick = { detailSheet = AccountDetailSheet.ORDERS },
                     )
+                    AccountMenuDivider()
+                    AccountMenuRow(
+                        icon = Icons.Rounded.History,
+                        title = copy.accountWithdrawalRecordsTitle,
+                        subtitle = if (withdrawals.isEmpty()) {
+                            copy.accountWithdrawalRecordsEmpty
+                        } else {
+                            "${copy.accountRecentCountPrefix}${withdrawals.size}${copy.accountRecordsSuffix}"
+                        },
+                        onClick = { detailSheet = AccountDetailSheet.WITHDRAWALS },
+                    )
                 }
             }
         }
@@ -325,7 +338,7 @@ internal fun AccountScreen(
         }
     }
 
-    if (detailSheet != null && detailSheet != AccountDetailSheet.WITHDRAWALS) {
+    if (detailSheet != null) {
         AccountDetailBottomSheet(
             sheet = detailSheet!!,
             records = records,
@@ -352,13 +365,13 @@ internal fun AccountScreen(
         )
     }
 
-    if (detailSheet == AccountDetailSheet.WITHDRAWALS) {
+    if (withdrawalFormVisible) {
         WithdrawalBottomSheet(
             summary = withdrawalSummary,
             withdrawals = withdrawals,
             walletNetwork = wallet?.network,
             language = language,
-            onDismiss = { detailSheet = null },
+            onDismiss = { withdrawalFormVisible = false },
             onSubmitWithdrawal = { pendingConfirmation = PendingAccountConfirmation.Withdrawal(it) },
             isSubmitting = accountOperation != null,
         )
@@ -575,6 +588,7 @@ private fun AccountPrimaryActions(
     onOpenFavorites: () -> Unit,
     onShowAuthPrompt: () -> Unit,
     onOpenDetailSheet: (AccountDetailSheet) -> Unit,
+    onOpenWithdrawalForm: () -> Unit,
 ) {
     val copy = strings(language)
     fun openSheetForAction(label: String) {
@@ -629,7 +643,7 @@ private fun AccountPrimaryActions(
                 trailing = withdrawalSummary?.minimumUsdt?.let { "Min USDT $it" }.orEmpty(),
                 modifier = Modifier.weight(1f),
                 onClick = if (isLoggedIn) {
-                    { openSheetForAction(copy.accountWithdrawTitle) }
+                    onOpenWithdrawalForm
                 } else {
                     onShowAuthPrompt
                 },
