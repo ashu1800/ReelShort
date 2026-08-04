@@ -3,9 +3,12 @@ package com.reelshort.backend.social;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.stereotype.Component;
 
@@ -18,8 +21,31 @@ class SocialDisplayFallbacks {
 	private static final HotnessProfile COLD_PROFILE = new HotnessProfile(HotnessTier.COLD, 80L, 301, 15L, 46, 3, 10);
 	private static final HotnessProfile WARM_PROFILE = new HotnessProfile(HotnessTier.WARM, 420L, 561, 40L, 101, 15, 31);
 	private static final HotnessProfile HOT_PROFILE = new HotnessProfile(HotnessTier.HOT, 1_000L, 3_001, 120L, 301, 100, 121);
-	private static final List<String> USERNAME_PREFIXES = List.of(
-			"viewer", "shortfan", "drama", "episode", "story", "binge");
+	private static final List<String> USERNAMES = List.of(
+			"Mira",
+			"NovaFan",
+			"DramaLover",
+			"SceneQueen",
+			"StoryPulse",
+			"BingeMood",
+			"ShortFan",
+			"EpisodeClub",
+			"PlotWatcher",
+			"ReelHeart",
+			"Cliffhanger",
+			"DailyDrama",
+			"QuietViewer",
+			"GoldenScene",
+			"NextEpisode",
+			"WatchMode",
+			"TwistLover",
+			"DramaNest",
+			"StarryPlot",
+			"ReelMood",
+			"SceneHunter",
+			"StoryBloom",
+			"FreshEpisode",
+			"DramaSpark");
 	private static final List<String> COMMENTS = List.of(
 			"Great episode.",
 			"I need the next one.",
@@ -47,6 +73,10 @@ class SocialDisplayFallbacks {
 	}
 
 	List<CommentResponse> comments(String bookId) {
+		return comments(bookId, ThreadLocalRandom.current().nextLong());
+	}
+
+	List<CommentResponse> comments(String bookId, long shuffleSeed) {
 		HotnessProfile profile = profile(bookId);
 		int count = profile.commentBase() + stableInt(bookId, profile.tier().name() + ":comment-count",
 				profile.commentSpread());
@@ -60,6 +90,7 @@ class SocialDisplayFallbacks {
 					BASE_COMMENT_TIME.plusMinutes(
 							stableInt(bookId, profile.tier().name() + ":comment-time-" + index, 100_000)).toString()));
 		}
+		Collections.shuffle(results, new Random(shuffleSeed));
 		return results;
 	}
 
@@ -79,10 +110,7 @@ class SocialDisplayFallbacks {
 	}
 
 	private String username(String bookId, int index, HotnessTier tier) {
-		String prefix = USERNAME_PREFIXES.get(
-				stableInt(bookId, tier.name() + ":username-prefix-" + index, USERNAME_PREFIXES.size()));
-		int suffix = 10 + stableInt(bookId, tier.name() + ":username-suffix-" + index, 90);
-		return prefix + suffix;
+		return USERNAMES.get(stableInt(bookId, tier.name() + ":username-" + index, USERNAMES.size()));
 	}
 
 	private UUID stableUuid(String bookId, int index) {

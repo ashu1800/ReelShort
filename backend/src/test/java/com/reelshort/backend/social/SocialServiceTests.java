@@ -98,7 +98,7 @@ class SocialServiceTests {
 		assertThat(favorite.active()).isFalse();
 		assertThat(favorite.count()).isPositive();
 		assertThat(first).isNotEmpty();
-		assertThat(second).isEqualTo(first);
+		assertThat(second).containsExactlyInAnyOrderElementsOf(first);
 		assertThat(commentRepository.countByBookId(bookId)).isZero();
 	}
 
@@ -114,6 +114,27 @@ class SocialServiceTests {
 		assertThat(favorite.count()).isGreaterThanOrEqualTo(120);
 		assertThat(comments).hasSizeGreaterThanOrEqualTo(100);
 		assertThat(displayFallbacks.hotnessTier(hotBookId)).isEqualTo(SocialDisplayFallbacks.HotnessTier.HOT);
+	}
+
+	@Test
+	void fallbackCommentsCanBeShuffledWithoutChangingTheCommentSet() {
+		String bookId = "book-shuffle";
+
+		List<CommentResponse> first = displayFallbacks.comments(bookId, 101L);
+		List<CommentResponse> second = displayFallbacks.comments(bookId, 202L);
+
+		assertThat(first).isNotEmpty();
+		assertThat(second).containsExactlyInAnyOrderElementsOf(first);
+		assertThat(second).isNotEqualTo(first);
+	}
+
+	@Test
+	void fallbackCommentUsernamesDoNotUseNumericSuffixes() {
+		String hotBookId = findHotBookId();
+
+		assertThat(displayFallbacks.comments(hotBookId, 101L))
+				.extracting(CommentResponse::username)
+				.allSatisfy(username -> assertThat(username).doesNotContainPattern("\\d"));
 	}
 
 	private String findHotBookId() {

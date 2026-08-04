@@ -19,7 +19,7 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 原�
 - `backend/points`：积分账户、按视频时长计算的完成奖励、后台积分调整和充值入账模块；默认每完整 60 秒奖励 1 积分，公平模式保留十分位并以实际整数进位同时写入余额、流水、领取记录和响应，同一用户同一集永久只奖励一次；后台调整强制使用按管理员和用户作用域的幂等键；观看奖励和运营模拟观看共享每日全局规则快照与账号随机向下浮动额度，基础上限默认 1000、全局浮动上限默认 35%，按服务器自然日重置且只限制 `WATCH_REWARD` 自动奖励；积分余额增加和入账路径带整型溢出保护。
 - `backend/wallet`：App 冷钱包绑定、更换、解绑和银行卡占位模块；钱包地址允许多用户共享，绑定、更换和解绑必须验证当前密码，TRC20 地址按 Base58Check 校验且 ERC20 拒绝零地址；银行卡提交始终返回不支持，现有表单与接口保持不变。
 - `backend/withdrawal`：ERC20 积分提现申请与管理员外部钱包确认模块；默认每 50 积分兑换 0.14 USDT，手续费积分从用户提交积分中扣除，实际 USDT 向下截断到 2 位且最低 10 USDT，最低积分按当前比例、手续费和最低 USDT 动态计算；新申请保存每 50 积分 USDT 快照，历史人民币/美元快照及原金额不重算；提交提现时冻结可用积分，已登录且具备 `WITHDRAWAL_WRITE` 的管理员确认已通过外部钱包打款后正式扣减冻结积分，拒绝时释放冻结积分；系统不接收私钥、交易哈希或二次验证码，不签名、不广播、不做链上确认，旧自动打款 HTTP 接口固定返回 410；统计按 `reviewedAt` 在上海时区汇总已确认 ERC20 提现。
-- `backend/social`：点赞、收藏和评论模块；真实用户数据仍按 `bookId` 归集，展示接口按 `bookId` 生成稳定分层随机的伪热度，并与真实点赞、收藏、评论合并展示，避免播放器页长期显示全 0 或热度集中在单一低值区间。
+- `backend/social`：点赞、收藏和评论模块；真实用户数据仍按 `bookId` 归集，展示接口按 `bookId` 生成稳定分层随机的伪热度，并与真实点赞、收藏、评论合并展示；伪评论集合稳定但每次读取随机打乱顺序，且使用无数字后缀昵称，避免播放器页长期显示全 0 或热度、评论排序过于机械。
 - `backend/operations`：内部运营 API 模块，使用 `X-Internal-Super-Token` 保护运营脚本调用；支持查询用户积分快照、获取可领取观看奖励的视频任务，并对候选短剧随机取书、按集数顺序取集，再按用户、短剧、集数和进度模拟观看上报，复用现有观看奖励幂等逻辑和后台审计日志。
 - `content-provider`：第三方 ReelShort Flask API 的同机部署和适配层，提供搜索、货架、分集、播放地址和运行诊断内部端点，Spring Boot 通过统一 `ContentProvider` 接口调用；内部接口支持 `en` 与 `zh-TW` locale 参数，首页推荐兼容 ReelShort 新版 Next.js locale fallback 数据结构，并通过带硬上限的可配置搜索关键词扩展片库数量，尽量映射短剧简介、分集标题和分集简介字段；上游 HTTP 请求按总超时、最大响应字节数和最大重定向次数限制资源，并逐跳拒绝私网/回环目标；HTTPS 固定连接到校验后的公网 IP，同时保留原始域名 SNI、证书校验和 Host；运行诊断记录搜索空结果、Next data 404、播放页解析失败和播放地址缺失等上游异常摘要。
 - `infra`：单机部署、进程管理、Nginx、PostgreSQL、Redis、日志、PostgreSQL/配置备份恢复脚本、静态校验和恢复演练文档；生产 Compose 仅在内部网络开放 PostgreSQL、Redis、backend 和 content-provider，数据层宿主访问必须使用 loopback-only 调试 override，公网 Nginx 允许 `/api/internal` 透传到 backend 并由 `X-Internal-Super-Token` 做接口级鉴权；配置备份默认排除 `.env`，显式启用时使用 Windows DPAPI `CurrentUser` 加密并收紧 ACL；服务器宿主机 Nginx 接入 `shortlink.hjj888.cc`，HTTPS 证书由 Certbot/Let's Encrypt 管理，并反向代理公开 `/api/` 到后端、其他路径到后台 Web；Android 更新不再依赖静态本地 APK 目录。
@@ -71,6 +71,8 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 原�
 - 单机部署边界：生产 Compose 只在内部网络暴露 PostgreSQL/Redis/backend/content-provider，公网仅 Nginx；数据层宿主调试必须用 loopback-only override。App 更新下载只使用后端生成的 COS 预签名链接。
 
 ## 变更历史
+
+[2026-08-04] backend/social - 伪评论集合保持按短剧稳定生成，但每次读取随机打乱展示顺序，并移除用户名数字后缀。
 
 [2026-08-04] backend/social - 社交展示 fallback 改为按 `bookId` 稳定分层随机热度，热门短剧可显示 1k+ 点赞和 100+ 评论，真实评论仍在前且伪评论不落库。
 

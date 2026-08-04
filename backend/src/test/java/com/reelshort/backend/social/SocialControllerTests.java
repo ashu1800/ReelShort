@@ -1,5 +1,6 @@
 package com.reelshort.backend.social;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -99,10 +100,16 @@ class SocialControllerTests {
 
 	@Test
 	void emptyCommentsReturnDisplayFallbacks() throws Exception {
-		mockMvc.perform(get("/api/app/social/books/book-empty-comments/comments"))
+		MvcResult result = mockMvc.perform(get("/api/app/social/books/book-empty-comments/comments"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.length()", greaterThan(0)))
-				.andExpect(jsonPath("$.data[0].content").isNotEmpty());
+				.andExpect(jsonPath("$.data[0].content").isNotEmpty())
+				.andReturn();
+
+		JsonNode comments = objectMapper.readTree(result.getResponse().getContentAsString()).get("data");
+		for (JsonNode comment : comments) {
+			assertThat(comment.get("username").asText()).doesNotContainPattern("\\d");
+		}
 	}
 
 	@Test
