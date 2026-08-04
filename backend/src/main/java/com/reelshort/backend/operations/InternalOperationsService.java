@@ -72,7 +72,6 @@ public class InternalOperationsService {
 		return InternalPointsAccountResponse.from(user, pointsService.account(user.id()));
 	}
 
-	@Transactional
 	public InternalWatchRewardTaskResponse watchRewardTask(UUID userId) {
 		UserAccount user = activeUser(userId);
 		if (!user.isVip()) {

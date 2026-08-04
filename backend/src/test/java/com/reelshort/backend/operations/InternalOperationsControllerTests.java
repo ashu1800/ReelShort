@@ -46,6 +46,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest(properties = "reelshort.internal.super-token=test-super-token")
 @AutoConfigureMockMvc
@@ -238,6 +240,35 @@ class InternalOperationsControllerTests {
 	}
 
 	@Test
+	void watchRewardTaskDoesNotHoldDatabaseTransactionWhileCallingContentProvider() throws Exception {
+		RegisteredUser user = createUser("4155550715", "Password123");
+		clearContentCaches();
+		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(
+				"book-no-tx", "No Tx Drama", "no-tx-drama", "", "No tx description", 1)));
+		org.mockito.BDDMockito
+				.given(contentProvider.getEpisodesDetail("book-no-tx", "no-tx-drama", ContentLocale.ENGLISH))
+				.willAnswer(invocation -> {
+					assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+					return new ContentEpisodesDetail(java.util.Optional.empty(), List.of(
+							new ContentEpisode(1, "chapter-no-tx-1", "Episode 1", "First episode")));
+				});
+		org.mockito.BDDMockito
+				.given(contentProvider.getVideoUrl("book-no-tx", 1, "no-tx-drama", "chapter-no-tx-1",
+						ContentLocale.ENGLISH))
+				.willAnswer(invocation -> {
+					assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+					return new com.reelshort.backend.content.ContentVideo(
+							"https://example.test/no-tx.m3u8", 1, 300, null);
+				});
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-no-tx"))
+				.andExpect(jsonPath("$.data.durationSeconds").value(300));
+	}
+
+	@Test
 	void watchRewardTaskPicksBooksInRandomOrderButKeepsEpisodeOrder() throws Exception {
 		RegisteredUser user = createUser("4155550714", "Password123");
 		clearContentCaches();
@@ -267,27 +298,32 @@ class InternalOperationsControllerTests {
 				.given(contentProvider.getVideoUrl("book-new", 1, "new-drama", "chapter-new-1", ContentLocale.ENGLISH))
 				.willReturn(new com.reelshort.backend.content.ContentVideo(
 						"https://example.test/new-1.m3u8", 1, 300, null));
+		org.mockito.BDDMockito
+				.given(contentProvider.getVideoUrl("book-new", 2, "new-drama", "chapter-new-2", ContentLocale.ENGLISH))
+				.willReturn(new com.reelshort.backend.content.ContentVideo(
+						"https://example.test/new-2.m3u8", 1, 300, null));
+
+		MvcResult firstTask = mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.episodeNum").value(1))
+				.andReturn();
+		String firstBookId = JsonPath.read(firstTask.getResponse().getContentAsString(), "$.data.bookId");
+
+		pointsService.awardWatchProgress(user.userId(), firstBookId, 1, 100, 300);
 
 		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
 				.header("X-Internal-Super-Token", TOKEN))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.bookId").value("book-old"))
-				.andExpect(jsonPath("$.data.episodeNum").value(1));
-
-		pointsService.awardWatchProgress(user.userId(), "book-old", 1, 100, 300);
-
-		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
-				.header("X-Internal-Super-Token", TOKEN))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.bookId").value("book-old"))
+				.andExpect(jsonPath("$.data.bookId").value(firstBookId))
 				.andExpect(jsonPath("$.data.episodeNum").value(2));
 
-		pointsService.awardWatchProgress(user.userId(), "book-old", 2, 100, 300);
+		pointsService.awardWatchProgress(user.userId(), firstBookId, 2, 100, 300);
 
 		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
 				.header("X-Internal-Super-Token", TOKEN))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.bookId").value("book-new"))
+				.andExpect(jsonPath("$.data.bookId").value(firstBookId.equals("book-old") ? "book-new" : "book-old"))
 				.andExpect(jsonPath("$.data.episodeNum").value(1));
 	}
 

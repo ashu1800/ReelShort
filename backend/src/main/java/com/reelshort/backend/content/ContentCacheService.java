@@ -150,12 +150,10 @@ public class ContentCacheService {
 				.orElseThrow(() -> new ContentProviderException(404, "content book not cached"));
 	}
 
-	@Transactional(noRollbackFor = ContentProviderException.class)
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle) {
 		return getEpisodes(bookId, filteredTitle, ContentLocale.ENGLISH);
 	}
 
-	@Transactional(noRollbackFor = ContentProviderException.class)
 	public List<ContentEpisode> getEpisodes(String bookId, String filteredTitle, ContentLocale locale) {
 		return contentEpisodeCacheRepository.findByBookIdAndFilteredTitleAndLocale(bookId, filteredTitle, locale)
 				.map(cache -> readEpisodeCacheOrRefresh(cache, bookId, filteredTitle, locale))
@@ -199,12 +197,10 @@ public class ContentCacheService {
 		}
 	}
 
-	@Transactional(noRollbackFor = ContentProviderException.class)
 	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId) {
 		return getVideoUrl(bookId, episodeNum, filteredTitle, chapterId, ContentLocale.ENGLISH);
 	}
 
-	@Transactional(noRollbackFor = ContentProviderException.class)
 	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId,
 			ContentLocale locale) {
 		String lockKey = bookId + "\u0000" + episodeNum + "\u0000" + chapterId + "\u0000" + locale.apiValue();
