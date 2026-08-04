@@ -23,6 +23,9 @@ class SocialServiceTests {
 	@Autowired
 	private CommentRepository commentRepository;
 
+	@Autowired
+	private SocialDisplayFallbacks displayFallbacks;
+
 	@Test
 	void toggleLikeFlipsStateAndCounts() {
 		UUID userId = UUID.randomUUID();
@@ -94,8 +97,32 @@ class SocialServiceTests {
 		assertThat(like.count()).isPositive();
 		assertThat(favorite.active()).isFalse();
 		assertThat(favorite.count()).isPositive();
-		assertThat(first).hasSizeBetween(3, 5);
+		assertThat(first).isNotEmpty();
 		assertThat(second).isEqualTo(first);
 		assertThat(commentRepository.countByBookId(bookId)).isZero();
+	}
+
+	@Test
+	void hotBookUsesLargerDisplayFallbacks() {
+		String hotBookId = findHotBookId();
+
+		ToggleResponse like = socialService.likeStatus(UUID.randomUUID(), hotBookId);
+		ToggleResponse favorite = socialService.favoriteStatus(UUID.randomUUID(), hotBookId);
+		List<CommentResponse> comments = socialService.listComments(hotBookId);
+
+		assertThat(like.count()).isGreaterThanOrEqualTo(1_000);
+		assertThat(favorite.count()).isGreaterThanOrEqualTo(120);
+		assertThat(comments).hasSizeGreaterThanOrEqualTo(100);
+		assertThat(displayFallbacks.hotnessTier(hotBookId)).isEqualTo(SocialDisplayFallbacks.HotnessTier.HOT);
+	}
+
+	private String findHotBookId() {
+		for (int index = 0; index < 10_000; index++) {
+			String bookId = "book-hot-" + index;
+			if (displayFallbacks.hotnessTier(bookId) == SocialDisplayFallbacks.HotnessTier.HOT) {
+				return bookId;
+			}
+		}
+		throw new AssertionError("No hot fallback book id found");
 	}
 }

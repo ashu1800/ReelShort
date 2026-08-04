@@ -15,6 +15,9 @@ import com.reelshort.backend.social.SocialDtos.CommentResponse;
 class SocialDisplayFallbacks {
 
 	private static final OffsetDateTime BASE_COMMENT_TIME = OffsetDateTime.parse("2000-01-01T00:00:00Z");
+	private static final HotnessProfile COLD_PROFILE = new HotnessProfile(HotnessTier.COLD, 80L, 301, 15L, 46, 3, 10);
+	private static final HotnessProfile WARM_PROFILE = new HotnessProfile(HotnessTier.WARM, 420L, 561, 40L, 101, 15, 31);
+	private static final HotnessProfile HOT_PROFILE = new HotnessProfile(HotnessTier.HOT, 1_000L, 3_001, 120L, 301, 100, 121);
 	private static final List<String> USERNAME_PREFIXES = List.of(
 			"viewer", "shortfan", "drama", "episode", "story", "binge");
 	private static final List<String> COMMENTS = List.of(
@@ -24,33 +27,61 @@ class SocialDisplayFallbacks {
 			"Hooked already.",
 			"The lead is carrying this.",
 			"Did not expect that turn.",
-			"Keeping this in my list.");
+			"Keeping this in my list.",
+			"That ending was too much.",
+			"Watching this straight through.",
+			"Commenting before the next episode.",
+			"Can't stop now.",
+			"Replay worthy.");
 
 	long likeCount(String bookId, long realCount) {
-		return 128L + stableInt(bookId, "likes", 1_500) + realCount;
+		HotnessProfile profile = profile(bookId);
+		return profile.likeBase() + stableInt(bookId, profile.tier().name() + ":likes", profile.likeSpread()) + realCount;
 	}
 
 	long favoriteCount(String bookId, long realCount) {
-		return 36L + stableInt(bookId, "favorites", 700) + realCount;
+		HotnessProfile profile = profile(bookId);
+		return profile.favoriteBase()
+				+ stableInt(bookId, profile.tier().name() + ":favorites", profile.favoriteSpread())
+				+ realCount;
 	}
 
 	List<CommentResponse> comments(String bookId) {
-		int count = 3 + stableInt(bookId, "comment-count", 3);
-		int start = stableInt(bookId, "comment-start", COMMENTS.size());
+		HotnessProfile profile = profile(bookId);
+		int count = profile.commentBase() + stableInt(bookId, profile.tier().name() + ":comment-count",
+				profile.commentSpread());
+		int start = stableInt(bookId, profile.tier().name() + ":comment-start", COMMENTS.size());
 		List<CommentResponse> results = new ArrayList<>(count);
 		for (int index = 0; index < count; index++) {
 			results.add(new CommentResponse(
 					stableUuid(bookId, index),
-					username(bookId, index),
+					username(bookId, index, profile.tier()),
 					COMMENTS.get((start + index) % COMMENTS.size()),
-					BASE_COMMENT_TIME.plusMinutes(stableInt(bookId, "comment-time-" + index, 100_000)).toString()));
+					BASE_COMMENT_TIME.plusMinutes(
+							stableInt(bookId, profile.tier().name() + ":comment-time-" + index, 100_000)).toString()));
 		}
 		return results;
 	}
 
-	private String username(String bookId, int index) {
-		String prefix = USERNAME_PREFIXES.get(stableInt(bookId, "username-prefix-" + index, USERNAME_PREFIXES.size()));
-		int suffix = 10 + stableInt(bookId, "username-suffix-" + index, 90);
+	HotnessTier hotnessTier(String bookId) {
+		return profile(bookId).tier();
+	}
+
+	private HotnessProfile profile(String bookId) {
+		int bucket = stableInt(bookId, "hotness-tier", 100);
+		if (bucket < 60) {
+			return COLD_PROFILE;
+		}
+		if (bucket < 85) {
+			return WARM_PROFILE;
+		}
+		return HOT_PROFILE;
+	}
+
+	private String username(String bookId, int index, HotnessTier tier) {
+		String prefix = USERNAME_PREFIXES.get(
+				stableInt(bookId, tier.name() + ":username-prefix-" + index, USERNAME_PREFIXES.size()));
+		int suffix = 10 + stableInt(bookId, tier.name() + ":username-suffix-" + index, 90);
 		return prefix + suffix;
 	}
 
@@ -61,5 +92,15 @@ class SocialDisplayFallbacks {
 
 	private int stableInt(String bookId, String salt, int bound) {
 		return Math.floorMod(Objects.hash(bookId, salt), bound);
+	}
+
+	enum HotnessTier {
+		COLD,
+		WARM,
+		HOT
+	}
+
+	record HotnessProfile(HotnessTier tier, long likeBase, int likeSpread, long favoriteBase, int favoriteSpread,
+			int commentBase, int commentSpread) {
 	}
 }
