@@ -68,9 +68,7 @@ public class SocialService {
 				.stream()
 				.map(CommentResponse::from)
 				.toList());
-		if (comments.isEmpty()) {
-			comments.addAll(displayFallbacks.comments(bookId));
-		}
+		comments.addAll(displayFallbacks.comments(bookId));
 		return comments;
 	}
 

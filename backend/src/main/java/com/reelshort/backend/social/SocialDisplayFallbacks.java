@@ -27,11 +27,11 @@ class SocialDisplayFallbacks {
 			"Keeping this in my list.");
 
 	long likeCount(String bookId, long realCount) {
-		return realCount > 0 ? realCount : 128L + stableInt(bookId, "likes", 1_500);
+		return 128L + stableInt(bookId, "likes", 1_500) + realCount;
 	}
 
 	long favoriteCount(String bookId, long realCount) {
-		return realCount > 0 ? realCount : 36L + stableInt(bookId, "favorites", 700);
+		return 36L + stableInt(bookId, "favorites", 700) + realCount;
 	}
 
 	List<CommentResponse> comments(String bookId) {
