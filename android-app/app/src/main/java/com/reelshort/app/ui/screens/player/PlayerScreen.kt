@@ -88,6 +88,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.Comment
+import com.reelshort.app.data.DEFAULT_VIP_FREE_EPISODES
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.state.AppUiState
@@ -189,7 +190,7 @@ internal fun PlayerScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             CircleIconButton(icon = Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = copy.playerScreen, onClick = onBack)
-            val isVip = !state.vipUntil.isNullOrBlank()
+            val isVip = state.vipActive
             val badgeState = rewardBadgeState(
                 progressPercent = playback.progressPercent,
                 isReporting = playback.isRewardReporting,
@@ -289,7 +290,7 @@ internal fun PlayerScreen(
             selectedEpisode = state.selectedEpisode,
             watchHistory = state.watchHistory,
             language = state.language,
-            vipUntil = state.vipUntil,
+            vipActive = state.vipActive,
             onDismiss = { episodeSheetVisible = false },
             onSelectEpisode = { selected ->
                 episodeSheetVisible = false
@@ -957,11 +958,10 @@ private fun EpisodeSelectorBottomSheet(
     selectedEpisode: EpisodeSummary?,
     watchHistory: List<WatchRecord>,
     language: AppLanguage,
-    vipUntil: String?,
+    vipActive: Boolean,
     onDismiss: () -> Unit,
     onSelectEpisode: (EpisodeSummary) -> Unit,
 ) {
-    val isVip = !vipUntil.isNullOrBlank()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -1010,7 +1010,7 @@ private fun EpisodeSelectorBottomSheet(
                         selected = selected,
                         status = status,
                         language = language,
-                        locked = !isVip && episode.number > 7,
+                        locked = !vipActive && episode.number > DEFAULT_VIP_FREE_EPISODES,
                         onClick = { onSelectEpisode(episode) },
                     )
                 }

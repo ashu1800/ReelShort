@@ -120,6 +120,8 @@ data class PointAccountDto(
     val balance: Int,
     val frozenPoints: Int = 0,
     val availablePoints: Int = balance - frozenPoints,
+    val vip: Boolean = false,
+    val vipUntil: String? = null,
 )
 
 @Serializable

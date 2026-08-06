@@ -177,7 +177,14 @@ class OkHttpReelShortApiClient(
     override suspend fun getPointAccount(): PointAccount {
         val account = get<PointAccountDto>("/points/account", authenticated = true)
         val records = get<List<PointRecordDto>>("/points/records", authenticated = true)
-        return PointAccount(account.balance, account.frozenPoints, account.availablePoints, records.map { it.toDomain() })
+        return PointAccount(
+            balance = account.balance,
+            frozenPoints = account.frozenPoints,
+            availablePoints = account.availablePoints,
+            records = records.map { it.toDomain() },
+            vipActive = account.vip,
+            vipUntil = account.vipUntil,
+        )
     }
 
     override suspend fun getOrders(): List<RechargeOrderSummary> =

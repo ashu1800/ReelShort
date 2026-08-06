@@ -27,6 +27,7 @@ import com.reelshort.app.ui.components.GeoBlockedScreen
 import com.reelshort.app.ui.components.LoadingDialog
 import com.reelshort.app.ui.components.TopErrorToast
 import com.reelshort.app.ui.components.UpdateDialog
+import com.reelshort.app.ui.components.VipPaymentBottomSheet
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.updateStrings
 import com.reelshort.app.ui.screens.auth.AuthBottomSheet
@@ -115,6 +116,8 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onUnbindWallet = remember(viewModel) { viewModel::unbindWallet }
     val onCreateVipOrder = remember(viewModel) { viewModel::createVipOrder }
     val onRefreshVipOrder = remember(viewModel) { viewModel::refreshLatestVipOrder }
+    val onShowVipPaywall = remember(viewModel) { viewModel::showVipPaywall }
+    val onDismissVipPaywall = remember(viewModel) { viewModel::dismissVipPaywall }
     val onRefreshAccount = remember(viewModel) { viewModel::refreshAccount }
     val onSubmitWithdrawal = remember(viewModel) { viewModel::submitWithdrawal }
     val onChangePassword = remember(viewModel) { viewModel::changePassword }
@@ -161,12 +164,25 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onRefreshHome = onRefreshHome,
                 onBindWallet = onBindWallet,
                 onUnbindWallet = onUnbindWallet,
-                onCreateVipOrder = onCreateVipOrder,
-                onRefreshVipOrder = onRefreshVipOrder,
+                onShowVipPaywall = onShowVipPaywall,
                 onSubmitWithdrawal = onSubmitWithdrawal,
                 onChangePassword = onChangePassword,
                 onSubmitBankCard = onSubmitBankCard,
                 onRefreshAccount = onRefreshAccount,
+            )
+            VipPaymentBottomSheet(
+                visible = state.vipPaywallVisible,
+                language = state.language,
+                vipActive = state.vipActive,
+                vipUntil = state.vipUntil,
+                vipPriceUsdt = state.vipPriceUsdt,
+                vipCollectionAddress = state.vipCollectionAddress,
+                latestVipOrder = state.latestVipOrder,
+                pendingVipEpisode = state.pendingVipEpisode,
+                vipPaywallLoading = state.vipPaywallLoading || state.accountOperation != null,
+                onCreateOrder = onCreateVipOrder,
+                onRefresh = onRefreshVipOrder,
+                onDismiss = onDismissVipPaywall,
             )
             AuthBottomSheet(
                 visible = state.authPromptVisible,

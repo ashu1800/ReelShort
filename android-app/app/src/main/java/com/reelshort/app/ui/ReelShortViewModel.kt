@@ -135,6 +135,12 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.refreshLatestVipOrder() }
     }
 
+    fun showVipPaywall() {
+        viewModelScope.launch { controller.showVipPaywall() }
+    }
+
+    fun dismissVipPaywall() = controller.dismissVipPaywall()
+
     fun refreshAccount() {
         viewModelScope.launch { controller.loadAccountSnapshot() }
     }

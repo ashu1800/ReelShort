@@ -40,6 +40,10 @@ data class EpisodeSummary(
     val durationSeconds: Int = 0,
 )
 
+const val DEFAULT_VIP_FREE_EPISODES: Int = 7
+
+fun EpisodeSummary.requiresVip(): Boolean = number > DEFAULT_VIP_FREE_EPISODES
+
 data class VideoUrl(
     val url: String,
     val contentType: String,
@@ -126,6 +130,8 @@ data class PointAccount(
     val frozenPoints: Int = 0,
     val availablePoints: Int = balance - frozenPoints,
     val records: List<PointRecord>,
+    val vipActive: Boolean = false,
+    val vipUntil: String? = null,
 )
 
 data class PointRecord(

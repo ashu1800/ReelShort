@@ -65,8 +65,7 @@ internal fun MainShell(
     onRefreshHome: () -> Unit,
     onBindWallet: (String, String, String) -> Unit,
     onUnbindWallet: (String) -> Unit,
-    onCreateVipOrder: () -> Unit,
-    onRefreshVipOrder: () -> Unit,
+    onShowVipPaywall: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
     onSubmitBankCard: (String, String, String, String, String) -> Unit,
@@ -132,7 +131,7 @@ internal fun MainShell(
                             onGoToSearch = { onScreenSelected(AppScreen.SEARCH) },
                         )
                         AppScreen.SEARCH -> SearchScreen(state, onSearch, onOpenBook)
-                        AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, state.language, state.vipUntil, onOpenPlayer)
+                        AppScreen.DETAIL -> DetailScreen(state.selectedBook, state.episodes, state.language, state.vipActive, onOpenPlayer)
                         AppScreen.PLAYER -> Unit
                         AppScreen.FAVORITES -> FavoritesScreen(state.favorites, state.language, onOpenBook, onBackFromFavorites)
                         AppScreen.ACCOUNT -> AccountScreen(
@@ -149,10 +148,9 @@ internal fun MainShell(
                             wallet = state.wallet,
                             walletMutationVersion = state.walletMutationVersion,
                             withdrawalSubmissionVersion = state.withdrawalSubmissionVersion,
+                            vipActive = state.vipActive,
                             vipUntil = state.vipUntil,
                             vipPriceUsdt = state.vipPriceUsdt,
-                            vipCollectionAddress = state.vipCollectionAddress,
-                            latestVipOrder = state.latestVipOrder,
                             accountOperation = state.accountOperation,
                             withdrawalSummary = state.withdrawalSummary,
                             withdrawals = state.withdrawals,
@@ -165,8 +163,7 @@ internal fun MainShell(
                             onOpenWatchRecord = onOpenWatchRecord,
                             onBindWallet = onBindWallet,
                             onUnbindWallet = onUnbindWallet,
-                            onCreateVipOrder = onCreateVipOrder,
-                            onRefreshVipOrder = onRefreshVipOrder,
+                            onShowVipPaywall = onShowVipPaywall,
                             onRefreshAccount = onRefreshAccount,
                             onSubmitWithdrawal = onSubmitWithdrawal,
                             onChangePassword = onChangePassword,

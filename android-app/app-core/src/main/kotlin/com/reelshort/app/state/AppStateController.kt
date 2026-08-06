@@ -8,9 +8,11 @@ import com.reelshort.app.data.BookInteractionState
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.Comment
 import com.reelshort.app.data.EpisodeSummary
+import com.reelshort.app.data.PointAccount
 import com.reelshort.app.data.SavedCredentials
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WatchProgressReport
+import com.reelshort.app.data.requiresVip
 import com.reelshort.app.network.ApiClientException
 import com.reelshort.app.network.GeoIpClient
 import kotlinx.coroutines.CancellationException
@@ -30,9 +32,12 @@ class AppStateController(private val dataSource: AppDataSource) {
     private var geoChecked = false
     private var searchRequestVersion = 0L
     private var playbackRequestVersion = 0L
+    private var pendingVipEpisodeRequestVersion: Long? = null
+    private var vipPaywallGeneration = 0L
     private var accountRequestVersion = 0L
     private var favoritesRequestVersion = 0L
     private val accountOperationMutex = Mutex()
+    private val vipPaymentRefreshMutex = Mutex()
 
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
@@ -184,6 +189,23 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     private suspend fun openHomeAfterAuthentication(session: AuthSession) {
+        val pendingVipEpisode = state.value.pendingVipEpisode
+        if (pendingVipEpisode != null) {
+            mutableState.update {
+                it.copy(
+                    session = session,
+                    authPromptVisible = false,
+                    pendingPlaybackEpisode = null,
+                    isLoading = false,
+                    errorMessage = null,
+                )
+            }
+            openVipPaywall(
+                episode = pendingVipEpisode,
+                requestVersion = pendingVipEpisodeRequestVersion,
+            )
+            return
+        }
         val pendingEpisode = state.value.pendingPlaybackEpisode
         if (pendingEpisode != null) {
             val current = state.value
@@ -212,7 +234,7 @@ class AppStateController(private val dataSource: AppDataSource) {
                 mutableState.update { it.copy(isLoading = false, errorMessage = "内容暂时加载失败，可以稍后刷新。", messageType = UiMessageType.ERROR) }
                 return
             }
-            openPlayerForAuthenticatedUser(book, episode, requestVersion)
+            requestEpisodePlayback(book, episode, requestVersion)
             return
         }
         if (state.value.screen == AppScreen.ACCOUNT) {
@@ -410,17 +432,19 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update {
                 it.copy(
                     authPromptVisible = true,
-                    pendingPlaybackEpisode = firstEpisode,
+                    pendingPlaybackEpisode = if (firstEpisode.requiresVip()) null else firstEpisode,
+                    pendingVipEpisode = if (firstEpisode.requiresVip()) firstEpisode else null,
                     isLoading = false,
                 )
             }
+            pendingVipEpisodeRequestVersion = if (firstEpisode.requiresVip()) requestVersion else null
             return@runWithLoading
         }
         val resumeEpisode = chooseResumeEpisode(book, episodes, firstEpisode, requestVersion) ?: firstEpisode
         if (!isActivePlaybackRequest(requestVersion)) {
             return@runWithLoading
         }
-        openPlayerForAuthenticatedUser(book, resumeEpisode, requestVersion)
+        requestEpisodePlayback(book, resumeEpisode, requestVersion)
     }
 
     suspend fun openPlayer(episode: EpisodeSummary) = runWithLoading(ErrorContext.PLAYBACK) {
@@ -430,13 +454,15 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update {
                 it.copy(
                     authPromptVisible = true,
-                    pendingPlaybackEpisode = episode,
+                    pendingPlaybackEpisode = if (episode.requiresVip()) null else episode,
+                    pendingVipEpisode = if (episode.requiresVip()) episode else null,
                     isLoading = false,
                 )
             }
+            pendingVipEpisodeRequestVersion = if (episode.requiresVip()) requestVersion else null
             return@runWithLoading
         }
-        openPlayerForAuthenticatedUser(book, episode, requestVersion)
+        requestEpisodePlayback(book, episode, requestVersion)
     }
 
     suspend fun openWatchRecord(record: WatchRecord) = runWithLoading(ErrorContext.CONTENT) {
@@ -489,7 +515,41 @@ class AppStateController(private val dataSource: AppDataSource) {
                 isLoading = true,
             )
         }
-        openPlayerForAuthenticatedUser(book, episode, requestVersion)
+        requestEpisodePlayback(book, episode, requestVersion)
+    }
+
+    private suspend fun requestEpisodePlayback(
+        book: BookSummary,
+        episode: EpisodeSummary,
+        requestVersion: Long,
+    ) {
+        if (!isActivePlaybackRequest(requestVersion)) return
+        if (episode.requiresVip()) {
+            val pointAccount = state.value.pointAccount ?: loadPointAccountSilently()
+            if (!isActivePlaybackRequest(requestVersion)) return
+            if (pointAccount?.vipActive != true) {
+                openVipPaywall(
+                    episode = episode,
+                    requestVersion = requestVersion,
+                )
+                return
+            }
+        }
+        try {
+            openPlayerForAuthenticatedUser(book, episode, requestVersion)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            if (isActivePlaybackRequest(requestVersion) && isVipRequiredError(error)) {
+                openVipPaywall(
+                    episode = episode,
+                    requestVersion = requestVersion,
+                    allowImmediateResume = false,
+                )
+                return
+            }
+            throw error
+        }
     }
 
     private suspend fun openPlayerForAuthenticatedUser(
@@ -540,9 +600,11 @@ class AppStateController(private val dataSource: AppDataSource) {
                 isLoading = false,
                 authPromptVisible = false,
                 pendingPlaybackEpisode = null,
+                pendingVipEpisode = null,
                 errorMessage = if (snapshot == null) "积分状态暂时加载失败，播放不受影响。" else null,
             )
         }
+        pendingVipEpisodeRequestVersion = null
     }
 
     private suspend fun loadInteractionSilently(book: BookSummary): BookInteractionState {
@@ -877,9 +939,10 @@ class AppStateController(private val dataSource: AppDataSource) {
                 watchHistory = history,
                 continueWatchingBooks = continueWatchingBooks,
                 pointAccount = points,
+                vipActive = points.vipActive,
                 orders = orders,
                 wallet = wallet,
-                vipUntil = wallet?.vipUntil ?: it.vipUntil,
+                vipUntil = if (points.vipActive) points.vipUntil ?: wallet?.vipUntil else null,
                 vipPriceUsdt = wallet?.vipPriceUsdt ?: it.vipPriceUsdt,
                 vipCollectionAddress = wallet?.vipCollectionAddress ?: it.vipCollectionAddress,
                 vipOrders = vipOrders,
@@ -929,9 +992,10 @@ class AppStateController(private val dataSource: AppDataSource) {
                     watchHistory = history,
                     continueWatchingBooks = continueWatchingBooks,
                     pointAccount = points,
+                    vipActive = points.vipActive,
                     orders = orders,
                     wallet = wallet,
-                    vipUntil = wallet?.vipUntil ?: it.vipUntil,
+                    vipUntil = if (points.vipActive) points.vipUntil ?: wallet?.vipUntil else null,
                     vipPriceUsdt = wallet?.vipPriceUsdt ?: it.vipPriceUsdt,
                     withdrawalSummary = withdrawalSummary,
                     withdrawals = withdrawals,
@@ -955,18 +1019,56 @@ class AppStateController(private val dataSource: AppDataSource) {
         reloadAccountSnapshotAfterAction(walletUpdatedMessage(), walletMutationCompleted = true)
     }
 
-    suspend fun createVipOrder() = runAccountOperation(AccountOperation.WALLET_MUTATION) {
+    suspend fun createVipOrder() = runAccountOperation(
+        operation = AccountOperation.WALLET_MUTATION,
+        showGlobalLoading = false,
+    ) {
         requireAuthenticatedAccount()
-        dataSource.createVipOrder()
-        val latest = dataSource.loadLatestVipOrder()
-        mutableState.update { it.copy(latestVipOrder = latest) }
-        reloadAccountSnapshotAfterAction(vipOrderCreatedMessage())
+        val generation = vipPaywallGeneration
+        val createdOrder = dataSource.createVipOrder()
+        if (generation != vipPaywallGeneration) {
+            return@runAccountOperation
+        }
+        mutableState.update { it.copy(latestVipOrder = createdOrder) }
+        val refreshed = refreshVipPaymentState(
+            autoResume = true,
+            generation = generation,
+            waitForInFlight = true,
+        )
+        if (refreshed) {
+            mutableState.update {
+                it.copy(
+                    isLoading = false,
+                    errorMessage = vipOrderCreatedMessage(),
+                    messageType = UiMessageType.SUCCESS,
+                )
+            }
+        }
     }
 
-    suspend fun refreshLatestVipOrder() = runWithLoading(ErrorContext.ACCOUNT) {
+    suspend fun refreshLatestVipOrder() = runWithoutLoading(ErrorContext.ACCOUNT) {
         requireAuthenticatedAccount()
-        val latest = dataSource.loadLatestVipOrder()
-        mutableState.update { it.copy(latestVipOrder = latest, isLoading = false) }
+        refreshVipPaymentState(
+            autoResume = true,
+            generation = vipPaywallGeneration,
+        )
+    }
+
+    suspend fun showVipPaywall() = runWithoutLoading(ErrorContext.ACCOUNT) {
+        requireAuthenticatedAccount()
+        openVipPaywall(episode = null)
+    }
+
+    fun dismissVipPaywall() {
+        mutableState.update {
+            it.copy(
+                vipPaywallVisible = false,
+                vipPaywallLoading = false,
+                pendingVipEpisode = null,
+            )
+        }
+        pendingVipEpisodeRequestVersion = null
+        vipPaywallGeneration++
     }
 
     suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) = runWithLoading(ErrorContext.ACCOUNT) {
@@ -994,6 +1096,13 @@ class AppStateController(private val dataSource: AppDataSource) {
                     pointAccount = null,
                     orders = emptyList(),
                     wallet = null,
+                    vipActive = false,
+                    vipUntil = null,
+                    vipPaywallVisible = false,
+                    vipPaywallLoading = false,
+                    pendingVipEpisode = null,
+                    latestVipOrder = null,
+                    vipOrders = emptyList(),
                     withdrawalSummary = null,
                     withdrawals = emptyList(),
                     watchHistory = emptyList(),
@@ -1002,6 +1111,8 @@ class AppStateController(private val dataSource: AppDataSource) {
                     messageType = UiMessageType.SUCCESS,
                 )
             }
+            pendingVipEpisodeRequestVersion = null
+            vipPaywallGeneration++
         }
 
     fun clearError() {
@@ -1025,11 +1136,14 @@ class AppStateController(private val dataSource: AppDataSource) {
             it.copy(
                 authPromptVisible = false,
                 pendingPlaybackEpisode = null,
+                pendingVipEpisode = null,
                 authMode = AuthMode.LOGIN,
                 captchaId = "",
                 captchaImageBase64 = "",
             )
         }
+        pendingVipEpisodeRequestVersion = null
+        vipPaywallGeneration++
     }
 
     suspend fun checkApiHealth() {
@@ -1064,6 +1178,8 @@ class AppStateController(private val dataSource: AppDataSource) {
             savedCredentials = state.value.savedCredentials,
             language = state.value.language,
         )
+        pendingVipEpisodeRequestVersion = null
+        vipPaywallGeneration++
     }
 
     private suspend fun runWithLoading(errorContext: ErrorContext, block: suspend () -> Unit) {
@@ -1074,41 +1190,225 @@ class AppStateController(private val dataSource: AppDataSource) {
             mutableState.update { it.copy(isLoading = false) }
             throw error
         } catch (error: Throwable) {
-            val blockedAccount = isBlockedAccountError(error)
-            if (blockedAccount) {
-                dataSource.clearSession()
-            }
-            mutableState.update {
-                it.copy(
-                    session = if (blockedAccount) null else it.session,
-                    isLoading = false,
-                    errorMessage = userFacingErrorMessage(error, errorContext),
-                    messageTrigger = it.messageTrigger + 1,
-                    messageType = UiMessageType.ERROR,
-                    authPromptVisible = if (blockedAccount) {
-                        false
-                    } else if (shouldPromptForLogin(error, errorContext)) {
-                        true
-                    } else {
-                        it.authPromptVisible
-                    },
-                    pendingPlaybackEpisode = if (blockedAccount) null else it.pendingPlaybackEpisode,
-                )
-            }
+            handleRequestError(error, errorContext)
         }
     }
 
-    private suspend fun runAccountOperation(operation: AccountOperation, block: suspend () -> Unit) {
+    private suspend fun runWithoutLoading(errorContext: ErrorContext, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            handleRequestError(error, errorContext)
+        }
+    }
+
+    private suspend fun handleRequestError(error: Throwable, errorContext: ErrorContext) {
+        val blockedAccount = isBlockedAccountError(error)
+        val paywallAuthenticationFailed = state.value.vipPaywallVisible &&
+            error is ApiClientException &&
+            error.statusCode == 401
+        val clearVipPaymentState = blockedAccount || paywallAuthenticationFailed
+        if (blockedAccount) {
+            dataSource.clearSession()
+        }
+        mutableState.update {
+            it.copy(
+                session = if (blockedAccount) null else it.session,
+                isLoading = false,
+                errorMessage = userFacingErrorMessage(error, errorContext),
+                messageTrigger = it.messageTrigger + 1,
+                messageType = UiMessageType.ERROR,
+                authPromptVisible = if (blockedAccount) {
+                    false
+                } else if (shouldPromptForLogin(error, errorContext)) {
+                    true
+                } else {
+                    it.authPromptVisible
+                },
+                pendingPlaybackEpisode = if (blockedAccount) null else it.pendingPlaybackEpisode,
+                pointAccount = if (clearVipPaymentState) null else it.pointAccount,
+                vipActive = if (clearVipPaymentState) false else it.vipActive,
+                vipUntil = if (clearVipPaymentState) null else it.vipUntil,
+                vipPaywallVisible = if (clearVipPaymentState) false else it.vipPaywallVisible,
+                vipPaywallLoading = if (clearVipPaymentState) false else it.vipPaywallLoading,
+                pendingVipEpisode = if (clearVipPaymentState) null else it.pendingVipEpisode,
+                latestVipOrder = if (clearVipPaymentState) null else it.latestVipOrder,
+                vipOrders = if (clearVipPaymentState) emptyList() else it.vipOrders,
+            )
+        }
+        if (clearVipPaymentState) {
+            pendingVipEpisodeRequestVersion = null
+            vipPaywallGeneration++
+        }
+    }
+
+    private suspend fun runAccountOperation(
+        operation: AccountOperation,
+        showGlobalLoading: Boolean = true,
+        block: suspend () -> Unit,
+    ) {
         if (!accountOperationMutex.tryLock()) {
             return
         }
         mutableState.update { it.copy(accountOperation = operation) }
         try {
-            runWithLoading(ErrorContext.ACCOUNT, block)
+            if (showGlobalLoading) {
+                runWithLoading(ErrorContext.ACCOUNT, block)
+            } else {
+                runWithoutLoading(ErrorContext.ACCOUNT, block)
+            }
         } finally {
             mutableState.update { it.copy(accountOperation = null) }
             accountOperationMutex.unlock()
         }
+    }
+
+    private suspend fun loadPointAccountSilently(): PointAccount? {
+        val pointAccount = try {
+            dataSource.loadPointAccount()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: ApiClientException) {
+            if (error.statusCode == 401 || error.statusCode == 403) {
+                throw error
+            }
+            null
+        } catch (_: Throwable) {
+            null
+        }
+        if (pointAccount != null) {
+            mutableState.update {
+                it.copy(
+                    pointAccount = pointAccount,
+                    vipActive = pointAccount.vipActive,
+                    vipUntil = if (pointAccount.vipActive) pointAccount.vipUntil else null,
+                )
+            }
+        }
+        return pointAccount
+    }
+
+    private suspend fun openVipPaywall(
+        episode: EpisodeSummary?,
+        requestVersion: Long? = null,
+        allowImmediateResume: Boolean = true,
+    ) {
+        val generation = ++vipPaywallGeneration
+        pendingVipEpisodeRequestVersion = requestVersion
+        mutableState.update {
+            it.copy(
+                vipPaywallVisible = true,
+                vipPaywallLoading = true,
+                pendingVipEpisode = episode,
+                isLoading = false,
+                errorMessage = null,
+                messageType = null,
+            )
+        }
+        refreshVipPaymentState(
+            autoResume = allowImmediateResume && episode != null,
+            generation = generation,
+            waitForInFlight = true,
+        )
+    }
+
+    private suspend fun refreshVipPaymentState(
+        autoResume: Boolean,
+        generation: Long,
+        waitForInFlight: Boolean = false,
+    ): Boolean {
+        if (waitForInFlight) {
+            vipPaymentRefreshMutex.lock()
+        } else if (!vipPaymentRefreshMutex.tryLock()) {
+            return true
+        }
+        if (generation == vipPaywallGeneration) {
+            mutableState.update { it.copy(vipPaywallLoading = true) }
+        }
+        var episodeToResume: EpisodeSummary? = null
+        val refreshed = try {
+            val pointAccount = dataSource.loadPointAccount()
+            val latest = dataSource.loadLatestVipOrder()
+            val wallet = loadOptionalAccountData(state.value.wallet) { dataSource.loadWallet() }
+            val vipOrders = loadOptionalAccountData(state.value.vipOrders) { dataSource.loadVipOrders() }
+            if (generation != vipPaywallGeneration) {
+                false
+            } else {
+                val pendingEpisode = state.value.pendingVipEpisode
+                val pendingRequestVersion = pendingVipEpisodeRequestVersion
+                mutableState.update {
+                    it.copy(
+                        pointAccount = pointAccount,
+                        vipActive = pointAccount.vipActive,
+                        vipUntil = if (pointAccount.vipActive) pointAccount.vipUntil ?: wallet?.vipUntil else null,
+                        wallet = wallet,
+                        vipPriceUsdt = wallet?.vipPriceUsdt ?: it.vipPriceUsdt,
+                        vipCollectionAddress = wallet?.vipCollectionAddress ?: it.vipCollectionAddress,
+                        latestVipOrder = latest,
+                        vipOrders = vipOrders,
+                        vipPaywallLoading = false,
+                        isLoading = false,
+                    )
+                }
+                if (autoResume && pointAccount.vipActive) {
+                    episodeToResume = pendingEpisode?.takeIf {
+                        pendingRequestVersion == playbackRequestVersion
+                    }
+                    mutableState.update {
+                        it.copy(
+                            vipPaywallVisible = false,
+                            vipPaywallLoading = false,
+                            pendingVipEpisode = null,
+                        )
+                    }
+                    pendingVipEpisodeRequestVersion = null
+                }
+                true
+            }
+        } catch (error: CancellationException) {
+            if (generation == vipPaywallGeneration) {
+                mutableState.update { it.copy(vipPaywallLoading = false, isLoading = false) }
+            }
+            throw error
+        } catch (error: ApiClientException) {
+            if (generation != vipPaywallGeneration) {
+                false
+            } else {
+                mutableState.update { it.copy(vipPaywallLoading = false, isLoading = false) }
+                if (error.statusCode == 401 || error.statusCode == 403) {
+                    throw error
+                }
+                mutableState.update {
+                    it.copy(
+                        errorMessage = userFacingErrorMessage(error, ErrorContext.ACCOUNT),
+                        messageTrigger = it.messageTrigger + 1,
+                        messageType = UiMessageType.ERROR,
+                    )
+                }
+                false
+            }
+        } catch (error: Throwable) {
+            if (generation != vipPaywallGeneration) {
+                false
+            } else {
+                mutableState.update {
+                    it.copy(
+                        vipPaywallLoading = false,
+                        isLoading = false,
+                        errorMessage = userFacingErrorMessage(error, ErrorContext.ACCOUNT),
+                        messageTrigger = it.messageTrigger + 1,
+                        messageType = UiMessageType.ERROR,
+                    )
+                }
+                false
+            }
+        } finally {
+            vipPaymentRefreshMutex.unlock()
+        }
+        episodeToResume?.let { openPlayer(it) }
+        return refreshed
     }
 
     private fun requireSelectedBook(): BookSummary =
@@ -1234,6 +1534,11 @@ class AppStateController(private val dataSource: AppDataSource) {
         error is ApiClientException &&
             error.statusCode == 401 &&
             (context == ErrorContext.ACCOUNT || context == ErrorContext.PLAYBACK || context == ErrorContext.SOCIAL)
+
+    private fun isVipRequiredError(error: Throwable): Boolean =
+        error is ApiClientException &&
+            error.statusCode == 403 &&
+            error.message.contains("VIP required", ignoreCase = true)
 
     private fun isBlockedAccountError(error: Throwable): Boolean {
         val message = error.message?.lowercase().orEmpty()

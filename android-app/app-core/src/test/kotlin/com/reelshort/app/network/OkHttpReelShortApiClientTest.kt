@@ -418,7 +418,13 @@ class OkHttpReelShortApiClientTest {
     @Test
     fun pointsAndOrdersAreMappedFromProtectedEndpoints() = runTest {
         MockWebServer().use { server ->
-            server.enqueue(successBody("""{ "balance": 18 }"""))
+            server.enqueue(successBody("""
+                {
+                  "balance": 18,
+                  "vip": true,
+                  "vipUntil": "2030-01-01T00:00:00Z"
+                }
+            """.trimIndent()))
             server.enqueue(successBody("""
                 [
                   {
@@ -456,6 +462,8 @@ class OkHttpReelShortApiClientTest {
 
             assertEquals(18, account.balance)
             assertEquals(1, account.records.single().amount)
+            assertEquals(true, account.vipActive)
+            assertEquals("2030-01-01T00:00:00Z", account.vipUntil)
             assertEquals("RO202606270001", orders.single().orderNo)
             assertEquals(99, orders.single().pointAmount)
             assertEquals("/api/app/points/account", server.takeRequest().path)

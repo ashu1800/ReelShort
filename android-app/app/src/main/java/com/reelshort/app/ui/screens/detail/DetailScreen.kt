@@ -16,6 +16,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
+import com.reelshort.app.data.DEFAULT_VIP_FREE_EPISODES
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.ui.components.EpisodeRow
 import com.reelshort.app.ui.components.EmptyState
@@ -32,11 +33,10 @@ internal fun DetailScreen(
     book: BookSummary?,
     episodes: List<EpisodeSummary>,
     language: AppLanguage,
-    vipUntil: String?,
+    vipActive: Boolean,
     onOpenPlayer: (EpisodeSummary) -> Unit,
 ) {
     val copy = strings(language)
-    val isVip = !vipUntil.isNullOrBlank()
     val emptyState = detailEmptyState(book, episodes.size, language)
     if (book == null) {
         EmptyState(emptyState ?: return)
@@ -57,7 +57,7 @@ internal fun DetailScreen(
                 episode = episode,
                 bookDescription = book.description,
                 language = language,
-                locked = !isVip && episode.number > 7,
+                locked = !vipActive && episode.number > DEFAULT_VIP_FREE_EPISODES,
                 onClick = { onOpenPlayer(episode) },
             )
         }

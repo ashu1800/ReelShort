@@ -56,7 +56,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,9 +67,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.reelshort.app.data.AppLanguage
-import kotlinx.coroutines.delay
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.RechargeOrderSummary
@@ -144,10 +141,9 @@ internal fun AccountScreen(
     wallet: WalletInfo?,
     walletMutationVersion: Long,
     withdrawalSubmissionVersion: Long,
+    vipActive: Boolean,
     vipUntil: String?,
     vipPriceUsdt: String,
-    vipCollectionAddress: String,
-    latestVipOrder: VipOrder?,
     accountOperation: AccountOperation?,
     withdrawalSummary: WithdrawalSummary?,
     withdrawals: List<WithdrawalRecord>,
@@ -160,8 +156,7 @@ internal fun AccountScreen(
     onOpenWatchRecord: (WatchRecord) -> Unit,
     onBindWallet: (String, String, String) -> Unit,
     onUnbindWallet: (String) -> Unit,
-    onCreateVipOrder: () -> Unit,
-    onRefreshVipOrder: () -> Unit,
+    onShowVipPaywall: () -> Unit,
     onRefreshAccount: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
@@ -175,7 +170,6 @@ internal fun AccountScreen(
     var lastHandledWithdrawalSubmissionVersion by remember { mutableStateOf(withdrawalSubmissionVersion) }
     var passwordSheetVisible by remember { mutableStateOf(false) }
     var bankCardSheetVisible by remember { mutableStateOf(false) }
-    var vipSheetVisible by remember { mutableStateOf(false) }
     var supportDialogVisible by remember { mutableStateOf(false) }
     var withdrawalFormVisible by remember { mutableStateOf(false) }
     var pendingConfirmation by remember { mutableStateOf<PendingAccountConfirmation?>(null) }
@@ -269,10 +263,10 @@ internal fun AccountScreen(
                     AccountMenuDivider()
                     AccountMenuRow(
                         icon = Icons.Rounded.Star,
-                        title = if (vipUntil.isNullOrBlank()) copy.accountVipStatusInactive else copy.accountVipStatusActive,
-                        subtitle = vipUntil?.let { "${copy.vipExpiryLabel}$it" }
+                        title = if (vipActive) copy.accountVipStatusActive else copy.accountVipStatusInactive,
+                        subtitle = vipUntil?.takeIf { vipActive }?.let { "${copy.vipExpiryLabel}$it" }
                             ?: "${vipPriceUsdt.ifBlank { "" }}${copy.accountVipPriceSuffix}".trim(),
-                        onClick = { onRefreshAccount(); vipSheetVisible = true },
+                        onClick = onShowVipPaywall,
                     )
                     AccountMenuDivider()
                     AccountMenuRow(
@@ -397,22 +391,6 @@ internal fun AccountScreen(
                 onSubmitBankCard(holder, number, month, year, cvv)
             },
             onDismiss = { bankCardSheetVisible = false },
-        )
-    }
-
-    if (vipSheetVisible) {
-        VipBottomSheet(
-            language = language,
-            isVip = !vipUntil.isNullOrBlank(),
-            vipUntil = vipUntil,
-            vipPriceUsdt = vipPriceUsdt,
-            vipCollectionAddress = vipCollectionAddress,
-            latestVipOrder = latestVipOrder,
-            onCreateOrder = {
-                onCreateVipOrder()
-            },
-            onRefresh = onRefreshVipOrder,
-            onDismiss = { vipSheetVisible = false },
         )
     }
 
@@ -978,7 +956,6 @@ private fun AccountEmptyDetail(message: String) {
         )
     }
 }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WalletBottomSheet(
@@ -1332,161 +1309,6 @@ private fun AccountMenuDivider() {
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun VipBottomSheet(
-    language: AppLanguage,
-    isVip: Boolean,
-    vipUntil: String?,
-    vipPriceUsdt: String,
-    vipCollectionAddress: String,
-    latestVipOrder: VipOrder?,
-    onCreateOrder: () -> Unit,
-    onRefresh: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val copy = strings(language)
-    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val pendingOrder = if (!isVip && latestVipOrder?.status == "PENDING") latestVipOrder else null
-    var remainingSeconds by remember(pendingOrder?.expiresAt) {
-        mutableStateOf(computeRemaining(pendingOrder?.expiresAt))
-    }
-    LaunchedEffect(pendingOrder?.expiresAt) {
-        while (remainingSeconds > 0) {
-            delay(1000)
-            remainingSeconds--
-        }
-    }
-    // L2: 用 rememberUpdatedState 捕获最新值，订单 CONFIRMED/EXPIRED 后停止轮询
-    val currentPendingOrder by rememberUpdatedState(pendingOrder)
-    val currentRemaining by rememberUpdatedState(remainingSeconds)
-    // Auto-refresh order status every 10 seconds while sheet is open and order is pending
-    LaunchedEffect(pendingOrder?.id) {
-        while (currentPendingOrder != null && currentRemaining > 0) {
-            delay(10_000)
-            if (currentPendingOrder == null || currentRemaining <= 0) break
-            onRefresh()
-        }
-    }
-    val orderExpired = !isVip && latestVipOrder?.status == "EXPIRED"
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, containerColor = Panel) {
-        Column(
-            modifier = Modifier
-                .padding(start = 18.dp, end = 18.dp, bottom = 28.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                if (isVip) copy.vipDialogTitle else copy.vipPayTitle,
-                color = TextPrimary,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            if (isVip) {
-                // State 1: Already VIP — show status and expiry
-                Text("${copy.vipActiveLabel}", color = SuccessText, style = MaterialTheme.typography.bodyLarge)
-                vipUntil?.let {
-                    Text("${copy.vipExpiryLabel}$it", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-                }
-                latestVipOrder?.let { order ->
-                    Spacer(Modifier.height(4.dp))
-                    Text("${copy.vipPayOrderNo}${order.orderNo}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text("${copy.vipPayAmount}${order.usdtAmount} USDT", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text(
-                        when (order.status) {
-                            "CONFIRMED" -> copy.vipPayStatusConfirmed
-                            "REJECTED" -> copy.vipPayStatusRejected
-                            else -> copy.vipPayStatusPending
-                        },
-                        color = if (order.status == "CONFIRMED") SuccessText else TextSecondary,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            } else if (latestVipOrder != null && latestVipOrder.status == "PENDING") {
-                // State 2: Non-VIP with pending order — show payment info
-                val paymentAddress = latestVipOrder.receivingWalletAddress ?: vipCollectionAddress
-                Text("${copy.vipPayAmount}${latestVipOrder.payableAmount ?: latestVipOrder.usdtAmount} USDT", color = PrimaryGold, style = MaterialTheme.typography.titleMedium)
-                Text("${copy.vipPayOrderNo}${latestVipOrder.orderNo}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(4.dp))
-                Text(copy.vipPayAddress, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    paymentAddress.ifBlank { "N/A" },
-                    color = TextPrimary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (latestVipOrder.expiresAt != null) {
-                    if (remainingSeconds > 0) {
-                        Text(
-                            "${copy.vipPayExpiresIn} ${remainingSeconds / 60}:${(remainingSeconds % 60).toString().padStart(2, '0')}",
-                            color = PrimaryGold,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    } else {
-                        Text(copy.vipPayExpired, color = DangerText, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-                if (paymentAddress.isNotBlank()) {
-                    AsyncImage(
-                        model = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$paymentAddress",
-                        contentDescription = copy.vipPayQrHint,
-                        modifier = Modifier.size(200.dp),
-                    )
-                    GoldOutlinedButton(copy.vipPayCopy, true, {
-                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(paymentAddress))
-                    }, Modifier.fillMaxWidth(), PrimaryGold)
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(copy.vipPayHint, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                Text("${copy.vipPayStatusPending}", color = PrimaryGold, style = MaterialTheme.typography.bodyMedium)
-                if (remainingSeconds <= 0 && latestVipOrder.expiresAt != null) {
-                    GoldOutlinedButton(copy.accountVipUnlockAction, true, onCreateOrder, Modifier.fillMaxWidth(), PrimaryGold)
-                } else {
-                    GoldOutlinedButton(
-                        "Refresh status",
-                        true, onRefresh, Modifier.fillMaxWidth(), PrimaryGold,
-                    )
-                }
-            } else {
-                // State 3: Non-VIP, no pending order (or expired) — create order
-                if (orderExpired) {
-                    Text(copy.vipPayExpired, color = DangerText, style = MaterialTheme.typography.bodyMedium)
-                }
-                Text(
-                    "${vipPriceUsdt.ifBlank { "" }}${copy.accountVipPriceSuffix}".trim(),
-                    color = PrimaryGold,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                if (vipCollectionAddress.isNotBlank()) {
-                    Text(copy.vipPayAddress, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-                    Text(vipCollectionAddress, color = TextPrimary, style = MaterialTheme.typography.bodyMedium)
-                    AsyncImage(
-                        model = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$vipCollectionAddress",
-                        contentDescription = copy.vipPayQrHint,
-                        modifier = Modifier.size(200.dp),
-                    )
-                }
-                latestVipOrder?.let { order ->
-                    Text("${copy.vipPayOrderNo}${order.orderNo}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text(
-                        when (order.status) {
-                            "CONFIRMED" -> copy.vipPayStatusConfirmed
-                            "REJECTED" -> copy.vipPayStatusRejected
-                            else -> copy.vipPayStatusPending
-                        },
-                        color = if (order.status == "REJECTED") DangerText else TextSecondary,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                GoldOutlinedButton(copy.accountVipUnlockAction, true, onCreateOrder, Modifier.fillMaxWidth(), PrimaryGold)
-            }
-            GoldOutlinedButton(copy.authClose, true, onDismiss, Modifier.fillMaxWidth(), PrimaryGold)
-        }
-    }
-}
-
 @Composable
 private fun LabeledField(
     label: String,
@@ -1503,17 +1325,5 @@ private fun LabeledField(
             modifier = Modifier.fillMaxWidth(),
             textStyle = MaterialTheme.typography.bodyMedium,
         )
-    }
-}
-
-private fun computeRemaining(expiresAt: String?): Int {
-    if (expiresAt == null) return 0
-    return try {
-        val expiry = java.time.OffsetDateTime.parse(expiresAt)
-        val now = java.time.OffsetDateTime.now()
-        val diff = java.time.Duration.between(now, expiry).seconds.toInt()
-        maxOf(0, diff)
-    } catch (_: Exception) {
-        0
     }
 }

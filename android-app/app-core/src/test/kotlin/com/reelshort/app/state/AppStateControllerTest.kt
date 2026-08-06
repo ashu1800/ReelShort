@@ -29,6 +29,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -752,6 +753,476 @@ class AppStateControllerTest {
         assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
         assertEquals(180, state.playback.durationSeconds)
         assertEquals(listOf("snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun nonVipLockedEpisodeOpensPaywallWithoutRequestingVideo() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        dataSource.calls.clear()
+        controller.openPlayer(lockedEpisode)
+
+        val state = controller.state.value
+        assertTrue(state.vipPaywallVisible)
+        assertEquals(lockedEpisode, state.pendingVipEpisode)
+        assertFalse(dataSource.calls.contains("video:book-1:8"))
+        assertEquals(AppScreen.PLAYER, state.screen)
+    }
+
+    @Test
+    fun nonVipLockedResumeEpisodeOpensPaywallWithoutRequestingVideo() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        dataSource.watchHistory = listOf(WatchRecord("book-1", "Alpha", 8, 60))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+
+        assertTrue(controller.state.value.vipPaywallVisible)
+        assertEquals(lockedEpisode, controller.state.value.pendingVipEpisode)
+        assertFalse(dataSource.calls.contains("video:book-1:8"))
+    }
+
+    @Test
+    fun guestLockedEpisodeLogsInThenOpensPaywallInsteadOfPlaying() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        val controller = AppStateController(dataSource)
+
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(lockedEpisode)
+        assertTrue(controller.state.value.authPromptVisible)
+        assertEquals(lockedEpisode, controller.state.value.pendingVipEpisode)
+
+        controller.login("demo", "Password123")
+
+        val state = controller.state.value
+        assertFalse(state.authPromptVisible)
+        assertTrue(state.vipPaywallVisible)
+        assertEquals(lockedEpisode, state.pendingVipEpisode)
+        assertFalse(dataSource.calls.contains("video:book-1:8"))
+    }
+
+    @Test
+    fun guestLoginHistoryResumeChecksVipBeforePlaying() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = null)
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        dataSource.watchHistory = listOf(WatchRecord("book-1", "Alpha", 8, 60))
+        val controller = AppStateController(dataSource)
+
+        controller.openBook(dataSource.books.first())
+        assertEquals(dataSource.episodes.first(), controller.state.value.pendingPlaybackEpisode)
+
+        controller.login("demo", "Password123")
+
+        assertFalse(controller.state.value.authPromptVisible)
+        assertTrue(controller.state.value.vipPaywallVisible)
+        assertEquals(lockedEpisode, controller.state.value.pendingVipEpisode)
+        assertFalse(dataSource.calls.contains("video:book-1:8"))
+    }
+
+    @Test
+    fun vipRequired403OpensPaywallAndPreservesEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.videoError = ApiClientException(403, null, "VIP required to watch this episode")
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        dataSource.calls.clear()
+        controller.openPlayer(dataSource.episodes.first())
+
+        val state = controller.state.value
+        assertTrue(state.vipPaywallVisible)
+        assertEquals(dataSource.episodes.first(), state.pendingVipEpisode)
+        assertNull(state.currentVideoUrl)
+    }
+
+    @Test
+    fun vipRequired403FromBookResumeOpensPaywall() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.videoError = ApiClientException(403, null, "VIP required to watch this episode")
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+
+        val state = controller.state.value
+        assertTrue(state.vipPaywallVisible)
+        assertEquals(dataSource.episodes.first(), state.pendingVipEpisode)
+        assertNull(state.currentVideoUrl)
+    }
+
+    @Test
+    fun staleVipRequired403DoesNotOpenPaywallForNewerEpisodeRequest() = runTest {
+        val firstVideoGate = CompletableDeferred<Unit>()
+        val secondVideoGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        dataSource.videoGates["book-1:1"] = firstVideoGate
+        dataSource.videoGates["book-1:2"] = secondVideoGate
+        dataSource.videoErrors["book-1:1"] = ApiClientException(403, null, "VIP required to watch this episode")
+        val first = launch { controller.openPlayer(dataSource.episodes[0]) }
+        runCurrent()
+        val second = launch { controller.openPlayer(dataSource.episodes[1]) }
+        runCurrent()
+
+        firstVideoGate.complete(Unit)
+        runCurrent()
+
+        assertFalse(controller.state.value.vipPaywallVisible)
+        assertNull(controller.state.value.pendingVipEpisode)
+
+        secondVideoGate.complete(Unit)
+        first.join()
+        second.join()
+        assertEquals(dataSource.episodes[1], controller.state.value.selectedEpisode)
+    }
+
+    @Test
+    fun nonVipGeneric403KeepsTheExistingPlaybackError() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.videoError = ApiClientException(403, null, "forbidden")
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(dataSource.episodes.first())
+
+        assertFalse(controller.state.value.vipPaywallVisible)
+        assertEquals("forbidden", controller.state.value.errorMessage)
+    }
+
+    @Test
+    fun confirmedVipAutomaticallyResumesPendingLockedEpisode() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        dataSource.latestVipOrder = dataSource.pendingVipOrder()
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(lockedEpisode)
+        assertTrue(controller.state.value.vipPaywallVisible)
+        assertEquals(lockedEpisode, controller.state.value.pendingVipEpisode)
+        dataSource.pointVip = true
+        dataSource.latestVipOrder = dataSource.confirmedVipOrder()
+
+        controller.refreshLatestVipOrder()
+
+        val state = controller.state.value
+        assertFalse(state.vipPaywallVisible)
+        assertNull(state.pendingVipEpisode)
+        assertEquals(AppScreen.PLAYER, state.screen)
+        assertEquals(lockedEpisode, state.selectedEpisode)
+        assertEquals("https://media.local/book-1/8.m3u8", state.currentVideoUrl?.url)
+    }
+
+    @Test
+    fun confirmedVipClosesPaywallOpenedFromAccount() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.showVipPaywall()
+        assertTrue(controller.state.value.vipPaywallVisible)
+        dataSource.pointVip = true
+
+        controller.refreshLatestVipOrder()
+
+        assertFalse(controller.state.value.vipPaywallVisible)
+        assertTrue(controller.state.value.vipActive)
+        assertNull(controller.state.value.pendingVipEpisode)
+    }
+
+    @Test
+    fun dismissingVipPaywallCancelsAutomaticResume() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(lockedEpisode)
+        controller.dismissVipPaywall()
+        dataSource.pointVip = true
+        controller.refreshLatestVipOrder()
+
+        assertFalse(controller.state.value.vipPaywallVisible)
+        assertNull(controller.state.value.pendingVipEpisode)
+        assertEquals(1, controller.state.value.selectedEpisode?.number)
+        assertFalse(dataSource.calls.contains("video:book-1:8"))
+    }
+
+    @Test
+    fun creatingVipOrderKeepsTheCurrentPlaybackScreen() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(lockedEpisode)
+        controller.createVipOrder()
+
+        assertEquals(AppScreen.PLAYER, controller.state.value.screen)
+        assertTrue(controller.state.value.vipPaywallVisible)
+        assertEquals("PENDING", controller.state.value.latestVipOrder?.status)
+        assertEquals(1, dataSource.calls.count { it == "vip:create" })
+    }
+
+    @Test
+    fun creatingVipOrderResumesWhenEntitlementIsAlreadyActive() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        dataSource.vipAfterCreate = true
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(lockedEpisode)
+        controller.createVipOrder()
+
+        assertFalse(controller.state.value.vipPaywallVisible)
+        assertNull(controller.state.value.pendingVipEpisode)
+        assertEquals(lockedEpisode, controller.state.value.selectedEpisode)
+    }
+
+    @Test
+    fun duplicateVipOrderSubmissionIsIgnoredWhileTheFirstIsRunning() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.vipOrderGate = gate
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+
+        val first = launch { controller.createVipOrder() }
+        runCurrent()
+        val duplicate = launch { controller.createVipOrder() }
+        runCurrent()
+
+        assertEquals(1, dataSource.calls.count { it == "vip:create" })
+        gate.complete(Unit)
+        first.join()
+        duplicate.join()
+    }
+
+    @Test
+    fun duplicateVipStatusRefreshIsIgnoredWhileTheFirstIsRunning() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.latestVipOrder = dataSource.pendingVipOrder()
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.showVipPaywall()
+        dataSource.calls.clear()
+        dataSource.pointAccountGate = gate
+
+        val first = launch { controller.refreshLatestVipOrder() }
+        runCurrent()
+        val duplicate = launch { controller.refreshLatestVipOrder() }
+        runCurrent()
+
+        assertEquals(1, dataSource.calls.count { it == "points" })
+        gate.complete(Unit)
+        first.join()
+        duplicate.join()
+    }
+
+    @Test
+    fun vipStatusRefreshDoesNotShowGlobalLoading() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.latestVipOrder = dataSource.pendingVipOrder()
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.showVipPaywall()
+        dataSource.pointAccountGate = gate
+
+        val refresh = launch { controller.refreshLatestVipOrder() }
+        runCurrent()
+
+        assertFalse(controller.state.value.isLoading)
+        assertTrue(controller.state.value.vipPaywallLoading)
+
+        gate.complete(Unit)
+        refresh.join()
+    }
+
+    @Test
+    fun lockedEpisodePointAccount401PromptsForLoginInsteadOfOpeningPaywall() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        dataSource.accountError = ApiClientException(401, null, "unauthorized")
+
+        controller.openPlayer(lockedEpisode)
+
+        assertFalse(controller.state.value.vipPaywallVisible)
+        assertTrue(controller.state.value.authPromptVisible)
+        assertEquals("登录状态已失效，请重新登录。", controller.state.value.errorMessage)
+    }
+
+    @Test
+    fun staleLockedEpisodeEntitlementCheckDoesNotReplaceNewerPaywallTarget() = runTest {
+        val entitlementGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val episode8 = dataSource.lockedEpisode()
+        val episode9 = episode8.copy(number = 9, chapterId = "chapter-9", title = "Newer Locked Episode")
+        dataSource.episodes = dataSource.episodes + episode8 + episode9
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        dataSource.pointAccountGate = entitlementGate
+
+        val first = launch { controller.openPlayer(episode8) }
+        runCurrent()
+        dataSource.pointAccountGate = null
+        controller.openPlayer(episode9)
+
+        entitlementGate.complete(Unit)
+        first.join()
+
+        assertTrue(controller.state.value.vipPaywallVisible)
+        assertEquals(episode9, controller.state.value.pendingVipEpisode)
+    }
+
+    @Test
+    fun reopeningPaywallWaitsForStaleRefreshAndUsesTheNewResumeTarget() = runTest {
+        val staleRefreshGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val episode8 = dataSource.lockedEpisode()
+        val episode9 = episode8.copy(number = 9, chapterId = "chapter-9", title = "Newer Locked Episode")
+        dataSource.episodes = dataSource.episodes + episode8 + episode9
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(episode8)
+        controller.dismissVipPaywall()
+        dataSource.pointAccountGate = staleRefreshGate
+
+        val staleAccountPaywall = launch { controller.showVipPaywall() }
+        runCurrent()
+        controller.dismissVipPaywall()
+        val newerLockedPaywall = launch { controller.openPlayer(episode9) }
+        runCurrent()
+        dataSource.pointVip = true
+        staleRefreshGate.complete(Unit)
+        staleAccountPaywall.join()
+        newerLockedPaywall.join()
+
+        assertFalse(controller.state.value.vipPaywallVisible)
+        assertNull(controller.state.value.pendingVipEpisode)
+        assertEquals(episode9, controller.state.value.selectedEpisode)
+    }
+
+    @Test
+    fun createdVipOrderRemainsVisibleWhenSnapshotRefreshFails() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.showVipPaywall()
+        dataSource.latestVipOrderError = IllegalStateException("refresh unavailable")
+
+        controller.createVipOrder()
+
+        assertEquals("PENDING", controller.state.value.latestVipOrder?.status)
+        assertEquals("refresh unavailable", controller.state.value.errorMessage)
+    }
+
+    @Test
+    fun vipOrderResponseDoesNotRestorePaymentStateAfterLogout() = runTest {
+        val createGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.showVipPaywall()
+        dataSource.vipOrderGate = createGate
+
+        val create = launch { controller.createVipOrder() }
+        runCurrent()
+        controller.logout()
+        createGate.complete(Unit)
+        create.join()
+
+        assertNull(controller.state.value.session)
+        assertNull(controller.state.value.latestVipOrder)
+        assertFalse(controller.state.value.vipActive)
+        assertFalse(controller.state.value.vipPaywallVisible)
+    }
+
+    @Test
+    fun dismissingPaywallDuringVipOrderCreationDoesNotLeaveGlobalLoading() = runTest {
+        val createGate = CompletableDeferred<Unit>()
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.showVipPaywall()
+        dataSource.vipOrderGate = createGate
+
+        val create = launch { controller.createVipOrder() }
+        runCurrent()
+        controller.dismissVipPaywall()
+        createGate.complete(Unit)
+        create.join()
+
+        assertFalse(controller.state.value.isLoading)
+        assertFalse(controller.state.value.vipPaywallVisible)
+    }
+
+    @Test
+    fun vip403DuringConfirmedAutoResumeDoesNotDeadlockPaymentRefresh() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val lockedEpisode = dataSource.lockedEpisode()
+        dataSource.episodes = dataSource.episodes + lockedEpisode
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.openBook(dataSource.books.first())
+        controller.openPlayer(lockedEpisode)
+        dataSource.pointVip = true
+        dataSource.videoError = ApiClientException(403, null, "VIP required to watch this episode")
+
+        withTimeout(1_000) {
+            controller.refreshLatestVipOrder()
+        }
+
+        assertTrue(controller.state.value.vipPaywallVisible)
+        assertEquals(lockedEpisode, controller.state.value.pendingVipEpisode)
+    }
+
+    @Test
+    fun vipRefresh401ClosesPaywallAndPromptsForLogin() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        controller.showVipPaywall()
+        dataSource.accountError = ApiClientException(401, null, "unauthorized")
+
+        controller.refreshLatestVipOrder()
+
+        assertFalse(controller.state.value.vipPaywallVisible)
+        assertNull(controller.state.value.pendingVipEpisode)
+        assertTrue(controller.state.value.authPromptVisible)
     }
 
     @Test
@@ -1718,9 +2189,12 @@ class AppStateControllerTest {
                 rememberPassword = true,
             ),
         )
+        dataSource.pointVip = true
         val controller = AppStateController(dataSource)
         controller.restoreSession()
         controller.loadAccountSnapshot()
+        controller.showVipPaywall()
+        assertTrue(controller.state.value.vipPaywallVisible)
         dataSource.calls.clear()
 
         controller.changePassword("OldPassword123", "NewPassword123")
@@ -1732,6 +2206,9 @@ class AppStateControllerTest {
         assertNull(state.pointAccount)
         assertNull(state.wallet)
         assertTrue(state.watchHistory.isEmpty())
+        assertFalse(state.vipActive)
+        assertFalse(state.vipPaywallVisible)
+        assertNull(state.pendingVipEpisode)
         assertEquals("Password changed. Sign in again with the new password.", state.errorMessage)
         assertEquals(listOf("password:change", "clear"), dataSource.calls)
     }
@@ -2025,6 +2502,8 @@ class AppStateControllerTest {
         var progressRewardStatus: WatchRewardStatus = WatchRewardStatus.NOT_COMPLETE
         var progressAwardedPoints: Int = 0
         var pointBalance: Int = 25
+        var pointVip: Boolean = false
+        var pointAccountGate: CompletableDeferred<Unit>? = null
         var snapshot: WatchEpisodeSnapshot = WatchEpisodeSnapshot.empty("book-1", 1)
         var snapshotError: Throwable? = null
         var episodes = listOf(
@@ -2047,6 +2526,12 @@ class AppStateControllerTest {
         var lastProgress: WatchProgressReport? = null
         var videoUrlVersion: Int = 1
         var videoDurationSeconds: Int? = null
+        var videoError: Throwable? = null
+        val videoErrors = mutableMapOf<String, Throwable>()
+        var latestVipOrder: VipOrder? = null
+        var latestVipOrderError: Throwable? = null
+        var vipOrderGate: CompletableDeferred<Unit>? = null
+        var vipAfterCreate: Boolean = false
         var healthError: Throwable? = null
         var socialError: Throwable? = null
         var walletError: Throwable? = null
@@ -2061,6 +2546,31 @@ class AppStateControllerTest {
         private val commentStore = mutableListOf<Comment>()
         var favoritesList: List<BookSummary> = emptyList()
         var language: AppLanguage = AppLanguage.ENGLISH
+
+        fun lockedEpisode(): EpisodeSummary = EpisodeSummary(
+            number = 8,
+            chapterId = "chapter-8",
+            title = "Locked Episode",
+            description = "VIP only",
+            durationSeconds = 190,
+        )
+
+        fun pendingVipOrder(): VipOrder = VipOrder(
+            id = "vip-1",
+            orderNo = "VIP1",
+            usdtAmount = "15",
+            payableAmount = "15.01",
+            status = "PENDING",
+            paymentMethod = "USDT",
+            txHash = null,
+            createdAt = "2026-07-07T00:00:00Z",
+            confirmedAt = null,
+        )
+
+        fun confirmedVipOrder(): VipOrder = pendingVipOrder().copy(
+            status = "CONFIRMED",
+            confirmedAt = "2026-07-07T00:05:00Z",
+        )
 
         override val apiBaseUrl: String = "https://shortlink.hjj888.cc/api/app"
 
@@ -2136,7 +2646,10 @@ class AppStateControllerTest {
 
         override suspend fun loadVideoUrl(book: BookSummary, episode: EpisodeSummary): VideoUrl {
             calls += "video:${book.id}:${episode.number}"
-            videoGates["${book.id}:${episode.number}"]?.await()
+            val episodeKey = "${book.id}:${episode.number}"
+            videoGates[episodeKey]?.await()
+            videoErrors[episodeKey]?.let { throw it }
+            videoError?.let { throw it }
             val suffix = if (videoUrlVersion == 1) "" else "-v$videoUrlVersion"
             return VideoUrl(
                 url = "https://media.local/${book.id}/${episode.number}$suffix.m3u8",
@@ -2195,8 +2708,14 @@ class AppStateControllerTest {
 
         override suspend fun loadPointAccount(): PointAccount {
             calls += "points"
+            pointAccountGate?.await()
             accountError?.let { throw it }
-            return PointAccount(balance = pointBalance, records = listOf(PointRecord(amount = 5, reason = "WATCH_REWARD")))
+            return PointAccount(
+                balance = pointBalance,
+                records = listOf(PointRecord(amount = 5, reason = "WATCH_REWARD")),
+                vipActive = pointVip,
+                vipUntil = if (pointVip) "2030-01-01T00:00:00Z" else null,
+            )
         }
 
         override suspend fun loadOrders(): List<RechargeOrderSummary> {
@@ -2234,16 +2753,9 @@ class AppStateControllerTest {
 
         override suspend fun createVipOrder(): VipOrder {
             calls += "vip:create"
-            return VipOrder(
-                id = "vip-1",
-                orderNo = "VIP1",
-                usdtAmount = "15",
-                status = "PENDING",
-                paymentMethod = "USDT",
-                txHash = null,
-                createdAt = "2026-07-07T00:00:00Z",
-                confirmedAt = null,
-            )
+            vipOrderGate?.await()
+            if (vipAfterCreate) pointVip = true
+            return pendingVipOrder().also { latestVipOrder = it }
         }
 
         override suspend fun loadVipOrders(): List<VipOrder> {
@@ -2253,7 +2765,8 @@ class AppStateControllerTest {
 
         override suspend fun loadLatestVipOrder(): VipOrder? {
             calls += "vip:latest"
-            return null
+            latestVipOrderError?.let { throw it }
+            return latestVipOrder
         }
 
         override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
