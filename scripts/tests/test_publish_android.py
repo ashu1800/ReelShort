@@ -1,6 +1,7 @@
 import importlib.util
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 def load_publisher():
@@ -38,6 +39,20 @@ class PublishAndroidTests(unittest.TestCase):
 
         with self.assertRaises(publisher.PublishError):
             publisher.verify_badging(badging, "0.7.5", 28)
+
+    @patch("builtins.input", return_value="")
+    def test_empty_interactive_release_notes_are_preserved(self, _input):
+        args = publisher.argparse.Namespace(
+            version="0.8.2",
+            version_code=35,
+            notes=None,
+            mandatory=False,
+            minimum_version_code=1,
+        )
+
+        _, _, notes = publisher.resolve_inputs(args, {})
+
+        self.assertEqual("", notes)
 
 
 if __name__ == "__main__":

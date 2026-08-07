@@ -65,7 +65,7 @@ App 启动
 python scripts/publish-android.py
 ```
 
-交互式提示输入版本号（`X.Y.Z`）、version code 和 release notes。脚本会自动：
+交互式提示输入版本号（`X.Y.Z`）、version code 和可选的 release notes；直接留空时不会写入默认更新说明。脚本会自动：
 
 1. 用 Gradle 构建签名 release APK
 2. 用 `apksigner` / `aapt` 校验签名、正式证书 SHA-256、包名（`com.reelshort.app`）、versionName 和 versionCode
@@ -87,7 +87,7 @@ python scripts/publish-android.py \
 
 - `--version` — 版本号 `X.Y.Z`
 - `--version-code` — 正整数 version code（省略时提示，默认建议为当前最新 + 1）
-- `--notes` — release notes 文本
+- `--notes` — 可选 release notes 文本；省略或传空字符串时发布记录保持为空
 - `--mandatory` — 标记为强制更新（当前 App 未强制执行该标记，仅记录）
 - `--minimum-version-code` — 可安装此更新的最低 App version code（默认 1）
 

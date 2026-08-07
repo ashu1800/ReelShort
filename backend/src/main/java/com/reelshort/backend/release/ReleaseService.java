@@ -25,9 +25,7 @@ public class ReleaseService {
 		String title = request.title() == null || request.title().isBlank()
 				? "ShortLink v" + versionName
 				: request.title().trim();
-		String releaseNotes = request.releaseNotes() == null || request.releaseNotes().isBlank()
-				? "ShortLink v" + versionName + " update."
-				: request.releaseNotes().trim();
+		String releaseNotes = request.releaseNotes() == null ? "" : request.releaseNotes().trim();
 
 		Optional<AppRelease> existing = releaseRepository.findByVersionName(versionName);
 		AppRelease release;

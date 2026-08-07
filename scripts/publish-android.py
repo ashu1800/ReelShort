@@ -80,7 +80,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--version", help="Version name in X.Y.Z form. Prompted if omitted.")
     parser.add_argument("--version-code", type=int,
                         help="Positive integer version code. Defaults to last published + 1.")
-    parser.add_argument("--notes", help="Release notes text. Prompted if omitted.")
+    parser.add_argument("--notes", help="Optional release notes text. Defaults to empty when omitted.")
     parser.add_argument("--mandatory", action="store_true", help="Mark the release as mandatory.")
     parser.add_argument("--minimum-version-code", type=int, default=1,
                         help="Minimum app version code that may install this update (default 1).")
@@ -125,8 +125,7 @@ def resolve_inputs(args: argparse.Namespace, config: dict) -> tuple[str, int, st
 
     notes = args.notes
     if notes is None:
-        default = f"ShortLink v{version_name} update."
-        notes = input(f"Release notes [default: {default}]: ").strip() or default
+        notes = input("Release notes [optional]: ").strip()
 
     return version_name, version_code, notes
 

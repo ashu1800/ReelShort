@@ -71,7 +71,7 @@ class ReleaseServiceTests {
 		assertThat(saved.versionName()).isEqualTo("0.4.3");
 		assertThat(saved.versionCode()).isEqualTo(7);
 		assertThat(saved.title()).isEqualTo("ShortLink v0.4.3");
-		assertThat(saved.releaseNotes()).isEqualTo("ShortLink v0.4.3 update.");
+		assertThat(saved.releaseNotes()).isEmpty();
 	}
 
 	@Test
