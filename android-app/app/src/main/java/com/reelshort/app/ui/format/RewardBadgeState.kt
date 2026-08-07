@@ -14,14 +14,16 @@ internal enum class RewardBadgeVisualState {
 }
 
 internal data class RewardBadgeState(
-    val displayText: String,
+    val accessibilityText: String,
+    val pointsText: String,
+    val pointsFontSizeSp: Float,
     val ringProgress: Float,
     val visualState: RewardBadgeVisualState,
-    val hasLeadingIcon: Boolean = true,
 )
 
 internal fun rewardBadgeState(
     progressPercent: Int,
+    estimatedRewardPoints: Int,
     isReporting: Boolean,
     hasError: Boolean,
     language: AppLanguage = AppLanguage.ENGLISH,
@@ -40,7 +42,7 @@ internal fun rewardBadgeState(
         progress >= 100 -> RewardBadgeVisualState.READY
         else -> RewardBadgeVisualState.WAITING
     }
-    val displayText = when (visualState) {
+    val accessibilityText = when (visualState) {
         RewardBadgeVisualState.REPORTING -> rewardBadgeSyncingLabel(language)
         RewardBadgeVisualState.ERROR -> rewardBadgeRetryLabel(language)
         RewardBadgeVisualState.READY -> rewardBadgeReadyLabel(language)
@@ -49,19 +51,24 @@ internal fun rewardBadgeState(
         RewardBadgeVisualState.UNAVAILABLE -> rewardBadgeUnavailableLabel(language)
         RewardBadgeVisualState.WAITING -> rewardBadgeWaitingLabel(language)
     }
+    val pointsText = estimatedRewardPoints.coerceAtLeast(0).toString()
     return RewardBadgeState(
-        displayText = displayText,
+        accessibilityText = accessibilityText,
+        pointsText = pointsText,
+        pointsFontSizeSp = when (pointsText.length) {
+            1, 2 -> 12f
+            3 -> 10f
+            else -> 8f
+        },
         ringProgress = (progress.toFloat() / 100f).coerceIn(0f, 1f),
         visualState = visualState,
     )
 }
 
-internal fun rewardBadgeIncludesProgressRing(state: RewardBadgeState): Boolean =
-    state.visualState != RewardBadgeVisualState.COMPLETED &&
-        state.visualState != RewardBadgeVisualState.DAILY_LIMIT
-
-internal fun rewardBadgeContentDescription(state: RewardBadgeState, language: AppLanguage): String =
-    "${rewardBadgeInfoTitle(language)}: ${state.displayText}"
+internal fun rewardBadgeContentDescription(state: RewardBadgeState, language: AppLanguage): String {
+    val unit = if (state.pointsText == "1") "point" else "points"
+    return "${rewardBadgeInfoTitle(language)}: ${state.accessibilityText}, ${state.pointsText} $unit"
+}
 
 internal fun rewardBadgeInfoTitle(language: AppLanguage): String =
     when (language) {

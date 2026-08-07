@@ -361,7 +361,7 @@ class AppStateControllerTest {
         assertEquals(1, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
         assertEquals(PlaybackStatus.READY, state.playback.status)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -387,7 +387,7 @@ class AppStateControllerTest {
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals(90, state.playback.positionSeconds)
         assertEquals(50, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -404,7 +404,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -420,7 +420,7 @@ class AppStateControllerTest {
         val state = controller.state.value
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(2, state.selectedEpisode?.number)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -535,7 +535,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(1, state.selectedEpisode?.number)
         assertNull(state.errorMessage)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -730,10 +730,26 @@ class AppStateControllerTest {
         assertEquals(book, state.playback.book)
         assertEquals(dataSource.episodes.first(), state.playback.episode)
         assertEquals("https://media.local/book-1/1.m3u8", state.playback.videoUrl?.url)
+        assertEquals(2, state.playback.videoUrl?.estimatedRewardPoints)
         assertEquals(200, state.playback.durationSeconds)
         assertEquals(0, state.playback.positionSeconds)
         assertEquals(0, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+    }
+
+    @Test
+    fun vipAccountIsLoadedBeforePlayingFreeEpisodeForRewardIndicator() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        dataSource.pointVip = true
+        val controller = AppStateController(dataSource)
+
+        controller.restoreSession()
+        dataSource.calls.clear()
+        controller.openBook(dataSource.books.first())
+
+        assertTrue(controller.state.value.vipActive)
+        assertEquals(25, controller.state.value.pointAccount?.balance)
+        assertTrue(dataSource.calls.contains("points"))
     }
 
     @Test
@@ -751,6 +767,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
+        assertEquals(3, state.playback.videoUrl?.estimatedRewardPoints)
         assertEquals(180, state.playback.durationSeconds)
         assertEquals(listOf("snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
@@ -1092,7 +1109,9 @@ class AppStateControllerTest {
         dataSource.episodes = dataSource.episodes + episode8 + episode9
         val controller = AppStateController(dataSource)
         controller.restoreSession()
+        dataSource.accountError = IllegalStateException("initial entitlement unavailable")
         controller.openBook(dataSource.books.first())
+        dataSource.accountError = null
         dataSource.pointAccountGate = entitlementGate
 
         val first = launch { controller.openPlayer(episode8) }
@@ -1278,7 +1297,7 @@ class AppStateControllerTest {
         assertFalse(state.authPromptVisible)
         assertNull(state.pendingPlaybackEpisode)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -1304,7 +1323,7 @@ class AppStateControllerTest {
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals(90, state.playback.positionSeconds)
         assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "points", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -1320,7 +1339,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(2, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/2.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "points", "snapshot:book-1:2", "video:book-1:2", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -1336,7 +1355,7 @@ class AppStateControllerTest {
         assertEquals(AppScreen.PLAYER, state.screen)
         assertEquals(1, state.selectedEpisode?.number)
         assertEquals("https://media.local/book-1/1.m3u8", state.currentVideoUrl?.url)
-        assertEquals(listOf("episodes:book-1", "login:demo", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "login:demo", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -1447,7 +1466,7 @@ class AppStateControllerTest {
         assertEquals(200, state.playback.positionSeconds)
         assertEquals(200, state.playback.durationSeconds)
         assertEquals(100, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1"), dataSource.calls)
     }
 
     @Test
@@ -1498,7 +1517,7 @@ class AppStateControllerTest {
         assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
         assertEquals(25, state.pointAccount?.balance)
         assertEquals(
-            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:150", "history", "points"),
+            listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:150", "history", "points"),
             dataSource.calls,
         )
     }
@@ -1525,9 +1544,9 @@ class AppStateControllerTest {
         assertEquals(30, dataSource.lastProgress?.positionSeconds)
         assertEquals(30, state.playback.lastReportedPositionSeconds)
         assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
-        assertNull(state.pointAccount)
+        assertEquals(25, state.pointAccount?.balance)
         assertEquals(
-            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:15", "progress:book-1:1:30"),
+            listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:15", "progress:book-1:1:30"),
             dataSource.calls,
         )
     }
@@ -1549,7 +1568,7 @@ class AppStateControllerTest {
         assertEquals(160, state.playback.positionSeconds)
         assertEquals(80, state.playback.progressPercent)
         assertEquals(160, state.playback.lastReportedPositionSeconds)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:160"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:160"), dataSource.calls)
     }
 
     @Test
@@ -1573,7 +1592,7 @@ class AppStateControllerTest {
         val reportingState = controller.state.value
         assertFalse(reportingState.isLoading)
         assertEquals(true, reportingState.playback.isRewardReporting)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:200"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:200"), dataSource.calls)
 
         dataSource.progressGate?.complete(Unit)
         job.join()
@@ -1582,7 +1601,7 @@ class AppStateControllerTest {
         assertEquals(3, controller.state.value.playback.awardedPoints)
         assertEquals(true, controller.state.value.playback.rewardClaimed)
         assertEquals(
-            listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:200", "points"),
+            listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:200", "points"),
             dataSource.calls,
         )
     }
@@ -1607,7 +1626,7 @@ class AppStateControllerTest {
         assertEquals(50, state.playback.positionSeconds)
         assertEquals(25, state.playback.progressPercent)
         assertNull(state.errorMessage)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:50"), dataSource.calls)
     }
 
     @Test
@@ -1647,7 +1666,7 @@ class AppStateControllerTest {
         assertEquals(0, playback.awardedPoints)
         assertEquals(0L, playback.rewardAwardVersion)
         assertEquals(1, dataSource.calls.count { it.startsWith("progress:") })
-        assertFalse(dataSource.calls.contains("points"))
+        assertEquals(1, dataSource.calls.count { it == "points" })
     }
 
     @Test
@@ -1669,6 +1688,7 @@ class AppStateControllerTest {
             listOf(
                 "episodes:book-1",
                 "history",
+                "points",
                 "snapshot:book-1:1",
                 "video:book-1:1",
                 "like-status:book-1",
@@ -1719,7 +1739,7 @@ class AppStateControllerTest {
         assertEquals(80, state.playback.positionSeconds)
         assertEquals(400, state.playback.durationSeconds)
         assertEquals(20, state.playback.progressPercent)
-        assertEquals(listOf("episodes:book-1", "history", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "video:book-1:1"), dataSource.calls)
+        assertEquals(listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "video:book-1:1"), dataSource.calls)
     }
 
     @Test
@@ -2656,6 +2676,7 @@ class AppStateControllerTest {
                 contentType = "application/vnd.apple.mpegurl",
                 episode = episode.number,
                 durationSeconds = videoDurationSeconds ?: episode.durationSeconds,
+                estimatedRewardPoints = episode.number + 1,
             )
         }
 

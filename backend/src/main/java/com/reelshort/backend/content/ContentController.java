@@ -14,6 +14,7 @@ import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.system.web.RequestIdFilter;
 import com.reelshort.backend.auth.CurrentUser;
+import com.reelshort.backend.points.PointsService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Min;
@@ -27,12 +28,14 @@ public class ContentController {
 	private final ContentCacheService contentCacheService;
 	private final VipGateService vipGateService;
 	private final SystemConfigService systemConfigService;
+	private final PointsService pointsService;
 
 	public ContentController(ContentCacheService contentCacheService, VipGateService vipGateService,
-			SystemConfigService systemConfigService) {
+			SystemConfigService systemConfigService, PointsService pointsService) {
 		this.contentCacheService = contentCacheService;
 		this.vipGateService = vipGateService;
 		this.systemConfigService = systemConfigService;
+		this.pointsService = pointsService;
 	}
 
 	@GetMapping("/search")
@@ -69,7 +72,7 @@ public class ContentController {
 	}
 
 	@GetMapping("/books/{bookId}/episodes/{episodeNum}/play")
-	public ApiResponse<ContentVideo> play(@PathVariable @NotBlank String bookId,
+	public ApiResponse<ContentPlayResponse> play(@PathVariable @NotBlank String bookId,
 			@PathVariable @Min(1) int episodeNum,
 			@RequestParam @NotBlank String filteredTitle,
 			@RequestParam @NotBlank String chapterId,
@@ -83,8 +86,10 @@ public class ContentController {
 				throw new ContentProviderException(403, "VIP required to watch this episode");
 			}
 		}
-		return ApiResponse.success(contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId,
-				parseLocale(locale)), requestId);
+		ContentVideo video = contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId,
+				parseLocale(locale));
+		return ApiResponse.success(ContentPlayResponse.from(video,
+				pointsService.estimatedWatchRewardPoints(video.duration())), requestId);
 	}
 
 	private ContentLocale parseLocale(String locale) {

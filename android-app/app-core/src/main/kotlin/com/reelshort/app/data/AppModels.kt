@@ -49,6 +49,7 @@ data class VideoUrl(
     val contentType: String,
     val episode: Int,
     val durationSeconds: Int,
+    val estimatedRewardPoints: Int? = null,
 )
 
 data class WatchProgressReport(

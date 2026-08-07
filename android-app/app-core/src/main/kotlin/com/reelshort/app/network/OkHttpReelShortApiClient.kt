@@ -369,7 +369,7 @@ class OkHttpReelShortApiClient(
     private fun ContentEpisodeDto.toDomain(): EpisodeSummary = EpisodeSummary(episode, chapterId, title, description)
 
     private fun ContentVideoDto.toDomain(): VideoUrl =
-        VideoUrl(videoUrl, "application/vnd.apple.mpegurl", episode, duration)
+        VideoUrl(videoUrl, "application/vnd.apple.mpegurl", episode, duration, estimatedRewardPoints)
 
     private fun WatchRecordDto.toProgressReport(): WatchProgressReport {
         val mappedStatus = rewardStatusFromApi(rewardStatus, progressPercent)

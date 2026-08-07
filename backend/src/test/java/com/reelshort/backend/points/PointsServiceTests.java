@@ -458,6 +458,15 @@ class PointsServiceTests {
 		assertThat(pointsService.estimatedWatchRewardPoints(120)).isEqualTo(2);
 	}
 
+	@Test
+	void estimatedRewardPointsUsesCurrentSecondsPerPointConfiguration() {
+		assertThat(pointsService.estimatedWatchRewardPoints(120)).isEqualTo(2);
+
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "30");
+
+		assertThat(pointsService.estimatedWatchRewardPoints(120)).isEqualTo(4);
+	}
+
 	private WatchProgressRequest request(String bookId, int episodeNum, int positionSeconds, int durationSeconds) {
 		return new WatchProgressRequest(bookId, "Title " + bookId, "filtered-" + bookId, episodeNum,
 				"chapter-" + episodeNum, positionSeconds, durationSeconds);

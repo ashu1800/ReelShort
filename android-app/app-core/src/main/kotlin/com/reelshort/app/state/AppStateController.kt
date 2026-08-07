@@ -524,9 +524,9 @@ class AppStateController(private val dataSource: AppDataSource) {
         requestVersion: Long,
     ) {
         if (!isActivePlaybackRequest(requestVersion)) return
+        val pointAccount = state.value.pointAccount ?: loadPointAccountSilently()
+        if (!isActivePlaybackRequest(requestVersion)) return
         if (episode.requiresVip()) {
-            val pointAccount = state.value.pointAccount ?: loadPointAccountSilently()
-            if (!isActivePlaybackRequest(requestVersion)) return
             if (pointAccount?.vipActive != true) {
                 openVipPaywall(
                     episode = episode,

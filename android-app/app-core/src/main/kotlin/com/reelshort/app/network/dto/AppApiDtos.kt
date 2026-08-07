@@ -73,6 +73,7 @@ data class ContentVideoDto(
     val videoUrl: String,
     val episode: Int,
     val duration: Int,
+    val estimatedRewardPoints: Int? = null,
     val nextEpisode: ContentEpisodeDto? = null,
 )
 

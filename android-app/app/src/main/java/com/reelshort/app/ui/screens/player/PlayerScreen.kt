@@ -70,6 +70,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,7 +112,6 @@ import com.reelshort.app.ui.format.playerErrorNextEpisode
 import com.reelshort.app.ui.format.playerLoadingLabel
 import com.reelshort.app.ui.format.playerOverlayMode
 import com.reelshort.app.ui.format.rewardBadgeContentDescription
-import com.reelshort.app.ui.format.rewardBadgeIncludesProgressRing
 import com.reelshort.app.ui.format.rewardBadgeInfoBody
 import com.reelshort.app.ui.format.rewardBadgeInfoTitle
 import com.reelshort.app.ui.format.rewardBadgeAwardLabel
@@ -191,29 +195,33 @@ internal fun PlayerScreen(
         ) {
             CircleIconButton(icon = Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = copy.playerScreen, onClick = onBack)
             val isVip = state.vipActive
-            val badgeState = rewardBadgeState(
-                progressPercent = playback.progressPercent,
-                isReporting = playback.isRewardReporting,
-                hasError = playback.rewardReportError,
-                language = state.language,
-                rewardClaimed = playback.rewardClaimed,
-                rewardStatus = playback.rewardStatus,
-            )
-            if (isVip && (badgeState.visualState != RewardBadgeVisualState.WAITING || playback.progressPercent > 0)) {
-                Box(contentAlignment = Alignment.TopEnd) {
-                    RewardBadgeChip(
+            val estimatedRewardPoints = playback.videoUrl?.estimatedRewardPoints
+            val indicatorPoints = estimatedRewardPoints?.takeIf { isVip }
+            val showRewardIndicator = indicatorPoints != null
+            Box(contentAlignment = Alignment.TopEnd) {
+                if (indicatorPoints != null) {
+                    val badgeState = rewardBadgeState(
+                        progressPercent = playback.progressPercent,
+                        estimatedRewardPoints = indicatorPoints,
+                        isReporting = playback.isRewardReporting,
+                        hasError = playback.rewardReportError,
+                        language = state.language,
+                        rewardClaimed = playback.rewardClaimed,
+                        rewardStatus = playback.rewardStatus,
+                    )
+                    RewardProgressIndicator(
                         state = badgeState,
                         language = state.language,
-                        onClick = { rewardInfoSheetVisible = true },
+                        onOpenInfo = { rewardInfoSheetVisible = true },
                     )
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = visibleAwardPoints != null,
-                        enter = fadeIn() + slideInVertically { it / 2 },
-                        exit = fadeOut() + slideOutVertically { -it / 2 },
-                        modifier = Modifier.padding(top = 42.dp, end = 4.dp),
-                    ) {
-                        RewardAwardToast(points = visibleAwardPoints ?: 0, language = state.language)
-                    }
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = visibleAwardPoints != null,
+                    enter = fadeIn() + slideInVertically { it / 2 },
+                    exit = fadeOut() + slideOutVertically { -it / 2 },
+                    modifier = Modifier.padding(top = if (showRewardIndicator) 48.dp else 0.dp, end = 4.dp),
+                ) {
+                    RewardAwardToast(points = visibleAwardPoints ?: 0, language = state.language)
                 }
             }
         }
@@ -646,47 +654,66 @@ private fun CircleIconButton(
 }
 
 @Composable
-private fun RewardBadgeChip(
+private fun RewardProgressIndicator(
     state: RewardBadgeState,
     language: AppLanguage,
-    onClick: () -> Unit,
+    onOpenInfo: () -> Unit,
 ) {
-    val ringColor = if (state.visualState == RewardBadgeVisualState.ERROR) DangerText else PrimaryGold
-    Surface(
-        color = Color(0xE611151E),
-        shape = RoundedCornerShape(18.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, ringColor),
+    val ringColor = when (state.visualState) {
+        RewardBadgeVisualState.ERROR -> DangerText
+        RewardBadgeVisualState.DAILY_LIMIT,
+        RewardBadgeVisualState.UNAVAILABLE,
+        -> TextSecondary
+        else -> PrimaryGold
+    }
+    val accessibilityLabel = rewardBadgeContentDescription(state, language)
+    Row(
         modifier = Modifier
-            .height(36.dp)
-            .clickable(onClick = onClick),
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onOpenInfo)
+            .clearAndSetSemantics {
+                contentDescription = accessibilityLabel
+                role = Role.Button
+                onClick {
+                    onOpenInfo()
+                    true
+                }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Box(
+            modifier = Modifier
+                .size(16.dp),
+            contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Rounded.MonetizationOn,
-                contentDescription = rewardBadgeContentDescription(state, language),
+                contentDescription = null,
                 tint = ringColor,
-                modifier = Modifier.size(17.dp),
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(
+                progress = { state.ringProgress },
+                color = ringColor,
+                trackColor = TextSecondary.copy(alpha = 0.38f),
+                strokeWidth = 3.dp,
+                modifier = Modifier.fillMaxSize(),
             )
             Text(
-                state.displayText,
+                state.pointsText,
                 color = ringColor,
-                style = MaterialTheme.typography.labelMedium,
+                fontSize = state.pointsFontSizeSp.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-            if (rewardBadgeIncludesProgressRing(state)) {
-                CircularProgressIndicator(
-                    progress = { state.ringProgress },
-                    color = ringColor,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
         }
     }
 }

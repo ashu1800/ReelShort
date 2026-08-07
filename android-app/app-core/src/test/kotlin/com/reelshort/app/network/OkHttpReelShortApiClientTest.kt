@@ -241,6 +241,7 @@ class OkHttpReelShortApiClientTest {
                   "videoUrl": "https://cdn.example.com/book-1/1.m3u8",
                   "episode": 1,
                   "duration": 180,
+                  "estimatedRewardPoints": 3,
                   "nextEpisode": { "episode": 2, "chapterId": "chapter-2" }
                 }
             """.trimIndent()))
@@ -261,6 +262,25 @@ class OkHttpReelShortApiClientTest {
             assertEquals("Bearer token-123", videoRequest.getHeader("Authorization"))
             assertEquals("https://cdn.example.com/book-1/1.m3u8", video.url)
             assertEquals(180, video.durationSeconds)
+            assertEquals(3, video.estimatedRewardPoints)
+        }
+    }
+
+    @Test
+    fun videoUrlWithoutEstimatedRewardPointsRemainsCompatible() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(successBody("""
+                {
+                  "videoUrl": "https://cdn.example.com/book-1/1.m3u8",
+                  "episode": 1,
+                  "duration": 180
+                }
+            """.trimIndent()))
+            val client = client(server, token = "token-123")
+
+            val video = client.getVideoUrl("book-1", 1, "alpha", "chapter-1", "en")
+
+            assertEquals(null, video.estimatedRewardPoints)
         }
     }
 

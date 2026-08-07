@@ -67,7 +67,7 @@
 
 ### `GET /api/app/content/books/{bookId}/episodes/{episodeNum}/play?filteredTitle={filteredTitle}&chapterId={chapterId}&locale={locale}`
 
-通过 `ContentProvider` 获取指定分集的 HLS 播放地址、时长和下一集信息。
+通过 `ContentProvider` 获取指定分集的 HLS 播放地址、时长和下一集信息。响应额外包含非负整数 `estimatedRewardPoints`，由后端按本次请求取得的权威时长和当前观看积分配置实时估算；该值不写入内容缓存，也不代表受每日额度与公平模式累计影响后的最终实际到账。
 
 ## 内容源适配契约
 

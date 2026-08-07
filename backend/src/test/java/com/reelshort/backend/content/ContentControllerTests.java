@@ -22,6 +22,7 @@ import com.reelshort.backend.auth.AccessTokenRepository;
 import com.reelshort.backend.auth.TokenHasher;
 import com.reelshort.backend.admin.AdminTokenRepository;
 import com.reelshort.backend.admin.AdminUserRepository;
+import com.reelshort.backend.points.PointsService;
 import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.system.web.GlobalExceptionHandler;
 import com.reelshort.backend.system.web.RequestIdFilter;
@@ -41,6 +42,9 @@ class ContentControllerTests {
 
 	@MockitoBean
 	private SystemConfigService systemConfigService;
+
+	@MockitoBean
+	private PointsService pointsService;
 
 	@MockitoBean
 	private AccessTokenRepository accessTokenRepository;
@@ -166,6 +170,7 @@ class ContentControllerTests {
 						1,
 						120,
 						new ContentEpisode(2, "chapter-2", "Next Episode", "The next scene.")));
+		when(pointsService.estimatedWatchRewardPoints(120)).thenReturn(2, 3);
 
 		mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
 				.param("filteredTitle", "love-story")
@@ -175,9 +180,16 @@ class ContentControllerTests {
 				.andExpect(jsonPath("$.data.videoUrl").value("https://cdn.example.com/video.m3u8"))
 				.andExpect(jsonPath("$.data.episode").value(1))
 				.andExpect(jsonPath("$.data.duration").value(120))
+				.andExpect(jsonPath("$.data.estimatedRewardPoints").value(2))
 				.andExpect(jsonPath("$.data.nextEpisode.episode").value(2))
 				.andExpect(jsonPath("$.data.nextEpisode.chapterId").value("chapter-2"))
 				.andExpect(jsonPath("$.data.nextEpisode.title").value("Next Episode"));
+
+		mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
+				.param("filteredTitle", "love-story")
+				.param("chapterId", "chapter-1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.estimatedRewardPoints").value(3));
 	}
 
 	@Test
