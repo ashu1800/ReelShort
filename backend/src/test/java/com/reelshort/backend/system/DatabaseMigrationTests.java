@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -74,6 +75,25 @@ class DatabaseMigrationTests {
 				values (?, ?, ?, ?, ?)
 				""", id2, "duplicate-user", "hash", "ACTIVE", now))
 			.hasMessageContaining("duplicate-user");
+	}
+
+	@Test
+	void latestMigrationMatchesProductionFirstAppLoginSchema() {
+		var v30 = Arrays.stream(flyway.info().applied())
+				.filter(migration -> migration.getVersion() != null)
+				.filter(migration -> migration.getVersion().getVersion().equals("30"))
+				.toList();
+
+		assertThat(v30).singleElement().satisfies(migration -> {
+			assertThat(migration.getScript()).isEqualTo("V30__track_first_app_login.sql");
+			assertThat(migration.getChecksum()).isEqualTo(-423089945);
+		});
+		Integer columnCount = jdbcTemplate.queryForObject("""
+				select count(*) from information_schema.columns
+				where table_name = 'users' and column_name = 'first_app_login_at'
+				""", Integer.class);
+
+		assertThat(columnCount).isOne();
 	}
 
 	@Test
