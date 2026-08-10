@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material3.Icon
@@ -31,7 +30,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.reelshort.app.data.AppLanguage
-import com.reelshort.app.data.VipOrder
 import com.reelshort.app.state.AccountOperation
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.components.GoldOutlinedButton
@@ -104,9 +102,6 @@ internal fun VipRechargeScreen(
                     }
                 }
             }
-            item { Text(copy.vipRecordsTitle, color = TextPrimary, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-            if (state.vipOrders.isEmpty()) item { Text(copy.accountVipNoOrders, color = TextSecondary) }
-            else items(state.vipOrders, key = { it.id }) { VipHistoryRow(it, language) }
         }
     }
 }
@@ -118,16 +113,6 @@ private fun VipPaymentDetails(address: String, copy: com.reelshort.app.ui.format
     if (address.isNotBlank()) {
         AsyncImage("https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$address", copy.vipPayQrHint, Modifier.size(184.dp))
         GoldOutlinedButton(copy.vipPayCopy, !busy, { clipboard.setText(AnnotatedString(address)) }, Modifier.fillMaxWidth().size(48.dp), PrimaryGold)
-    }
-}
-
-@Composable
-private fun VipHistoryRow(order: VipOrder, language: AppLanguage) {
-    SurfacePanel {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("${order.usdtAmount} USDT · ${order.orderNo}", color = TextPrimary, fontWeight = FontWeight.SemiBold)
-            Text(order.status, color = if (order.status == "CONFIRMED") SuccessText else if (order.status == "REJECTED") DangerText else TextSecondary)
-        }
     }
 }
 

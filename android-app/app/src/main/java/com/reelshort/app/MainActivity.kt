@@ -117,10 +117,8 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onCreateVipOrder = remember(viewModel) { viewModel::createVipOrder }
     val onRefreshVipOrder = remember(viewModel) { viewModel::refreshLatestVipOrder }
     val onShowVipPaywall = remember(viewModel) { viewModel::showVipPaywall }
-    val onOpenFunds = remember(viewModel) { viewModel::openFunds }
     val onOpenWithdrawal = remember(viewModel) { viewModel::openWithdrawal }
     val onOpenVipRecharge = remember(viewModel) { viewModel::openVipRecharge }
-    val onBackFromFunds = remember(viewModel) { viewModel::backFromFunds }
     val onBackFromFundsChild = remember(viewModel) { viewModel::backFromFundsChild }
     val onDismissVipPaywall = remember(viewModel) { viewModel::dismissVipPaywall }
     val onRefreshAccount = remember(viewModel) { viewModel::refreshAccount }
@@ -177,10 +175,8 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onUnbindWallet = onUnbindWallet,
                 onCreateVipOrder = onCreateVipOrder,
                 onRefreshVipOrder = onRefreshVipOrder,
-                onOpenFunds = onOpenFunds,
                 onOpenWithdrawal = onOpenWithdrawal,
                 onOpenVipRecharge = onOpenVipRecharge,
-                onBackFromFunds = onBackFromFunds,
                 onBackFromFundsChild = onBackFromFundsChild,
                 onSubmitWithdrawal = onSubmitWithdrawal,
                 onChangePassword = onChangePassword,

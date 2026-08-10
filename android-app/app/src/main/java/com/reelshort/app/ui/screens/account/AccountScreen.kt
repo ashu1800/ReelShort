@@ -70,8 +70,6 @@ import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.BookSummary
 import com.reelshort.app.data.PointRecord
-import com.reelshort.app.data.RechargeOrderSummary
-import com.reelshort.app.data.VipOrder
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WalletInfo
 import com.reelshort.app.data.WithdrawalRecord
@@ -136,8 +134,6 @@ internal fun AccountScreen(
     frozenPoints: Int,
     availablePoints: Int,
     pointRecords: List<PointRecord>,
-    orders: List<RechargeOrderSummary>,
-    vipOrders: List<VipOrder> = emptyList(),
     wallet: WalletInfo?,
     walletMutationVersion: Long,
     vipActive: Boolean,
@@ -154,7 +150,6 @@ internal fun AccountScreen(
     onOpenWatchRecord: (WatchRecord) -> Unit,
     onBindWallet: (String, String, String) -> Unit,
     onUnbindWallet: (String) -> Unit,
-    onOpenFunds: () -> Unit,
     onRefreshAccount: () -> Unit,
     onChangePassword: (String, String) -> Unit,
     onSubmitBankCard: (String, String, String, String, String) -> Unit,
@@ -207,23 +202,11 @@ internal fun AccountScreen(
                 availablePoints = availablePoints,
                 records = records,
                 pointRecords = pointRecords,
-                orders = orders,
                 language = language,
                 onOpenFavorites = onOpenFavorites,
                 onShowAuthPrompt = onShowAuthPrompt,
                 onOpenDetailSheet = { detailSheet = it },
             )
-        }
-
-        item {
-            AccountMenuGroup {
-                AccountMenuRow(
-                    icon = Icons.Rounded.MonetizationOn,
-                    title = copy.fundsEntryTitle,
-                    subtitle = copy.fundsEntrySubtitle,
-                    onClick = onOpenFunds,
-                )
-            }
         }
 
         if (isLoggedIn && records.isNotEmpty()) {
@@ -307,7 +290,6 @@ internal fun AccountScreen(
             sheet = detailSheet!!,
             records = records,
             pointRecords = pointRecords,
-            orders = orders,
             withdrawals = withdrawals,
             language = language,
             onDismiss = { detailSheet = null },
@@ -515,8 +497,6 @@ private fun AccountPrimaryActions(
     availablePoints: Int,
     records: List<WatchRecord>,
     pointRecords: List<PointRecord>,
-    orders: List<RechargeOrderSummary>,
-    vipOrders: List<VipOrder> = emptyList(),
     language: AppLanguage,
     onOpenFavorites: () -> Unit,
     onShowAuthPrompt: () -> Unit,
@@ -744,33 +724,6 @@ private fun ContinueWatchingPosterCard(
 }
 
 @Composable
-private fun VipOrderRow(order: VipOrder, language: AppLanguage) {
-    val copy = strings(language)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "${copy.vipPayAmount}${order.payableAmount ?: order.usdtAmount} USDT",
-                color = PrimaryGold,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(order.orderNo, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-        }
-        val (statusColor, statusText) = when (order.status) {
-            "CONFIRMED" -> SuccessText to copy.vipPayStatusConfirmed
-            "REJECTED" -> DangerText to copy.vipPayStatusRejected
-            else -> PrimaryGold to copy.vipPayStatusPending
-        }
-        Text(statusText, color = statusColor, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
 private fun ContinueWatchingRow(record: WatchRecord, language: AppLanguage, onClick: () -> Unit) {
     val copy = strings(language)
     Row(
@@ -804,8 +757,6 @@ private fun AccountDetailBottomSheet(
     sheet: AccountDetailSheet,
     records: List<WatchRecord>,
     pointRecords: List<PointRecord>,
-    orders: List<RechargeOrderSummary>,
-    vipOrders: List<VipOrder> = emptyList(),
     withdrawals: List<WithdrawalRecord>,
     language: AppLanguage,
     onDismiss: () -> Unit,
@@ -844,13 +795,7 @@ private fun AccountDetailBottomSheet(
                     }
                 }
                 AccountDetailSheet.ORDERS -> {
-                    if (vipOrders.isEmpty()) {
-                        item { AccountEmptyDetail(accountEmptyDetailMessage(sheet, language)) }
-                    } else {
-                        items(vipOrders, key = { it.id }) { order ->
-                            VipOrderRow(order, language)
-                        }
-                    }
+                    item { AccountEmptyDetail(accountEmptyDetailMessage(sheet, language)) }
                 }
                 AccountDetailSheet.WITHDRAWALS -> {
                     if (withdrawals.isEmpty()) {

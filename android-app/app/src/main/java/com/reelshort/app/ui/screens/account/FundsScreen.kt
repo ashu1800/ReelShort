@@ -10,13 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,11 +27,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.reelshort.app.data.AppLanguage
+import com.reelshort.app.data.VipOrder
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.Divider
 import com.reelshort.app.ui.theme.PanelSoft
 import com.reelshort.app.ui.theme.PrimaryGold
+import com.reelshort.app.ui.theme.DangerText
+import com.reelshort.app.ui.theme.SuccessText
 import com.reelshort.app.ui.theme.TextPrimary
 import com.reelshort.app.ui.theme.TextSecondary
 import com.reelshort.app.ui.theme.TranslucentWhiteSurface
@@ -40,7 +42,7 @@ import com.reelshort.app.ui.theme.TranslucentWhiteSurface
 @Composable
 internal fun FundsScreen(
     state: AppUiState,
-    onBack: () -> Unit,
+    vipOrders: List<VipOrder>,
     onOpenWithdrawal: () -> Unit,
     onOpenVipRecharge: () -> Unit,
     onShowAuthPrompt: () -> Unit,
@@ -50,15 +52,13 @@ internal fun FundsScreen(
     val account = state.pointAccount
     val loggedIn = state.session != null
     Column {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Rounded.ArrowBack, contentDescription = copy.fundsTitle, tint = TextPrimary)
-            }
-            Text(copy.fundsTitle, color = TextPrimary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        }
+        Text(
+            copy.fundsTitle,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+            color = TextPrimary,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
         LazyColumn(
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -101,6 +101,53 @@ internal fun FundsScreen(
                     onClick = if (loggedIn) onOpenVipRecharge else onShowAuthPrompt,
                 )
             }
+            item {
+                Text(
+                    copy.vipRecordsTitle,
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            if (vipOrders.isEmpty()) {
+                item { Text(copy.accountVipNoOrders, color = TextSecondary) }
+            } else {
+                items(vipOrders, key = { it.id }) { order -> FundsVipOrderRow(order, language) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FundsVipOrderRow(order: VipOrder, language: AppLanguage) {
+    val copy = strings(language)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = PanelSoft,
+        border = BorderStroke(1.dp, Divider),
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "${copy.vipPayAmount}${order.payableAmount ?: order.usdtAmount} USDT",
+                    color = PrimaryGold,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(order.orderNo, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text(order.createdAt, color = TextSecondary, style = MaterialTheme.typography.labelSmall)
+            }
+            val (statusColor, statusText) = when (order.status) {
+                "CONFIRMED" -> SuccessText to copy.vipPayStatusConfirmed
+                "REJECTED" -> DangerText to copy.vipPayStatusRejected
+                else -> PrimaryGold to copy.vipPayStatusPending
+            }
+            Text(statusText, color = statusColor, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

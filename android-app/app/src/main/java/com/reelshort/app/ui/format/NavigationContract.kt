@@ -3,7 +3,7 @@ package com.reelshort.app.ui.format
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.state.AppScreen
 
-internal val primaryTabs = listOf(AppScreen.HOME, AppScreen.SEARCH, AppScreen.ACCOUNT)
+internal val primaryTabs = listOf(AppScreen.HOME, AppScreen.SEARCH, AppScreen.FUNDS, AppScreen.ACCOUNT)
 
 internal val AppScreen.usesGlobalTopBar: Boolean
     get() = false

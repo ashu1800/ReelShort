@@ -72,7 +72,7 @@ class VisualTextContractTest {
     fun bottomNavigationUsesReadableLabels() {
         val labels = primaryTabs.map { it.navigationLabel }
 
-        assertEquals(listOf("Home", "Discover", "Me"), labels)
+        assertEquals(listOf("Home", "Discover", "Funds center", "Me"), labels)
         assertTrue(labels.all { it.length >= 2 })
     }
 
@@ -80,7 +80,7 @@ class VisualTextContractTest {
     fun bottomNavigationUsesDefaultEnglishLabelsWhenLanguageIsEnglish() {
         val labels = primaryTabs.map { it.navigationLabel(AppLanguage.ENGLISH) }
 
-        assertEquals(listOf("Home", "Discover", "Me"), labels)
+        assertEquals(listOf("Home", "Discover", "Funds center", "Me"), labels)
     }
 
     @Test
