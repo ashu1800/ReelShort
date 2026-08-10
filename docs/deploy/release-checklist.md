@@ -99,9 +99,9 @@ Android 代码变更必须在模拟器完成手动验收，不能只依赖单元
 
 - 版本号必须为 `X.Y.Z`，并与 Android `versionName` 完全一致；`versionCode` 必须单调递增。
 - 发布使用本地脚本 `python scripts/publish-android.py`，详细前置准备和参数见 `docs/deploy/publish-android.md`。
-- 脚本完成签名构建、`apksigner` / 正式证书 SHA-256 / 包名 / versionName / versionCode 校验、SHA-256 和大小计算后，上传 APK 和 `.sha256` 到腾讯 COS，再 POST 发布元数据到后端 `POST /api/internal/release/publish`。
+- 脚本完成签名构建、`apksigner` / 固定 Debug 证书 SHA-256 / 包名 / versionName / versionCode 校验、SHA-256 和大小计算后，上传 APK 和 `.sha256` 到腾讯 COS，再 POST 发布元数据到后端 `POST /api/internal/release/publish`。
 - 后端在 `app_releases` 表 upsert 发布记录，App 清单只从 `https://shortlink.hjj888.cc/api/app/release/latest` 获取并直接返回 COS 预签名下载 URL；旧版 `/api/app/update/latest` 与 `/downloads/android/` 兼容链路已删除。
-- 正式 keystore 只能从仓库外备份恢复，通过 `ANDROID_SIGNING_*` 环境变量注入；COS 密钥和超级 Token 只在 `.env`（gitignored）或部署环境变量中，禁止写入仓库或日志。
+- 所有 APK 必须使用 `C:\Users\Ashu\.android\debug.keystore` 的固定 Debug 证书；换机器时迁移同一文件，禁止重新生成。COS 密钥和超级 Token 只在 `.env`（gitignored）或部署环境变量中，禁止写入仓库或日志。
 
 发布后执行：
 

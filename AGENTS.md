@@ -13,7 +13,7 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 原�
 - `backend/content/points` 奖励预计：播放接口的 `estimatedRewardPoints` 按权威时长、当前积分配置、登录用户十分位尾数和当日剩余额度实时计算，不写入内容缓存。
 
 - `android-app`：Android 原生客户端，用户可见 App 品牌为 `ShortLink`，使用深色金色自适应 launcher icon；使用 Kotlin、Jetpack Compose、Material3 和 Material Icons 建立游客首页、搜索、详情、播放、账户和登录/注册底部面板；Compose UI 已接入 `AppStateController`/`AppUiState`，默认启动进入首页，未登录可浏览内容，播放和账户数据等受保护动作触发底部认证面板；认证 UI 使用国家区号、手机号、至少 8 位密码和 6 位短信验证码，公开注册只完成验证码流程，登录账号由内部开户注册接口生成，认证弹层默认进入登录模式、注册作为次级入口并按模式切换单一主 CTA，改密验证码走受保护接口且改密成功后清除本机会话和记住密码；首页、搜索和收藏入口点击短剧后加载分集并直接进入播放，未登录时停留原列表弹出认证面板，登录成功后自动继续播放；已登录用户点击短剧时优先按后端观看历史恢复最近观看集数，已看完集数默认续到下一集；首页、搜索和详情海报支持 Coil 加载内容封面，并保留渐变 fallback；首页和搜索海报网格按可用宽度自适应列数，海报卡合并 TalkBack 描述并在大字体下降低覆盖文案密度；详情页展示短剧简介，分集行展示上游标题和分集简介并在缺失时回退短剧简介；第 8 集及以后统一显示 VIP 锁定状态，非 VIP 点击后在当前详情页或播放器上打开共享 TRC20 付费弹层，游客登录后自动进入付费层，订单确认后自动关闭并继续原目标分集，Me 页复用同一全局弹层；播放页接入 Media3/ExoPlayer 播放 Spring Boot 返回的合法 HTTP/HTTPS 媒体 URL，播放器采用 9:16 竖屏优先布局、自动播放并从历史快照位置恢复，视频首次 ready 前显示封面加载过渡，缓冲时显示紧凑加载状态，播放失败时提供重试、下一集和返回操作，底部提供选集入口和分集弹层，选集格子展示当前集、已看和观看进度状态；播放页约每 15 秒静默保存进度，并在播放完成时按服务端权威时长一次性领取奖励，右上角以积分图标和确定型圆环展示观看进度，圆心显示后端按本集权威时长计算的预计基础积分，点击后继续提供状态说明并以浮层反馈真实到账积分；账户页采用会员中心式“我的”布局，包含身份摘要卡、2 列快捷业务入口、继续观看海报卡、冷钱包、提现、提现记录、改密、银行卡占位、联系客服邮箱和低优先级语言/诊断/退出分组，提现数量输入框失焦且为空时提示到账约 1 天；账户操作串行防重复提交，钱包解绑与提现需二次确认，表单默认完全展开并支持滚动、大字体、IME 和系统栏安全边距，短信倒计时仅在发送成功后启动，银行卡占位不再收集敏感信息；冷钱包绑定、更换或解绑成功后关闭操作弹层并返回 Me，资金类表单提交失败时保留弹层和用户输入；全局顶部消息按成功、错误和信息使用不同语义色与 TalkBack 实时播报；纯 Kotlin `app-core` 模块承载 Spring Boot API 配置、OkHttp 客户端接口实现、会话存储边界、记住密码凭据存储边界、Repository、数据源边界、共享模型、播放状态和可测试的 UI 状态控制层；生产默认 API 地址为 `https://shortlink.hjj888.cc/api/app`；Android 层使用 AndroidX Security Crypto 加密保存登录会话和记住密码凭据，加密初始化失败时删除旧明文会话并仅保留进程内会话，不再降级写入明文 Token；同时关闭 App 自动备份和全局明文流量。
-- `android-app/release`：通过后端 `/api/app/release/latest`（游客可访问）获取版本清单，后端按需生成短时 COS 预签名下载链接；旧版 `/api/app/update/latest` 与 `/downloads/android/` 兼容链路已删除，只保留 COS 预签名下载方式；App 在私有缓存流式下载 APK 并显示进度，经 SHA-256 完整性校验后调用 Android 系统安装器，包名、版本和签名由发布脚本预检及 Android 安装器兜底；发布使用本地 `scripts/publish-android.py` 脚本完成签名构建、正式证书 SHA-256 钉死校验、APK 校验、上传腾讯云 COS 并回调后端，发布说明可为空且不再自动写入默认内容，COS 密钥只在服务端，不再经 GitHub Actions 或 SSH 上传到自有服务器。
+- `android-app/release`：通过后端 `/api/app/release/latest`（游客可访问）获取版本清单，后端按需生成短时 COS 预签名下载链接；旧版 `/api/app/update/latest` 与 `/downloads/android/` 兼容链路已删除，只保留 COS 预签名下载方式；App 在私有缓存流式下载 APK 并显示进度，经 SHA-256 完整性校验后调用 Android 系统安装器，包名、版本和签名由发布脚本预检及 Android 安装器兜底；所有 Debug 和优化 Release APK 统一使用 `C:\Users\Ashu\.android\debug.keystore` 的固定 Debug 证书，SHA-256 为 `7bb921b325b079400c9fa4fc322e6a903571f688f35ce6ab284baf32d0cca436`，不再使用正式签名或 `ANDROID_SIGNING_*`；发布脚本完成证书钉死校验、APK 校验、上传腾讯云 COS 并回调后端，详细入口为 `android-app/SIGNING.md`。
 - `admin-web`：后台管理网站，使用 Vue、Element Plus、Pinia、Vue Router 和 Axios，包含管理员登录、会话、基础导航、用户运营操作、BLACKLISTED 状态管理、按未来到期时间设置或取消用户 VIP 权益、ERC20 提现申请拒绝与管理员外部钱包打款后的单笔确认、提现申请列表复制收款钱包地址、每 50 积分对应 USDT 的直接换算配置、按今天/昨天/本周/本月/上月筛选的 ERC20 打款笔数和金额统计、带失败重试幂等键的积分调整、订单管理、内容缓存单语言刷新、双语货架刷新、货架健康状态和刷新任务状态、系统配置、运行诊断、内容源结构化诊断事件、异常告警、系统日志和审计日志视图；管理员仅使用账号密码登录，后台会话与 RBAC 权限控制保持不变；提现确认只要求已登录且具备 `WITHDRAWAL_WRITE`，不接收私钥、交易哈希或二次验证码，不签名、不广播、不查询链上交易。
 - `backend`：Spring Boot 模块化单体后端，按 `auth`、`user`、`content`、`watch`、`points`、`wallet`、`social`、`withdrawal`、`order`、`payment`、`admin`、`release`、`system` 等业务模块组织；App 账号改为非中国大陆手机号密码登录，公开注册生成随机 6 位验证码并通过 AccountManager 供应商短信回调写入验证码系统但不创建可登录账号，内部手机号开户注册由超级 Token 保护并支持单账号和批量开户；公开短信接口仅允许注册用途，AccountManager 未售出手机号返回 `account_not_found` 时发送接口对 App 假成功但立即作废验证码，验证码重复发送会失效旧码且只能消费一次，改密成功后撤销用户全部未撤销 Token；生产启动会 fail-closed 校验管理员 BCrypt 哈希和支付回调密钥，固定开发值只允许显式 `app-dev` 或测试 profile；数据库 schema 由 Flyway 迁移管理，JPA 默认只做结构校验，V30 迁移源码保留生产已执行的可空 `users.first_app_login_at` 列但当前不启用未合并的脚本登录限制逻辑；`release` 模块用 Flyway `app_releases` 表持久化发布记录，`/api/app/release/latest` 游客可访问并返回 COS 预签名下载链接，发布接口 `/api/internal/release/publish` 由超级 Token 保护。
 - `backend/content`：内容聚合 API、内容源适配、首页货架、剧集详情、PostgreSQL 内容/分集缓存、刷新运行记录和后台缓存刷新能力；App 内容接口支持 `en` 与 `zh-TW` locale 参数且缓存按 locale 分桶；首页和货架读取优先使用自有 PostgreSQL 元数据缓存，后台刷新负责主动更新片库并记录来源、locale、状态、耗时、数量和错误，支持单语言刷新和全部支持 locale 批量刷新，后台缓存状态按缺失、空结果、错误、过期和健康计算货架健康信号；搜索和分集接口成功拉取后继续回填标题、封面、简介、集数和分集元数据，搜索上游失败时按当前 locale 从自有元数据缓存兜底；首页、搜索、货架、短剧详情和剧集列表允许游客访问，播放地址仍要求 App Bearer Token 并按需向上游获取，播放响应按权威时长和当前积分配置实时返回 `estimatedRewardPoints`，播放地址缓存只作为可配置短 TTL 的内容源 5xx 兜底且不缓存奖励估算。
@@ -29,7 +29,7 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 原�
 - `backend/operations`：内部运营 API 模块，使用 `X-Internal-Super-Token` 保护运营脚本调用；支持查询用户积分快照、获取可领取观看奖励的视频任务，并对候选短剧随机取书、按集数顺序取集，再按用户、短剧、集数和进度模拟观看上报，复用现有观看奖励幂等逻辑和后台审计日志；观看任务查询不包裹长事务，内容源现拉时不长期占用数据库连接。
 - `content-provider`：第三方 ReelShort Flask API 的同机部署和适配层，提供搜索、货架、分集、播放地址和运行诊断内部端点，Spring Boot 通过统一 `ContentProvider` 接口调用；内部接口支持 `en` 与 `zh-TW` locale 参数，首页推荐兼容 ReelShort 新版 Next.js locale fallback 数据结构，并通过带硬上限的可配置搜索关键词扩展片库数量，尽量映射短剧简介、分集标题和分集简介字段；上游 HTTP 请求按总超时、最大响应字节数和最大重定向次数限制资源，并逐跳拒绝私网/回环目标；HTTPS 固定连接到校验后的公网 IP，同时保留原始域名 SNI、证书校验和 Host；运行诊断记录搜索空结果、Next data 404、播放页解析失败和播放地址缺失等上游异常摘要。
 - `infra`：单机部署、进程管理、Nginx、PostgreSQL、Redis、日志、PostgreSQL/配置备份恢复脚本、静态校验和恢复演练文档；生产 Compose 仅在内部网络开放 PostgreSQL、Redis、backend 和 content-provider，数据层宿主访问必须使用 loopback-only 调试 override，公网 Nginx 允许 `/api/internal` 透传到 backend 并由 `X-Internal-Super-Token` 做接口级鉴权；配置备份默认排除 `.env`，显式启用时使用 Windows DPAPI `CurrentUser` 加密并收紧 ACL；服务器宿主机 Nginx 接入 `shortlink.hjj888.cc`，HTTPS 证书由 Certbot/Let's Encrypt 管理，并反向代理公开 `/api/` 到后端、其他路径到后台 Web；Android 更新不再依赖静态本地 APK 目录。
-- `scripts`：本地发布和验收脚本，包含发布质量基线验证、脚本回归测试和 Android 模拟器 UI smoke 截图验收；发布基线同时检查工作区、暂存区 whitespace 和未跟踪文件，发布脚本钉住正式签名证书 SHA-256、包名、版本号和 versionCode，只有显式开关才允许跳过工作树完整性检查。
+- `scripts`：本地发布和验收脚本，包含发布质量基线验证、脚本回归测试和 Android 模拟器 UI smoke 截图验收；发布基线同时检查工作区、暂存区 whitespace 和未跟踪文件，发布脚本钉住固定 Debug 签名证书 SHA-256、包名、版本号和 versionCode，只有显式开关才允许跳过工作树完整性检查。
 - `docs`：架构设计、接口说明、部署说明和阶段计划。
 
 ## 构建与测试命令
@@ -54,7 +54,7 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 原�
   - 真机/模拟器插桩测试：`./gradlew :app:connectedAndroidTest`
   - 版本由 gradle property 控制：`-PappVersionName=0.4.1 -PappVersionCode=5`
   - 本地后端地址覆盖：`-PreelshortApiBaseUrl=http://10.0.2.2:18080/api/app`
-  - 正式签名材料经 `ANDROID_SIGNING_*` 环境变量注入，密钥库文件不入库。
+  - Debug 与优化 Release 变体统一使用 `C:\Users\Ashu\.android\debug.keystore`；发布前按 `android-app/SIGNING.md` 核对固定证书 SHA-256，禁止生成或使用其他签名。
 - `content-provider`（Flask · pytest）
   - 安装依赖：`pip install -r requirements.txt`
   - 运行：`python app.py`（默认监听 5000，后端通过 `http://127.0.0.1:5000` 同机调用）
@@ -77,6 +77,8 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 原�
 - 单机部署边界：生产 Compose 只在内部网络暴露 PostgreSQL/Redis/backend/content-provider，公网仅 Nginx；数据层宿主调试必须用 loopback-only override。App 更新下载只使用后端生成的 COS 预签名链接。
 
 ## 变更历史
+
+[2026-08-10] android-app/release/scripts/docs - Android 全部切换为同一固定 Debug keystore 签名；优化 Release 变体保留压缩和非 debuggable 属性，发布脚本钉死 Debug 证书 SHA-256，删除正式 JKS、DPAPI 备份和 `ANDROID_SIGNING_*` 配置；已装正式签名 `0.8.6 (40)` 的设备需卸载一次，之后可连续覆盖升级。
 
 [2026-08-10] backend/content/points/android-app/player - 播放奖励预计值改为结合登录用户十分位尾数与当日剩余额度计算实际整数入账；奖励结算后播放器圆环改用服务端实际到账积分，避免圆环数字与 `+N pt` 浮层不一致。
 

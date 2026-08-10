@@ -4,7 +4,7 @@ ReelShort / ShortLink Android release publisher.
 
 Interactive script that:
   1. Prompts for a version number (X.Y.Z).
-  2. Builds a signed release APK via Gradle.
+  2. Builds an optimized release APK signed by the fixed Debug certificate.
   3. Verifies the APK package name / version / signature.
   4. Computes SHA-256 and file sizes.
   5. Uploads the APK and its .sha256 checksum to Tencent COS.
@@ -43,7 +43,7 @@ ANDROID_DIR = REPO_ROOT / "android-app"
 OBJECT_KEY_PREFIX = "releases/android"
 PACKAGE_NAME = "com.reelshort.app"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
-EXPECTED_RELEASE_CERT_SHA256 = "c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9"
+EXPECTED_DEBUG_CERT_SHA256 = "7bb921b325b079400c9fa4fc322e6a903571f688f35ce6ab284baf32d0cca436"
 
 
 class PublishError(Exception):
@@ -197,10 +197,10 @@ def verify_expected_certificate(apksigner_output: str) -> str:
     if not match:
         raise PublishError("APK signing certificate SHA-256 digest was not reported by apksigner.")
     digest = normalize_sha256_digest(match.group(1))
-    if digest != EXPECTED_RELEASE_CERT_SHA256:
+    if digest != EXPECTED_DEBUG_CERT_SHA256:
         raise PublishError(
-            "APK signing certificate SHA-256 does not match the pinned ShortLink release certificate.\n"
-            f"Expected: {EXPECTED_RELEASE_CERT_SHA256}\n"
+            "APK signing certificate SHA-256 does not match the pinned ShortLink Debug certificate.\n"
+            f"Expected: {EXPECTED_DEBUG_CERT_SHA256}\n"
             f"Actual:   {digest}")
     return digest
 

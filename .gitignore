@@ -49,7 +49,6 @@ android-app/.idea/
 *.keystore
 *.p12
 *.signing.properties
-android-app/release-signing/
 
 # Environment
 .env

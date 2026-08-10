@@ -24,16 +24,15 @@ App 启动
 
 ## 前置准备
 
-### 1. 本地签名材料
+### 1. 固定 Debug 签名材料
 
-发布脚本需要正式签名材料。设置以下环境变量（或在 `.env` 中配置）：
+所有 APK 统一使用以下固定 Debug keystore：
 
-- `ANDROID_SIGNING_STORE_FILE` — 签名密钥库文件路径（`.jks`）
-- `ANDROID_SIGNING_STORE_PASSWORD`
-- `ANDROID_SIGNING_KEY_ALIAS`
-- `ANDROID_SIGNING_KEY_PASSWORD`
+- 文件：`C:\Users\Ashu\.android\debug.keystore`
+- 证书 SHA-256：`7bb921b325b079400c9fa4fc322e6a903571f688f35ce6ab284baf32d0cca436`
+- 详细入口：`android-app/SIGNING.md`
 
-密钥库文件本身被 `.gitignore` 忽略，不入库。
+发布脚本仍构建经过压缩和资源收缩的 Release 变体，但该变体由上述 Debug 证书签名。文件缺失或证书不匹配时发布会在上传前失败；不能让 Gradle重新生成另一份 Debug keystore。
 
 ### 2. 发布配置
 
@@ -68,7 +67,7 @@ python scripts/publish-android.py
 交互式提示输入版本号（`X.Y.Z`）、version code 和可选的 release notes；直接留空时不会写入默认更新说明。脚本会自动：
 
 1. 用 Gradle 构建签名 release APK
-2. 用 `apksigner` / `aapt` 校验签名、正式证书 SHA-256、包名（`com.reelshort.app`）、versionName 和 versionCode
+2. 用 `apksigner` / `aapt` 校验签名、固定 Debug 证书 SHA-256、包名（`com.reelshort.app`）、versionName 和 versionCode
 3. 计算 APK 的 SHA-256 和文件大小，生成 `.sha256` 校验文件
 4. 自动安装 `cos-python-sdk-v5`（如未安装）
 5. 上传 APK 和校验文件到 COS（覆盖同版本号的旧文件）
@@ -113,5 +112,11 @@ curl -s https://shortlink.hjj888.cc/api/app/release/latest | python -m json.tool
 - 预签名下载链接短时（默认 1h）过期，按需生成，不持久化。
 - 发布接口由 `X-Internal-Super-Token` 保护，复用 `reelshort.internal.super-token`。
 - `gitleaks` 扫描全历史（push 与 PR），确保无密钥泄漏。
-- 发布脚本钉住当前正式签名证书 SHA-256；如果本地环境变量指向了错误 keystore，发布会在上传前失败。
+- 发布脚本钉住固定 Debug 签名证书 SHA-256；如果 keystore 缺失、被重新生成或被替换，发布会在上传前失败。
 - App 下载后只做 SHA-256 完整性校验，包名、版本和签名错误由发布脚本上传前拦截，并由 Android 系统安装器在最终安装阶段兜底。
+
+## 签名迁移说明
+
+- Debug 证书签名的 `0.8.5 (39)` 可以直接覆盖升级后续版本。
+- 正式证书签名的 `0.8.6 (40)` 需要卸载一次后才能安装固定 Debug 证书版本。
+- 完成切换后，所有后续发布必须继续使用同一个固定 Debug keystore。

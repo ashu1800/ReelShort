@@ -9,16 +9,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 fun String.asBuildConfigString(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-val signingStoreFile = providers.environmentVariable("ANDROID_SIGNING_STORE_FILE").orNull
-val signingStorePassword = providers.environmentVariable("ANDROID_SIGNING_STORE_PASSWORD").orNull
-val signingKeyAlias = providers.environmentVariable("ANDROID_SIGNING_KEY_ALIAS").orNull
-val signingKeyPassword = providers.environmentVariable("ANDROID_SIGNING_KEY_PASSWORD").orNull
-val releaseSigningConfigured = listOf(
-    signingStoreFile,
-    signingStorePassword,
-    signingKeyAlias,
-    signingKeyPassword,
-).all { !it.isNullOrBlank() }
+val fixedDebugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
 val appVersionName = providers.gradleProperty("appVersionName").orElse("0.7.4").get()
 val appVersionCode = providers.gradleProperty("appVersionCode").orElse("27").get().toInt()
 require(appVersionCode > 0) { "appVersionCode must be positive" }
@@ -40,17 +31,18 @@ android {
     }
 
     signingConfigs {
-        if (releaseSigningConfigured) {
-            create("release") {
-                storeFile = file(signingStoreFile!!)
-                storePassword = signingStorePassword
-                keyAlias = signingKeyAlias
-                keyPassword = signingKeyPassword
-            }
+        create("fixedDebug") {
+            storeFile = fixedDebugKeystore
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
 
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("fixedDebug")
+        }
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -58,7 +50,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.findByName("release")
+            signingConfig = signingConfigs.getByName("fixedDebug")
         }
     }
 
@@ -103,11 +95,13 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
-tasks.matching { it.name == "packageRelease" || it.name == "bundleRelease" }.configureEach {
+tasks.matching {
+    it.name in setOf("packageDebug", "bundleDebug", "packageRelease", "bundleRelease")
+}.configureEach {
     doFirst {
-        check(releaseSigningConfigured) {
-            "Release signing requires ANDROID_SIGNING_STORE_FILE, ANDROID_SIGNING_STORE_PASSWORD, " +
-                "ANDROID_SIGNING_KEY_ALIAS, and ANDROID_SIGNING_KEY_PASSWORD"
+        check(fixedDebugKeystore.isFile) {
+            "Fixed Debug keystore is missing at ${fixedDebugKeystore.absolutePath}. " +
+                "Restore the pinned keystore before building Android packages."
         }
     }
 }

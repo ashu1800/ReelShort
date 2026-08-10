@@ -16,23 +16,35 @@ publisher = load_publisher()
 
 
 class PublishAndroidTests(unittest.TestCase):
-    def test_accepts_pinned_release_certificate(self):
+    def test_accepts_pinned_debug_certificate(self):
         output = (
             "Verified using v2 scheme (APK Signature Scheme v2): true\n"
-            f"Signer #1 certificate SHA-256 digest: {publisher.EXPECTED_RELEASE_CERT_SHA256}\n"
+            f"Signer #1 certificate SHA-256 digest: {publisher.EXPECTED_DEBUG_CERT_SHA256}\n"
         )
 
-        self.assertEqual(publisher.EXPECTED_RELEASE_CERT_SHA256, publisher.verify_expected_certificate(output))
+        self.assertEqual(
+            publisher.EXPECTED_DEBUG_CERT_SHA256,
+            publisher.verify_expected_certificate(output),
+        )
 
-    def test_rejects_unexpected_release_certificate(self):
+    def test_rejects_former_release_certificate(self):
         output = (
             "Verified using v2 scheme (APK Signature Scheme v2): true\n"
             "Signer #1 certificate SHA-256 digest: "
-            "0000000000000000000000000000000000000000000000000000000000000000\n"
+            "c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9\n"
         )
 
         with self.assertRaises(publisher.PublishError):
             publisher.verify_expected_certificate(output)
+
+    def test_release_build_uses_fixed_debug_signing(self):
+        gradle_file = Path(__file__).resolve().parents[2] / "android-app" / "app" / "build.gradle.kts"
+        gradle = gradle_file.read_text(encoding="utf-8")
+
+        self.assertIn('create("fixedDebug")', gradle)
+        self.assertIn('getByName("debug")', gradle)
+        self.assertIn('signingConfig = signingConfigs.getByName("fixedDebug")', gradle)
+        self.assertNotIn("ANDROID_SIGNING_", gradle)
 
     def test_rejects_version_code_mismatch(self):
         badging = "package: name='com.reelshort.app' versionCode='27' versionName='0.7.5'"

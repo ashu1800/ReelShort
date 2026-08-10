@@ -22,9 +22,9 @@ App 只访问 Spring Boot API，不直接访问 Flask 内容源服务。生产�
 
 ## COS 更新
 
-稳定版清单从后端 `/api/app/release/latest` 获取，APK 和同名 `.sha256` 文件通过腾讯云 COS 预签名链接下载。App 冷启动后台检查稳定版，Me 页可手动检查；下载后只验证 SHA-256 完整性，再打开系统安装器。发布脚本在上传前校验包名、versionName、versionCode 和正式签名证书；普通 Android 设备仍需要用户确认安装，并可能需要为 ShortLink 开启“允许安装未知应用”。
+稳定版清单从后端 `/api/app/release/latest` 获取，APK 和同名 `.sha256` 文件通过腾讯云 COS 预签名链接下载。App 冷启动后台检查稳定版，Me 页可手动检查；下载后只验证 SHA-256 完整性，再打开系统安装器。发布脚本在上传前校验包名、versionName、versionCode 和固定 Debug 签名证书；普通 Android 设备仍需要用户确认安装，并可能需要为 ShortLink 开启“允许安装未知应用”。
 
-正式 Release 使用仓库根目录的 `scripts/publish-android.py` 本地发布脚本构建、上传并回调后端。签名材料只能通过 `ANDROID_SIGNING_STORE_FILE`、`ANDROID_SIGNING_STORE_PASSWORD`、`ANDROID_SIGNING_KEY_ALIAS` 和 `ANDROID_SIGNING_KEY_PASSWORD` 环境变量提供，禁止提交 keystore 或密码文件。
+发布 APK 使用仓库根目录的 `scripts/publish-android.py` 本地脚本构建、上传并回调后端。Debug 和优化 Release 变体统一使用 `C:\Users\Ashu\.android\debug.keystore`，固定证书指纹和迁移说明见 `android-app/SIGNING.md`；仓库不再使用正式签名或 `ANDROID_SIGNING_*` 环境变量。
 
 ## 可运行验证
 
