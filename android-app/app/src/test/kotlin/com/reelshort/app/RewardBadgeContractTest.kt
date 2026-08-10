@@ -1,6 +1,7 @@
 package com.reelshort.app
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.WatchRewardStatus
+import com.reelshort.app.ui.format.RewardAwardToastState
 import com.reelshort.app.ui.format.RewardBadgeVisualState
 import com.reelshort.app.ui.format.rewardBadgeState
 import com.reelshort.app.ui.format.rewardBadgeContentDescription
@@ -14,6 +15,28 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
 class RewardBadgeContractTest {
+    @Test
+    fun hidingRewardToastRetainsDisplayedPointsForExitAnimation() {
+        val hidden = RewardAwardToastState().show(2).hide()
+
+        assertFalse(hidden.visible)
+        assertEquals(2, hidden.points)
+    }
+
+    @Test
+    fun nonPositiveRewardDoesNotShowToast() {
+        assertEquals(RewardAwardToastState(), RewardAwardToastState().show(0))
+        assertEquals(RewardAwardToastState(), RewardAwardToastState().show(-2))
+    }
+
+    @Test
+    fun newerRewardReplacesPreviousToastPoints() {
+        val updated = RewardAwardToastState().show(1).show(3)
+
+        assertEquals(true, updated.visible)
+        assertEquals(3, updated.points)
+    }
+
     @Test
     fun zeroProgressExplainsCompletionReward() {
         val state = rewardBadgeState(

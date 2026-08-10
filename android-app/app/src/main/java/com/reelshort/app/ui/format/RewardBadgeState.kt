@@ -13,6 +13,16 @@ internal enum class RewardBadgeVisualState {
     ERROR,
 }
 
+internal data class RewardAwardToastState(
+    val points: Int = 0,
+    val visible: Boolean = false,
+) {
+    fun show(awardedPoints: Int): RewardAwardToastState =
+        if (awardedPoints > 0) copy(points = awardedPoints, visible = true) else this
+
+    fun hide(): RewardAwardToastState = copy(visible = false)
+}
+
 internal data class RewardBadgeState(
     val accessibilityText: String,
     val pointsText: String,

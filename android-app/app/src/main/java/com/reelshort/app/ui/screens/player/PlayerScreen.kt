@@ -101,6 +101,7 @@ import com.reelshort.app.state.playbackProgressSample
 import com.reelshort.app.ui.format.EpisodeWatchStatus
 import com.reelshort.app.ui.format.EpisodeWatchStatusType
 import com.reelshort.app.ui.format.PlayerOverlayMode
+import com.reelshort.app.ui.format.RewardAwardToastState
 import com.reelshort.app.ui.format.RewardBadgeState
 import com.reelshort.app.ui.format.RewardBadgeVisualState
 import com.reelshort.app.ui.format.coverUrlOrNull
@@ -144,18 +145,18 @@ internal fun PlayerScreen(
     var commentSheetVisible by remember { mutableStateOf(false) }
     var episodeSheetVisible by remember { mutableStateOf(false) }
     var rewardInfoSheetVisible by remember { mutableStateOf(false) }
-    var visibleAwardPoints by remember { mutableStateOf<Int?>(null) }
+    var rewardAwardToastState by remember(book?.id, episode?.number) {
+        mutableStateOf(RewardAwardToastState())
+    }
     var lastRewardAwardVersion by remember(book?.id, episode?.number) {
         mutableStateOf(playback.rewardAwardVersion)
     }
 
-    LaunchedEffect(playback.rewardAwardVersion, state.language) {
+    LaunchedEffect(playback.rewardAwardVersion) {
         if (playback.rewardAwardVersion > lastRewardAwardVersion && playback.awardedPoints > 0) {
-            visibleAwardPoints = playback.awardedPoints
+            rewardAwardToastState = rewardAwardToastState.show(playback.awardedPoints)
             kotlinx.coroutines.delay(1100)
-            if (visibleAwardPoints == playback.awardedPoints) {
-                visibleAwardPoints = null
-            }
+            rewardAwardToastState = rewardAwardToastState.hide()
         }
         lastRewardAwardVersion = playback.rewardAwardVersion
     }
@@ -217,12 +218,12 @@ internal fun PlayerScreen(
                     )
                 }
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = visibleAwardPoints != null,
+                    visible = rewardAwardToastState.visible,
                     enter = fadeIn() + slideInVertically { it / 2 },
                     exit = fadeOut() + slideOutVertically { -it / 2 },
                     modifier = Modifier.padding(top = if (showRewardIndicator) 48.dp else 0.dp, end = 4.dp),
                 ) {
-                    RewardAwardToast(points = visibleAwardPoints ?: 0, language = state.language)
+                    RewardAwardToast(points = rewardAwardToastState.points, language = state.language)
                 }
             }
         }
