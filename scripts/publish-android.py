@@ -4,7 +4,7 @@ ReelShort / ShortLink Android release publisher.
 
 Interactive script that:
   1. Prompts for a version number (X.Y.Z).
-  2. Builds an optimized release APK signed by the fixed Debug certificate.
+  2. Builds an optimized release APK signed by the pinned release certificate.
   3. Verifies the APK package name / version / signature.
   4. Computes SHA-256 and file sizes.
   5. Uploads the APK and its .sha256 checksum to Tencent COS.
@@ -43,7 +43,10 @@ ANDROID_DIR = REPO_ROOT / "android-app"
 OBJECT_KEY_PREFIX = "releases/android"
 PACKAGE_NAME = "com.reelshort.app"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
-EXPECTED_DEBUG_CERT_SHA256 = "7bb921b325b079400c9fa4fc322e6a903571f688f35ce6ab284baf32d0cca436"
+RELEASE_SIGNING_DIR = ANDROID_DIR / "release-signing"
+RELEASE_SIGNING_CONFIG = RELEASE_SIGNING_DIR / "signing-config.txt"
+RELEASE_KEYSTORE = RELEASE_SIGNING_DIR / "shortlink-release.jks"
+EXPECTED_RELEASE_CERT_SHA256 = "c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9"
 
 
 class PublishError(Exception):
@@ -99,6 +102,8 @@ def load_config() -> dict:
             key, value = key.strip(), value.strip().strip('"').strip("'")
             os.environ.setdefault(key, value)
 
+    load_release_signing_environment(RELEASE_SIGNING_CONFIG, RELEASE_KEYSTORE)
+
     required = ["COS_SECRET_ID", "COS_SECRET_KEY", "COS_BUCKET", "COS_REGION",
                 "REELSHORT_INTERNAL_SUPER_TOKEN", "RELEASE_BACKEND_URL"]
     missing = [k for k in required if not os.environ.get(k)]
@@ -107,6 +112,27 @@ def load_config() -> dict:
             f"Missing required config: {', '.join(missing)}.\n"
             f"Set them via environment variables or in {env_path} (see .env.example).")
     return {k: os.environ[k] for k in required}
+
+
+def load_release_signing_environment(config_path: Path, keystore_path: Path) -> None:
+    """Load ignored local signing values without overriding explicit environment variables."""
+    if config_path.exists():
+        for raw_line in config_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[7:].lstrip()
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key.startswith("ANDROID_SIGNING_"):
+                os.environ.setdefault(key, value)
+
+    if keystore_path.exists():
+        os.environ.setdefault("ANDROID_SIGNING_STORE_FILE", str(keystore_path.resolve()))
 
 
 def resolve_inputs(args: argparse.Namespace, config: dict) -> tuple[str, int, str]:
@@ -147,6 +173,18 @@ def suggest_version_code(config: dict) -> int:
 
 def build_apk(version_name: str, version_code: int) -> Path:
     print(f"\n=== Building ShortLink v{version_name} ({version_code}) ===")
+    required_signing = [
+        "ANDROID_SIGNING_STORE_FILE",
+        "ANDROID_SIGNING_STORE_PASSWORD",
+        "ANDROID_SIGNING_KEY_ALIAS",
+        "ANDROID_SIGNING_KEY_PASSWORD",
+    ]
+    missing_signing = [key for key in required_signing if not os.environ.get(key)]
+    if missing_signing:
+        raise PublishError(
+            "Release signing is not configured. Missing: " + ", ".join(missing_signing) +
+            f". Restore {RELEASE_SIGNING_CONFIG} or set the signing environment variables."
+        )
     gradlew = str(ANDROID_DIR / ("gradlew.bat" if os.name == "nt" else "gradlew"))
     cmd = [
         gradlew, ":app:assembleRelease",
@@ -197,10 +235,10 @@ def verify_expected_certificate(apksigner_output: str) -> str:
     if not match:
         raise PublishError("APK signing certificate SHA-256 digest was not reported by apksigner.")
     digest = normalize_sha256_digest(match.group(1))
-    if digest != EXPECTED_DEBUG_CERT_SHA256:
+    if digest != EXPECTED_RELEASE_CERT_SHA256:
         raise PublishError(
-            "APK signing certificate SHA-256 does not match the pinned ShortLink Debug certificate.\n"
-            f"Expected: {EXPECTED_DEBUG_CERT_SHA256}\n"
+            "APK signing certificate SHA-256 does not match the pinned ShortLink release certificate.\n"
+            f"Expected: {EXPECTED_RELEASE_CERT_SHA256}\n"
             f"Actual:   {digest}")
     return digest
 

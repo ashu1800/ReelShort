@@ -10,6 +10,16 @@ fun String.asBuildConfigString(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 val fixedDebugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+val signingStoreFile = providers.environmentVariable("ANDROID_SIGNING_STORE_FILE").orNull
+val signingStorePassword = providers.environmentVariable("ANDROID_SIGNING_STORE_PASSWORD").orNull
+val signingKeyAlias = providers.environmentVariable("ANDROID_SIGNING_KEY_ALIAS").orNull
+val signingKeyPassword = providers.environmentVariable("ANDROID_SIGNING_KEY_PASSWORD").orNull
+val releaseSigningConfigured = listOf(
+    signingStoreFile,
+    signingStorePassword,
+    signingKeyAlias,
+    signingKeyPassword,
+).all { !it.isNullOrBlank() }
 val appVersionName = providers.gradleProperty("appVersionName").orElse("0.7.4").get()
 val appVersionCode = providers.gradleProperty("appVersionCode").orElse("27").get().toInt()
 require(appVersionCode > 0) { "appVersionCode must be positive" }
@@ -37,6 +47,14 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(signingStoreFile!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -50,7 +68,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("fixedDebug")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -95,13 +113,11 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
-tasks.matching {
-    it.name in setOf("packageDebug", "bundleDebug", "packageRelease", "bundleRelease")
-}.configureEach {
+tasks.matching { it.name == "packageRelease" || it.name == "bundleRelease" }.configureEach {
     doFirst {
-        check(fixedDebugKeystore.isFile) {
-            "Fixed Debug keystore is missing at ${fixedDebugKeystore.absolutePath}. " +
-                "Restore the pinned keystore before building Android packages."
+        check(releaseSigningConfigured) {
+            "Release signing requires ANDROID_SIGNING_STORE_FILE, ANDROID_SIGNING_STORE_PASSWORD, " +
+                "ANDROID_SIGNING_KEY_ALIAS, and ANDROID_SIGNING_KEY_PASSWORD"
         }
     }
 }

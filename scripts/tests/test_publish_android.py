@@ -1,4 +1,6 @@
 import importlib.util
+import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -16,35 +18,69 @@ publisher = load_publisher()
 
 
 class PublishAndroidTests(unittest.TestCase):
-    def test_accepts_pinned_debug_certificate(self):
+    def test_accepts_pinned_release_certificate(self):
         output = (
             "Verified using v2 scheme (APK Signature Scheme v2): true\n"
-            f"Signer #1 certificate SHA-256 digest: {publisher.EXPECTED_DEBUG_CERT_SHA256}\n"
+            f"Signer #1 certificate SHA-256 digest: {publisher.EXPECTED_RELEASE_CERT_SHA256}\n"
         )
 
         self.assertEqual(
-            publisher.EXPECTED_DEBUG_CERT_SHA256,
+            publisher.EXPECTED_RELEASE_CERT_SHA256,
             publisher.verify_expected_certificate(output),
         )
 
-    def test_rejects_former_release_certificate(self):
+    def test_rejects_debug_certificate(self):
         output = (
             "Verified using v2 scheme (APK Signature Scheme v2): true\n"
             "Signer #1 certificate SHA-256 digest: "
-            "c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9\n"
+            "7bb921b325b079400c9fa4fc322e6a903571f688f35ce6ab284baf32d0cca436\n"
         )
 
         with self.assertRaises(publisher.PublishError):
             publisher.verify_expected_certificate(output)
 
-    def test_release_build_uses_fixed_debug_signing(self):
+    def test_release_build_uses_environment_backed_release_signing(self):
         gradle_file = Path(__file__).resolve().parents[2] / "android-app" / "app" / "build.gradle.kts"
         gradle = gradle_file.read_text(encoding="utf-8")
 
+        self.assertIn('environmentVariable("ANDROID_SIGNING_STORE_FILE")', gradle)
+        self.assertIn('create("release")', gradle)
         self.assertIn('create("fixedDebug")', gradle)
-        self.assertIn('getByName("debug")', gradle)
         self.assertIn('signingConfig = signingConfigs.getByName("fixedDebug")', gradle)
-        self.assertNotIn("ANDROID_SIGNING_", gradle)
+        self.assertIn('signingConfig = signingConfigs.findByName("release")', gradle)
+
+    def test_loads_ignored_signing_config_without_overwriting_explicit_environment(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "signing-config.txt"
+            keystore_path = root / "shortlink-release.jks"
+            config_path.write_text(
+                "ANDROID_SIGNING_STORE_PASSWORD=store-secret\n"
+                "ANDROID_SIGNING_KEY_ALIAS=release-key\n"
+                "ANDROID_SIGNING_KEY_PASSWORD=key-secret\n",
+                encoding="utf-8",
+            )
+            keystore_path.write_bytes(b"test keystore placeholder")
+
+            with patch.dict(
+                os.environ,
+                {"ANDROID_SIGNING_KEY_ALIAS": "explicit-alias"},
+                clear=True,
+            ):
+                publisher.load_release_signing_environment(config_path, keystore_path)
+
+                self.assertEqual(str(keystore_path.resolve()), os.environ["ANDROID_SIGNING_STORE_FILE"])
+                self.assertEqual("store-secret", os.environ["ANDROID_SIGNING_STORE_PASSWORD"])
+                self.assertEqual("explicit-alias", os.environ["ANDROID_SIGNING_KEY_ALIAS"])
+                self.assertEqual("key-secret", os.environ["ANDROID_SIGNING_KEY_PASSWORD"])
+
+    def test_local_signing_config_is_gitignored(self):
+        gitignore_path = Path(__file__).resolve().parents[2] / ".gitignore"
+
+        self.assertIn(
+            "android-app/release-signing/signing-config.txt",
+            gitignore_path.read_text(encoding="utf-8").splitlines(),
+        )
 
     def test_rejects_version_code_mismatch(self):
         badging = "package: name='com.reelshort.app' versionCode='27' versionName='0.7.5'"
