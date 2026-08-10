@@ -143,6 +143,22 @@ class PointsServiceTests {
 		PointAccountResponse account = pointsService.account(UUID.randomUUID());
 
 		assertThat(account.balance()).isZero();
+		assertThat(account.todayCreditedPoints()).isZero();
+	}
+
+	@Test
+	void accountReportsTodayPositiveCreditsUsingShanghaiCalendarDay() {
+		UUID userId = UUID.randomUUID();
+		pointTransactionRepository.saveAll(List.of(
+				PointTransaction.watchReward(userId, 100, 100, "yesterday", 1, 1,
+						Instant.parse("2026-07-12T15:59:59Z").atOffset(java.time.ZoneOffset.UTC)),
+				PointTransaction.watchReward(userId, 2, 102, "today-1", 1, 1,
+						Instant.parse("2026-07-12T16:00:00Z").atOffset(java.time.ZoneOffset.UTC)),
+				PointTransaction.watchReward(userId, 3, 105, "today-2", 1, 1,
+						Instant.parse("2026-07-13T15:59:59Z").atOffset(java.time.ZoneOffset.UTC)),
+				PointTransaction.withdrawal(userId, 50, 55, "withdrawal-1")));
+
+		assertThat(pointsService.account(userId).todayCreditedPoints()).isEqualTo(5);
 	}
 
 	@Test

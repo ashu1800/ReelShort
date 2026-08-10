@@ -112,4 +112,7 @@ internal fun AppScreen.navigationLabel(language: AppLanguage): String =
         AppScreen.DETAIL -> strings(language).detailScreen
         AppScreen.PLAYER -> strings(language).playerScreen
         AppScreen.FAVORITES -> strings(language).favoritesScreen
+        AppScreen.FUNDS -> strings(language).fundsTitle
+        AppScreen.WITHDRAWAL -> strings(language).accountWithdrawTitle
+        AppScreen.VIP_RECHARGE -> strings(language).vipPayTitle
     }

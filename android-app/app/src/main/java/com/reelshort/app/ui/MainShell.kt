@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Payments
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +31,9 @@ import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.format.navigationLabel
 import com.reelshort.app.ui.format.primaryTabs
 import com.reelshort.app.ui.screens.account.AccountScreen
+import com.reelshort.app.ui.screens.account.FundsScreen
+import com.reelshort.app.ui.screens.account.WithdrawalScreen
+import com.reelshort.app.ui.screens.account.VipRechargeScreen
 import com.reelshort.app.ui.screens.detail.DetailScreen
 import com.reelshort.app.ui.screens.favorites.FavoritesScreen
 import com.reelshort.app.ui.screens.home.HomeScreen
@@ -65,7 +71,13 @@ internal fun MainShell(
     onRefreshHome: () -> Unit,
     onBindWallet: (String, String, String) -> Unit,
     onUnbindWallet: (String) -> Unit,
-    onShowVipPaywall: () -> Unit,
+    onCreateVipOrder: () -> Unit,
+    onRefreshVipOrder: () -> Unit,
+    onOpenFunds: () -> Unit,
+    onOpenWithdrawal: () -> Unit,
+    onOpenVipRecharge: () -> Unit,
+    onBackFromFunds: () -> Unit,
+    onBackFromFundsChild: () -> Unit,
     onSubmitWithdrawal: (Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
     onSubmitBankCard: (String, String, String, String, String) -> Unit,
@@ -147,12 +159,10 @@ internal fun MainShell(
                             vipOrders = state.vipOrders,
                             wallet = state.wallet,
                             walletMutationVersion = state.walletMutationVersion,
-                            withdrawalSubmissionVersion = state.withdrawalSubmissionVersion,
                             vipActive = state.vipActive,
                             vipUntil = state.vipUntil,
                             vipPriceUsdt = state.vipPriceUsdt,
                             accountOperation = state.accountOperation,
-                            withdrawalSummary = state.withdrawalSummary,
                             withdrawals = state.withdrawals,
                             appVersionLabel = appVersionLabel,
                             isCheckingForUpdate = isCheckingForUpdate,
@@ -163,12 +173,34 @@ internal fun MainShell(
                             onOpenWatchRecord = onOpenWatchRecord,
                             onBindWallet = onBindWallet,
                             onUnbindWallet = onUnbindWallet,
-                            onShowVipPaywall = onShowVipPaywall,
+                            onOpenFunds = onOpenFunds,
                             onRefreshAccount = onRefreshAccount,
-                            onSubmitWithdrawal = onSubmitWithdrawal,
                             onChangePassword = onChangePassword,
                             onSubmitBankCard = onSubmitBankCard,
                             onLogout = onLogout,
+                            language = state.language,
+                        )
+                        AppScreen.FUNDS -> FundsScreen(
+                            state = state,
+                            onBack = onBackFromFunds,
+                            onOpenWithdrawal = onOpenWithdrawal,
+                            onOpenVipRecharge = onOpenVipRecharge,
+                            onShowAuthPrompt = onShowAuthPrompt,
+                            language = state.language,
+                        )
+                        AppScreen.WITHDRAWAL -> WithdrawalScreen(
+                            state = state,
+                            onBack = onBackFromFundsChild,
+                            onSubmitWithdrawal = onSubmitWithdrawal,
+                            onShowAuthPrompt = onShowAuthPrompt,
+                            language = state.language,
+                        )
+                        AppScreen.VIP_RECHARGE -> VipRechargeScreen(
+                            state = state,
+                            onBack = onBackFromFundsChild,
+                            onCreateOrder = onCreateVipOrder,
+                            onRefresh = onRefreshVipOrder,
+                            onShowAuthPrompt = onShowAuthPrompt,
                             language = state.language,
                         )
                     }
@@ -184,6 +216,9 @@ private fun NavigationIcon(screen: AppScreen) {
         AppScreen.HOME -> Icons.Rounded.Home
         AppScreen.SEARCH -> Icons.Rounded.Search
         AppScreen.ACCOUNT -> Icons.Rounded.AccountCircle
+        AppScreen.FUNDS -> Icons.Rounded.AccountBalanceWallet
+        AppScreen.WITHDRAWAL -> Icons.Rounded.Payments
+        AppScreen.VIP_RECHARGE -> Icons.Rounded.Star
         else -> Icons.Rounded.Home
     }
     Icon(imageVector = imageVector, contentDescription = null)

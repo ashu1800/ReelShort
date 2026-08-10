@@ -29,6 +29,19 @@ public interface PointTransactionRepository extends JpaRepository<PointTransacti
 			@Param("startInclusive") OffsetDateTime startInclusive,
 			@Param("endExclusive") OffsetDateTime endExclusive);
 
+	@Query("""
+			select coalesce(sum(transaction.amount), 0)
+			from PointTransaction transaction
+			where transaction.userId = :userId
+			  and transaction.amount > 0
+			  and transaction.createdAt >= :startInclusive
+			  and transaction.createdAt < :endExclusive
+			""")
+	long sumPositiveAmountByUserIdAndCreatedAtBetween(
+			@Param("userId") UUID userId,
+			@Param("startInclusive") OffsetDateTime startInclusive,
+			@Param("endExclusive") OffsetDateTime endExclusive);
+
 	long countByUserId(UUID userId);
 
 	Optional<PointTransaction> findByIdempotencyKey(String idempotencyKey);

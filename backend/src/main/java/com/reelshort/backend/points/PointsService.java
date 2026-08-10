@@ -2,6 +2,10 @@ package com.reelshort.backend.points;
 
 import java.util.List;
 import java.util.UUID;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,11 +29,12 @@ public class PointsService {
 	private final UserActionLocks userActionLocks;
 	private final PointAwardTransaction pointAwardTransaction;
 	private final SystemConfigService systemConfigService;
+	private final Clock clock;
 
 	public PointsService(PointTransactionRepository pointTransactionRepository,
 			PointAccountRepository pointAccountRepository, UserAccountRepository userAccountRepository,
 			UserWalletRepository userWalletRepository, UserActionLocks userActionLocks,
-			PointAwardTransaction pointAwardTransaction, SystemConfigService systemConfigService) {
+			PointAwardTransaction pointAwardTransaction, SystemConfigService systemConfigService, Clock clock) {
 		this.pointTransactionRepository = pointTransactionRepository;
 		this.pointAccountRepository = pointAccountRepository;
 		this.userAccountRepository = userAccountRepository;
@@ -37,6 +42,7 @@ public class PointsService {
 		this.userActionLocks = userActionLocks;
 		this.pointAwardTransaction = pointAwardTransaction;
 		this.systemConfigService = systemConfigService;
+		this.clock = clock;
 	}
 
 	public PointAccountResponse account(UUID userId) {
@@ -50,9 +56,15 @@ public class PointsService {
 							.withZone(java.time.ZoneId.systemDefault()).format(user.vipUntil())
 					: null;
 			String walletAddress = wallet != null ? wallet.walletAddress() : null;
+			ZoneId zone = ZoneId.of("Asia/Shanghai");
+			LocalDate today = LocalDate.now(clock.withZone(zone));
+			ZonedDateTime start = today.atStartOfDay(zone);
+			ZonedDateTime end = today.plusDays(1).atStartOfDay(zone);
+			long todayCreditedPoints = pointTransactionRepository.sumPositiveAmountByUserIdAndCreatedAtBetween(
+					userId, start.toOffsetDateTime(), end.toOffsetDateTime());
 			// balance 永远是真实整数积分（小数部分由 PointAccount.fractionalPart 承载），直接透传。
 			return new PointAccountResponse(account.balance(), account.frozenPoints(), account.availablePoints(),
-					vip, vipUntil, walletAddress);
+					vip, vipUntil, walletAddress, Math.toIntExact(todayCreditedPoints));
 		});
 	}
 

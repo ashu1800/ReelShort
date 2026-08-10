@@ -72,6 +72,8 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 原�
 
 ## 变更历史
 
+[2026-08-10] backend/points/android-app - 积分账户摘要新增上海时区当天正向入账积分 `todayCreditedPoints`；Android “我的”页新增资金中心入口，并提供独立提现与 VIP 充值页面，页面共享现有提现和 VIP 订单状态。
+
 [2026-08-07] backend/content/android-app/player - 播放接口新增按权威时长和当前积分配置实时计算的 `estimatedRewardPoints`；播放器奖励胶囊改为无外框的积分图标与确定型进度圆环，圆心显示本集预计基础积分并保留 TalkBack 与实际到账反馈。
 
 [2026-08-07] backend/migration - 从原始功能分支恢复生产已执行的 `V30__track_first_app_login.sql`，以 checksum `-423089945` 补齐 Flyway 历史源码；仅增加可空列，不合并旧分支的登录限制逻辑。

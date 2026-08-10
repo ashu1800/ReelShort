@@ -123,6 +123,7 @@ data class PointAccountDto(
     val availablePoints: Int = balance - frozenPoints,
     val vip: Boolean = false,
     val vipUntil: String? = null,
+    val todayCreditedPoints: Int = 0,
 )
 
 @Serializable

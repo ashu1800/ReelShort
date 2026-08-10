@@ -111,6 +111,7 @@ class FakeReelShortApiClient : ReelShortApiClient {
             PointRecord(2, "观看完成奖励"),
             PointRecord(10, "后台活动赠送"),
         ),
+        todayCreditedPoints = 2,
     )
 
     override suspend fun getOrders(): List<RechargeOrderSummary> =

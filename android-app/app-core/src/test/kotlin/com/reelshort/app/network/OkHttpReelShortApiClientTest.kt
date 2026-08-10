@@ -441,6 +441,7 @@ class OkHttpReelShortApiClientTest {
             server.enqueue(successBody("""
                 {
                   "balance": 18,
+                  "todayCreditedPoints": 7,
                   "vip": true,
                   "vipUntil": "2030-01-01T00:00:00Z"
                 }
@@ -481,6 +482,7 @@ class OkHttpReelShortApiClientTest {
             val orders = client.getOrders()
 
             assertEquals(18, account.balance)
+            assertEquals(7, account.todayCreditedPoints)
             assertEquals(1, account.records.single().amount)
             assertEquals(true, account.vipActive)
             assertEquals("2030-01-01T00:00:00Z", account.vipUntil)

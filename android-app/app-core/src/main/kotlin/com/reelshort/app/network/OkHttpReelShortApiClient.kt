@@ -184,6 +184,7 @@ class OkHttpReelShortApiClient(
             records = records.map { it.toDomain() },
             vipActive = account.vip,
             vipUntil = account.vipUntil,
+            todayCreditedPoints = account.todayCreditedPoints,
         )
     }
 

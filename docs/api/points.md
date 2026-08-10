@@ -10,7 +10,7 @@ Authorization: Bearer <token>
 
 ## `GET /api/app/points/account`
 
-返回当前用户积分账户。首次查询会自动创建余额为 `0` 的账户。
+返回当前用户积分账户。首次查询会自动创建余额为 `0` 的账户。`todayCreditedPoints` 按服务器上海时区当天 `[00:00, 次日 00:00)` 统计所有正向积分流水（`amount > 0`），提现等负向流水不计入。
 
 响应：
 
@@ -19,7 +19,10 @@ Authorization: Bearer <token>
   "code": 0,
   "message": "success",
   "data": {
-    "balance": 3
+      "balance": 3,
+      "frozenPoints": 0,
+      "availablePoints": 3,
+      "todayCreditedPoints": 2
   },
   "requestId": "uuid",
   "timestamp": "2026-06-26T17:30:00+08:00"

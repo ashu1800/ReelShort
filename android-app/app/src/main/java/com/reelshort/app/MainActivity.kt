@@ -117,6 +117,11 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onCreateVipOrder = remember(viewModel) { viewModel::createVipOrder }
     val onRefreshVipOrder = remember(viewModel) { viewModel::refreshLatestVipOrder }
     val onShowVipPaywall = remember(viewModel) { viewModel::showVipPaywall }
+    val onOpenFunds = remember(viewModel) { viewModel::openFunds }
+    val onOpenWithdrawal = remember(viewModel) { viewModel::openWithdrawal }
+    val onOpenVipRecharge = remember(viewModel) { viewModel::openVipRecharge }
+    val onBackFromFunds = remember(viewModel) { viewModel::backFromFunds }
+    val onBackFromFundsChild = remember(viewModel) { viewModel::backFromFundsChild }
     val onDismissVipPaywall = remember(viewModel) { viewModel::dismissVipPaywall }
     val onRefreshAccount = remember(viewModel) { viewModel::refreshAccount }
     val onSubmitWithdrawal = remember(viewModel) { viewModel::submitWithdrawal }
@@ -129,6 +134,12 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     }
     BackHandler(enabled = state.screen == AppScreen.FAVORITES) {
         viewModel.backFromFavorites()
+    }
+    BackHandler(enabled = state.screen == AppScreen.FUNDS) {
+        viewModel.backFromFunds()
+    }
+    BackHandler(enabled = state.screen == AppScreen.WITHDRAWAL || state.screen == AppScreen.VIP_RECHARGE) {
+        viewModel.backFromFundsChild()
     }
     val onLogin = remember(viewModel) { { u: String, p: String, r: Boolean -> viewModel.login(u, p, r) } }
     val onRegister = remember(viewModel) { { u: String, p: String, captchaId: String, answer: String -> viewModel.register(u, p, captchaId, answer) } }
@@ -164,7 +175,13 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onRefreshHome = onRefreshHome,
                 onBindWallet = onBindWallet,
                 onUnbindWallet = onUnbindWallet,
-                onShowVipPaywall = onShowVipPaywall,
+                onCreateVipOrder = onCreateVipOrder,
+                onRefreshVipOrder = onRefreshVipOrder,
+                onOpenFunds = onOpenFunds,
+                onOpenWithdrawal = onOpenWithdrawal,
+                onOpenVipRecharge = onOpenVipRecharge,
+                onBackFromFunds = onBackFromFunds,
+                onBackFromFundsChild = onBackFromFundsChild,
                 onSubmitWithdrawal = onSubmitWithdrawal,
                 onChangePassword = onChangePassword,
                 onSubmitBankCard = onSubmitBankCard,

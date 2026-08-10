@@ -865,6 +865,10 @@ class AppStateController(private val dataSource: AppDataSource) {
         mutableState.update { it.copy(screen = AppScreen.ACCOUNT, isLoading = false, errorMessage = null) }
     }
 
+    fun backToFunds() {
+        mutableState.update { it.copy(screen = AppScreen.FUNDS, isLoading = false, errorMessage = null) }
+    }
+
     private suspend fun runSocialAction(block: suspend () -> Unit) {
         mutableState.update { it.copy(errorMessage = null, messageType = null) }
         try {
@@ -905,11 +909,37 @@ class AppStateController(private val dataSource: AppDataSource) {
         refreshAccountSilently(requestVersion)
     }
 
-    private suspend fun loadAccountSnapshot(requestVersion: Long) = runWithLoading(ErrorContext.ACCOUNT) {
-        loadAccountSnapshotForAuthenticatedUser(requestVersion)
+    suspend fun openFunds() = openAccountSection(AppScreen.FUNDS)
+
+    suspend fun openWithdrawal() = openAccountSection(AppScreen.WITHDRAWAL)
+
+    suspend fun openVipRecharge() = openAccountSection(AppScreen.VIP_RECHARGE)
+
+    private suspend fun openAccountSection(targetScreen: AppScreen) {
+        if (state.value.session == null) {
+            mutableState.update { it.copy(screen = targetScreen, errorMessage = null, isLoading = false) }
+            return
+        }
+        if (!hasAccountSnapshot(state.value)) {
+            val requestVersion = ++accountRequestVersion
+            mutableState.update { it.copy(screen = targetScreen) }
+            loadAccountSnapshot(requestVersion, targetScreen)
+            return
+        }
+
+        val requestVersion = ++accountRequestVersion
+        mutableState.update { it.copy(screen = targetScreen, errorMessage = null) }
+        refreshAccountSilently(requestVersion)
     }
 
-    private suspend fun loadAccountSnapshotForAuthenticatedUser(requestVersion: Long) = coroutineScope {
+    private suspend fun loadAccountSnapshot(requestVersion: Long, targetScreen: AppScreen = AppScreen.ACCOUNT) = runWithLoading(ErrorContext.ACCOUNT) {
+        loadAccountSnapshotForAuthenticatedUser(requestVersion, targetScreen)
+    }
+
+    private suspend fun loadAccountSnapshotForAuthenticatedUser(
+        requestVersion: Long,
+        targetScreen: AppScreen = AppScreen.ACCOUNT,
+    ) = coroutineScope {
         // Parallelize all network requests to avoid 5+ second sequential loading
         val historyAsync = async { dataSource.loadWatchHistory() }
         val pointsAsync = async { dataSource.loadPointAccount() }
@@ -926,16 +956,16 @@ class AppStateController(private val dataSource: AppDataSource) {
         val vipOrders = vipOrdersAsync.await()
         val withdrawalSummary = withdrawalSummaryAsync.await()
         val withdrawals = withdrawalsAsync.await()
-        if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+        if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
             return@coroutineScope
         }
         val continueWatchingBooks = loadContinueWatchingBooks(history, requestVersion)
-        if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+        if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
             return@coroutineScope
         }
         mutableState.update {
             it.copy(
-                screen = AppScreen.ACCOUNT,
+                screen = targetScreen,
                 watchHistory = history,
                 continueWatchingBooks = continueWatchingBooks,
                 pointAccount = points,
@@ -954,41 +984,42 @@ class AppStateController(private val dataSource: AppDataSource) {
     }
 
     private suspend fun refreshAccountSilently(requestVersion: Long = accountRequestVersion) {
+        val targetScreen = state.value.screen.takeIf(::isAccountAreaScreen) ?: AppScreen.ACCOUNT
         try {
             val history = dataSource.loadWatchHistory()
-            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
                 return
             }
             val points = dataSource.loadPointAccount()
-            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
                 return
             }
             val orders = dataSource.loadOrders()
-            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
                 return
             }
             val wallet = loadOptionalAccountData(null) { dataSource.loadWallet() }
-            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
                 return
             }
             val withdrawalSummary = loadOptionalAccountData(null) { dataSource.loadWithdrawalSummary() }
-            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
                 return
             }
             val withdrawals = loadOptionalAccountData(emptyList()) { dataSource.loadWithdrawals() }
-            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
                 return
             }
-            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
                 return
             }
             val continueWatchingBooks = loadContinueWatchingBooks(history, requestVersion)
-            if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+            if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
                 return
             }
             mutableState.update {
                 it.copy(
-                    screen = AppScreen.ACCOUNT,
+                    screen = targetScreen,
                     watchHistory = history,
                     continueWatchingBooks = continueWatchingBooks,
                     pointAccount = points,
@@ -1420,6 +1451,10 @@ class AppStateController(private val dataSource: AppDataSource) {
     private fun hasAccountSnapshot(state: AppUiState): Boolean =
         state.pointAccount != null || state.watchHistory.isNotEmpty() || state.orders.isNotEmpty() || state.wallet != null
 
+    private fun isAccountAreaScreen(screen: AppScreen): Boolean =
+        screen == AppScreen.ACCOUNT || screen == AppScreen.FUNDS ||
+            screen == AppScreen.WITHDRAWAL || screen == AppScreen.VIP_RECHARGE
+
     private fun requireAuthenticatedAccount() {
         if (state.value.session == null) {
             mutableState.update { it.copy(authPromptVisible = true, isLoading = false) }
@@ -1433,14 +1468,15 @@ class AppStateController(private val dataSource: AppDataSource) {
         withdrawalSubmitted: Boolean = false,
     ) {
         val requestVersion = ++accountRequestVersion
-        mutableState.update { it.copy(screen = AppScreen.ACCOUNT) }
+        val targetScreen = state.value.screen.takeIf(::isAccountAreaScreen) ?: AppScreen.ACCOUNT
+        mutableState.update { it.copy(screen = targetScreen) }
         try {
-            loadAccountSnapshotForAuthenticatedUser(requestVersion)
+            loadAccountSnapshotForAuthenticatedUser(requestVersion, targetScreen)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
         }
-        if (requestVersion == accountRequestVersion && state.value.screen == AppScreen.ACCOUNT) {
+        if (requestVersion == accountRequestVersion && isAccountAreaScreen(state.value.screen)) {
             mutableState.update {
                 it.copy(
                     errorMessage = successMessage,
@@ -1483,7 +1519,7 @@ class AppStateController(private val dataSource: AppDataSource) {
             .distinct()
             .take(2)
             .forEach { bookId ->
-                if (requestVersion != accountRequestVersion || state.value.screen != AppScreen.ACCOUNT) {
+                if (requestVersion != accountRequestVersion || !isAccountAreaScreen(state.value.screen)) {
                     return books
                 }
                 try {

@@ -102,6 +102,9 @@ class ReelShortViewModel(
                 com.reelshort.app.state.AppScreen.HOME -> controller.openHome()
                 com.reelshort.app.state.AppScreen.SEARCH -> controller.showSearch()
                 com.reelshort.app.state.AppScreen.ACCOUNT -> controller.openAccount()
+                com.reelshort.app.state.AppScreen.FUNDS -> controller.openFunds()
+                com.reelshort.app.state.AppScreen.WITHDRAWAL -> controller.openWithdrawal()
+                com.reelshort.app.state.AppScreen.VIP_RECHARGE -> controller.openVipRecharge()
                 else -> Unit
             }
         }
@@ -204,6 +207,22 @@ class ReelShortViewModel(
     fun backFromPlayer() = controller.backToPlaybackSource()
 
     fun backFromFavorites() = controller.backToAccount()
+
+    fun backFromFunds() = controller.backToAccount()
+
+    fun backFromFundsChild() = controller.backToFunds()
+
+    fun openFunds() {
+        viewModelScope.launch { controller.openFunds() }
+    }
+
+    fun openWithdrawal() {
+        viewModelScope.launch { controller.openWithdrawal() }
+    }
+
+    fun openVipRecharge() {
+        viewModelScope.launch { controller.openVipRecharge() }
+    }
 
     fun checkApiHealth() {
         viewModelScope.launch { controller.checkApiHealth() }

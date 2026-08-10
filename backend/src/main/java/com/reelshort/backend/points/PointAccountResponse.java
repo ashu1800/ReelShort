@@ -6,7 +6,13 @@ public record PointAccountResponse(
 		int availablePoints,
 		boolean vip,
 		String vipUntil,
-		String walletAddress) {
+		String walletAddress,
+		int todayCreditedPoints) {
+
+	public PointAccountResponse(int balance, int frozenPoints, int availablePoints, boolean vip, String vipUntil,
+			String walletAddress) {
+		this(balance, frozenPoints, availablePoints, vip, vipUntil, walletAddress, 0);
+	}
 
 	public static PointAccountResponse from(PointAccount account) {
 		return new PointAccountResponse(account.balance(), account.frozenPoints(), account.availablePoints(),

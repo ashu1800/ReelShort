@@ -41,6 +41,22 @@ import kotlin.test.assertFailsWith
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppStateControllerTest {
     @Test
+    fun fundsScreensHaveExplicitNavigationAndBackTargets() = runTest {
+        val controller = AppStateController(FakeAppDataSource())
+
+        controller.openFunds()
+        assertEquals(AppScreen.FUNDS, controller.state.value.screen)
+        controller.openWithdrawal()
+        assertEquals(AppScreen.WITHDRAWAL, controller.state.value.screen)
+        controller.backToFunds()
+        assertEquals(AppScreen.FUNDS, controller.state.value.screen)
+        controller.openVipRecharge()
+        assertEquals(AppScreen.VIP_RECHARGE, controller.state.value.screen)
+        controller.backToFunds()
+        assertEquals(AppScreen.FUNDS, controller.state.value.screen)
+    }
+
+    @Test
     fun initialStateStartsOnHomeScreenForGuestBrowsing() {
         val controller = AppStateController(FakeAppDataSource())
 

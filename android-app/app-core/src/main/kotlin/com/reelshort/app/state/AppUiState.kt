@@ -24,6 +24,9 @@ enum class AppScreen {
     DETAIL,
     PLAYER,
     ACCOUNT,
+    FUNDS,
+    WITHDRAWAL,
+    VIP_RECHARGE,
     FAVORITES,
 }
 

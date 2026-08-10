@@ -140,12 +140,10 @@ internal fun AccountScreen(
     vipOrders: List<VipOrder> = emptyList(),
     wallet: WalletInfo?,
     walletMutationVersion: Long,
-    withdrawalSubmissionVersion: Long,
     vipActive: Boolean,
     vipUntil: String?,
     vipPriceUsdt: String,
     accountOperation: AccountOperation?,
-    withdrawalSummary: WithdrawalSummary?,
     withdrawals: List<WithdrawalRecord>,
     appVersionLabel: String,
     isCheckingForUpdate: Boolean,
@@ -156,9 +154,8 @@ internal fun AccountScreen(
     onOpenWatchRecord: (WatchRecord) -> Unit,
     onBindWallet: (String, String, String) -> Unit,
     onUnbindWallet: (String) -> Unit,
-    onShowVipPaywall: () -> Unit,
+    onOpenFunds: () -> Unit,
     onRefreshAccount: () -> Unit,
-    onSubmitWithdrawal: (Int) -> Unit,
     onChangePassword: (String, String) -> Unit,
     onSubmitBankCard: (String, String, String, String, String) -> Unit,
     onLogout: () -> Unit,
@@ -167,11 +164,9 @@ internal fun AccountScreen(
     var detailSheet by remember { mutableStateOf<AccountDetailSheet?>(null) }
     var walletSheetVisible by remember { mutableStateOf(false) }
     var lastHandledWalletMutationVersion by remember { mutableStateOf(walletMutationVersion) }
-    var lastHandledWithdrawalSubmissionVersion by remember { mutableStateOf(withdrawalSubmissionVersion) }
     var passwordSheetVisible by remember { mutableStateOf(false) }
     var bankCardSheetVisible by remember { mutableStateOf(false) }
     var supportDialogVisible by remember { mutableStateOf(false) }
-    var withdrawalFormVisible by remember { mutableStateOf(false) }
     var pendingConfirmation by remember { mutableStateOf<PendingAccountConfirmation?>(null) }
     val copy = strings(language)
     val updateCopy = updateStrings(language)
@@ -187,16 +182,6 @@ internal fun AccountScreen(
             walletSheetVisible = false
         }
         lastHandledWalletMutationVersion = walletMutationVersion
-    }
-
-    LaunchedEffect(withdrawalSubmissionVersion) {
-        if (
-            withdrawalFormVisible &&
-            withdrawalSubmissionVersion > lastHandledWithdrawalSubmissionVersion
-        ) {
-            withdrawalFormVisible = false
-        }
-        lastHandledWithdrawalSubmissionVersion = withdrawalSubmissionVersion
     }
 
     LazyColumn(
@@ -222,14 +207,23 @@ internal fun AccountScreen(
                 availablePoints = availablePoints,
                 records = records,
                 pointRecords = pointRecords,
-                withdrawalSummary = withdrawalSummary,
                 orders = orders,
                 language = language,
                 onOpenFavorites = onOpenFavorites,
                 onShowAuthPrompt = onShowAuthPrompt,
                 onOpenDetailSheet = { detailSheet = it },
-                onOpenWithdrawalForm = { withdrawalFormVisible = true },
             )
+        }
+
+        item {
+            AccountMenuGroup {
+                AccountMenuRow(
+                    icon = Icons.Rounded.MonetizationOn,
+                    title = copy.fundsEntryTitle,
+                    subtitle = copy.fundsEntrySubtitle,
+                    onClick = onOpenFunds,
+                )
+            }
         }
 
         if (isLoggedIn && records.isNotEmpty()) {
@@ -262,14 +256,6 @@ internal fun AccountScreen(
                     )
                     AccountMenuDivider()
                     AccountMenuRow(
-                        icon = Icons.Rounded.Star,
-                        title = if (vipActive) copy.accountVipStatusActive else copy.accountVipStatusInactive,
-                        subtitle = vipUntil?.takeIf { vipActive }?.let { "${copy.vipExpiryLabel}$it" }
-                            ?: "${vipPriceUsdt.ifBlank { "" }}${copy.accountVipPriceSuffix}".trim(),
-                        onClick = onShowVipPaywall,
-                    )
-                    AccountMenuDivider()
-                    AccountMenuRow(
                         icon = Icons.Rounded.Settings,
                         title = copy.accountChangePasswordTitle,
                         subtitle = copy.accountPasswordNewLabel,
@@ -281,24 +267,6 @@ internal fun AccountScreen(
                         title = copy.accountBankCardTitle,
                         subtitle = copy.accountBankCardSubtitle,
                         onClick = { bankCardSheetVisible = true },
-                    )
-                    AccountMenuDivider()
-                    AccountMenuRow(
-                        icon = Icons.AutoMirrored.Rounded.ReceiptLong,
-                        title = copy.accountOrdersTitle,
-                        subtitle = if (vipOrders.isEmpty()) copy.accountOrdersReserved else "${vipOrders.size}",
-                        onClick = { detailSheet = AccountDetailSheet.ORDERS },
-                    )
-                    AccountMenuDivider()
-                    AccountMenuRow(
-                        icon = Icons.Rounded.History,
-                        title = copy.accountWithdrawalRecordsTitle,
-                        subtitle = if (withdrawals.isEmpty()) {
-                            copy.accountWithdrawalRecordsEmpty
-                        } else {
-                            "${copy.accountRecentCountPrefix}${withdrawals.size}${copy.accountRecordsSuffix}"
-                        },
-                        onClick = { detailSheet = AccountDetailSheet.WITHDRAWALS },
                     )
                 }
             }
@@ -361,19 +329,6 @@ internal fun AccountScreen(
         )
     }
 
-    if (withdrawalFormVisible) {
-        WithdrawalBottomSheet(
-            summary = withdrawalSummary,
-            withdrawals = withdrawals,
-            walletNetwork = wallet?.network,
-            language = language,
-            onDismiss = { withdrawalFormVisible = false },
-            onSubmitWithdrawal = { pendingConfirmation = PendingAccountConfirmation.Withdrawal(it) },
-            isSubmitting = accountOperation != null,
-        )
-    }
-
-
     if (passwordSheetVisible) {
         PasswordBottomSheet(
             language = language,
@@ -428,7 +383,6 @@ internal fun AccountScreen(
                         pendingConfirmation = null
                         when (confirmation) {
                             is PendingAccountConfirmation.WalletUnbind -> onUnbindWallet(confirmation.password)
-                            is PendingAccountConfirmation.Withdrawal -> onSubmitWithdrawal(confirmation.points)
                         }
                     },
                 ) { Text(accountConfirmationConfirm(language), color = DangerText) }
@@ -561,14 +515,12 @@ private fun AccountPrimaryActions(
     availablePoints: Int,
     records: List<WatchRecord>,
     pointRecords: List<PointRecord>,
-    withdrawalSummary: WithdrawalSummary?,
     orders: List<RechargeOrderSummary>,
     vipOrders: List<VipOrder> = emptyList(),
     language: AppLanguage,
     onOpenFavorites: () -> Unit,
     onShowAuthPrompt: () -> Unit,
     onOpenDetailSheet: (AccountDetailSheet) -> Unit,
-    onOpenWithdrawalForm: () -> Unit,
 ) {
     val copy = strings(language)
     fun openSheetForAction(label: String) {
@@ -608,22 +560,6 @@ private fun AccountPrimaryActions(
                 modifier = Modifier.weight(1f),
                 onClick = if (isLoggedIn) {
                     { openSheetForAction(copy.accountWatchHistoryTitle) }
-                } else {
-                    onShowAuthPrompt
-                },
-            )
-            AccountActionTile(
-                icon = Icons.AutoMirrored.Rounded.ReceiptLong,
-                title = copy.accountWithdrawTitle,
-                subtitle = if (isLoggedIn) {
-                    "${availablePoints}${copy.accountPointsSuffix} · ${copy.accountWithdrawMinimumLabel} ${withdrawalSummary?.minimumPoints ?: 0}"
-                } else {
-                    copy.accountGuestSignInSubtitle
-                },
-                trailing = withdrawalSummary?.minimumUsdt?.let { "Min USDT $it" }.orEmpty(),
-                modifier = Modifier.weight(1f),
-                onClick = if (isLoggedIn) {
-                    onOpenWithdrawalForm
                 } else {
                     onShowAuthPrompt
                 },
@@ -1158,13 +1094,11 @@ private fun BankCardBottomSheet(
 private sealed interface PendingAccountConfirmation {
     data class WalletUnbind(val password: String) : PendingAccountConfirmation
 
-    data class Withdrawal(val points: Int) : PendingAccountConfirmation
 }
 
 private fun PendingAccountConfirmation.summary(language: AppLanguage): String =
     when (this) {
         is PendingAccountConfirmation.WalletUnbind -> "unbind the wallet"
-        is PendingAccountConfirmation.Withdrawal -> "withdraw $points points"
     }
 
 @Composable

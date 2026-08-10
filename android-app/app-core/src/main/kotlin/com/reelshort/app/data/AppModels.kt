@@ -133,6 +133,7 @@ data class PointAccount(
     val records: List<PointRecord>,
     val vipActive: Boolean = false,
     val vipUntil: String? = null,
+    val todayCreditedPoints: Int = 0,
 )
 
 data class PointRecord(
