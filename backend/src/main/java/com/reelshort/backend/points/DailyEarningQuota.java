@@ -70,18 +70,27 @@ class DailyEarningQuota {
 	 * 返回实际分配的十分位数（例如返回 13 表示分配了 1.3 分）。
 	 */
 	int allocateTenths(int requestedTenths, OffsetDateTime now) {
-		int maxTenths = effectiveMaximum * 10;
-		long currentTenths = (long) this.earnedPoints * 10 + this.fractionalEarned;
-		long remaining = maxTenths - currentTenths;
-		if (remaining <= 0 || requestedTenths <= 0) {
+		int grantedTenths = previewAllocationTenths(requestedTenths);
+		if (grantedTenths == 0) {
 			return 0;
 		}
-		long grantedTenths = Math.min((long) requestedTenths, remaining);
+		long currentTenths = (long) this.earnedPoints * 10 + this.fractionalEarned;
 		long newTotal = currentTenths + grantedTenths;
 		this.earnedPoints = (int) (newTotal / 10);
 		this.fractionalEarned = (int) (newTotal % 10);
 		this.updatedAt = now;
-		return (int) grantedTenths;
+		return grantedTenths;
+	}
+
+	int previewAllocationTenths(int requestedTenths) {
+		long maxTenths = (long) effectiveMaximum * WatchRewardCalculation.FAIR_MODE_SCALE;
+		long currentTenths = (long) this.earnedPoints * WatchRewardCalculation.FAIR_MODE_SCALE
+				+ this.fractionalEarned;
+		long remaining = maxTenths - currentTenths;
+		if (remaining <= 0 || requestedTenths <= 0) {
+			return 0;
+		}
+		return (int) Math.min((long) requestedTenths, remaining);
 	}
 
 	int remainingPoints() {

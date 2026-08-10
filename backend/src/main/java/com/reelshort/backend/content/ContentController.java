@@ -89,7 +89,7 @@ public class ContentController {
 		ContentVideo video = contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId,
 				parseLocale(locale));
 		return ApiResponse.success(ContentPlayResponse.from(video,
-				pointsService.estimatedWatchRewardPoints(video.duration())), requestId);
+				pointsService.estimatedWatchRewardPoints(currentUser.userId(), video.duration())), requestId);
 	}
 
 	private ContentLocale parseLocale(String locale) {

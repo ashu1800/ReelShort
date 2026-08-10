@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,8 +18,11 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.reelshort.backend.auth.AccessTokenRepository;
+import com.reelshort.backend.auth.AppUserPrincipal;
 import com.reelshort.backend.auth.TokenHasher;
 import com.reelshort.backend.admin.AdminTokenRepository;
 import com.reelshort.backend.admin.AdminUserRepository;
@@ -26,6 +30,7 @@ import com.reelshort.backend.points.PointsService;
 import com.reelshort.backend.system.config.SystemConfigService;
 import com.reelshort.backend.system.web.GlobalExceptionHandler;
 import com.reelshort.backend.system.web.RequestIdFilter;
+import com.reelshort.backend.user.UserStatus;
 
 @WebMvcTest(controllers = {ContentController.class, HomeController.class})
 @AutoConfigureMockMvc(addFilters = false)
@@ -163,6 +168,7 @@ class ContentControllerTests {
 
 	@Test
 	void playReturnsProviderVideoInUnifiedEnvelope() throws Exception {
+		UUID userId = UUID.randomUUID();
 		when(vipGateService.isVip(nullable(com.reelshort.backend.auth.CurrentUser.class))).thenReturn(true);
 		when(contentCacheService.getVideoUrl("book-1", 1, "love-story", "chapter-1", ContentLocale.ENGLISH))
 				.thenReturn(new ContentVideo(
@@ -170,26 +176,33 @@ class ContentControllerTests {
 						1,
 						120,
 						new ContentEpisode(2, "chapter-2", "Next Episode", "The next scene.")));
-		when(pointsService.estimatedWatchRewardPoints(120)).thenReturn(2, 3);
+		when(pointsService.estimatedWatchRewardPoints(userId, 120)).thenReturn(2, 3);
+		SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+				new AppUserPrincipal(userId, "viewer", UserStatus.ACTIVE), null));
 
-		mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
-				.param("filteredTitle", "love-story")
-				.param("chapterId", "chapter-1"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.code").value(0))
-				.andExpect(jsonPath("$.data.videoUrl").value("https://cdn.example.com/video.m3u8"))
-				.andExpect(jsonPath("$.data.episode").value(1))
-				.andExpect(jsonPath("$.data.duration").value(120))
-				.andExpect(jsonPath("$.data.estimatedRewardPoints").value(2))
-				.andExpect(jsonPath("$.data.nextEpisode.episode").value(2))
-				.andExpect(jsonPath("$.data.nextEpisode.chapterId").value("chapter-2"))
-				.andExpect(jsonPath("$.data.nextEpisode.title").value("Next Episode"));
+		try {
+			mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
+					.param("filteredTitle", "love-story")
+					.param("chapterId", "chapter-1"))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.code").value(0))
+					.andExpect(jsonPath("$.data.videoUrl").value("https://cdn.example.com/video.m3u8"))
+					.andExpect(jsonPath("$.data.episode").value(1))
+					.andExpect(jsonPath("$.data.duration").value(120))
+					.andExpect(jsonPath("$.data.estimatedRewardPoints").value(2))
+					.andExpect(jsonPath("$.data.nextEpisode.episode").value(2))
+					.andExpect(jsonPath("$.data.nextEpisode.chapterId").value("chapter-2"))
+					.andExpect(jsonPath("$.data.nextEpisode.title").value("Next Episode"));
 
-		mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
-				.param("filteredTitle", "love-story")
-				.param("chapterId", "chapter-1"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.estimatedRewardPoints").value(3));
+			mockMvc.perform(get("/api/app/content/books/book-1/episodes/1/play")
+					.param("filteredTitle", "love-story")
+					.param("chapterId", "chapter-1"))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.data.estimatedRewardPoints").value(3));
+		}
+		finally {
+			SecurityContextHolder.clearContext();
+		}
 	}
 
 	@Test

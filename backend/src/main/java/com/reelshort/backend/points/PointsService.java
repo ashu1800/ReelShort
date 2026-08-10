@@ -105,14 +105,26 @@ public class PointsService {
 	}
 
 	public int estimatedWatchRewardPoints(int authoritativeDurationSeconds) {
+		return rewardTenths(authoritativeDurationSeconds) / WatchRewardCalculation.FAIR_MODE_SCALE;
+	}
+
+	public int estimatedWatchRewardPoints(UUID userId, int authoritativeDurationSeconds) {
+		int requestedTenths = rewardTenths(authoritativeDurationSeconds);
+		int dailyEarnedMaximum = systemConfigService.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM);
+		int fluctuationMaximum = systemConfigService
+				.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT);
+		return userActionLocks.withUserLock(userId,
+				() -> pointAwardTransaction.estimatedWatchRewardPoints(userId, requestedTenths, dailyEarnedMaximum,
+						fluctuationMaximum));
+	}
+
+	private int rewardTenths(int authoritativeDurationSeconds) {
 		int secondsPerPoint = systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT);
 		boolean fairMode = systemConfigService.intValue(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED) == 1;
-		// 公平模式返回十分位值 ÷10 的整数部分；普通模式直接返回整数分。
-		int tenths = fairMode
+		return fairMode
 				? WatchRewardCalculation.pointsForDurationTenths(authoritativeDurationSeconds, secondsPerPoint)
 				: WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds, secondsPerPoint)
 						* WatchRewardCalculation.FAIR_MODE_SCALE;
-		return tenths / WatchRewardCalculation.FAIR_MODE_SCALE;
 	}
 
 	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason, String idempotencyKey) {

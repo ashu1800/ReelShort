@@ -29,6 +29,7 @@ internal fun rewardBadgeState(
     language: AppLanguage = AppLanguage.ENGLISH,
     rewardClaimed: Boolean = false,
     rewardStatus: WatchRewardStatus = WatchRewardStatus.NOT_COMPLETE,
+    awardedPoints: Int = 0,
 ): RewardBadgeState {
     val progress = progressPercent.coerceIn(0, 100)
     val visualState = when {
@@ -51,7 +52,8 @@ internal fun rewardBadgeState(
         RewardBadgeVisualState.UNAVAILABLE -> rewardBadgeUnavailableLabel(language)
         RewardBadgeVisualState.WAITING -> rewardBadgeWaitingLabel(language)
     }
-    val pointsText = estimatedRewardPoints.coerceAtLeast(0).toString()
+    val displayedPoints = if (rewardClaimed && awardedPoints > 0) awardedPoints else estimatedRewardPoints
+    val pointsText = displayedPoints.coerceAtLeast(0).toString()
     return RewardBadgeState(
         accessibilityText = accessibilityText,
         pointsText = pointsText,

@@ -475,6 +475,40 @@ class PointsServiceTests {
 	}
 
 	@Test
+	void userEstimatedRewardIncludesFractionThatWillCarryIntoBalance() {
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
+		UUID userId = UUID.randomUUID();
+
+		for (int episode = 1; episode <= 3; episode++) {
+			pointsService.awardWatchProgress(userId, "estimate-carry-book", episode, 100, 78);
+		}
+
+		int estimated = pointsService.estimatedWatchRewardPoints(userId, 78);
+		WatchRewardResult awarded = pointsService.awardWatchProgress(userId, "estimate-carry-book", 4, 100, 78);
+
+		assertThat(estimated).isEqualTo(2);
+		assertThat(awarded.awardedPoints()).isEqualTo(estimated);
+	}
+
+	@Test
+	void userEstimatedRewardIncludesRemainingDailyLimit() {
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
+		UUID userId = UUID.randomUUID();
+		pointsService.awardWatchProgress(userId, "estimate-limit-book", 1, 100, 999);
+
+		int estimated = pointsService.estimatedWatchRewardPoints(userId, 10);
+		WatchRewardResult awarded = pointsService.awardWatchProgress(userId, "estimate-limit-book", 2, 100, 10);
+
+		assertThat(estimated).isEqualTo(1);
+		assertThat(awarded.awardedPoints()).isEqualTo(estimated);
+		assertThat(awarded.rewardStatus()).isEqualTo(WatchRewardStatus.AWARDED_PARTIAL);
+	}
+
+	@Test
 	void estimatedRewardPointsUsesCurrentSecondsPerPointConfiguration() {
 		assertThat(pointsService.estimatedWatchRewardPoints(120)).isEqualTo(2);
 

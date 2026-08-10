@@ -208,6 +208,7 @@ internal fun PlayerScreen(
                         language = state.language,
                         rewardClaimed = playback.rewardClaimed,
                         rewardStatus = playback.rewardStatus,
+                        awardedPoints = playback.awardedPoints,
                     )
                     RewardProgressIndicator(
                         state = badgeState,

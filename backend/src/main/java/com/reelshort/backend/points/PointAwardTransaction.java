@@ -113,6 +113,19 @@ class PointAwardTransaction {
 	}
 
 	@Transactional
+	public int estimatedWatchRewardPoints(UUID userId, int requestedTenths, int dailyEarnedMaximum,
+			int fluctuationMaximumPercent) {
+		DailyEarningRule rule = dailyRule(LocalDate.now(clock), dailyEarnedMaximum, fluctuationMaximumPercent);
+		int grantedTenths = requestedTenths;
+		if (rule.baseMaximum() > 0) {
+			DailyEarningQuota quota = dailyQuota(userId, rule, OffsetDateTime.now(clock));
+			grantedTenths = quota.previewAllocationTenths(requestedTenths);
+		}
+		PointAccount account = accountEntity(userId);
+		return (account.fractionalPart() + grantedTenths) / WatchRewardCalculation.FAIR_MODE_SCALE;
+	}
+
+	@Transactional
 	public void snapshotDailyEarningRule(int dailyEarnedMaximum, int fluctuationMaximumPercent) {
 		dailyRule(LocalDate.now(clock), dailyEarnedMaximum, fluctuationMaximumPercent);
 	}

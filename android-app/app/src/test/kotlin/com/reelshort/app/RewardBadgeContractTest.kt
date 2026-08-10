@@ -108,6 +108,20 @@ class RewardBadgeContractTest {
     }
 
     @Test
+    fun completedEpisodeUsesActualAwardedPointsInTheRing() {
+        val state = rewardBadgeState(
+            progressPercent = 100,
+            estimatedRewardPoints = 1,
+            isReporting = false,
+            hasError = false,
+            rewardClaimed = true,
+            awardedPoints = 2,
+        )
+
+        assertEquals("2", state.pointsText)
+    }
+
+    @Test
     fun failedReportKeepsCurrentStageWithErrorVisualState() {
         val state = rewardBadgeState(
             progressPercent = 25,
