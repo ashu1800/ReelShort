@@ -48,6 +48,7 @@ class PublishAndroidTests(unittest.TestCase):
         self.assertEqual(2, gradle.count('signingConfig = signingConfigs.getByName("official")'))
         self.assertIn(publisher.EXPECTED_RELEASE_CERT_SHA256, gradle)
         self.assertIn("validateOfficialSigning", gradle)
+        self.assertIn("gradle.taskGraph.whenReady", gradle)
         self.assertNotIn("fixedDebug", gradle)
         self.assertNotIn("debug.keystore", gradle)
 

@@ -5,21 +5,56 @@ plugins {
 }
 
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.security.KeyStore
+import java.security.MessageDigest
 
 fun String.asBuildConfigString(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-val fixedDebugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
 val signingStoreFile = providers.environmentVariable("ANDROID_SIGNING_STORE_FILE").orNull
 val signingStorePassword = providers.environmentVariable("ANDROID_SIGNING_STORE_PASSWORD").orNull
 val signingKeyAlias = providers.environmentVariable("ANDROID_SIGNING_KEY_ALIAS").orNull
 val signingKeyPassword = providers.environmentVariable("ANDROID_SIGNING_KEY_PASSWORD").orNull
-val releaseSigningConfigured = listOf(
+val officialSigningConfigured = listOf(
     signingStoreFile,
     signingStorePassword,
     signingKeyAlias,
     signingKeyPassword,
 ).all { !it.isNullOrBlank() }
+val signingStore = signingStoreFile?.takeIf(String::isNotBlank)?.let(::file)
+val expectedOfficialCertSha256 =
+    "c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9"
+
+fun validateOfficialSigning() {
+    check(officialSigningConfigured) {
+        "Official signing requires ANDROID_SIGNING_STORE_FILE, ANDROID_SIGNING_STORE_PASSWORD, " +
+            "ANDROID_SIGNING_KEY_ALIAS, and ANDROID_SIGNING_KEY_PASSWORD"
+    }
+    val keystoreFile = signingStore!!
+    check(keystoreFile.isFile) {
+        "Official signing keystore was not found: ${keystoreFile.absolutePath}"
+    }
+
+    val certificate = try {
+        KeyStore.getInstance("JKS").apply {
+            keystoreFile.inputStream().use { input ->
+                load(input, signingStorePassword!!.toCharArray())
+            }
+        }.getCertificate(signingKeyAlias!!)
+    } catch (error: Exception) {
+        throw GradleException("Official signing keystore validation failed.", error)
+    }
+    check(certificate != null) {
+        "Official signing certificate alias was not found in the configured keystore"
+    }
+
+    val actualDigest = MessageDigest.getInstance("SHA-256")
+        .digest(certificate.encoded)
+        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    check(actualDigest == expectedOfficialCertSha256) {
+        "Configured signing certificate does not match the pinned ShortLink official certificate"
+    }
+}
 val appVersionName = providers.gradleProperty("appVersionName").orElse("0.7.4").get()
 val appVersionCode = providers.gradleProperty("appVersionCode").orElse("27").get().toInt()
 require(appVersionCode > 0) { "appVersionCode must be positive" }
@@ -41,15 +76,9 @@ android {
     }
 
     signingConfigs {
-        create("fixedDebug") {
-            storeFile = fixedDebugKeystore
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-        if (releaseSigningConfigured) {
-            create("release") {
-                storeFile = file(signingStoreFile!!)
+        create("official") {
+            if (officialSigningConfigured) {
+                storeFile = signingStore
                 storePassword = signingStorePassword
                 keyAlias = signingKeyAlias
                 keyPassword = signingKeyPassword
@@ -59,7 +88,7 @@ android {
 
     buildTypes {
         getByName("debug") {
-            signingConfig = signingConfigs.getByName("fixedDebug")
+            signingConfig = signingConfigs.getByName("official")
         }
         getByName("release") {
             isMinifyEnabled = true
@@ -68,7 +97,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.findByName("release")
+            signingConfig = signingConfigs.getByName("official")
         }
     }
 
@@ -113,12 +142,10 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
-tasks.matching { it.name == "packageRelease" || it.name == "bundleRelease" }.configureEach {
-    doFirst {
-        check(releaseSigningConfigured) {
-            "Release signing requires ANDROID_SIGNING_STORE_FILE, ANDROID_SIGNING_STORE_PASSWORD, " +
-                "ANDROID_SIGNING_KEY_ALIAS, and ANDROID_SIGNING_KEY_PASSWORD"
-        }
+val officialPackagingTask = Regex("^(assemble|package|bundle|sign)(Debug|Release).*$")
+gradle.taskGraph.whenReady {
+    if (allTasks.any { task -> task.project == project && officialPackagingTask.matches(task.name) }) {
+        validateOfficialSigning()
     }
 }
 
