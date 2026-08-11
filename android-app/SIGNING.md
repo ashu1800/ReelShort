@@ -1,6 +1,6 @@
-# ShortLink Android 固定签名
+# ShortLink Android 唯一正式签名
 
-> **线上 Release APK 必须使用原 ShortLink 正式 keystore。禁止改用 Debug 证书或重新生成签名。**
+> **ReelShort 的所有 APK 变体（Debug、Release）都必须使用原 ShortLink 正式 keystore。项目不再使用 Debug 证书。**
 
 ## 正式签名材料
 
@@ -15,8 +15,9 @@
 
 ## 构建规则
 
-- Debug 变体继续使用 `C:\Users\Ashu\.android\debug.keystore`，仅用于开发和模拟器测试。
-- Release 变体从 `ANDROID_SIGNING_*` 环境变量读取正式签名；发布脚本会自动加载上述本地配置。
+- Debug 和 Release 变体都从 `ANDROID_SIGNING_*` 环境变量读取同一份正式签名；`Debug` 仅表示可调试构建属性，不代表 Debug 证书。
+- ReelShort 不读取、不创建也不依赖 `C:\Users\Ashu\.android\debug.keystore`。该文件如被其他 Android 项目使用，保留在用户目录中，不属于本项目签名材料。
+- Debug 与 Release 的 APK/AAB 打包任务会在执行前校验 keystore、alias 和正式证书 SHA-256；配置缺失或证书不匹配时直接失败。
 - 发布脚本在上传前用 `apksigner` 钉死校验正式证书 SHA-256，并校验包名、versionName 和 versionCode。
 - 正式 keystore、配置缺失或证书不匹配时必须停止发布。
 
@@ -28,6 +29,6 @@ python scripts/publish-android.py --version X.Y.Z --version-code N --notes ""
 
 ## 签名切换影响
 
-- 正式签名 `0.8.6 (40)` 与恢复后的正式签名新版本可以原地覆盖升级。
-- Debug 签名 `0.8.7 (41)` 不能覆盖升级到正式签名新版本，用户需要卸载后重新安装；卸载会清除本地会话和缓存，服务器账号、积分和订单数据不受影响。
-- 从恢复后的新版本开始，所有线上版本必须持续使用上述正式 keystore。
+- 正式签名 `0.8.6 (40)`、`0.8.8 (42)` 及后续版本可以原地覆盖升级。
+- 历史 Debug 签名 `0.8.7 (41)` 无法覆盖安装正式签名版本，仍需卸载后重新安装；卸载只清除本地会话和缓存，服务器账号、积分和订单数据不受影响。
+- 从 `0.8.8 (42)` 起，所有 Debug、Release 和线上版本都必须持续使用上述正式 keystore。

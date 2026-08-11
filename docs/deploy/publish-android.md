@@ -34,7 +34,7 @@ App 启动
 - 证书 SHA-256：`c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9`
 - 详细入口：`android-app/SIGNING.md`
 
-发布脚本会从本地忽略配置加载 `ANDROID_SIGNING_*` 并构建经过压缩和资源收缩的 Release 变体。文件缺失或证书不匹配时发布会在上传前失败；签名材料和密码禁止提交 Git 或输出到日志。
+发布脚本会从本地忽略配置加载 `ANDROID_SIGNING_*` 并构建经过压缩和资源收缩的 Release 变体。项目的 Debug 与 Release 变体均使用同一正式 keystore；`Debug` 仅表示可调试属性，不使用 Debug 证书。文件缺失或证书不匹配时任何 APK/AAB 打包和发布都会失败；签名材料和密码禁止提交 Git 或输出到日志。
 
 ### 2. 发布配置
 
@@ -115,10 +115,11 @@ curl -s https://shortlink.hjj888.cc/api/app/release/latest | python -m json.tool
 - 发布接口由 `X-Internal-Super-Token` 保护，复用 `reelshort.internal.super-token`。
 - `gitleaks` 扫描全历史（push 与 PR），确保无密钥泄漏。
 - 发布脚本钉住固定正式签名证书 SHA-256；如果 keystore 缺失、被替换或配置不完整，发布会在上传前失败。
+- Gradle 在 `packageDebug`、`packageRelease` 及 Android Test 打包前再次校验正式证书；手工构建也不能回退到 Debug keystore。
 - App 下载后只做 SHA-256 完整性校验，包名、版本和签名错误由发布脚本上传前拦截，并由 Android 系统安装器在最终安装阶段兜底。
 
 ## 签名迁移说明
 
 - 正式证书签名的 `0.8.6 (40)` 可以直接覆盖升级恢复正式签名后的新版本。
-- Debug 证书签名的 `0.8.7 (41)` 不能覆盖安装正式签名新版本，需要卸载后重新安装。
-- 恢复正式签名后，所有后续线上版本必须继续使用同一个正式 keystore。
+- 历史 Debug 证书签名的 `0.8.7 (41)` 不能覆盖安装正式签名新版本，需要卸载后重新安装。
+- 从 `0.8.8 (42)` 起，所有 Debug、Release 和后续线上版本必须继续使用同一个正式 keystore。
