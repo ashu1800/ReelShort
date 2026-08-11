@@ -39,15 +39,17 @@ class PublishAndroidTests(unittest.TestCase):
         with self.assertRaises(publisher.PublishError):
             publisher.verify_expected_certificate(output)
 
-    def test_release_build_uses_environment_backed_release_signing(self):
+    def test_all_android_variants_use_only_official_signing(self):
         gradle_file = Path(__file__).resolve().parents[2] / "android-app" / "app" / "build.gradle.kts"
         gradle = gradle_file.read_text(encoding="utf-8")
 
         self.assertIn('environmentVariable("ANDROID_SIGNING_STORE_FILE")', gradle)
-        self.assertIn('create("release")', gradle)
-        self.assertIn('create("fixedDebug")', gradle)
-        self.assertIn('signingConfig = signingConfigs.getByName("fixedDebug")', gradle)
-        self.assertIn('signingConfig = signingConfigs.findByName("release")', gradle)
+        self.assertIn('create("official")', gradle)
+        self.assertEqual(2, gradle.count('signingConfig = signingConfigs.getByName("official")'))
+        self.assertIn(publisher.EXPECTED_RELEASE_CERT_SHA256, gradle)
+        self.assertIn("validateOfficialSigning", gradle)
+        self.assertNotIn("fixedDebug", gradle)
+        self.assertNotIn("debug.keystore", gradle)
 
     def test_loads_ignored_signing_config_without_overwriting_explicit_environment(self):
         with tempfile.TemporaryDirectory() as temp_dir:
