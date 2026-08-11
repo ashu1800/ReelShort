@@ -38,4 +38,3 @@ Gradle 只保留一个环境变量驱动的正式签名配置。`Debug` 和 `Rel
 ## 文档与上下文
 
 更新 `AGENTS.md`、`android-app/SIGNING.md`、`android-app/README.md` 和当前发布文档，醒目标注：ReelShort 所有 APK 变体只能使用原正式签名。历史设计文档保留当时事实，不作为当前发布规则。
-

@@ -267,4 +267,3 @@ Expected: `master` and `origin/master` point to the same final commit. Preserve 
 **Step 4: Final online-neutrality check**
 
 Confirm no publish command ran and `/api/app/release/latest` is unchanged. This task changes future packaging only and must not create a new online release.
-
