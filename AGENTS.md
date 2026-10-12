@@ -78,6 +78,8 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 原�
 
 ## 变更历史
 
+[2026-10-12] backend/content-provider/infra/docs - 生产部署到 `104.143.38.190` 并接入 `shortlink.hjj888.cc`（systemd 原生部署，见 `docs/deploy/systemd.md`）。修复两处只在真实部署中暴露的缺陷：① `spring.http.client.read-timeout` 由固定 `5s` 改为 `${REELSHORT_HTTP_READ_TIMEOUT:60s}`（连接超时 `${REELSHORT_HTTP_CONNECT_TIMEOUT:5s}`）——内容源冷缓存时单次上游抓取实测 4-15 秒，5 秒读超时会导致所有内容接口 503 且定时货架刷新永远失败；② 内容源上游站点地址改用独立的 `REELSHORT_UPSTREAM_SITE_URL`（`content-provider/app.py` 优先读取，仅为兼容旧部署回退 `REELSHORT_SITE_URL`，`infra/docker-compose.yml` 同步改键），避免把后端语义的"本平台公网域名"传给内容源导致其抓取自身、拿不到 Next.js `buildId` 而全站内容 502。部署同时确认：`SERVER_ADDRESS=127.0.0.1` 必须显式设置（Tomcat 默认监听 0.0.0.0，实测公网扫描器会直连 8080 请求 `/.env`、`/.git/HEAD`）；`REELSHORT_TRUSTED_PROXIES=127.0.0.1/32` 配合 `real_ip_header CF-Connecting-IP` 后限流按真实客户端计数（实测第 11 次请求返回 429）。
+
 [2026-10-12] docs/plans - 新增 2026-10-12 全面代码审查修复的设计与实施计划（`2026-10-12-review-remediation-design.md` / `-implementation.md`），并逐份把 `docs/api/*.md`、`docs/deploy/*.md`、根 `README.md` 与 `AGENTS.md` 对齐到真实实现：重写认证文档为用户名 + 密码 + 图形验证码并标注短信/手机号链路已删除，删除 `zh-TW`/双语/按 locale 分桶表述改写为英文单语，补齐提现人工确认流水、作废 attempt 接口、`Idempotency-Key`、打款开关、银行卡 410、`403 invalid current password`/凭证锁定 429、新增限流规则与 CIDR 可信代理、部署面非 root/gunicorn/健康检查/备份落点、发布脚本新开关与 `ci.yml`。
 
 [2026-10-12] backend/auth/security/system - 认证模型收敛为用户名 + 密码 + 4 位图形验证码并删除手机号/短信/AccountManager 回调与内部开户接口；验证码答案只以 SHA-256 哈希落库（`CaptchaChallenge.answer` 改为内存字段）、答错立即作废、新增 `CaptchaCleanupService` 定时清理过期挑战；新增 `CredentialAttemptGuard` 凭证失败锁定（默认 5 次 / 15 分钟，失败计数 `REQUIRES_NEW` 独立落库，锁定优先于 BCrypt 比对）；登录先比对密码再判状态以消除账号枚举；`CredentialLockedException` → 429、`IllegalStateException` → 409 `conflict`、`DataIntegrityViolationException` → 400；`X-Request-Id` 收紧为 `^[A-Za-z0-9_-]{8,64}$`。

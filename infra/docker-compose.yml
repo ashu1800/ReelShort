@@ -43,7 +43,9 @@ services:
       CONTENT_PROVIDER_PORT: 5000
       # 内容源内部共享密钥，必须与 backend 服务使用同一取值。
       CONTENT_PROVIDER_INTERNAL_TOKEN: ${CONTENT_PROVIDER_INTERNAL_TOKEN:-}
-      REELSHORT_SITE_URL: ${REELSHORT_SITE_URL:-https://www.reelshort.com}
+      # 内容源抓取的是上游 ReelShort 站点，与"本平台公网域名" REELSHORT_SITE_URL 语义不同；
+      # 传错会让内容源去抓自己（拿不到 Next.js buildId，全站内容 502）。
+      REELSHORT_UPSTREAM_SITE_URL: ${REELSHORT_UPSTREAM_SITE_URL:-https://www.reelshort.com}
       REELSHORT_SITE_ID: ${REELSHORT_SITE_ID:-37}
       REELSHORT_REQUEST_TIMEOUT_SECONDS: ${REELSHORT_REQUEST_TIMEOUT_SECONDS:-10}
       REELSHORT_MAX_RESPONSE_BYTES: ${REELSHORT_MAX_RESPONSE_BYTES:-5242880}

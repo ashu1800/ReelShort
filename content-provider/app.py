@@ -211,7 +211,10 @@ class ReelShortClient:
         except (TypeError, ValueError) as exception:
             raise ValueError("REELSHORT_MAX_REDIRECTS must be an integer") from exception
         return cls(
-            os.getenv("REELSHORT_SITE_URL", "https://www.reelshort.com"),
+            # P3-23：上游站点地址必须与"本平台公网域名"区分开——后端用 REELSHORT_SITE_URL 表示
+            # 自己的站点，若原样传给内容源，内容源会去抓自己（拿不到 Next.js buildId，全站内容 502）。
+            # 因此这里优先读 REELSHORT_UPSTREAM_SITE_URL，仅为兼容旧部署才回退到 REELSHORT_SITE_URL。
+            os.getenv("REELSHORT_UPSTREAM_SITE_URL") or os.getenv("REELSHORT_SITE_URL", "https://www.reelshort.com"),
             os.getenv("REELSHORT_SITE_ID", "37"),
             timeout_seconds,
             os.getenv("REELSHORT_NEXT_BUILD_ID"),

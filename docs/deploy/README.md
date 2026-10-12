@@ -13,6 +13,8 @@ ReelShort 长期按单机部署设计，不引入 K8s 或微服务治理。单�
 
 外部用户只访问 Nginx。后台 Web 的 `/api/` 请求由 Nginx 转发到 Spring Boot。Spring Boot 再访问 PostgreSQL、Redis 和 Flask 内容源。
 
+> 不想用 Docker（低配机器，或到 Docker Hub 的国际带宽受限）时改用 systemd 原生部署：步骤与验收见 [systemd.md](systemd.md)。两条路径的运行形态、网络边界与安全头保持一致。
+
 ## Docker Compose 启动
 
 进入 `infra` 目录：
