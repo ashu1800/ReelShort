@@ -85,8 +85,10 @@ public class AppRelease {
 				sha256SizeBytes, apkSha256, title, releaseNotes, mandatory, minimumVersionCode, now, now);
 	}
 
-	public void republish(String apkObjectKey, String sha256ObjectKey, long apkSizeBytes, long sha256SizeBytes,
-			String apkSha256, String title, String releaseNotes, boolean mandatory, long minimumVersionCode) {
+	public void republish(long versionCode, String apkObjectKey, String sha256ObjectKey, long apkSizeBytes,
+			long sha256SizeBytes, String apkSha256, String title, String releaseNotes, boolean mandatory,
+			long minimumVersionCode) {
+		this.versionCode = versionCode;
 		this.apkObjectKey = apkObjectKey;
 		this.sha256ObjectKey = sha256ObjectKey;
 		this.apkSizeBytes = apkSizeBytes;

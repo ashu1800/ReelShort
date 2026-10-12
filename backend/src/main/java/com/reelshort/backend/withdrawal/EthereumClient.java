@@ -47,7 +47,9 @@ public class EthereumClient {
 			return Credentials.create(hexPrivateKey).getAddress();
 		}
 		catch (Exception exception) {
-			throw new WithdrawalException(400, "invalid hot wallet private key: " + exception.getMessage());
+			// 固定文案 + 只记录异常类型：避免把私钥相关细节回显给调用方或写进日志。
+			log.warn("Rejected invalid hot wallet private key ({})", exception.getClass().getSimpleName());
+			throw new WithdrawalException(400, "invalid hot wallet private key");
 		}
 	}
 
@@ -116,7 +118,9 @@ public class EthereumClient {
 			credentials = Credentials.create(hexPrivateKey);
 		}
 		catch (Exception exception) {
-			throw new WithdrawalException(400, "invalid hot wallet private key: " + exception.getMessage());
+			// 固定文案 + 只记录异常类型：避免把私钥相关细节回显给调用方或写进日志。
+			log.warn("Rejected invalid hot wallet private key ({})", exception.getClass().getSimpleName());
+			throw new WithdrawalException(400, "invalid hot wallet private key");
 		}
 		Function transferFunction = new Function("transfer",
 				List.of(new Address(toAddress), new Uint256(usdtAmount.multiply(USDT_DECIMALS).toBigIntegerExact())),

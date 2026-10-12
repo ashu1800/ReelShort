@@ -12,9 +12,11 @@
 
 ## App API
 
-以下 App 内容接口都支持可选 `locale` 参数，当前仅允许 `en` 和 `zh-TW`，默认 `en`。PostgreSQL 内容缓存按 locale 分桶：同一 `bookId` 的英文和繁體中文标题、封面、简介、分集标题可以分别保存；观看记录、收藏、点赞和评论仍按 `bookId` 关联，不按语言拆分。
+以下 App 内容接口都保留可选 `locale` 参数以求兼容，但**当前只支持英文单语 `en`**：任何传入值都会被解析为 `en`，缓存也只保存一套英文元数据。观看记录、收藏、点赞和评论按 `bookId` 关联，不按语言拆分。
 
-点赞、收藏和评论接口使用本地社交表作为真实数据源；当某个 `bookId` 没有真实互动数据时，后端按 `bookId` 生成稳定的展示基线计数和少量伪评论，不落库，真实用户互动会叠加在展示基线之上。
+> 历史说明：`zh-TW` 与"按 locale 分桶/双语缓存"的表述已失效。后端 `ContentLocale` 只保留 `ENGLISH`（源码注释明示 app is English-only），Flask 内容源 `SUPPORTED_LOCALES = {"en"}`，Android `AppLanguage` 也只保留 `ENGLISH`。`REELSHORT_CONTENT_REFRESH_LOCALES` 默认 `en`；写多个值只会让同一货架按同一语言被重复刷新，不会产生第二套缓存。
+
+点赞、收藏和评论接口使用本地社交表作为真实数据源；当某个 `bookId` 没有真实互动数据时，后端按 `bookId` 生成稳定的展示基线计数和少量伪评论，不落库，真实用户互动会叠加在展示基线之上。评论列表分页返回（`page` 默认 `0`、`size` 默认 `20`、上限 `50`），真实评论始终排在伪评论之前。
 
 ### `GET /api/app/home/recommend?locale={locale}`
 
@@ -45,8 +47,9 @@
 首页、货架、剧集详情和分集列表等元数据以 PostgreSQL 自有缓存为主。上游新增短剧时，不依赖 App 首页实时拉上游，而是通过两条路径进入自有库：
 
 - 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh` 强制刷新指定货架。
-- 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh-locales` 一次刷新所有支持的 locale，适合运营手动同步双语元数据。
-- 后端定时任务默认每 6 小时刷新 `recommend` 货架的 `en` 和 `zh-TW` 元数据，可通过 `REELSHORT_CONTENT_REFRESH_ENABLED`、`REELSHORT_CONTENT_REFRESH_INTERVAL`、`REELSHORT_CONTENT_REFRESH_SHELVES` 和 `REELSHORT_CONTENT_REFRESH_LOCALES` 调整。
+- 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh-locales` 按 `ContentLocale` 枚举逐个刷新；当前枚举只有 `en`，因此等价于刷新一次英文货架。
+- 后端定时任务默认每 6 小时刷新 `recommend` 货架的 `en` 元数据，可通过 `REELSHORT_CONTENT_REFRESH_ENABLED`、`REELSHORT_CONTENT_REFRESH_INTERVAL`、`REELSHORT_CONTENT_REFRESH_SHELVES` 和 `REELSHORT_CONTENT_REFRESH_LOCALES` 调整。
+- 面向 App 的读路径只读缓存；缓存缺失时的上游调用发生在数据库事务之外，同一 `(shelfType, locale)` 的并发 miss 由 single-flight 去重，只有一次真正打到上游。
 - 后台手动刷新和后端定时刷新都会写入 `content_refresh_runs`，用于后台查看最近刷新来源、locale、状态、耗时、返回数量和失败原因。
 - Flask 内容源提供 `/diagnostics` 内部诊断端点，记录搜索空结果、Next data 404、播放页 HTML 解析失败、播放地址缺失等最近事件；后端运行诊断页会展示结构化事件总数、类型计数和最近事件上下文，方便定位上游结构变化。
 
@@ -91,20 +94,20 @@
 
 ### `POST /api/admin/content/cache/shelves/{shelfType}/refresh`
 
-强制刷新指定货架缓存，支持可选 `locale=en|zh-TW`，默认 `en`。成功后写入 PostgreSQL 元数据缓存、刷新运行记录和后台审计日志 `CONTENT_CACHE_REFRESHED`。
+强制刷新指定货架缓存，支持可选 `locale` 参数（当前仅 `en`，传其他值同样解析为 `en`）。成功后写入 PostgreSQL 元数据缓存、刷新运行记录和后台审计日志 `CONTENT_CACHE_REFRESHED`。
 
 刷新失败时返回内容源错误，不伪装成功；如果此前有缓存，失败原因会记录到该货架的 `lastError`，同时写入一条 `FAILED` 刷新运行记录。
 
 ### `POST /api/admin/content/cache/shelves/{shelfType}/refresh-locales`
 
-强制刷新指定货架的全部支持语言缓存，目前包含 `en` 和 `zh-TW`。接口逐个 locale 调用同一套货架刷新逻辑，因此每个 locale 都会写入独立的 `content_refresh_runs` 运行记录；批量操作本身写入后台审计日志 `CONTENT_CACHE_REFRESHED_LOCALES`。
+按后端支持的 locale 枚举逐个刷新指定货架。当前枚举只有一个值 `en`，因此本接口等价于刷新一次英文货架；接口仍保留逐个 locale 循环与逐行结果的形态，以便将来新增语言时不需要改协议。每个 locale 写入独立的 `content_refresh_runs` 运行记录，批量操作本身写入后台审计日志 `CONTENT_CACHE_REFRESHED_LOCALES`。
 
 单个 locale 刷新失败不会中断其他 locale。只要请求本身合法，接口返回 `200`，并在响应行里用 `status=FAILED` 表达局部失败；未知 `shelfType` 仍返回 `400`。
 
 响应 `data[]` 字段：
 
 - `shelfType`：货架 API 值，例如 `recommend`。
-- `locale`：刷新语言，当前为 `en` 或 `zh-TW`。
+- `locale`：刷新语言，当前固定为 `en`。
 - `status`：`SUCCESS` 或 `FAILED`。
 - `itemCount`：成功刷新时写入的短剧数量；失败时为 `0`。
 - `errorMessage`：失败原因；成功时为 `null`。

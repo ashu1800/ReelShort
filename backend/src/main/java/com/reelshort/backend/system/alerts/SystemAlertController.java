@@ -52,10 +52,31 @@ public class SystemAlertController {
 	@RequireAdminPermission(AdminPermissions.SYSTEM_ALERT_WRITE)
 	public ApiResponse<SystemAlertResponse> acknowledge(@PathVariable UUID alertId, CurrentAdmin currentAdmin,
 			HttpServletRequest request) {
-		SystemAlertResponse response = systemAlertService.acknowledge(alertId, currentAdmin.username());
-		adminAuditService.record(currentAdmin.username(), "SYSTEM_ALERT_ACKNOWLEDGED", "SYSTEM_ALERT", alertId,
-				"Acknowledged system alert " + response.alertKey());
-		return ApiResponse.success(response, requestId(request));
+		try {
+			SystemAlertResponse response = systemAlertService.acknowledge(alertId, currentAdmin.username());
+			// P2-12: 审计写独立事务，确认失败（告警不存在等）时同样留痕
+			adminAuditService.recordIndependent(currentAdmin.username(), "SYSTEM_ALERT_ACKNOWLEDGED", "SYSTEM_ALERT",
+					alertId, "Acknowledged system alert " + response.alertKey());
+			return ApiResponse.success(response, requestId(request));
+		}
+		catch (RuntimeException exception) {
+			adminAuditService.recordIndependent(currentAdmin.username(), "SYSTEM_ALERT_ACKNOWLEDGE_FAILED",
+					"SYSTEM_ALERT", alertId, failureSummary(exception));
+			throw exception;
+		}
+	}
+
+	/**
+	 * P2-12: 失败摘要限长（summary 为 varchar(512)），避免审计写入本身失败而掩盖原始异常。
+	 */
+	private String failureSummary(RuntimeException exception) {
+		String message = exception.getMessage() == null || exception.getMessage().isBlank()
+				? exception.getClass().getSimpleName()
+				: exception.getMessage();
+		if (message.length() > 200) {
+			message = message.substring(0, 200);
+		}
+		return "status=FAILED (" + message + ")";
 	}
 
 	private String requestId(HttpServletRequest request) {

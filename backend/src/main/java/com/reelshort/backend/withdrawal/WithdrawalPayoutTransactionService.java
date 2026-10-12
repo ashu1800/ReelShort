@@ -4,6 +4,7 @@ import java.math.BigInteger;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +14,7 @@ import com.reelshort.backend.points.PointTransaction;
 import com.reelshort.backend.points.PointTransactionRepository;
 
 @Service
+@ConditionalOnProperty(prefix = "reelshort.withdrawal.payout", name = "enabled", havingValue = "true")
 public class WithdrawalPayoutTransactionService {
 
 	private final WithdrawalRequestRepository withdrawalRepository;

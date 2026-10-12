@@ -58,7 +58,9 @@ def main() -> int:
     try:
         config = load_config()
         version_name, version_code, release_notes = resolve_inputs(args, config)
-        apk_path = build_apk(version_name, version_code)
+        preflight_release(config, version_name, version_code)
+        apk_path = build_apk(version_name, version_code,
+                             config.get("REELSHORT_COS_BUCKET", ""), config.get("REELSHORT_COS_REGION", ""))
         verify_apk(apk_path, version_name, version_code)
         sha256_hex, apk_size, sha256_path, sha256_size = compute_artifacts(apk_path)
         ensure_cos_dependency()
@@ -156,22 +158,53 @@ def resolve_inputs(args: argparse.Namespace, config: dict) -> tuple[str, int, st
     return version_name, version_code, notes
 
 
-def suggest_version_code(config: dict) -> int:
-    """Best-effort: query the backend's current latest version code + 1."""
+def fetch_latest_release(config: dict) -> dict | None:
+    """Best-effort: read the currently published release manifest, or None when unavailable."""
     try:
         import urllib.request
-        import urllib.error
         req = urllib.request.Request(
             f"{config['RELEASE_BACKEND_URL'].rstrip('/')}/api/internal/release/latest",
             headers={"X-Internal-Super-Token": config["REELSHORT_INTERNAL_SUPER_TOKEN"]})
         with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - trusted internal URL
-            body = json.loads(resp.read())
-            return int(body["data"]["versionCode"]) + 1
+            return json.loads(resp.read()).get("data") or None
+    except Exception:
+        return None
+
+
+def suggest_version_code(config: dict) -> int:
+    """Best-effort: query the backend's current latest version code + 1."""
+    latest = fetch_latest_release(config)
+    if not latest:
+        return 1
+    try:
+        return int(latest["versionCode"]) + 1
     except Exception:
         return 1
 
 
-def build_apk(version_name: str, version_code: int) -> Path:
+def preflight_release(config: dict, version_name: str, version_code: int) -> None:
+    """
+    Refuse an obviously invalid release before building and uploading the APK:
+    the backend also rejects a decreasing versionCode, but by then the objects are already in COS
+    and someone has to clean them up by hand.
+    """
+    latest = fetch_latest_release(config)
+    if latest is None:
+        print("WARNING: cannot read the current release manifest; skipping the versionCode preflight "
+              "(the backend still rejects a decreasing versionCode).")
+        return
+    current_code = int(latest.get("versionCode", 0))
+    current_name = latest.get("versionName", "unknown")
+    if version_code < current_code:
+        raise PublishError(
+            f"versionCode {version_code} is lower than the published {current_code} (v{current_name}); "
+            "the backend would reject this release after the APK upload. Use a higher versionCode.")
+    if version_code == current_code:
+        print(f"NOTE: versionCode {version_code} already exists (published v{current_name}); "
+              f"re-publishing v{version_name} overwrites that release's object keys.")
+
+
+def build_apk(version_name: str, version_code: int, cos_bucket: str = "", cos_region: str = "") -> Path:
     print(f"\n=== Building ShortLink v{version_name} ({version_code}) ===")
     required_signing = [
         "ANDROID_SIGNING_STORE_FILE",
@@ -191,6 +224,11 @@ def build_apk(version_name: str, version_code: int) -> Path:
         f"-PappVersionName={version_name}",
         f"-PappVersionCode={version_code}",
     ]
+    # 把 .env 里的 COS 桶/地域传给 App 构建：App 只接受该桶的精确下载域名，避免两处配置漂移。
+    if cos_bucket:
+        cmd.append(f"-PreelshortCosBucket={cos_bucket}")
+    if cos_region:
+        cmd.append(f"-PreelshortCosRegion={cos_region}")
     print(f"$ {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=str(ANDROID_DIR))
     if result.returncode != 0:
@@ -341,7 +379,16 @@ def publish_to_backend(config: dict, version_name: str, version_code: int, relea
                 raise PublishError(f"Backend rejected publish: {body}")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise PublishError(f"Backend publish failed (HTTP {exc.code}): {detail}") from exc
+        raise PublishError(
+            f"Backend publish failed (HTTP {exc.code}): {detail}\n"
+            f"The APK and checksum are already uploaded to COS ({apk_key}, {sha_key}) but the release is "
+            "NOT active until the backend accepts it. Fix the cause and re-run, or delete those two COS "
+            "objects if you want to abandon this version.") from exc
+    except urllib.error.URLError as exc:
+        raise PublishError(
+            f"Backend publish failed (network error: {exc.reason}).\n"
+            f"The APK and checksum are already uploaded to COS ({apk_key}, {sha_key}) but the release is "
+            "NOT active. Re-run the publish step, or delete those two COS objects before publishing again.") from exc
     print(f"Backend accepted release v{version_name}.")
 
 

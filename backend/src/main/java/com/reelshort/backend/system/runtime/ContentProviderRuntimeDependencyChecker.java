@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -14,13 +15,25 @@ import org.springframework.web.client.RestClient;
 @Component
 public class ContentProviderRuntimeDependencyChecker implements RuntimeDependencyChecker {
 
+	/** P2-16：content-provider 的内部共享密钥请求头。 */
+	static final String INTERNAL_TOKEN_HEADER = "X-Content-Provider-Token";
+
 	private final RestClient restClient;
 	private final String baseUrl;
 	private volatile SystemRuntimeResponse.ContentProviderDiagnostics latestDiagnostics;
 
+	public ContentProviderRuntimeDependencyChecker(RestClient.Builder restClientBuilder, String baseUrl) {
+		this(restClientBuilder, baseUrl, "");
+	}
+
+	@Autowired
 	public ContentProviderRuntimeDependencyChecker(RestClient.Builder restClientBuilder,
-			@Value("${reelshort.content-provider.base-url:http://127.0.0.1:5000}") String baseUrl) {
-		this.restClient = restClientBuilder.build();
+			@Value("${reelshort.content-provider.base-url:http://127.0.0.1:5000}") String baseUrl,
+			@Value("${reelshort.content-provider.internal-token:${CONTENT_PROVIDER_INTERNAL_TOKEN:}}")
+			String internalToken) {
+		this.restClient = internalToken == null || internalToken.isBlank()
+				? restClientBuilder.build()
+				: restClientBuilder.defaultHeader(INTERNAL_TOKEN_HEADER, internalToken).build();
 		this.baseUrl = trimTrailingSlash(baseUrl);
 	}
 

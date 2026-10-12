@@ -57,6 +57,7 @@ Authorization: Bearer <token>
 
 - 同一用户、同一 `bookId`、同一 `episodeNum` 重复上报会更新同一条记录。
 - `progressPercent` 由后端根据 `positionSeconds / durationSeconds` 计算，最大为 `100`。
+- **进度只允许前进**：后端取"已保存进度"与"本次上报进度"的较大值写回，离线补报、多设备切换或乱序上报不会把已看完的集数回退（避免出现"进度 8% + `rewardClaimed=true`"的永久不一致）。标题、`filteredTitle`、`chapterId` 等元数据仍按最新上报更新。
 - 当 `positionSeconds > durationSeconds` 时，后端按 `durationSeconds` 保存。
 - `awardedStages` 是兼容字段，固定为空数组；`awardedPoints` 表示本次实际发放积分。
 - 只有使用服务端权威时长计算出的进度达到 `100%` 才会发奖。

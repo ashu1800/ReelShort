@@ -19,7 +19,6 @@ export type UserStatus = 'ACTIVE' | 'DISABLED' | 'BLACKLISTED'
 export type AdminUserSummary = {
   id: string
   username: string
-  phoneE164: string | null
   status: UserStatus
   vip: boolean
   vipUntil: string | null
@@ -29,9 +28,8 @@ export type AdminUserSummary = {
   createdAt: string
 }
 
+// 账号唯一标识是 username；后端 AdminUserDetailResponse 没有 phone* 字段，不要再补回
 export type AdminUserDetail = AdminUserSummary & {
-  phoneCountryCode: string | null
-  phoneNumber: string | null
   walletNetwork: string | null
   walletAddress: string | null
   walletUpdatedAt: string | null
@@ -157,39 +155,6 @@ export type SystemConfig = {
   value: string
   description: string
   updatedAt: string | null
-}
-
-export type RechargeOrderStatus = 'CREATED' | 'PAID' | 'CANCELLED' | 'FAILED' | 'REFUNDED'
-
-export type RechargeOrder = {
-  id: string
-  userId: string
-  orderNo: string
-  amountCents: number
-  pointAmount: number
-  status: RechargeOrderStatus
-  paymentChannel: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-export type PaymentEventStatus = 'PROCESSED' | 'REJECTED'
-
-export type PaymentEvent = {
-  providerEventId: string
-  orderNo: string
-  paymentChannel: string
-  amountCents: number
-  status: PaymentEventStatus
-  failureReason: string | null
-  createdAt: string
-  processedAt: string
-}
-
-export type PaymentEventFilters = {
-  status?: PaymentEventStatus
-  orderNo?: string
-  paymentChannel?: string
 }
 
 export type VipOrderStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'EXPIRED'
@@ -427,11 +392,6 @@ export async function updateSystemConfig(configKey: string, value: string) {
   return response.data.data
 }
 
-export async function fetchOrders() {
-  const response = await http.get<ApiResponse<RechargeOrder[]>>('/orders')
-  return response.data.data
-}
-
 export async function fetchWithdrawals() {
 	const response = await http.get<ApiResponse<WithdrawalRequest[]>>('/withdrawals')
 	return response.data.data
@@ -454,13 +414,6 @@ export async function rejectWithdrawal(withdrawalId: string, reason: string) {
 		reason,
 	})
 	return response.data.data
-}
-
-export async function fetchPaymentEvents(filters: PaymentEventFilters = {}) {
-  const response = await http.get<ApiResponse<PaymentEvent[]>>('/payments/events', {
-    params: filters,
-  })
-  return response.data.data
 }
 
 export async function fetchVipOrders() {

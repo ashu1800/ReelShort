@@ -1,6 +1,5 @@
 package com.reelshort.backend;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -8,36 +7,36 @@ import java.util.UUID;
 
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jayway.jsonpath.JsonPath;
-import com.reelshort.backend.auth.CaptchaChallenge;
-import com.reelshort.backend.auth.CaptchaChallengeRepository;
+import com.reelshort.backend.auth.CaptchaService;
 
 public final class TestAppUsers {
 
-	private static volatile CaptchaChallengeRepository captchaRepositoryHolder;
+	private static volatile CaptchaService captchaServiceHolder;
 
 	private TestAppUsers() {
 	}
 
 	/**
-	 * Binds the captcha repository used to solve captmas during test registration. Call once from a test
+	 * Binds the captcha service used to solve captchas during test registration. Call once from a test
 	 * setup that has access to the Spring context.
+	 *
+	 * P2-16: 验证码答案只以 SHA-256 哈希落库，测试无法再从数据库读出明文答案，
+	 * 因此改为直接调用 {@link CaptchaService#generate()}：生成结果里仍带有内存中的明文答案。
 	 */
-	public static void bindCaptchaRepository(CaptchaChallengeRepository repository) {
-		captchaRepositoryHolder = repository;
+	public static void bindCaptchaService(CaptchaService captchaService) {
+		captchaServiceHolder = captchaService;
 	}
 
-	private static CaptchaChallengeRepository captchaRepository() {
-		CaptchaChallengeRepository repository = captchaRepositoryHolder;
-		if (repository == null) {
+	private static CaptchaService captchaService() {
+		CaptchaService captchaService = captchaServiceHolder;
+		if (captchaService == null) {
 			throw new IllegalStateException(
-					"CaptchaChallengeRepository not bound; call TestAppUsers.bindCaptchaRepository(...) first");
+					"CaptchaService not bound; call TestAppUsers.bindCaptchaService(...) first");
 		}
-		return repository;
+		return captchaService;
 	}
 
 	public static RegisteredUser register(MockMvc mockMvc, ObjectMapper objectMapper, String seed) throws Exception {
@@ -47,12 +46,8 @@ public final class TestAppUsers {
 	public static RegisteredUser register(MockMvc mockMvc, ObjectMapper objectMapper, String seed, String password)
 			throws Exception {
 		String username = usernameFor(seed);
-		MvcResult captchaResult = mockMvc.perform(get("/api/app/auth/captcha"))
-				.andExpect(status().isOk())
-				.andReturn();
-		String captchaBody = captchaResult.getResponse().getContentAsString();
-		String captchaId = JsonPath.read(captchaBody, "$.data.captchaId");
-		CaptchaChallenge challenge = captchaRepository().findById(UUID.fromString(captchaId)).orElseThrow();
+		CaptchaService.GeneratedCaptcha challenge = captchaService().generate();
+		String captchaId = challenge.captchaId();
 		String captchaAnswer = challenge.answer();
 		String body = """
 				{

@@ -90,6 +90,19 @@ public class AdminWithdrawalController {
 				currentAdmin.username()), requestId(request));
 	}
 
+	/**
+	 * 作废卡死的 ACTIVE 打款尝试（记录原因与操作人）。SIGNING/PREPARED 直接作废；
+	 * BROADCASTED 会先做只读链上核对：确认达标转人工确认，查无或失败才作废。
+	 */
+	@PostMapping("/{withdrawalId}/payout-attempt/void")
+	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
+	public ApiResponse<WithdrawalResponse> voidPayoutAttempt(CurrentAdmin currentAdmin,
+			@PathVariable UUID withdrawalId, @Valid @RequestBody WithdrawalVoidAttemptRequest voidRequest,
+			HttpServletRequest request) {
+		return ApiResponse.success(withdrawalService.voidActivePayoutAttempt(withdrawalId,
+				voidRequest.reason(), currentAdmin.username()), requestId(request));
+	}
+
 	@PostMapping("/batch-preview")
 	@RequireAdminPermissions({ AdminPermissions.WITHDRAWAL_READ, AdminPermissions.WITHDRAWAL_WRITE })
 	public ApiResponse<BatchWithdrawalPreviewResponse> batchPreview(

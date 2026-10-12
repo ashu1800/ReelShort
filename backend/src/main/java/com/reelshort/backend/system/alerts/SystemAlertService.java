@@ -6,6 +6,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -17,8 +20,25 @@ import com.reelshort.backend.system.runtime.SystemRuntimeResponse;
 @Service
 public class SystemAlertService {
 
+	private static final Pattern DIAGNOSTICS_EVENTS = Pattern.compile("diagnostics events=(\\d+)");
+
 	private final SystemAlertRepository systemAlertRepository;
 	private final Clock clock;
+
+	/**
+	 * P3-20：内容源诊断计数器是进程内累计值（永不回落）。按“水位线”判定：后端只对上次评估之后
+	 * 新增的事件告警，counter 不再增长时自动 resolve，避免内容源恢复后告警长期 OPEN。
+	 *
+	 * <p>水位线是**进程级**状态（与内容源进程内的累计计数器同生命周期），因此刻意声明为 static：
+	 * 同一 JVM 内任何评估入口（定时任务、管理员手动触发）都共享同一基线。进程重启后水位线回到空，
+	 * 首次观测只记录基线而不告警，所以重启不会产生误报。
+	 */
+	private static final ConcurrentHashMap<String, Integer> DIAGNOSTICS_WATERMARKS = new ConcurrentHashMap<>();
+
+	/** 仅供测试与诊断：清空进程级水位线。 */
+	public static void resetDiagnosticsWatermarks() {
+		DIAGNOSTICS_WATERMARKS.clear();
+	}
 
 	public SystemAlertService(SystemAlertRepository systemAlertRepository, Clock clock) {
 		this.systemAlertRepository = systemAlertRepository;
@@ -38,7 +58,7 @@ public class SystemAlertService {
 			}
 			else {
 				resolveAlert(alertKey, now);
-				if (hasContentProviderDiagnosticsEvents(dependency)) {
+				if (hasNewContentProviderDiagnosticsEvents(dependency)) {
 					String diagnosticsAlertKey = contentProviderDiagnosticsAlertKey();
 					observedKeys.add(diagnosticsAlertKey);
 					upsertContentProviderDiagnosticsAlert(diagnosticsAlertKey, dependency, now);
@@ -111,12 +131,39 @@ public class SystemAlertService {
 		return "runtime:dependency:content-provider:diagnostics";
 	}
 
-	private boolean hasContentProviderDiagnosticsEvents(RuntimeDependencyStatus dependency) {
+	/**
+	 * P3-20：相对水位线判断是否出现了新的内容源诊断事件。首次观测只记录基线不告警，
+	 * 之后仅在计数器增长时告警；不再增长即视为已恢复，由调用方 resolve 告警。
+	 */
+	private boolean hasNewContentProviderDiagnosticsEvents(RuntimeDependencyStatus dependency) {
 		if (!"content-provider".equals(dependency.name())) {
 			return false;
 		}
-		String detail = dependency.detail();
-		return detail != null && detail.contains("diagnostics events=");
+		Integer totalEvents = parseDiagnosticsTotalEvents(dependency.detail());
+		if (totalEvents == null) {
+			return false;
+		}
+		Integer previous = DIAGNOSTICS_WATERMARKS.put("content-provider", totalEvents);
+		return previous != null && totalEvents > previous;
+	}
+
+	/**
+	 * 从运行诊断 detail 中解析累计事件数（形如 {@code reachable; diagnostics events=3, ...}）。
+	 */
+	private Integer parseDiagnosticsTotalEvents(String detail) {
+		if (detail == null) {
+			return null;
+		}
+		Matcher matcher = DIAGNOSTICS_EVENTS.matcher(detail);
+		if (!matcher.find()) {
+			return null;
+		}
+		try {
+			return Integer.valueOf(matcher.group(1));
+		}
+		catch (NumberFormatException exception) {
+			return null;
+		}
 	}
 
 	private SystemAlertSeverity dependencySeverity(String dependencyName) {

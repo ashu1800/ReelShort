@@ -84,6 +84,17 @@ public class AdminUser {
 		roles.add(role);
 	}
 
+	public void revokeRole(AdminRole role) {
+		roles.remove(role);
+	}
+
+	/**
+	 * P2-13: 允许启动引导按配置同步密码哈希（REELSHORT_ADMIN_PASSWORD_HASH 轮换）。
+	 */
+	public void changePasswordHash(String passwordHash) {
+		this.passwordHash = passwordHash;
+	}
+
 	public Set<String> permissionCodes() {
 		return roles.stream()
 				.flatMap(role -> role.permissions().stream())

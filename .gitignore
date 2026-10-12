@@ -17,6 +17,11 @@ backend/logs/
 infra/backups/
 infra/restored-config/
 
+# Database dumps: production dumps must never sit inside the repository tree.
+reelshort-prod-db-backup-*/
+*.dump
+database.dump
+
 # Java / Gradle
 .gradle/
 build/

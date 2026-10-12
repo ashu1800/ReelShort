@@ -1,5 +1,6 @@
 import os
 import re
+import hmac
 import json
 import ipaddress
 import math
@@ -55,6 +56,55 @@ RESPONSE_CHUNK_SIZE = 64 * 1024
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 UPSTREAM_USER_AGENT = "ShortLinkContentProvider/1.0"
 
+# P3-21：只允许 HTTP/HTTPS 默认端口出网，避免被上游重定向驱动到任意公网 IP:端口。
+ALLOWED_UPSTREAM_PORTS = {"http": 80, "https": 443}
+
+# P2-16：诊断 context 中的外部输入（搜索关键词、URL）统一截断，避免诊断数据被撑爆。
+DIAGNOSTIC_VALUE_MAX_LENGTH = 200
+
+# P2-16：内部共享密钥。除 /health 外的所有端点都要求请求头 X-Content-Provider-Token。
+INTERNAL_TOKEN_HEADER = "X-Content-Provider-Token"
+INTERNAL_TOKEN_ENV = "CONTENT_PROVIDER_INTERNAL_TOKEN"
+
+
+def _as_int(value, default: int = 0) -> int:
+    """容错整数转换：上游字段类型异常时回落到默认值，而不是直接 500。"""
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return default
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value.strip()))
+        except (TypeError, ValueError):
+            return default
+    return default
+
+
+def _as_list(value) -> list:
+    """容错列表转换：非 list/tuple 一律视为空列表。"""
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return []
+
+
+def _as_dict(value) -> dict:
+    """容错字典转换：非 dict 一律视为空字典。"""
+    return value if isinstance(value, dict) else {}
+
+
+def _truncate(value, max_length: int = DIAGNOSTIC_VALUE_MAX_LENGTH):
+    """诊断 context 值截断，保持事件可读且不携带超长外部输入。"""
+    if value is None:
+        return None
+    text = str(value)
+    return text if len(text) <= max_length else text[:max_length] + "..."
+
+
 
 class _PinnedHTTPSAdapter(HTTPAdapter):
     """连接到已校验的 IP，但让 TLS 使用原始域名的 SNI 和证书校验。"""
@@ -93,10 +143,15 @@ class ProviderDiagnostics:
         self._lock = threading.Lock()
 
     def record(self, event_type: str, **context):
+        sanitized = {
+            key: _truncate(value) if isinstance(value, (str, bytes)) else value
+            for key, value in context.items()
+            if value not in (None, "")
+        }
         event = {
             "event_type": event_type,
             "observed_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            "context": {key: value for key, value in context.items() if value not in (None, "")},
+            "context": sanitized,
         }
         with self._lock:
             self._events.appendleft(event)
@@ -187,7 +242,8 @@ class ReelShortClient:
 
     def episodes(self, book_id: str, filtered_title: str, locale: str = DEFAULT_LOCALE):
         try:
-            book_data = self._movie_payload(book_id, filtered_title, locale).get("pageProps", {}).get("data", {})
+            page_props = _as_dict(self._movie_payload(book_id, filtered_title, locale).get("pageProps"))
+            book_data = _as_dict(page_props.get("data"))
         except UpstreamError as exception:
             if exception.status_code != 404:
                 raise
@@ -195,7 +251,7 @@ class ReelShortClient:
         return {
             "book": self._map_book(self._with_book_context(book_id, filtered_title, book_data)),
             "episodes": self._map_chapters(
-                book_data.get("online_base", []),
+                _as_list(book_data.get("online_base")),
                 fallback_description=self._first_text(
                     book_data, ("description", "introduction", "book_intro", "summary", "special_desc", "desc")
                 ),
@@ -204,7 +260,7 @@ class ReelShortClient:
 
     @staticmethod
     def _with_book_context(book_id: str, filtered_title: str, book_data: dict):
-        view = dict(book_data)
+        view = dict(_as_dict(book_data))
         view.setdefault("book_id", book_id)
         if not view.get("book_id"):
             view["book_id"] = book_id
@@ -234,7 +290,8 @@ class ReelShortClient:
             if exception.status_code != 404:
                 raise
             payload = self._episode_html_payload(slug)
-        episode_data = payload.get("pageProps", {}).get("data", {})
+        episode_data = _as_dict(_as_dict(payload).get("pageProps")).get("data")
+        episode_data = _as_dict(episode_data)
         if not episode_data.get("video_url"):
             self.diagnostics.record(
                 "video_url_missing",
@@ -245,16 +302,27 @@ class ReelShortClient:
             )
             raise UpstreamError(404, "upstream not found")
 
-        chapters = self.episodes(book_id, filtered_title, locale).get("episodes", [])
+        # P2-6：next_episode 只是播放页的便利元数据，上游分集接口失败不能连带已取得的 video_url 一起失败。
+        try:
+            chapters = _as_list(self.episodes(book_id, filtered_title, locale).get("episodes"))
+        except UpstreamError as exception:
+            self.diagnostics.record(
+                "next_episode_unavailable",
+                book_id=book_id,
+                episode_num=episode_num,
+                status_code=exception.status_code,
+                message=exception.message,
+            )
+            chapters = []
         next_chapter = None
         for index, chapter in enumerate(chapters):
-            if chapter.get("episode") == episode_num and index + 1 < len(chapters):
+            if _as_int(_as_dict(chapter).get("episode")) == episode_num and index + 1 < len(chapters):
                 next_chapter = chapters[index + 1]
                 break
         return {
             "video_url": episode_data.get("video_url", ""),
-            "episode": int(episode_data.get("serial_number", episode_num) or episode_num),
-            "duration": int(episode_data.get("duration", 0) or 0),
+            "episode": _as_int(episode_data.get("serial_number"), episode_num) or episode_num,
+            "duration": _as_int(episode_data.get("duration")),
             "next_episode": next_chapter,
         }
 
@@ -271,13 +339,22 @@ class ReelShortClient:
             )
 
     def _book_info_chapters(self, book_id: str):
-        return self._book_info(book_id).get("online_base", [])
+        return _as_list(self._book_info(book_id).get("online_base"))
 
     def _book_info(self, book_id: str):
-        payload = self._get("/api/video/book/getBookInfo", params={"book_id": book_id})
-        if payload.get("code") not in {0, None}:
-            raise UpstreamError(404, "upstream not found")
-        return payload.get("data", {})
+        payload = _as_dict(self._get("/api/video/book/getBookInfo", params={"book_id": book_id}))
+        code = payload.get("code")
+        if code != 0:
+            # P2-6：上游 code != 0 既可能是“资源不存在”，也可能是上游内部错误。
+            # 统一映射为 502 并记录诊断事件，让后端按 5xx 走缓存兜底，而不是把错误结论固化成 404。
+            self.diagnostics.record(
+                "book_info_upstream_error",
+                book_id=book_id,
+                code=_truncate(code, 32),
+                message=_truncate(payload.get("msg") or payload.get("message"), 120),
+            )
+            raise UpstreamError(502, "upstream request failed")
+        return _as_dict(payload.get("data"))
 
     def _episode_html_payload(self, slug: str):
         html = self._get_text(f"/episodes/{quote(slug, safe='')}", params={"play_time": "1"})
@@ -388,8 +465,16 @@ class ReelShortClient:
                 raise UpstreamError(502, "upstream returned too many redirects")
 
             redirect_url = urljoin(original_current_url, location)
-            # M11: _validate_redirect_url 也返回 pinned URL
+            # M11: _validate_redirect_url 也返回 pinned URL（先做公网/端口校验，再做协议降级校验）
             pinned_redirect, _ = self._validate_redirect_url(redirect_url)
+            # P3-21：禁止 https → http 降级，降级时记录诊断事件并拒绝。
+            if urlparse(original_current_url).scheme == "https" and urlparse(redirect_url).scheme == "http":
+                self.diagnostics.record(
+                    "upstream_downgrade_blocked",
+                    url=original_current_url,
+                    redirect_url=redirect_url,
+                )
+                raise UpstreamError(502, "upstream returned unsafe redirect")
             if redirect_url in visited:
                 self.diagnostics.record("upstream_redirect_loop", url=redirect_url)
                 raise UpstreamError(502, "upstream redirect loop")
@@ -486,6 +571,15 @@ class ReelShortClient:
             raise UpstreamError(502, message)
         try:
             original_port = parsed.port
+        except ValueError:
+            self.diagnostics.record(event_type, url=url)
+            raise UpstreamError(502, message)
+        # P3-21：端口白名单，只允许 HTTP/HTTPS 默认端口，防止被上游重定向驱动到任意公网 IP:端口。
+        effective_port = original_port if original_port is not None else ALLOWED_UPSTREAM_PORTS[parsed.scheme]
+        if effective_port not in ALLOWED_UPSTREAM_PORTS.values():
+            self.diagnostics.record("upstream_port_blocked", url=url, port=effective_port)
+            raise UpstreamError(502, message)
+        try:
             # M11: DNS pinning —— 解析后直接用 IP 连接，避免 requests 二次解析导致的 TOCTOU
             addresses = self.resolver(parsed.hostname)
             safe = addresses and all(ipaddress.ip_address(address).is_global for address in addresses)
@@ -527,13 +621,16 @@ class ReelShortClient:
 
     def _home_shelf_books(self, shelf_name: str, locale: str = DEFAULT_LOCALE):
         payload = self._get_locale_data(".json", locale=locale)
-        web_info = payload.get("pageProps", {}).get("fallback", {}).get("/api/ms/hall/webInfo", {})
-        shelves = web_info.get("bookShelfList") or []
+        page_props = _as_dict(payload.get("pageProps"))
+        fallback = _as_dict(page_props.get("fallback"))
+        web_info = _as_dict(fallback.get("/api/ms/hall/webInfo"))
+        shelves = _as_list(web_info.get("bookShelfList"))
         selected_shelves = self._select_home_shelves(shelves, shelf_name)
         books = []
         seen = set()
         for shelf in selected_shelves:
-            for book in shelf.get("books") or []:
+            for book in _as_list(_as_dict(shelf).get("books")):
+                book = _as_dict(book)
                 book_id = book.get("book_id") or book.get("_id") or book.get("id")
                 if book_id and book_id not in seen:
                     seen.add(book_id)
@@ -656,13 +753,11 @@ class ReelShortClient:
         return (keywords or defaults)[:MAX_CATALOG_KEYWORDS]
 
     def _bounded_int_env(self, name: str, default: int, maximum: int):
-        try:
-            value = int(os.getenv(name, str(default)))
-        except ValueError:
-            return default
+        value = _as_int(os.getenv(name), default)
         return min(max(value, 0), maximum)
 
     def _select_home_shelves(self, shelves, shelf_name: str):
+        shelves = [_as_dict(shelf) for shelf in _as_list(shelves)]
         if shelf_name == "recommend":
             return [shelf for shelf in shelves if shelf.get("books")]
         labels = {
@@ -676,13 +771,14 @@ class ReelShortClient:
         return matched or [shelf for shelf in shelves if shelf.get("books")]
 
     def _books(self, payload):
-        page_props = payload.get("pageProps", {})
+        page_props = _as_dict(_as_dict(payload).get("pageProps"))
         books = page_props.get("books")
         if books is None:
             books = page_props.get("bookList")
-        return books or []
+        return _as_list(books)
 
     def _map_book(self, book):
+        book = _as_dict(book)
         title = book.get("book_title") or book.get("title") or ""
         book_id = self._book_id(book)
         return {
@@ -695,27 +791,35 @@ class ReelShortClient:
             "description": self._first_text(
                 book, ("description", "introduction", "book_intro", "summary", "special_desc", "desc")
             ),
-            "chapter_count": int(book.get("chapter_count", 0) or 0),
+            "chapter_count": _as_int(book.get("chapter_count")),
         }
 
     def _map_chapters(self, chapters, fallback_description: str = ""):
-        return [
-            {
-                "episode": chapter.get("serial_number"),
-                "chapter_id": chapter.get("chapter_id", ""),
-                "title": self._first_text(chapter, ("chapter_title", "chapter_name", "title", "name")),
-                "description": self._first_text(
-                    chapter, ("description", "intro", "summary", "chapter_desc", "desc")
-                ) or fallback_description,
-            }
-            for chapter in chapters
-            if chapter.get("chapter_id") and int(chapter.get("serial_number", 0) or 0) > 0
-        ]
+        mapped = []
+        for chapter in _as_list(chapters):
+            chapter = _as_dict(chapter)
+            serial_number = _as_int(chapter.get("serial_number"))
+            if not chapter.get("chapter_id") or serial_number <= 0:
+                continue
+            mapped.append(
+                {
+                    "episode": serial_number,
+                    "chapter_id": chapter.get("chapter_id", ""),
+                    "title": self._first_text(chapter, ("chapter_title", "chapter_name", "title", "name")),
+                    "description": self._first_text(
+                        chapter, ("description", "intro", "summary", "chapter_desc", "desc")
+                    )
+                    or fallback_description,
+                }
+            )
+        return mapped
 
     def _book_id(self, book):
+        book = _as_dict(book)
         return book.get("book_id") or book.get("_id") or book.get("id") or ""
 
     def _first_text(self, payload, keys):
+        payload = _as_dict(payload)
         for key in keys:
             value = payload.get(key)
             if isinstance(value, str) and value.strip():
@@ -727,13 +831,29 @@ class ReelShortClient:
         return value
 
 
-def create_app(client=None) -> Flask:
+def create_app(client=None, internal_token=None) -> Flask:
     app = Flask(__name__)
     reelshort_client = client or ReelShortClient.from_env()
+    expected_token = internal_token if internal_token is not None else os.getenv(INTERNAL_TOKEN_ENV, "")
 
     @app.get("/health")
     def health():
         return jsonify({"status": "UP", "service": "reelshort-content-provider"})
+
+    @app.before_request
+    def require_internal_token():
+        # P2-16：/health 保持匿名可达（容器健康检查），其余端点要求内部共享密钥。
+        if request.path == "/health":
+            return None
+        if not expected_token:
+            # fail-closed：未配置内部密钥时拒绝除 /health 之外的全部请求。
+            return jsonify({"error": "content provider internal token is not configured"}), 503
+        provided = request.headers.get(INTERNAL_TOKEN_HEADER, "")
+        if not provided:
+            return jsonify({"error": "missing internal token"}), 401
+        if not hmac.compare_digest(provided, expected_token):
+            return jsonify({"error": "invalid internal token"}), 403
+        return None
 
     @app.get("/diagnostics")
     def diagnostics():
@@ -747,6 +867,20 @@ def create_app(client=None) -> Flask:
     @app.errorhandler(UpstreamError)
     def upstream_error(error: UpstreamError):
         return jsonify({"error": error.message}), error.status_code
+
+    @app.errorhandler(Exception)
+    def unexpected_error(error):
+        # P2-16：未预期异常记录诊断事件并返回 502，而不是裸 500 栈。
+        diagnostics_recorder = getattr(reelshort_client, "diagnostics", None)
+        if diagnostics_recorder is not None:
+            diagnostics_recorder.record(
+                "unexpected_error",
+                error_type=type(error).__name__,
+                message=_truncate(error, 200),
+                path=request.path,
+            )
+        app.logger.exception("unexpected content provider error")
+        return jsonify({"error": "content provider internal error"}), 502
 
     def request_locale():
         locale = request.args.get("locale", DEFAULT_LOCALE).strip() or DEFAULT_LOCALE
@@ -812,9 +946,16 @@ def create_app(client=None) -> Flask:
 
 
 def run_app():
+    """本地/调试入口（Werkzeug 开发服务器）。生产由 gunicorn 以 `app:create_app()` 承载。"""
+    host = os.getenv("CONTENT_PROVIDER_HOST", "127.0.0.1")
+    if not os.getenv(INTERNAL_TOKEN_ENV) and host not in {"127.0.0.1", "localhost", "::1"}:
+        # P2-16：非 loopback 监听必须配置内部共享密钥，否则除 /health 外的请求都会被拒绝。
+        raise RuntimeError(
+            f"{INTERNAL_TOKEN_ENV} must be set when CONTENT_PROVIDER_HOST is not loopback"
+        )
     create_app().run(
-        host=os.getenv("CONTENT_PROVIDER_HOST", "127.0.0.1"),
-        port=int(os.getenv("CONTENT_PROVIDER_PORT", "5000")),
+        host=host,
+        port=_as_int(os.getenv("CONTENT_PROVIDER_PORT", "5000"), 5000),
     )
 
 

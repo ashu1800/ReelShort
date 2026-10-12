@@ -5,9 +5,16 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+/**
+ * 自动打款确认链路。打款执行能力默认关闭（{@code reelshort.withdrawal.payout.enabled=false}），
+ * 关闭时本服务不参与装配；管理员仍有只读链上核对与受审计的 attempt 作废入口。
+ */
 @Service
+@ConditionalOnProperty(prefix = "reelshort.withdrawal.payout", name = "enabled", havingValue = "true")
 public class WithdrawalPayoutConfirmationService {
 
 	private static final Logger log = LoggerFactory.getLogger(WithdrawalPayoutConfirmationService.class);
@@ -23,12 +30,13 @@ public class WithdrawalPayoutConfirmationService {
 	private final BscProperties bscProperties;
 
 	public WithdrawalPayoutConfirmationService(WithdrawalPayoutAttemptRepository attemptRepository,
-			WithdrawalPayoutTransactionService transactionService, WithdrawalPayoutCoordinator coordinator,
+			ObjectProvider<WithdrawalPayoutTransactionService> transactionService,
+			ObjectProvider<WithdrawalPayoutCoordinator> coordinator,
 			EthereumClient ethereumClient, TronClient tronClient, BscClient bscClient,
 			EthereumProperties ethereumProperties, TronProperties tronProperties, BscProperties bscProperties) {
 		this.attemptRepository = attemptRepository;
-		this.transactionService = transactionService;
-		this.coordinator = coordinator;
+		this.transactionService = transactionService.getIfAvailable();
+		this.coordinator = coordinator.getIfAvailable();
 		this.ethereumClient = ethereumClient;
 		this.tronClient = tronClient;
 		this.bscClient = bscClient;

@@ -6,12 +6,12 @@ import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
-import com.reelshort.backend.auth.CaptchaChallengeRepository;
+import com.reelshort.backend.auth.CaptchaService;
 
 /**
- * Auto-discovered JUnit extension that binds the Spring-managed {@link CaptchaChallengeRepository} into the
+ * Auto-discovered JUnit extension that binds the Spring-managed {@link CaptchaService} into the
  * static {@link TestAppUsers} helper before any test class runs, so that username+password registration (which
- * requires captcha verification) works transparently in tests. Silently skips contexts where the repository
+ * requires captcha verification) works transparently in tests. Silently skips contexts where the service
  * bean is not available (e.g. sliced tests without JPA).
  */
 public class TestAppUsersCaptchaExtension implements BeforeAllCallback {
@@ -27,10 +27,10 @@ public class TestAppUsersCaptchaExtension implements BeforeAllCallback {
 			return;
 		}
 		try {
-			TestAppUsers.bindCaptchaRepository(applicationContext.getBean(CaptchaChallengeRepository.class));
+			TestAppUsers.bindCaptchaService(applicationContext.getBean(CaptchaService.class));
 		}
 		catch (NoSuchBeanDefinitionException exception) {
-			// Sliced test context without JPA repositories; captcha registration not supported here.
+			// Sliced test context without the captcha service; captcha registration not supported here.
 		}
 	}
 }

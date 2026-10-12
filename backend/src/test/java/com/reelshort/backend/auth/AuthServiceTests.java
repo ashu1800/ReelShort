@@ -3,12 +3,12 @@ package com.reelshort.backend.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.UUID;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import com.reelshort.backend.system.security.CredentialAttemptRepository;
+import com.reelshort.backend.system.security.CredentialLockedException;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
@@ -28,6 +28,9 @@ class AuthServiceTests {
 
 	@Autowired
 	private UserAccountRepository userAccountRepository;
+
+	@Autowired
+	private CredentialAttemptRepository credentialAttemptRepository;
 
 	@Test
 	void registerStoresPasswordHashInsteadOfPlaintext() {
@@ -60,20 +63,71 @@ class AuthServiceTests {
 	}
 
 	@Test
-	void loginRejectsDisabledUsersBeforePasswordCheck() {
-		UserAccount disabled = userAccountRepository.save(UserAccount.create("auth-test-disabled",
+	void loginRejectsDisabledUserOnlyAfterPasswordMatches() {
+		UserAccount disabled = userAccountRepository.save(UserAccount.create("auth-test-disabled-ok",
 				passwordHasher.hash("Password123"), UserStatus.DISABLED));
 
-		assertThatThrownBy(() -> authService.login(disabled.username(), "wrong"))
+		// P2-14: 密码正确 + 账号被禁用 → 403 user disabled
+		assertThatThrownBy(() -> authService.login(disabled.username(), "Password123"))
 				.isInstanceOf(AuthException.class)
 				.hasMessage("user disabled")
 				.extracting("statusCode")
 				.isEqualTo(403);
 	}
 
+	@Test
+	void loginDoesNotRevealDisabledAccountWhenPasswordIsWrong() {
+		UserAccount disabled = userAccountRepository.save(UserAccount.create("auth-test-disabled-wrong",
+				passwordHasher.hash("Password123"), UserStatus.DISABLED));
+
+		// P2-14: 密码错误时文案与状态码必须与"用户不存在"完全一致，避免枚举被禁用账号
+		assertThatThrownBy(() -> authService.login(disabled.username(), "wrong"))
+				.isInstanceOf(AuthException.class)
+				.hasMessage("invalid username or password")
+				.extracting("statusCode")
+				.isEqualTo(401);
+	}
+
+	@Test
+	void changePasswordLocksAfterRepeatedWrongOldPasswordsAndThenRejectsCorrectPassword() {
+		AuthToken token = registerUser("auth-test-change-lock", "Password123");
+		CurrentUser currentUser = new CurrentUser(token.userId(), token.username());
+		for (int attempt = 0; attempt < 5; attempt++) {
+			assertThatThrownBy(() -> authService.changePassword(currentUser, "wrong", "Password456"))
+					.isInstanceOf(AuthException.class)
+					.hasMessage("invalid old password")
+					.extracting("statusCode")
+					.isEqualTo(401);
+		}
+
+		// 锁定期内即使旧密码正确也拒绝（锁定判断优先于 BCrypt 比对）
+		assertThatThrownBy(() -> authService.changePassword(currentUser, "Password123", "Password456"))
+				.isInstanceOf(CredentialLockedException.class)
+				.hasMessage("too many attempts, try again later");
+		// 密码未被修改
+		assertThat(passwordHasher.matches("Password123",
+				userAccountRepository.findById(token.userId()).orElseThrow().passwordHash())).isTrue();
+	}
+
+	@Test
+	void changePasswordClearsFailureCounterOnSuccess() {
+		AuthToken token = registerUser("auth-test-change-reset", "Password123");
+		CurrentUser currentUser = new CurrentUser(token.userId(), token.username());
+
+		assertThatThrownBy(() -> authService.changePassword(currentUser, "wrong", "Password456"))
+				.isInstanceOf(AuthException.class);
+		assertThat(credentialAttemptRepository.findById(token.userId())).isPresent();
+
+		authService.changePassword(currentUser, "Password123", "Password456");
+
+		assertThat(credentialAttemptRepository.findById(token.userId())).isEmpty();
+		assertThat(passwordHasher.matches("Password456",
+				userAccountRepository.findById(token.userId()).orElseThrow().passwordHash())).isTrue();
+	}
+
 	private AuthToken registerUser(String usernameSeed, String password) {
 		String username = TestAppUsers.usernameFor(usernameSeed);
-		com.reelshort.backend.auth.CaptchaChallenge challenge = captchaService.generate();
-		return authService.register(username, password, challenge.id().toString(), challenge.answer());
+		CaptchaService.GeneratedCaptcha challenge = captchaService.generate();
+		return authService.register(username, password, challenge.captchaId(), challenge.answer());
 	}
 }

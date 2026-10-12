@@ -6,6 +6,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.reelshort.backend.system.security.CredentialAttemptGuard;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
@@ -20,13 +21,15 @@ public class AuthService {
 	private final PasswordHasher passwordHasher;
 	private final TokenService tokenService;
 	private final CaptchaService captchaService;
+	private final CredentialAttemptGuard credentialAttemptGuard;
 
 	public AuthService(UserAccountRepository userAccountRepository, PasswordHasher passwordHasher,
-			TokenService tokenService, CaptchaService captchaService) {
+			TokenService tokenService, CaptchaService captchaService, CredentialAttemptGuard credentialAttemptGuard) {
 		this.userAccountRepository = userAccountRepository;
 		this.passwordHasher = passwordHasher;
 		this.tokenService = tokenService;
 		this.captchaService = captchaService;
+		this.credentialAttemptGuard = credentialAttemptGuard;
 	}
 
 	@Transactional
@@ -50,11 +53,13 @@ public class AuthService {
 	public AuthToken login(String username, String password) {
 		UserAccount user = userAccountRepository.findByUsername(username)
 				.orElseThrow(() -> new AuthException(401, "invalid username or password"));
-		if (user.status() != UserStatus.ACTIVE) {
-			throw new AuthException(403, "user disabled");
-		}
+		// P2-14: 先做 BCrypt 比对（对禁用账号也执行一次 matches，消除时序差异），密码正确后才判定状态，
+		// 否则 403 "user disabled" 会变成"该用户名存在且被封禁"的枚举名单。
 		if (!passwordHasher.matches(password, user.passwordHash())) {
 			throw new AuthException(401, "invalid username or password");
+		}
+		if (user.status() != UserStatus.ACTIVE) {
+			throw new AuthException(403, "user disabled");
 		}
 		return tokenService.issue(user);
 	}
@@ -66,13 +71,18 @@ public class AuthService {
 		if (user.status() != UserStatus.ACTIVE) {
 			throw new AuthException(403, "user disabled");
 		}
+		// P1-5: 锁定判断必须优先于密码比对，锁定期间即使密码正确也拒绝（避免继续消耗 BCrypt 与爆破额度）
+		credentialAttemptGuard.assertNotLocked(user.id());
 		if (!passwordHasher.matches(oldPassword, user.passwordHash())) {
+			// REQUIRES_NEW：外层事务回滚也要留下失败计数
+			credentialAttemptGuard.recordFailure(user.id());
 			throw new AuthException(401, "invalid old password");
 		}
 		validatePassword(newPassword);
 		user.changePasswordHash(passwordHasher.hash(newPassword));
 		userAccountRepository.save(user);
 		tokenService.revokeAllForUser(user.id());
+		credentialAttemptGuard.recordSuccess(user.id());
 	}
 
 	@Transactional

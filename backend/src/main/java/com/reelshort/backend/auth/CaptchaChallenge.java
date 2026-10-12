@@ -15,8 +15,12 @@ public class CaptchaChallenge {
 	@Id
 	private UUID id;
 
-	@Column(nullable = false, length = 8)
-	private String answer;
+	/**
+	 * P2-16: 只保存 SHA-256 十六进制哈希，明文答案既不落库也不保存在实体里
+	 * （V31 起 answer 列允许为空，保留该列仅用于兼容历史数据）。
+	 */
+	@Column(name = "answer_hash", length = 64)
+	private String answerHash;
 
 	@Column(name = "image_base64", nullable = false, columnDefinition = "text")
 	private String imageBase64;
@@ -33,30 +37,34 @@ public class CaptchaChallenge {
 	protected CaptchaChallenge() {
 	}
 
-	private CaptchaChallenge(UUID id, String answer, String imageBase64, OffsetDateTime expiresAt,
+	private CaptchaChallenge(UUID id, String answerHash, String imageBase64, OffsetDateTime expiresAt,
 			OffsetDateTime usedAt, OffsetDateTime createdAt) {
 		this.id = id;
-		this.answer = answer;
+		this.answerHash = answerHash;
 		this.imageBase64 = imageBase64;
 		this.expiresAt = expiresAt;
 		this.usedAt = usedAt;
 		this.createdAt = createdAt;
 	}
 
-	public static CaptchaChallenge create(String answer, String imageBase64, OffsetDateTime expiresAt) {
-		return new CaptchaChallenge(UUID.randomUUID(), answer, imageBase64, expiresAt, null, OffsetDateTime.now());
+	public static CaptchaChallenge create(String answerHash, String imageBase64, OffsetDateTime expiresAt) {
+		return new CaptchaChallenge(UUID.randomUUID(), answerHash, imageBase64, expiresAt, null, OffsetDateTime.now());
 	}
 
 	public UUID id() {
 		return id;
 	}
 
-	public String answer() {
-		return answer;
+	public String answerHash() {
+		return answerHash;
 	}
 
 	public String imageBase64() {
 		return imageBase64;
+	}
+
+	public OffsetDateTime expiresAt() {
+		return expiresAt;
 	}
 
 	public boolean isUsed() {

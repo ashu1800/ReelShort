@@ -139,6 +139,15 @@ public class WithdrawalPayoutAttempt {
 		updatedAt = now;
 	}
 
+	@Column(name = "voided_at")
+	private OffsetDateTime voidedAt;
+
+	@Column(name = "voided_by", length = 64)
+	private String voidedBy;
+
+	@Column(name = "void_reason", length = 255)
+	private String voidReason;
+
 	public void completeSigning(String owner, PreparedPayoutTransaction signed) {
 		if (status != WithdrawalPayoutStatus.SIGNING || !owner.equals(signingOwner)) {
 			throw new IllegalStateException("payout signing intent is not owned by caller");
@@ -210,6 +219,26 @@ public class WithdrawalPayoutAttempt {
 		failureCode = "MANUAL_REVIEW";
 		failureReason = truncate(reason);
 		updatedAt = OffsetDateTime.now();
+	}
+
+	/**
+	 * 管理员受审计地作废一个尚未确认的打款尝试：释放 active_slot 后，该提现单可以正常拒绝或人工确认。
+	 * 仅允许用于尚未确认的尝试；已确认或已判定可重试的尝试不可作废。
+	 */
+	public void markVoided(String adminUsername, String reason) {
+		requireActive();
+		if (status == WithdrawalPayoutStatus.MANUAL_REVIEW) {
+			throw new IllegalStateException("payout attempt is already in manual review");
+		}
+		OffsetDateTime now = OffsetDateTime.now();
+		status = WithdrawalPayoutStatus.VOIDED;
+		activeSlot = null;
+		signingOwner = null;
+		signingLeaseUntil = null;
+		voidedAt = now;
+		voidedBy = adminUsername;
+		voidReason = truncate(reason);
+		updatedAt = now;
 	}
 
 	public void recordConfirmations(int confirmations) {

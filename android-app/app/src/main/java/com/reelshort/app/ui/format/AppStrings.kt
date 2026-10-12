@@ -79,7 +79,6 @@ internal data class AppStrings(
     val accountTransferRecordsTitle: String,
     val accountChangePasswordTitle: String,
     val accountBankCardTitle: String,
-    val accountBankCardSubtitle: String,
     val authContinue: String,
     val accountWithdrawalsTitle: String,
     val accountWithdrawalRecordsTitle: String,
@@ -215,14 +214,10 @@ internal data class AppStrings(
     val accountTransferOutLabel: String,
     val accountPasswordNewLabel: String,
     val accountBankCardUnsupported: String,
-    val accountBankCardHolderLabel: String,
-    val accountBankCardNumberLabel: String,
     val commonNotSupported: String,
     val posterEpisodeUnit: String,
     val bookRowFallbackSuffix: String,
     val bookRowViewAction: String,
-    val geoBlockedTitle: String,
-    val geoBlockedMessage: String,
 )
 
 internal fun strings(language: AppLanguage): AppStrings =
@@ -304,7 +299,6 @@ internal fun strings(language: AppLanguage): AppStrings =
             accountTransferRecordsTitle = "Transfer records",
             accountChangePasswordTitle = "Change password",
             accountBankCardTitle = "Bank card",
-            accountBankCardSubtitle = "Credit card",
             authContinue = "Continue",
             accountWithdrawalsTitle = "Withdrawals",
             accountWithdrawalRecordsTitle = "Withdrawal records",
@@ -440,14 +434,10 @@ internal fun strings(language: AppLanguage): AppStrings =
             accountTransferOutLabel = "Sent",
             accountPasswordNewLabel = "New password (8+ characters)",
             accountBankCardUnsupported = "Bank card withdrawal is not supported. This entry is reserved.",
-            accountBankCardHolderLabel = "Holder name",
-            accountBankCardNumberLabel = "Card number",
             commonNotSupported = "Not supported",
             posterEpisodeUnit = " eps",
             bookRowFallbackSuffix = " episodes",
             bookRowViewAction = "View",
-            geoBlockedTitle = "Service Unavailable",
-            geoBlockedMessage = "ShortLink is not available in your region. Please use a VPN or try again from a different network.",
         )
     }
 

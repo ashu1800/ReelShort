@@ -92,7 +92,10 @@ python scripts/publish-android.py \
 - `--mandatory` — 标记为强制更新（当前 App 未强制执行该标记，仅记录）
 - `--minimum-version-code` — 可安装此更新的最低 App version code（默认 1）
 
-脚本任何一步失败都会明确报错并退出，不会产生半成品发布。
+脚本任何一步失败都会明确报错并退出，但上传与回调不是同一个事务，因此仍存在**半成功**状态：
+
+- APK 与 `.sha256` 已上传 COS，但 POST 后端失败 → COS 上有文件、`app_releases` 无记录。此时 App 清单不会返回该版本；处理方式是修好后端后重新运行脚本（同名对象会被覆盖），COS 上的孤立文件不自动清理。
+- 后端回调成功但对象被外部改动 → 清单里的 `apkSha256` 与实际文件不一致，App 侧 SHA-256 校验会拦截，需要重新上传同名对象。
 
 ## 发布后验证
 
@@ -105,8 +108,11 @@ curl -s https://shortlink.hjj888.cc/api/app/release/latest | python -m json.tool
 
 ## 同版本重新发布
 
-对同一个 `versionName` 再次运行脚本会覆盖 COS 上同名的 APK 文件，并 upsert 后端的发布记录
-（更新 `apk_object_key` / `sha256` / `published_at` 等字段，保留原 `id`）。
+对同一个 `versionName` 再次运行脚本会覆盖 COS 上同名的 APK 文件，并 upsert 后端的发布记录（更新 `versionCode`、`apk_object_key`、`sha256`、`published_at` 等字段，保留原 `id`）。
+
+`republish` 现在会一并更新 `versionCode`；如果提交的 `versionCode` 小于该 `versionName` 已记录的值，后端返回 `400 versionCode must not decrease for an existing versionName`。清单按 `versionCode DESC` 排序，因此填错版本号后重发不会再出现"运维看到成功、App 判断无更新"的静默发布失败。
+
+发布脚本会在省略 `--version-code` 时提示"当前最新 + 1"，但**不会**在上传前阻止你填一个更小的值——真正的拦截发生在后端回调阶段（即 COS 已上传之后）。需要严格控制版本号时，先执行 `/api/app/release/latest` 核对当前 `versionCode`。
 
 ## 安全边界
 

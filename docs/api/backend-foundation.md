@@ -47,7 +47,7 @@
 
 ### `GET /api/app/content/search?keywords={keywords}&locale={locale}`
 
-通过 `ContentProvider` 调用 Flask ReelShort 内容源搜索剧集，并转换为平台内部内容模型。`locale` 可选，默认 `en`，当前支持 `en` 和 `zh-TW`。
+通过 `ContentProvider` 调用 Flask ReelShort 内容源搜索剧集，并转换为平台内部内容模型。`locale` 参数保留但当前只支持英文单语：任何传入值都由 `ContentLocale.fromApiValue` 解析为 `en`。
 
 ### `GET /api/app/home/recommend?locale={locale}`
 

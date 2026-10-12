@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.system.config.SystemConfigDefinition.ValueType;
+import com.reelshort.backend.withdrawal.TronAddress;
 
 @Component
 public class SystemConfigRegistry {
@@ -51,7 +52,8 @@ public class SystemConfigRegistry {
 			new SystemConfigDefinition(VIP_FREE_EPISODES, "7",
 					"Number of free episodes viewable without VIP.", ValueType.INTEGER, 1, 100, Set.of()),
 			new SystemConfigDefinition(VIP_COLLECTION_ADDRESS, "",
-					"TRC20 USDT collection wallet address for VIP payments.", ValueType.STRING, 0, 0, Set.of()),
+					"TRC20 USDT collection wallet address for VIP payments. Empty means not configured.",
+					ValueType.STRING, 0, 0, Set.of(), SystemConfigRegistry::validateVipCollectionAddress),
 			new SystemConfigDefinition(VIP_ORDER_TIMEOUT_MINUTES, "20",
 					"VIP order payment timeout in minutes.", ValueType.INTEGER, 1, 10_000, Set.of()),
 			new SystemConfigDefinition(CONTENT_RECOMMENDATION_STRATEGY, "LATEST", "Default content recommendation strategy.",
@@ -70,5 +72,19 @@ public class SystemConfigRegistry {
 			throw new AdminException(404, "config not found");
 		}
 		return definition;
+	}
+
+	/**
+	 * P2-17: VIP 收款地址是资金敏感配置，写入时就要拒绝非法地址，避免把收款地址改成永远收不到款的字符串。
+	 * 为空允许保存（表示未配置 / 未开启链上 VIP 支付），与默认值 "0 警告" 的行为一致。
+	 */
+	private static String validateVipCollectionAddress(String value) {
+		if (value.isEmpty()) {
+			return "";
+		}
+		if (!TronAddress.isValid(value)) {
+			throw new AdminException(400, "bad request");
+		}
+		return value;
 	}
 }

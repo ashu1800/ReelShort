@@ -15,6 +15,34 @@ http://10.0.2.2:8080/api/app
 - Python 依赖已安装：`content-provider\requirements.txt`。
 - 本流程使用后端 `app-dev` profile，不需要本机 PostgreSQL。
 - 默认情况下，本机 `5000` 和 `8080` 端口未被其他进程占用；如有占用，可使用脚本参数改端口。
+- 必须在**同一个 PowerShell 会话**里先设置内容源内部共享密钥（见下节），否则内容接口会返回 503。
+
+## 内容源内部共享密钥（必需）
+
+content-provider 除 `/health` 外所有端点都要求请求头 `X-Content-Provider-Token`，且**未配置密钥时 fail-closed**（返回 503 `content provider internal token is not configured`）。后端通过 `reelshort.content-provider.internal-token`（`application.properties` 中默认取环境变量 `CONTENT_PROVIDER_INTERNAL_TOKEN`）读取同一个值，并在内部请求上带上该请求头。
+
+因此本机联调必须先在同一会话导出变量，`start-app-local-dev.ps1` 启动的两个子进程会继承它：
+
+```powershell
+$env:CONTENT_PROVIDER_INTERNAL_TOKEN = "<本地任意随机串>"
+powershell -ExecutionPolicy Bypass -File infra/scripts/start-app-local-dev.ps1
+```
+
+手工单独启动时同样需要：
+
+```powershell
+# content-provider（在 content-provider 目录）
+$env:CONTENT_PROVIDER_INTERNAL_TOKEN = "<本地任意随机串>"
+python app.py
+
+# backend（在 backend 目录，同一个值）
+$env:CONTENT_PROVIDER_INTERNAL_TOKEN = "<本地任意随机串>"
+.\gradlew.bat bootRun --args='--spring.profiles.active=app-dev'
+```
+
+不设置密钥时的表现：`/health` 仍返回 `UP`（脚本的健康等待会通过），但后端调用内容源时收到 503，首页/搜索/分集接口报内容源不可用。
+
+> 已知缺口：`infra/scripts/start-app-local-dev.ps1` 目前只导出 `CONTENT_PROVIDER_PORT`，尚未自动生成/导出 `CONTENT_PROVIDER_INTERNAL_TOKEN`，因此必须按上面的方式手工设置（属于 W5 部署项待办，不在本次文档改动范围内）。
 
 ## 启动
 

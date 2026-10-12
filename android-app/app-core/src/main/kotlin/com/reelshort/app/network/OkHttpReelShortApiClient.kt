@@ -23,10 +23,10 @@ import com.reelshort.app.data.WithdrawalSummary
 import com.reelshort.app.network.dto.AuthRequestDto
 import com.reelshort.app.network.dto.AuthSessionDto
 import com.reelshort.app.network.dto.ApiHealthStatusDto
-import com.reelshort.app.network.dto.BankCardBindRequestDto
 import com.reelshort.app.network.dto.BackendApiResponse
 import com.reelshort.app.network.dto.CaptchaResponseDto
 import com.reelshort.app.network.dto.CommentDto
+import com.reelshort.app.network.dto.CommentPageDto
 import com.reelshort.app.network.dto.CommentRequestDto
 import com.reelshort.app.network.dto.ContentBookDto
 import com.reelshort.app.network.dto.ContentEpisodeDto
@@ -221,14 +221,6 @@ class OkHttpReelShortApiClient(
     override suspend fun getLatestVipOrder(): VipOrder? =
         get<VipOrderDto?>("/vip/orders/latest", authenticated = true)?.toDomain()
 
-    override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
-        post<BankCardBindRequestDto, Unit>(
-            "/wallet/bank-card",
-            BankCardBindRequestDto(cardNumber, expiryMonth, expiryYear, cvv, holderName),
-            authenticated = true,
-        )
-    }
-
     override suspend fun getWithdrawalSummary(): WithdrawalSummary =
         get<WithdrawalSummaryDto>("/withdrawals/summary", authenticated = true).toDomain()
 
@@ -271,7 +263,9 @@ class OkHttpReelShortApiClient(
         ).toDomain()
 
     override suspend fun listComments(bookId: String): List<Comment> =
-        get<List<CommentDto>>(socialSegments(bookId, "comments"), authenticated = false).map { it.toDomain() }
+        get<CommentPageDto>(socialSegments(bookId, "comments"), authenticated = false)
+            .comments
+            .map { it.toDomain() }
 
     override suspend fun listMyFavorites(): List<BookSummary> =
         get<List<FavoriteBookDto>>(listOf("social", "my", "favorites"), authenticated = true)

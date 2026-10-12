@@ -248,7 +248,7 @@ onMounted(() => {
       <el-table-column label="申请 ID" min-width="240">
         <template #default="{ row }"><span class="mono">{{ row.id }}</span></template>
       </el-table-column>
-      <el-table-column label="手机号账号" min-width="180">
+      <el-table-column label="账号" min-width="180">
         <template #default="{ row }"><span class="mono">{{ row.userAccount || '-' }}</span></template>
       </el-table-column>
       <el-table-column align="right" label="积分" prop="pointAmount" width="100" />

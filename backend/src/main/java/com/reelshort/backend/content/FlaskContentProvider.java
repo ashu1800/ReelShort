@@ -17,13 +17,21 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @Component
 public class FlaskContentProvider implements ContentProvider {
 
+	/** P2-16：content-provider 的内部共享密钥请求头。 */
+	static final String INTERNAL_TOKEN_HEADER = "X-Content-Provider-Token";
+
 	private final RestClient restClient;
 	private final String baseUrl;
 
 	@Autowired
 	public FlaskContentProvider(RestClient.Builder restClientBuilder,
-			@Value("${reelshort.content-provider.base-url:http://127.0.0.1:5000}") String baseUrl) {
-		this.restClient = restClientBuilder.build();
+			@Value("${reelshort.content-provider.base-url:http://127.0.0.1:5000}") String baseUrl,
+			@Value("${reelshort.content-provider.internal-token:${CONTENT_PROVIDER_INTERNAL_TOKEN:}}")
+			String internalToken) {
+		// 内部 Token 未配置时不发送该请求头，保持本地开发可用；生产由部署环境注入。
+		this.restClient = internalToken == null || internalToken.isBlank()
+				? restClientBuilder.build()
+				: restClientBuilder.defaultHeader(INTERNAL_TOKEN_HEADER, internalToken).build();
 		this.baseUrl = trimTrailingSlash(baseUrl);
 	}
 

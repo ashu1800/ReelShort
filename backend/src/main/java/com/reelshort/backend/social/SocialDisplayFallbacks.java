@@ -94,6 +94,28 @@ class SocialDisplayFallbacks {
 		return results;
 	}
 
+	/**
+	 * P2-16：按页取伪评论。伪评论是展示层的稳定派生数据（不落库），这里只保留当前页需要的条数，
+	 * 避免热门剧每次请求都先构造最多 300 条再截断。同一 {@code (bookId, page, size)} 使用同一随机种子，
+	 * 保证同一页多次请求顺序一致。
+	 */
+	List<CommentResponse> commentsPage(String bookId, int offset, int size, long shuffleSeed) {
+		if (size <= 0) {
+			return List.of();
+		}
+		List<CommentResponse> all = comments(bookId, shuffleSeed);
+		if (offset >= all.size()) {
+			return List.of();
+		}
+		return List.copyOf(all.subList(offset, Math.min(all.size(), offset + size)));
+	}
+
+	int commentCount(String bookId) {
+		HotnessProfile profile = profile(bookId);
+		return profile.commentBase() + stableInt(bookId, profile.tier().name() + ":comment-count",
+				profile.commentSpread());
+	}
+
 	HotnessTier hotnessTier(String bookId) {
 		return profile(bookId).tier();
 	}

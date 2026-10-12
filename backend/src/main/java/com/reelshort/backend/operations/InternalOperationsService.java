@@ -29,12 +29,20 @@ import com.reelshort.backend.watch.WatchRecord;
 import com.reelshort.backend.watch.WatchRecordRepository;
 import com.reelshort.backend.watch.WatchRecordResponse;
 import com.reelshort.backend.watch.WatchService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InternalOperationsService {
+
+	private static final Logger log = LoggerFactory.getLogger(InternalOperationsService.class);
+
+	/** P3-19：运营候选片库单次最多加载的剧数量，避免全表加载。 */
+	private static final int WATCH_REWARD_CANDIDATE_WINDOW = 200;
 
 	private final UserAccountRepository userAccountRepository;
 	private final PointsService pointsService;
@@ -77,13 +85,15 @@ public class InternalOperationsService {
 		if (!user.isVip()) {
 			throw new AuthException(403, "non-VIP users cannot earn watch rewards");
 		}
+		// P3-19：一次性预取该用户全部已领奖的 (bookId, episodeNum) 集合，避免逐条 N+1 查询。
+		Set<String> claimed = rewardClaimRepository.findClaimedKeysByUserId(user.id());
 		for (WatchRecord record : watchRecordRepository.findByUserIdOrderByUpdatedAtDesc(user.id())) {
-			InternalWatchRewardTaskResponse task = taskFromRecord(user.id(), record);
+			InternalWatchRewardTaskResponse task = taskFromRecord(user.id(), record, claimed);
 			if (task != null && task.canReport()) {
 				return task;
 			}
 		}
-		InternalWatchRewardTaskResponse task = taskFromContentCache(user.id());
+		InternalWatchRewardTaskResponse task = taskFromContentCache(user.id(), claimed);
 		if (task == null) {
 			throw new AuthException(404, "watch reward task not found");
 		}
@@ -111,8 +121,8 @@ public class InternalOperationsService {
 		return InternalWatchProgressResponse.from(watchRecord, account);
 	}
 
-	private InternalWatchRewardTaskResponse taskFromRecord(UUID userId, WatchRecord record) {
-		if (rewardClaimRepository.existsByUserIdAndBookIdAndEpisodeNum(userId, record.bookId(), record.episodeNum())) {
+	private InternalWatchRewardTaskResponse taskFromRecord(UUID userId, WatchRecord record, Set<String> claimedKeys) {
+		if (claimedKeys.contains(record.bookId() + "#" + record.episodeNum())) {
 			return null;
 		}
 		int duration = resolveDuration(record.bookId(), record.episodeNum(), record.filteredTitle(), record.chapterId());
@@ -123,13 +133,8 @@ public class InternalOperationsService {
 				record.chapterId(), "Episode " + record.episodeNum(), duration, record.progressPercent());
 	}
 
-	private InternalWatchRewardTaskResponse taskFromContentCache(UUID userId) {
-		// 一次性预取该用户全部已领奖的 (bookId, episodeNum) 集合，避免逐集 N+1 查询。
-		Set<String> claimed = rewardClaimRepository.findClaimedKeysByUserId(userId);
-		List<ContentBookCache> books = new ArrayList<>(contentBookCacheRepository
-				.findByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale.ENGLISH, 0));
-		Collections.shuffle(books, bookOrderRandom.get());
-		for (ContentBookCache book : books) {
+	private InternalWatchRewardTaskResponse taskFromContentCache(UUID userId, Set<String> claimed) {
+		for (ContentBookCache book : sampleCachedBooks()) {
 			// 通过 getEpisodes 获取剧集列表：episode_cache 命中则秒回，缺失时向上游 provider 现拉并回填，
 			// 使候选池覆盖全部 ENGLISH 剧，而非仅限已预热的少数剧集。
 			List<ContentEpisode> episodes;
@@ -137,7 +142,9 @@ public class InternalOperationsService {
 				episodes = contentCacheService.getEpisodes(book.bookId(), book.filteredTitle(), ContentLocale.ENGLISH);
 			}
 			catch (RuntimeException exception) {
-				// 上游 5xx / 404 或解析失败时跳过这本书，不阻断整体遍历。
+				// P3-19：上游 5xx / 404 或解析失败时跳过这本书，但必须留下可定位的 WARN 日志。
+				log.warn("Skipping watch reward task candidate bookId={} because episodes lookup failed: {}",
+						book.bookId(), failureSummary(exception));
 				continue;
 			}
 			if (episodes == null || episodes.isEmpty()) {
@@ -155,6 +162,41 @@ public class InternalOperationsService {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * P3-19：片库候选随机取样。小片库直接全量返回；超过窗口上限时只加载一个随机窗口再打散，
+	 * 避免把整张 content_book_cache 读进内存。窗口内没有可用剧集时会再由调用方遍历窗口内其余书。
+	 */
+	private List<ContentBookCache> sampleCachedBooks() {
+		long total = contentBookCacheRepository.countByLocaleAndChapterCountGreaterThan(ContentLocale.ENGLISH, 0);
+		if (total <= 0) {
+			return List.of();
+		}
+		if (total <= WATCH_REWARD_CANDIDATE_WINDOW) {
+			List<ContentBookCache> books = new ArrayList<>(contentBookCacheRepository
+					.findByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale.ENGLISH, 0));
+			Collections.shuffle(books, bookOrderRandom.get());
+			return books;
+		}
+		int window = WATCH_REWARD_CANDIDATE_WINDOW;
+		int maxPage = (int) ((total - window) / window);
+		int page = bookOrderRandom.get().nextInt(maxPage + 1);
+		List<ContentBookCache> sampled = new ArrayList<>(contentBookCacheRepository
+				.findByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale.ENGLISH, 0,
+						PageRequest.of(page, window)));
+		Collections.shuffle(sampled, bookOrderRandom.get());
+		return sampled;
+	}
+
+	/** 只记录异常类型与消息摘要，不打印请求体等敏感内容。 */
+	private String failureSummary(RuntimeException exception) {
+		String message = exception.getMessage();
+		if (message == null || message.isBlank()) {
+			return exception.getClass().getSimpleName();
+		}
+		String summary = exception.getClass().getSimpleName() + ": " + message;
+		return summary.length() > 200 ? summary.substring(0, 200) : summary;
 	}
 
 	private InternalWatchRewardTaskResponse task(UUID userId, String bookId, String bookTitle, String bookDescription,

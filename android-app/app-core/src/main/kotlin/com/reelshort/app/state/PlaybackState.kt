@@ -147,3 +147,22 @@ fun shouldPersistPlaybackProgress(
     }
     return abs(safePosition - lastReportedPositionSeconds) >= PlaybackProgressSaveIntervalSeconds
 }
+
+/** 观看进度上报失败后的退避阶梯（秒）：5s → 15s → 60s，超过末位保持 60s。 */
+val PlaybackProgressRetryBackoffSeconds = listOf(5, 15, 60)
+
+/** 退避间隔上限：即使后续调整阶梯也不允许超过 5 分钟。 */
+const val PlaybackProgressRetryBackoffMaxSeconds = 5 * 60
+
+/**
+ * 计算第 [failureCount] 次连续失败后的重试等待秒数。
+ *
+ * @param failureCount 连续失败次数（从未失败传 0 或负数，返回 0 表示不等待）。
+ */
+fun progressReportBackoffSeconds(failureCount: Int): Int {
+    if (failureCount <= 0) {
+        return 0
+    }
+    val index = (failureCount - 1).coerceAtMost(PlaybackProgressRetryBackoffSeconds.lastIndex)
+    return PlaybackProgressRetryBackoffSeconds[index].coerceAtMost(PlaybackProgressRetryBackoffMaxSeconds)
+}

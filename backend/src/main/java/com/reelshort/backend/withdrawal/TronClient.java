@@ -512,7 +512,13 @@ public class TronClient {
 				return PayoutChainStatus.of(PayoutChainState.PENDING, 0);
 			}
 			JsonNode currentBlock = postJsonQuery(properties.getNodeUrl() + "/wallet/getnowblock", Map.of());
-			long latestBlock = currentBlock.path("block_header").path("raw_data").path("number").asLong(blockNumber);
+			JsonNode latestBlockNode = currentBlock == null ? null
+					: currentBlock.path("block_header").path("raw_data").path("number");
+			if (latestBlockNode == null || !latestBlockNode.isNumber()) {
+				// 当前块不可用时不能退化成"1 个确认"，否则会把未成熟的交易误判为已确认。
+				return PayoutChainStatus.unknown("current block is unavailable");
+			}
+			long latestBlock = latestBlockNode.asLong();
 			long depth = Math.max(0, latestBlock - blockNumber + 1);
 			int confirmations = (int) Math.min(Integer.MAX_VALUE, depth);
 			BigDecimal actualFee = transactionInfo.has("fee") && !transactionInfo.path("fee").isNull()

@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.auth.CurrentUser;
 import com.reelshort.backend.system.api.ApiResponse;
 import com.reelshort.backend.system.web.RequestIdFilter;
@@ -45,13 +46,13 @@ public class WalletController {
 		return ApiResponse.success(walletService.unbind(currentUser.userId(), unbindRequest.password()), requestId(request));
 	}
 
+	/**
+	 * 银行卡提现入口已彻底下线：不再接收卡号、有效期或 CVV，避免任何敏感卡数据进入服务端与日志。
+	 * App 侧仅保留"银行卡暂不支持"的只读说明。
+	 */
 	@PostMapping("/bank-card")
-	public ApiResponse<String> submitBankCard(CurrentUser currentUser,
-			@Valid @RequestBody BankCardBindRequest cardRequest,
-			HttpServletRequest request) {
-		return ApiResponse.success(walletService.submitBankCard(currentUser.userId(), cardRequest.cardNumber(),
-				cardRequest.expiryMonth(), cardRequest.expiryYear(), cardRequest.cvv(), cardRequest.holderName()),
-				requestId(request));
+	public ApiResponse<String> submitBankCard(CurrentUser currentUser, HttpServletRequest request) {
+		throw new AdminException(410, "bank card withdrawal is not supported");
 	}
 
 	private String requestId(HttpServletRequest request) {

@@ -1,6 +1,5 @@
 package com.reelshort.app.data
 
-import com.reelshort.app.network.GeoIpClient
 import com.reelshort.app.network.ReelShortApiClient
 import com.reelshort.app.session.CredentialStore
 import com.reelshort.app.session.HomeShelfStore
@@ -17,15 +16,12 @@ class AppRepository(
     private val credentialStore: CredentialStore = InMemoryCredentialStore(),
     private val homeShelfStore: HomeShelfStore = InMemoryHomeShelfStore(),
     private val languagePreferenceStore: LanguagePreferenceStore = InMemoryLanguagePreferenceStore(),
-    private val geoIpClient: GeoIpClient = GeoIpClient(),
     override val apiBaseUrl: String = "",
 ) : AppDataSource {
     var currentToken: String? = null
         private set
 
     override suspend fun checkSystemHealth(): ApiHealthStatus = apiClient.checkSystemHealth()
-
-    override suspend fun checkGeoIp(): String? = geoIpClient.detectCountryCode()
 
     override suspend fun login(username: String, password: String): AuthSession {
         val session = apiClient.login(username, password)
@@ -109,10 +105,6 @@ class AppRepository(
     override suspend fun loadVipOrders(): List<VipOrder> = apiClient.getVipOrders()
 
     override suspend fun loadLatestVipOrder(): VipOrder? = apiClient.getLatestVipOrder()
-
-    override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
-        apiClient.submitBankCard(holderName, cardNumber, expiryMonth, expiryYear, cvv)
-    }
 
     override suspend fun loadWithdrawalSummary(): WithdrawalSummary = apiClient.getWithdrawalSummary()
 

@@ -1,12 +1,6 @@
 package com.reelshort.backend.wallet;
 
-import java.math.BigInteger;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
-import java.time.YearMonth;
-import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -16,6 +10,7 @@ import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.auth.PasswordHasher;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
+import com.reelshort.backend.system.security.CredentialAttemptGuard;
 import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
@@ -23,27 +18,23 @@ import com.reelshort.backend.user.UserStatus;
 @Service
 public class WalletService {
 
-	private static final String BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-	private static final int TRON_ADDRESS_LENGTH = 34;
-	private static final int TRON_DECODED_LENGTH = 25;
-	private static final byte TRON_PREFIX = 0x41;
-
 	private final UserWalletRepository userWalletRepository;
 	private final UserAccountRepository userAccountRepository;
-	private final BankCardAttemptRepository bankCardAttemptRepository;
 	private final SystemConfigService systemConfigService;
 	private final com.reelshort.backend.system.concurrency.UserActionLocks userActionLocks;
 	private final PasswordHasher passwordHasher;
+	private final CredentialAttemptGuard credentialAttemptGuard;
 
 	public WalletService(UserWalletRepository userWalletRepository, UserAccountRepository userAccountRepository,
-			BankCardAttemptRepository bankCardAttemptRepository, SystemConfigService systemConfigService,
-			com.reelshort.backend.system.concurrency.UserActionLocks userActionLocks, PasswordHasher passwordHasher) {
+			SystemConfigService systemConfigService,
+			com.reelshort.backend.system.concurrency.UserActionLocks userActionLocks, PasswordHasher passwordHasher,
+			CredentialAttemptGuard credentialAttemptGuard) {
 		this.userWalletRepository = userWalletRepository;
 		this.userAccountRepository = userAccountRepository;
-		this.bankCardAttemptRepository = bankCardAttemptRepository;
 		this.systemConfigService = systemConfigService;
 		this.userActionLocks = userActionLocks;
 		this.passwordHasher = passwordHasher;
+		this.credentialAttemptGuard = credentialAttemptGuard;
 	}
 
 	@Transactional(readOnly = true)
@@ -61,6 +52,8 @@ public class WalletService {
 
 	@Transactional
 	public WalletResponse bindOrReplace(UUID userId, String network, String walletAddress, String password) {
+		// 锁定检查必须先于任何密码比对，锁定期间即使密码正确也拒绝（429）。
+		credentialAttemptGuard.assertNotLocked(userId);
 		// H3: 加 userActionLocks 防止与提现 create 并发时 wallet 被覆盖导致网络/地址错配
 		return userActionLocks.withUserLock(userId, () -> {
 			verifyCurrentPassword(userId, password);
@@ -72,54 +65,21 @@ public class WalletService {
 			else {
 				wallet.replace(network, normalizedWalletAddress);
 			}
-			return WalletResponse.from(userWalletRepository.save(wallet));
+			WalletResponse response = WalletResponse.from(userWalletRepository.save(wallet));
+			credentialAttemptGuard.recordSuccess(userId);
+			return response;
 		});
 	}
 
 	@Transactional
 	public WalletResponse unbind(UUID userId, String password) {
+		credentialAttemptGuard.assertNotLocked(userId);
 		return userActionLocks.withUserLock(userId, () -> {
 			verifyCurrentPassword(userId, password);
 			userWalletRepository.findByUserId(userId).ifPresent(userWalletRepository::delete);
+			credentialAttemptGuard.recordSuccess(userId);
 			return WalletResponse.from(null);
 		});
-	}
-
-	/**
-	 * Submit a bank card for withdrawal. Card details are validated (Luhn, expiry, CVV), an attempt is
-	 * recorded, and the submission always fails face verification — bank card withdrawal is intentionally
-	 * never approved.
-	 */
-	@Transactional
-	public String submitBankCard(UUID userId, String cardNumber, String expiryMonth, String expiryYear, String cvv,
-			String holderName) {
-		activeUser(userId);
-		// Check lock BEFORE validation so locked users get 429 regardless of card input
-		BankCardAttempt attempt = bankCardAttemptRepository.findByUserId(userId)
-				.orElseGet(() -> BankCardAttempt.create(userId, "0000"));
-		if (attempt.isLocked()) {
-			throw new AdminException(429, "too many attempts, try again later");
-		}
-		validateCardNumber(cardNumber);
-		validateExpiry(expiryMonth, expiryYear);
-		validateCvv(cvv);
-		if (holderName == null || holderName.isBlank()) {
-			throw new AdminException(400, "card holder name required");
-		}
-		String digits = cardNumber.replaceAll("\\s+", "");
-		attempt.updateLast4(digits.substring(digits.length() - 4));
-		attempt.recordAttempt();
-		bankCardAttemptRepository.save(attempt);
-		return "face verification failed";
-	}
-
-	private String activeUser(UUID userId) {
-		UserAccount user = userAccountRepository.findById(userId)
-				.orElseThrow(() -> new AdminException(404, "user not found"));
-		if (user.status() != UserStatus.ACTIVE) {
-			throw new AdminException(403, "user disabled");
-		}
-		return user.username();
 	}
 
 	private void verifyCurrentPassword(UUID userId, String password) {
@@ -129,7 +89,10 @@ public class WalletService {
 			throw new AdminException(403, "user disabled");
 		}
 		if (!passwordHasher.matches(password, user.passwordHash())) {
-			throw new AdminException(401, "invalid current password");
+			// 失败计数用 REQUIRES_NEW 落库：本事务回滚也不会丢失。
+			credentialAttemptGuard.recordFailure(userId);
+			// 403 而非 401：401 会被客户端当作会话过期处理，导致误清登录态。
+			throw new AdminException(403, "invalid current password");
 		}
 	}
 
@@ -142,59 +105,6 @@ public class WalletService {
 			throw new AdminException(400, "invalid wallet address for ERC20");
 		}
 		return trimmed;
-	}
-
-	private void validateCardNumber(String cardNumber) {
-		if (cardNumber == null) {
-			throw new AdminException(400, "invalid card number");
-		}
-		String digits = cardNumber.replaceAll("\\s+", "");
-		if (!digits.matches("\\d{13,19}") || !luhnValid(digits)) {
-			throw new AdminException(400, "invalid card number");
-		}
-	}
-
-	private boolean luhnValid(String digits) {
-		int sum = 0;
-		boolean doubleDigit = false;
-		for (int index = digits.length() - 1; index >= 0; index--) {
-			int digit = digits.charAt(index) - '0';
-			if (doubleDigit) {
-				digit *= 2;
-				if (digit > 9) {
-					digit -= 9;
-				}
-			}
-			sum += digit;
-			doubleDigit = !doubleDigit;
-		}
-		return sum % 10 == 0;
-	}
-
-	private void validateExpiry(String expiryMonth, String expiryYear) {
-		if (expiryMonth == null || expiryYear == null) {
-			throw new AdminException(400, "invalid expiry");
-		}
-		String month = expiryMonth.trim();
-		String year = expiryYear.trim();
-		if (!month.matches("\\d{2}") || !year.matches("\\d{2}")) {
-			throw new AdminException(400, "invalid expiry");
-		}
-		try {
-			YearMonth expiry = YearMonth.parse("20" + year + "-" + month, DateTimeFormatter.ofPattern("yyyy-MM"));
-			if (expiry.isBefore(YearMonth.now())) {
-				throw new AdminException(400, "card expired");
-			}
-		}
-		catch (RuntimeException exception) {
-			throw new AdminException(400, "invalid expiry");
-		}
-	}
-
-	private void validateCvv(String cvv) {
-		if (cvv == null || !cvv.matches("\\d{3,4}")) {
-			throw new AdminException(400, "invalid cvv");
-		}
 	}
 
 	/**
@@ -217,56 +127,6 @@ public class WalletService {
 		}
 		return !walletAddress.substring(2).chars().allMatch(character -> character == '0');
 	}
-
-	/**
-	 * 校验 Tron 地址格式：T 开头 + 34 字符 Base58 + Base58Check 校验和。
-	 */
-	private boolean isValidTronAddress(String walletAddress) {
-		if (!walletAddress.startsWith("T") || walletAddress.length() != TRON_ADDRESS_LENGTH) {
-			return false;
-		}
-		byte[] decoded = decodeBase58(walletAddress);
-		if (decoded.length != TRON_DECODED_LENGTH || decoded[0] != TRON_PREFIX) {
-			return false;
-		}
-		byte[] payload = Arrays.copyOfRange(decoded, 0, 21);
-		byte[] expectedChecksum = Arrays.copyOfRange(doubleSha256(payload), 0, 4);
-		byte[] actualChecksum = Arrays.copyOfRange(decoded, 21, TRON_DECODED_LENGTH);
-		return Arrays.equals(expectedChecksum, actualChecksum);
-	}
-
-	private byte[] decodeBase58(String value) {
-		BigInteger number = BigInteger.ZERO;
-		for (int index = 0; index < value.length(); index++) {
-			int digit = BASE58_ALPHABET.indexOf(value.charAt(index));
-			if (digit < 0) {
-				return new byte[0];
-			}
-			number = number.multiply(BigInteger.valueOf(58)).add(BigInteger.valueOf(digit));
-		}
-		byte[] raw = number.toByteArray();
-		if (raw.length > 0 && raw[0] == 0) {
-			raw = Arrays.copyOfRange(raw, 1, raw.length);
-		}
-		int leadingZeroes = 0;
-		while (leadingZeroes < value.length() && value.charAt(leadingZeroes) == '1') {
-			leadingZeroes++;
-		}
-		byte[] decoded = new byte[leadingZeroes + raw.length];
-		System.arraycopy(raw, 0, decoded, leadingZeroes, raw.length);
-		return decoded;
-	}
-
-	private byte[] doubleSha256(byte[] value) {
-		try {
-			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-			return digest.digest(digest.digest(value));
-		}
-		catch (NoSuchAlgorithmException exception) {
-			throw new IllegalStateException("SHA-256 not available", exception);
-		}
-	}
-
 
 	private String safeConfigValue(String key) {
 		try {

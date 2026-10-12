@@ -40,11 +40,15 @@ Authorization: Bearer <app-token>
 
 后台订单接口使用管理员 Bearer Token，并要求 `ORDER_READ` 权限。
 
+> 前端现状：admin-web **没有**订单管理页面，侧栏也不再有该入口（原先指向不存在的页面）。接口保留在后端，供脚本或后续页面直接调用。
+
 ### `GET /api/admin/orders`
 
 返回所有用户的充值订单，按创建时间倒序排列。
 
 字段同 `GET /api/app/orders` 的历史订单列表项。
+
+> VIP 订单不属于本文档范围：后台的 `GET /api/admin/vip/orders`、人工确认与拒绝见 `docs/api/admin.md`。
 
 ## 状态范围
 

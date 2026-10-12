@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { onMounted, reactive, ref } from 'vue'
 import { fetchSystemConfigs, updateSystemConfig } from '../services/adminApi'
 import type { SystemConfig } from '../services/adminApi'
@@ -10,6 +10,16 @@ const savingKey = ref('')
 const error = ref('')
 const configs = ref<SystemConfig[]>([])
 const draftValues = reactive<Record<string, string>>({})
+
+// W6a: 资金敏感配置键。改动会改变收款去向或用户实际到账金额，保存前必须二次确认。
+// 仅做展示与确认，不在前端做任何金额换算。
+const FUND_SENSITIVE_PREFIXES = ['withdraw.']
+const FUND_SENSITIVE_KEYS = ['vip.collection-address', 'vip.price-usdt']
+
+function isFundSensitiveConfig(configKey: string): boolean {
+  return FUND_SENSITIVE_KEYS.includes(configKey)
+    || FUND_SENSITIVE_PREFIXES.some((prefix) => configKey.startsWith(prefix))
+}
 
 async function loadConfigs() {
   loading.value = true
@@ -61,6 +71,43 @@ function validateConfigValue(config: SystemConfig, value: string): string | null
   return null
 }
 
+// W6a: 资金敏感配置用 HTML 表格展示"旧值 → 新值"，值来自接口与管理员输入，统一转义避免注入
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+async function confirmFundSensitiveChange(config: SystemConfig, newValue: string): Promise<boolean> {
+  const rows = [
+    ['配置项', configDisplayName(config.key)],
+    ['旧值', config.value],
+    ['新值', newValue],
+  ].map(([label, value]) =>
+    `<tr><td style="padding: 4px 12px 4px 0; color: #6b7280; white-space: nowrap;">${escapeHtml(label)}</td>`
+    + `<td style="padding: 4px 0; word-break: break-all;"><code>${escapeHtml(value)}</code></td></tr>`,
+  ).join('')
+  try {
+    await ElMessageBox.confirm(
+      `<p style="margin: 0 0 12px;">该配置影响资金收款去向或用户实际到账金额，保存后立即对后续订单和提现生效。</p>`
+      + `<table style="border-collapse: collapse;">${rows}</table>`,
+      '确认修改资金类配置',
+      {
+        dangerouslyUseHTMLString: true,
+        confirmButtonText: '确认保存',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function saveConfig(config: SystemConfig) {
   const value = draftValues[config.key]?.trim()
   if (!value) {
@@ -71,6 +118,10 @@ async function saveConfig(config: SystemConfig) {
   const validationError = validateConfigValue(config, value)
   if (validationError) {
     ElMessage.warning(validationError)
+    return
+  }
+  // W6a: 资金敏感配置保存前二次确认（普通配置保持原交互）
+  if (isFundSensitiveConfig(config.key) && !(await confirmFundSensitiveChange(config, value))) {
     return
   }
   savingKey.value = config.key
@@ -106,6 +157,9 @@ onMounted(loadConfigs)
       <el-table-column label="配置项" min-width="200">
         <template #default="{ row }">
           <span>{{ configDisplayName(row.key) }}</span>
+          <el-tag v-if="isFundSensitiveConfig(row.key)" class="fund-tag" size="small" type="warning" effect="plain">
+            资金类
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="配置值" min-width="220">
@@ -134,3 +188,9 @@ onMounted(loadConfigs)
     </el-table>
   </section>
 </template>
+
+<style scoped>
+.fund-tag {
+  margin-left: 8px;
+}
+</style>

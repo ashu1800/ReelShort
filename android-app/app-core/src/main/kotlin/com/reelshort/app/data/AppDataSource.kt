@@ -5,8 +5,6 @@ interface AppDataSource {
 
     suspend fun checkSystemHealth(): ApiHealthStatus
 
-    suspend fun checkGeoIp(): String?
-
     suspend fun login(username: String, password: String): AuthSession
 
     suspend fun register(
@@ -60,8 +58,6 @@ interface AppDataSource {
     suspend fun loadVipOrders(): List<VipOrder>
 
     suspend fun loadLatestVipOrder(): VipOrder?
-
-    suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String)
 
     suspend fun loadWithdrawalSummary(): WithdrawalSummary
 

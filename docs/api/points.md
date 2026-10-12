@@ -68,11 +68,14 @@ Authorization: Bearer <token>
 - `points.daily-earned.fluctuation-percent` 默认 `35`，每个账号每天随机分配 `0..35` 的向下浮动百分比。
 - 当日有效上限为 `floor(基础上限 * (100 - 随机浮动值) / 100)`；规则按服务器自然日快照，后台修改次日生效。
 - 超过剩余额度时只发剩余积分；额度为零时仍记录该视频已领取，不生成零金额流水，也不允许次日补发。
-- 观看奖励来源为 `WATCH_REWARD`，后台积分调整来源为 `ADMIN_ADJUSTMENT`，充值订单入账来源为 `RECHARGE_ORDER`。
+- 观看奖励来源为 `WATCH_REWARD`，后台积分调整来源为 `ADMIN_ADJUSTMENT`，充值订单入账来源为 `RECHARGE_ORDER`，提现扣减来源为 `WITHDRAWAL`。
+- `WITHDRAWAL` 流水由提现人工确认写入：金额为负数、带扣减后的余额快照、幂等键 `withdrawal:<提现申请 ID>`，因此"余额 = 流水累计"在所有出金路径上成立。提交提现时只冻结积分（`frozenPoints`），不写流水；被拒绝时释放冻结积分，也不写流水。
 - 新观看奖励流水的 `stage` 为空；非观看奖励流水的 `bookId`、`episodeNum`、`stage` 也可以为空。
-- `RECHARGE_ORDER` 流水只由后端内部订单结算边界生成，公开 App API 不能直接创建充值流水。
+- `RECHARGE_ORDER` 流水只由后端内部订单结算边界生成，公开 App API 不能直接创建充值流水；该流水带 `recharge:<订单号>` 幂等键，与订单行锁共同保证同一订单只入账一次。
 
 后台 `POST /api/admin/users/{userId}/points/adjust` 必须提交最长 64 字符的 `idempotencyKey`。服务端按管理员、目标用户和请求键组成作用域，同一作用域重复请求返回首次结果且不重复改余额或写流水。
+
+`GET /api/app/points/account` 的聚合与流水排序已由 V31 索引 `idx_point_transactions_user_created` 覆盖。
 
 错误：
 

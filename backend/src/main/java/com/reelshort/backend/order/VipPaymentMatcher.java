@@ -8,7 +8,20 @@ final class VipPaymentMatcher {
 	}
 
 	static boolean matches(VipOrder order, IncomingTransfer transfer, int requiredConfirmations) {
-		if (!"PENDING".equals(order.status()) || transfer == null || transfer.txHash() == null
+		return "PENDING".equals(order.status()) && matchesPaymentDetails(order, transfer, requiredConfirmations);
+	}
+
+	/**
+	 * 过期后补单：用户在有效期内已经付款，但链上确认晚于订单过期。
+	 * 除了订单状态（EXPIRED）以外，地址、合约、金额、时间窗和确认数要求与正常确认完全一致。
+	 */
+	static boolean matchesLatePayment(VipOrder order, IncomingTransfer transfer, int requiredConfirmations) {
+		return "EXPIRED".equals(order.status()) && matchesPaymentDetails(order, transfer, requiredConfirmations);
+	}
+
+	private static boolean matchesPaymentDetails(VipOrder order, IncomingTransfer transfer,
+			int requiredConfirmations) {
+		if (transfer == null || transfer.txHash() == null
 				|| transfer.txHash().isBlank() || !transfer.successful()
 				|| transfer.confirmationCount() < requiredConfirmations) {
 			return false;

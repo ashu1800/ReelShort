@@ -22,6 +22,8 @@ git log --oneline origin/master..HEAD
 
 ## 2. 一键发布验证
 
+推送到 `master`/`main` 或发起 PR 时，`.github/workflows/ci.yml` 会自动执行后端 Gradle 测试、content-provider pytest、admin-web 构建 + 契约测试、Android JVM 单测（`ci.yml` 全程不需要签名密钥，Android 打包仍只在本机/发布机执行）；`.github/workflows/security.yml` 继续用 gitleaks 扫描全历史。CI 通过不能替代本节的本地基线与模拟器验收。
+
 推荐优先运行统一脚本：
 
 ```powershell
@@ -46,16 +48,35 @@ powershell -ExecutionPolicy Bypass -File scripts/android-ui-smoke.ps1
 
 - `python -m pytest content-provider`
 - `backend\gradlew.bat test --no-daemon`
-- `npm ci`（仅 `admin-web/node_modules` 不存在时）和 `npm run build`
-- `android-app\gradlew.bat :app-core:test :app:testDebugUnitTest :app:assembleDebug --no-daemon`
-- `git diff --check`
+- `npm ci`（仅 `admin-web/node_modules` 不存在时）、`npm run build` 和 `npm run test:contracts`
+- `android-app\gradlew.bat :app-core:test :app:testDebugUnitTest --no-daemon`
+- `android-app\gradlew.bat :app:assembleDebug --no-daemon`（需要 `ANDROID_SIGNING_*`）
+- `infra/scripts/verify-backup-scripts.ps1` 静态校验
+- `scripts/tests/` 下的发布脚本与基线脚本回归测试
+- `git diff --check`、`git diff --cached --check`
+- 未提交的已跟踪文件修改检查与未跟踪文件检查
 
 如只验证部分模块，可使用跳过参数：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1 -SkipAndroid
 powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1 -SkipBackend -SkipContentProvider -SkipAdminWeb
+powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1 -SkipInfraChecks -SkipScriptTests -SkipAdminWebContracts
 ```
+
+本机没有签名密钥时，可以只跑 Android JVM 单测、跳过打包步骤：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1 -SkipAndroidPackage
+```
+
+需要在有未提交改动的本地工作树上做一次刻意的构建验证时，显式放行脏树：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1 -AllowDirtyTree
+```
+
+不传 `-AllowDirtyTree` 时，存在未提交的已跟踪文件修改会让基线检查失败并列出文件清单；`-AllowUntrackedFiles` 同理只应用于有意保留的生成产物。
 
 如果本次包含 Android 代码变更，必须安装最新 APK：
 
@@ -72,8 +93,9 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-release-baseline.ps1 -In
 完成标准：
 
 - 统一脚本退出码为 `0`。
-- Android 变更已生成并安装最新 debug APK。
+- Android 变更已生成并安装最新 debug APK（未跳过打包步骤时）。
 - `git diff --check` 无空白错误；Windows 换行提示可接受。
+- 不存在未提交的已跟踪文件修改，也没有计划外的未跟踪文件。
 
 ## 3. Android 模拟器验收
 
@@ -82,7 +104,7 @@ Android 代码变更必须在模拟器完成手动验收，不能只依赖单元
 核心路径：
 
 - 启动 App，首页推荐可加载。
-- 切换 English / 繁體中文，首页和搜索预设标签随语言切换。
+- 切换系统语言不影响内容：内容与后台均为英文单语，App UI 不再提供英文/繁中切换。
 - 搜索页点击预设标签并展示海报网格结果。
 - 首页或搜索点击短剧后直接进入播放器。
 - 播放器加载期间有明确加载状态，选集、返回、点赞、收藏、评论入口可用。
@@ -116,10 +138,21 @@ curl -s https://shortlink.hjj888.cc/api/app/release/latest | python -m json.tool
 服务器发布 backend、content-provider 或 infra 后执行：
 
 ```powershell
-curl https://shortlink.hjj888.cc/actuator/health
+# 后端健康检查必须从容器内直连；公网 /actuator/health 会命中后台 SPA 兜底并返回 200 HTML
+docker compose --env-file .env exec backend curl -fsS http://127.0.0.1:8080/actuator/health
+
 curl "https://shortlink.hjj888.cc/api/app/home/recommend?locale=en"
-curl "https://shortlink.hjj888.cc/api/app/home/recommend?locale=zh-TW"
+curl -s -o NUL -w "%{http_code}`n" -X POST "https://shortlink.hjj888.cc/api/app/wallet/bank-card"
 ```
+
+预期：健康检查返回 `{"status":"UP"}`；推荐接口返回正常 JSON；银行卡接口返回 `410`（需要登录鉴权时先带 App Token）。
+
+需要确认的部署事实：
+
+- `REELSHORT_TRUSTED_PROXIES` 已填成 Nginx 所在 Docker 子网（留空或填错会让全部匿名客户端共用一个限流键）。
+- `CONTENT_PROVIDER_INTERNAL_TOKEN` 在 backend 与 content-provider 两侧取值一致。
+- `REELSHORT_WITHDRAWAL_PAYOUT_ENABLED=false`（自动打款执行能力保持关闭）。
+- 备份只落在 `infra/backups/`，仓库根目录没有生产库转储。
 
 后台或服务器侧需要确认：
 
@@ -143,7 +176,7 @@ curl "https://shortlink.hjj888.cc/api/app/home/recommend?locale=zh-TW"
 - 代码回滚：记录上一个可用 Git commit，必要时重新部署该 commit 对应镜像或构建产物。
 - 数据库回滚：Flyway 迁移默认只前进；涉及 schema 的发布必须先备份 PostgreSQL。
 - Android 回滚：已安装更高 `versionCode` 后不能原地降级；发现线上问题应撤下尚未安装的 Release，并以更高 `versionCode` 发布修复版本。
-- 内容缓存回滚：如刷新后内容异常，优先停止刷新任务并恢复数据库备份或重新刷新稳定 locale。
+- 内容缓存回滚：如刷新后内容异常，优先停止刷新任务并恢复数据库备份，或重新执行一次货架刷新（内容源当前只提供英文单语，不存在按语言回滚）。
 - Nginx/证书回滚：保留上一个 Nginx 配置，证书续期失败时不要删除旧证书。
 
 完成标准：

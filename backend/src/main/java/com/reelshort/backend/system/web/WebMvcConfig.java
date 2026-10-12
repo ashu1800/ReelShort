@@ -15,9 +15,11 @@ import com.reelshort.backend.auth.CurrentUserArgumentResolver;
 import com.reelshort.backend.system.logs.SystemLogProperties;
 import com.reelshort.backend.system.ratelimit.RateLimitInterceptor;
 import com.reelshort.backend.system.ratelimit.RateLimitProperties;
+import com.reelshort.backend.system.security.CredentialGuardProperties;
 
 @Configuration
-@EnableConfigurationProperties({RateLimitProperties.class, SystemLogProperties.class})
+@EnableConfigurationProperties({RateLimitProperties.class, SystemLogProperties.class,
+		CredentialGuardProperties.class})
 public class WebMvcConfig implements WebMvcConfigurer {
 
 	private final CurrentUserArgumentResolver currentUserArgumentResolver;

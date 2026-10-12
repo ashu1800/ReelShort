@@ -75,6 +75,49 @@ class AdminWithdrawalControllerTests {
 	}
 
 	@Test
+	void voidAttemptRequestOnlyCarriesReason() {
+		List<String> fields = Arrays.stream(WithdrawalVoidAttemptRequest.class.getRecordComponents())
+				.map(RecordComponent::getName)
+				.toList();
+
+		assertThat(fields).containsExactly("reason");
+	}
+
+	@Test
+	void voidAttemptReleasesActiveSlotForUnconfirmedAttempt() {
+		WithdrawalRequest request = WithdrawalRequest.create(UUID.randomUUID(), 3600, 0,
+				new WithdrawalConversion(new BigDecimal("0.14"), new BigDecimal("10"), 0),
+				"ERC20", "0x1111111111111111111111111111111111111111");
+		WithdrawalPayoutAttempt attempt = WithdrawalPayoutAttempt.prepared(request.id(), 1,
+				request.walletAddress(), request.usdtAmount(), new PreparedPayoutTransaction("ERC20",
+						"0x2222222222222222222222222222222222222222",
+						"0xdAC17F958D2ee523a2206206994597C13D831ec7", 1L, BigInteger.ONE,
+						"0xsigned", "0x" + "a".repeat(64)), "admin");
+
+		attempt.markVoided("operator", "chain shows no transfer");
+
+		assertThat(attempt.status()).isEqualTo(WithdrawalPayoutStatus.VOIDED);
+		assertThat(attempt.activeSlot()).isNull();
+	}
+
+	@Test
+	void voidAttemptRejectsManualReviewAttempt() {
+		WithdrawalRequest request = WithdrawalRequest.create(UUID.randomUUID(), 3600, 0,
+				new WithdrawalConversion(new BigDecimal("0.14"), new BigDecimal("10"), 0),
+				"ERC20", "0x1111111111111111111111111111111111111111");
+		WithdrawalPayoutAttempt attempt = WithdrawalPayoutAttempt.prepared(request.id(), 1,
+				request.walletAddress(), request.usdtAmount(), new PreparedPayoutTransaction("ERC20",
+						"0x2222222222222222222222222222222222222222",
+						"0xdAC17F958D2ee523a2206206994597C13D831ec7", 1L, BigInteger.ONE,
+						"0xsigned", "0x" + "a".repeat(64)), "admin");
+		attempt.markManualReview("unknown broadcast");
+
+		assertThatThrownBy(() -> attempt.markVoided("operator", "reason"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("manual review");
+	}
+
+	@Test
 	void previewResponseContainsPublicAddressesButNoDerivedBalances() {
 		List<String> responseFields = Arrays.stream(BatchWithdrawalPreviewResponse.class.getRecordComponents())
 				.map(RecordComponent::getName)

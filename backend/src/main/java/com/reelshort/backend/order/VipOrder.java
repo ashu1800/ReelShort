@@ -145,6 +145,23 @@ public class VipOrder {
 		this.pendingSlot = null;
 	}
 
+	/**
+	 * 过期后补单（管理员在链上核验通过后调用）：用户在有效期内已付款，只是确认晚于过期。
+	 */
+	public void recoverExpired(String txHash, String confirmedBy, OffsetDateTime paymentObservedAt,
+			int confirmationCount) {
+		if (!"EXPIRED".equals(this.status)) {
+			throw new IllegalStateException("order is not expired");
+		}
+		this.txHash = txHash == null ? null : txHash.trim().toLowerCase(java.util.Locale.ROOT);
+		this.confirmedBy = confirmedBy;
+		this.status = "CONFIRMED";
+		this.confirmedAt = OffsetDateTime.now();
+		this.paymentObservedAt = paymentObservedAt;
+		this.confirmationCount = confirmationCount;
+		this.pendingSlot = null;
+	}
+
 	public void reject(String confirmedBy) {
 		if (!"PENDING".equals(this.status)) {
 			throw new IllegalStateException("order is not pending");

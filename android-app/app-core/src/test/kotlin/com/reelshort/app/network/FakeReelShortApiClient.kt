@@ -142,10 +142,6 @@ class FakeReelShortApiClient : ReelShortApiClient {
 
     override suspend fun getLatestVipOrder(): VipOrder? = null
 
-    override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
-        error("Bank card submission is not supported in fake client")
-    }
-
     override suspend fun getWithdrawalSummary(): WithdrawalSummary =
         WithdrawalSummary(
             balance = 18,

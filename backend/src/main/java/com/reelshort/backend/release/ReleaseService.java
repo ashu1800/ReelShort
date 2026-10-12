@@ -31,9 +31,12 @@ public class ReleaseService {
 		AppRelease release;
 		if (existing.isPresent()) {
 			release = existing.get();
-			release.republish(request.apkObjectKey(), request.sha256ObjectKey(), request.apkSizeBytes(),
-					request.sha256SizeBytes(), request.apkSha256(), title, releaseNotes, request.mandatory(),
-					request.minimumVersionCode());
+			if (request.versionCode() < release.versionCode()) {
+				throw new ReleaseException(400, "versionCode must not decrease for an existing versionName");
+			}
+			release.republish(request.versionCode(), request.apkObjectKey(), request.sha256ObjectKey(),
+					request.apkSizeBytes(), request.sha256SizeBytes(), request.apkSha256(), title, releaseNotes,
+					request.mandatory(), request.minimumVersionCode());
 		} else {
 			release = AppRelease.create(versionName, request.versionCode(), request.apkObjectKey(),
 					request.sha256ObjectKey(), request.apkSizeBytes(), request.sha256SizeBytes(), request.apkSha256(),

@@ -328,6 +328,42 @@ class InternalOperationsControllerTests {
 	}
 
 	@Test
+	void watchRewardTaskLogsWarnWhenProviderCallFailsForCandidateBook() throws Exception {
+		// P3-19：跳过某本书时必须留下 WARN 日志（记录 bookId 与异常摘要），不再静默吞错。
+		RegisteredUser user = createUser("4155550716", "Password123");
+		clearContentCaches();
+		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(
+				"book-warn", "Warn Drama", "warn-drama", "", "Warn description", 1)));
+		org.mockito.BDDMockito
+				.given(contentProvider.getEpisodesDetail("book-warn", "warn-drama", ContentLocale.ENGLISH))
+				.willThrow(new com.reelshort.backend.content.ContentProviderException(503, "upstream unavailable"));
+
+		ch.qos.logback.classic.Logger operationsLogger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
+				.getLogger(com.reelshort.backend.operations.InternalOperationsService.class);
+		ch.qos.logback.classic.Level previousLevel = operationsLogger.getLevel();
+		ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+				new ch.qos.logback.core.read.ListAppender<>();
+		appender.start();
+		operationsLogger.addAppender(appender);
+		operationsLogger.setLevel(ch.qos.logback.classic.Level.WARN);
+		try {
+			mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+					.header("X-Internal-Super-Token", TOKEN))
+					.andExpect(status().isNotFound());
+		}
+		finally {
+			operationsLogger.detachAppender(appender);
+			operationsLogger.setLevel(previousLevel);
+		}
+
+		assertThat(appender.list)
+				.anySatisfy(event -> {
+					assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.WARN);
+					assertThat(event.getFormattedMessage()).contains("book-warn").contains("ContentProviderException");
+				});
+	}
+
+	@Test
 	void watchRewardTaskSkipsBookWhenProviderFailsAndContinuesToNext() throws Exception {
 		// 鲁棒性回归保护：当上游 provider 对某本书返回 5xx（episode_cache 缺失需现拉），
 		// 应跳过该书继续遍历下一本，而非让整次调用失败或返回 404。

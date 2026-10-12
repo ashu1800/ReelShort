@@ -2,11 +2,14 @@ package com.reelshort.backend.social;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.reelshort.backend.social.SocialDtos.CommentPageResponse;
 import com.reelshort.backend.social.SocialDtos.CommentResponse;
 import com.reelshort.backend.social.SocialDtos.FavoriteBookResponse;
 import com.reelshort.backend.social.SocialDtos.FavoriteRequest;
@@ -63,13 +66,32 @@ public class SocialService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<CommentResponse> listComments(String bookId) {
-		List<CommentResponse> comments = new ArrayList<>(commentRepository.findByBookIdOrderByCreatedAtDesc(bookId)
-				.stream()
-				.map(CommentResponse::from)
-				.toList());
-		comments.addAll(displayFallbacks.comments(bookId));
-		return comments;
+	public CommentPageResponse listComments(String bookId, int page, int size) {
+		int safeSize = Math.max(size, 0);
+		int offset = Math.max(page, 0) * safeSize;
+		List<CommentResponse> comments = new ArrayList<>(
+				commentRepository.findByBookIdOrderByCreatedAtDesc(bookId, PageRequest.of(page, safeSize))
+						.stream()
+						.map(CommentResponse::from)
+						.toList());
+		// 伪评论只用于补足展示密度：真实评论始终在前，且按页裁剪，不落库。
+		// 伪评论池固定按 bookId 打散，保证翻页之间不重不漏。
+		int realTotal = (int) commentRepository.countByBookId(bookId);
+		int fallbackTotal = displayFallbacks.commentCount(bookId);
+		int fallbackFrom = Math.max(offset - realTotal, 0);
+		int fallbackTo = Math.min(Math.max(offset + safeSize - realTotal, 0), fallbackTotal);
+		if (fallbackTo > fallbackFrom) {
+			comments.addAll(displayFallbacks.commentsPage(bookId, fallbackFrom, fallbackTo - fallbackFrom,
+					stableShuffleSeed(bookId)));
+		}
+		int visibleFallback = Math.min(Math.max(offset + comments.size() - realTotal, 0), fallbackTotal);
+		boolean hasMore = offset + comments.size() < realTotal + fallbackTotal && visibleFallback < fallbackTotal;
+		return new CommentPageResponse(List.copyOf(comments), hasMore, page, safeSize);
+	}
+
+	/** 伪评论展示顺序按 bookId 稳定（同一页多次请求一致，翻页不重不漏）。 */
+	private long stableShuffleSeed(String bookId) {
+		return Objects.hash("social-fallback-page", bookId);
 	}
 
 	@Transactional(readOnly = true)

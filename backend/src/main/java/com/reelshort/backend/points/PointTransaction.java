@@ -95,8 +95,9 @@ public class PointTransaction {
 	}
 
 	public static PointTransaction rechargeOrder(UUID userId, int amount, int balanceAfter, String orderNo) {
+		// 数据库唯一键 recharge:<orderNo> 与订单行锁共同保证同一订单只入账一次（多实例/滚动重启场景）。
 		return new PointTransaction(UUID.randomUUID(), userId, amount, balanceAfter, "RECHARGE_ORDER", null, null,
-				null, orderNo, null, null, OffsetDateTime.now());
+				null, orderNo, "recharge:" + orderNo, null, OffsetDateTime.now());
 	}
 
 	public static PointTransaction withdrawal(UUID userId, int amount, int balanceAfter, String withdrawalId) {

@@ -22,6 +22,7 @@ class UpdateDialogTest {
     private val release = ReleaseInfo(
         "v0.2.0",
         SemanticVersion(0, 2, 0),
+        7,
         "ShortLink v0.2.0",
         "Faster and safer updates.",
         "2026-07-13T12:00:00Z",

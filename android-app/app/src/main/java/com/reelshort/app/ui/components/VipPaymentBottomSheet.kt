@@ -34,7 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.EpisodeSummary
 import com.reelshort.app.data.VipOrder
@@ -210,8 +209,8 @@ internal fun VipPaymentBottomSheet(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     if (paymentAddress.isNotBlank()) {
-                        AsyncImage(
-                            model = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$paymentAddress",
+                        QrCodeImage(
+                            content = paymentAddress,
                             contentDescription = copy.vipPayQrHint,
                             modifier = Modifier.size(184.dp),
                         )

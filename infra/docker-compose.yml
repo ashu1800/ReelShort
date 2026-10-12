@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:17
     container_name: reelshort-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-reelshort}
       POSTGRES_USER: ${POSTGRES_USER:-reelshort}
@@ -13,23 +14,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
     image: redis:8
     container_name: reelshort-redis
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   content-provider:
     build:
       context: ../content-provider
     container_name: reelshort-content-provider
+    restart: unless-stopped
     environment:
       CONTENT_PROVIDER_HOST: 0.0.0.0
       CONTENT_PROVIDER_PORT: 5000
+      # 内容源内部共享密钥，必须与 backend 服务使用同一取值。
+      CONTENT_PROVIDER_INTERNAL_TOKEN: ${CONTENT_PROVIDER_INTERNAL_TOKEN:-}
       REELSHORT_SITE_URL: ${REELSHORT_SITE_URL:-https://www.reelshort.com}
       REELSHORT_SITE_ID: ${REELSHORT_SITE_ID:-37}
       REELSHORT_REQUEST_TIMEOUT_SECONDS: ${REELSHORT_REQUEST_TIMEOUT_SECONDS:-10}
@@ -38,7 +51,6 @@ services:
       REELSHORT_NEXT_BUILD_ID: ${REELSHORT_NEXT_BUILD_ID:-}
       REELSHORT_CATALOG_SEARCH_KEYWORDS: ${REELSHORT_CATALOG_SEARCH_KEYWORDS:-}
       REELSHORT_CATALOG_SEARCH_KEYWORDS_EN: ${REELSHORT_CATALOG_SEARCH_KEYWORDS_EN:-}
-      REELSHORT_CATALOG_SEARCH_KEYWORDS_ZH_TW: ${REELSHORT_CATALOG_SEARCH_KEYWORDS_ZH_TW:-}
       REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD: ${REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD:-3}
       REELSHORT_CATALOG_MAX_BOOKS: ${REELSHORT_CATALOG_MAX_BOOKS:-500}
       REELSHORT_CATALOG_REQUEST_WORKERS: ${REELSHORT_CATALOG_REQUEST_WORKERS:-8}
@@ -49,11 +61,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   backend:
     build:
       context: ../backend
     container_name: reelshort-backend
+    restart: unless-stopped
     environment:
       REELSHORT_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-reelshort}
       REELSHORT_DB_USERNAME: ${POSTGRES_USER:-reelshort}
@@ -63,20 +80,23 @@ services:
       REELSHORT_ADMIN_USERNAME: ${REELSHORT_ADMIN_USERNAME:-admin}
       REELSHORT_ADMIN_PASSWORD_HASH: ${REELSHORT_ADMIN_PASSWORD_HASH:-}
       REELSHORT_CONTENT_PROVIDER_BASE_URL: http://content-provider:5000
+      # 内容源内部共享密钥，必须与 content-provider 服务使用同一取值。
+      CONTENT_PROVIDER_INTERNAL_TOKEN: ${CONTENT_PROVIDER_INTERNAL_TOKEN:-}
       REELSHORT_CONTENT_REFRESH_ENABLED: ${REELSHORT_CONTENT_REFRESH_ENABLED:-true}
       REELSHORT_CONTENT_REFRESH_INITIAL_DELAY: ${REELSHORT_CONTENT_REFRESH_INITIAL_DELAY:-5m}
       REELSHORT_CONTENT_REFRESH_INTERVAL: ${REELSHORT_CONTENT_REFRESH_INTERVAL:-6h}
       REELSHORT_CONTENT_REFRESH_SHELVES: ${REELSHORT_CONTENT_REFRESH_SHELVES:-recommend}
-      REELSHORT_CONTENT_REFRESH_LOCALES: ${REELSHORT_CONTENT_REFRESH_LOCALES:-en,zh-TW}
+      # 内容源当前仅支持 en，多语言取值会导致同一货架被重复刷新。
+      REELSHORT_CONTENT_REFRESH_LOCALES: ${REELSHORT_CONTENT_REFRESH_LOCALES:-en}
       REELSHORT_CONTENT_VIDEO_FALLBACK_TTL: ${REELSHORT_CONTENT_VIDEO_FALLBACK_TTL:-10m}
       REELSHORT_INTERNAL_SUPER_TOKEN: ${REELSHORT_INTERNAL_SUPER_TOKEN:-}
-      REELSHORT_SMS_CALLBACK_ENABLED: ${REELSHORT_SMS_CALLBACK_ENABLED:-true}
-      REELSHORT_SMS_CALLBACK_URL: ${REELSHORT_SMS_CALLBACK_URL:-}
-      REELSHORT_SMS_CALLBACK_API_KEY: ${REELSHORT_SMS_CALLBACK_API_KEY:-}
-      REELSHORT_SMS_CALLBACK_API_SECRET: ${REELSHORT_SMS_CALLBACK_API_SECRET:-}
-      REELSHORT_SMS_CALLBACK_TIMEOUT: ${REELSHORT_SMS_CALLBACK_TIMEOUT:-5s}
       REELSHORT_PAYMENT_CALLBACK_SECRET: ${REELSHORT_PAYMENT_CALLBACK_SECRET:?REELSHORT_PAYMENT_CALLBACK_SECRET must be set}
       REELSHORT_RATE_LIMIT_STORE: ${REELSHORT_RATE_LIMIT_STORE:-redis}
+      # 限流可信代理白名单（逗号分隔，支持精确 IP 与 CIDR）。容器内 remoteAddr 是 Docker
+      # 网关地址，未配置时后端会忽略 X-Forwarded-For，全部匿名客户端塌缩为同一个限流键。
+      REELSHORT_TRUSTED_PROXIES: ${REELSHORT_TRUSTED_PROXIES:?REELSHORT_TRUSTED_PROXIES must be set to the Docker subnet, for example 172.18.0.0/16}
+      # 自动打款执行能力开关，默认关闭；重新启用签名/广播前必须显式改为 true。
+      REELSHORT_WITHDRAWAL_PAYOUT_ENABLED: ${REELSHORT_WITHDRAWAL_PAYOUT_ENABLED:-false}
       REELSHORT_REDIS_HOST: redis
       REELSHORT_REDIS_PORT: 6379
       REELSHORT_COS_SECRET_ID: ${REELSHORT_COS_SECRET_ID:-}
@@ -94,6 +114,41 @@ services:
       REELSHORT_VIP_CONFIRMATION_GRACE: ${REELSHORT_VIP_CONFIRMATION_GRACE:-10m}
       REELSHORT_ETH_HOT_WALLET_ADDRESS: ${REELSHORT_ETH_HOT_WALLET_ADDRESS:-}
       REELSHORT_BSC_HOT_WALLET_ADDRESS: ${REELSHORT_BSC_HOT_WALLET_ADDRESS:-}
+      # 连接池与日志：默认值在 application.properties，生产可通过 .env 覆盖
+      REELSHORT_DB_POOL_MAXIMUM_SIZE: ${REELSHORT_DB_POOL_MAXIMUM_SIZE:-30}
+      REELSHORT_LOG_FILE: ${REELSHORT_LOG_FILE:-logs/backend.log}
+      REELSHORT_SYSTEM_LOG_ROOT: ${REELSHORT_SYSTEM_LOG_ROOT:-logs}
+      REELSHORT_SYSTEM_LOG_MAX_LINES: ${REELSHORT_SYSTEM_LOG_MAX_LINES:-500}
+      REELSHORT_SYSTEM_LOG_MAX_BYTES: ${REELSHORT_SYSTEM_LOG_MAX_BYTES:-1048576}
+      # 凭证爆破锁定（钱包改绑 / 改密共用）
+      REELSHORT_CREDENTIAL_GUARD_MAX_FAILURES: ${REELSHORT_CREDENTIAL_GUARD_MAX_FAILURES:-5}
+      REELSHORT_CREDENTIAL_GUARD_LOCK_DURATION: ${REELSHORT_CREDENTIAL_GUARD_LOCK_DURATION:-15m}
+      # 关键限流阈值（完整规则表见 application.properties 的 reelshort.rate-limit.rules[*]）
+      REELSHORT_RATE_LIMIT_APP_CAPTCHA_LIMIT: ${REELSHORT_RATE_LIMIT_APP_CAPTCHA_LIMIT:-10}
+      REELSHORT_RATE_LIMIT_APP_CAPTCHA_WINDOW: ${REELSHORT_RATE_LIMIT_APP_CAPTCHA_WINDOW:-1m}
+      REELSHORT_RATE_LIMIT_APP_WALLET_LIMIT: ${REELSHORT_RATE_LIMIT_APP_WALLET_LIMIT:-10}
+      REELSHORT_RATE_LIMIT_APP_WALLET_WINDOW: ${REELSHORT_RATE_LIMIT_APP_WALLET_WINDOW:-1m}
+      REELSHORT_RATE_LIMIT_APP_WALLET_BIND_LIMIT: ${REELSHORT_RATE_LIMIT_APP_WALLET_BIND_LIMIT:-10}
+      REELSHORT_RATE_LIMIT_APP_WALLET_BIND_WINDOW: ${REELSHORT_RATE_LIMIT_APP_WALLET_BIND_WINDOW:-1m}
+      REELSHORT_RATE_LIMIT_APP_WITHDRAWAL_LIMIT: ${REELSHORT_RATE_LIMIT_APP_WITHDRAWAL_LIMIT:-5}
+      REELSHORT_RATE_LIMIT_APP_WITHDRAWAL_WINDOW: ${REELSHORT_RATE_LIMIT_APP_WITHDRAWAL_WINDOW:-1m}
+      REELSHORT_RATE_LIMIT_APP_SOCIAL_LIMIT: ${REELSHORT_RATE_LIMIT_APP_SOCIAL_LIMIT:-30}
+      REELSHORT_RATE_LIMIT_APP_SOCIAL_WINDOW: ${REELSHORT_RATE_LIMIT_APP_SOCIAL_WINDOW:-1m}
+      # 链上节点与合约：默认值在 application.properties，换节点/换网络时必须能通过 .env 覆盖
+      REELSHORT_TRON_NODE_URL: ${REELSHORT_TRON_NODE_URL:-https://api.trongrid.io}
+      REELSHORT_TRON_USDT_CONTRACT: ${REELSHORT_TRON_USDT_CONTRACT:-TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t}
+      REELSHORT_TRON_REQUIRED_CONFIRMATIONS: ${REELSHORT_TRON_REQUIRED_CONFIRMATIONS:-20}
+      REELSHORT_ETH_NODE_URL: ${REELSHORT_ETH_NODE_URL:-https://mainnet.infura.io/v3/}
+      REELSHORT_ETH_API_KEY: ${REELSHORT_ETH_API_KEY:-}
+      REELSHORT_ETH_USDT_CONTRACT: ${REELSHORT_ETH_USDT_CONTRACT:-0xdAC17F958D2ee523a2206206994597C13D831ec7}
+      REELSHORT_ETH_CHAIN_ID: ${REELSHORT_ETH_CHAIN_ID:-1}
+      REELSHORT_ETH_REQUIRED_CONFIRMATIONS: ${REELSHORT_ETH_REQUIRED_CONFIRMATIONS:-12}
+      REELSHORT_BSC_NODE_URL: ${REELSHORT_BSC_NODE_URL:-https://bsc-dataseed.binance.org/}
+      REELSHORT_BSC_API_KEY: ${REELSHORT_BSC_API_KEY:-}
+      REELSHORT_BSC_USDT_CONTRACT: ${REELSHORT_BSC_USDT_CONTRACT:-0x55d398326f99059fF775485246999027B3197955}
+      REELSHORT_BSC_CHAIN_ID: ${REELSHORT_BSC_CHAIN_ID:-56}
+      REELSHORT_BSC_REQUIRED_CONFIRMATIONS: ${REELSHORT_BSC_REQUIRED_CONFIRMATIONS:-15}
+      REELSHORT_BSC_USDT_DECIMALS: ${REELSHORT_BSC_USDT_DECIMALS:-18}
     expose:
       - "8080"
     depends_on:
@@ -108,21 +163,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   nginx:
     build:
       context: ../admin-web
     container_name: reelshort-nginx
+    restart: unless-stopped
     ports:
       - "${NGINX_PORT:-80}:80"
     depends_on:
       backend:
         condition: service_healthy
+    # 必须直连后端容器：admin-web/nginx.conf 只代理 /api/，/actuator/health 会命中
+    # SPA 兜底并始终返回 200，探 127.0.0.1 会让后端宕机也显示 healthy。
+    # 镜像为 nginx:1.27-alpine，自带 busybox wget（无 curl）；非 2xx 时 wget 退出码非 0。
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/actuator/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://backend:8080/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres-data:

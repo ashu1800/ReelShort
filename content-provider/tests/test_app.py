@@ -6,7 +6,10 @@ import pytest
 import time
 
 import app as app_module
-from app import ReelShortClient, UpstreamError, create_app
+from app import INTERNAL_TOKEN_ENV, INTERNAL_TOKEN_HEADER, ReelShortClient, UpstreamError, create_app
+
+
+INTERNAL_TOKEN = "test-internal-token"
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +20,47 @@ def resolve_test_hosts_to_public_address(monkeypatch):
         "_request_get",
         lambda self, pinned_url, original_url, **kwargs: app_module.requests.get(original_url, **kwargs),
     )
+
+
+@pytest.fixture(autouse=True)
+def configure_internal_token(monkeypatch):
+    # P2-16：除 /health 外所有端点都要求内部共享密钥，测试显式配置。
+    monkeypatch.setenv(INTERNAL_TOKEN_ENV, INTERNAL_TOKEN)
+
+
+def internal_token_headers():
+    return {INTERNAL_TOKEN_HEADER: INTERNAL_TOKEN}
+
+
+class AuthedTestClient:
+    """给 Flask 测试客户端的所有请求自动补上内部 Token 请求头。"""
+
+    def __init__(self, client):
+        self._client = client
+
+    def open(self, *args, **kwargs):
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers.update(internal_token_headers())
+        return self._client.open(*args, headers=headers, **kwargs)
+
+    def get(self, *args, **kwargs):
+        return self.open(*args, method="GET", **kwargs)
+
+    def post(self, *args, **kwargs):
+        return self.open(*args, method="POST", **kwargs)
+
+    def put(self, *args, **kwargs):
+        return self.open(*args, method="PUT", **kwargs)
+
+    def delete(self, *args, **kwargs):
+        return self.open(*args, method="DELETE", **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+
+def authed_test_client(app):
+    return AuthedTestClient(app.test_client())
 
 
 BOOK = {
@@ -73,7 +117,7 @@ class FailingReelShortClient(FakeReelShortClient):
 
 @pytest.fixture
 def client():
-    return create_app(client=FakeReelShortClient()).test_client()
+    return authed_test_client(create_app(client=FakeReelShortClient()))
 
 
 def test_health_returns_up(client):
@@ -127,7 +171,7 @@ def test_search_requires_keywords(client):
 def test_upstream_error_maps_to_configured_status():
     app = create_app(client=FailingReelShortClient())
 
-    response = app.test_client().get("/api/v1/reelshort/search?keywords=love")
+    response = authed_test_client(app).get("/api/v1/reelshort/search?keywords=love")
 
     assert response.status_code == 502
     assert response.get_json() == {"error": "upstream failed"}
@@ -1569,12 +1613,13 @@ def test_reelshort_client_preserves_explicit_port_in_host_header(monkeypatch):
         return StreamingResponse(body=b'{"ok": true}')
 
     monkeypatch.setattr("app.requests.get", fake_get)
+    # P3-21：只允许 80/443，因此这里用默认端口验证 Host header 仍保留原始域名与端口。
     client = ReelShortClient(
-        "https://site.example:8443", "id", 3, build_id="build", resolver=lambda host: ["93.184.216.34"]
+        "http://site.example:80", "id", 3, build_id="build", resolver=lambda host: ["93.184.216.34"]
     )
 
     assert client._get("/data.json") == {"ok": True}
-    assert captured["host"] == "site.example:8443"
+    assert captured["host"] == "site.example:80"
 
 
 def test_reelshort_client_brackets_pinned_ipv6_url():
@@ -1582,10 +1627,22 @@ def test_reelshort_client_brackets_pinned_ipv6_url():
         "https://site.example", "id", 3, resolver=lambda host: ["2001:4860:4860::8888"]
     )
 
-    pinned, original_host = client._validate_url("https://site.example:8443/data.json", "blocked", "blocked")
+    pinned, original_host = client._validate_url("https://site.example:443/data.json", "blocked", "blocked")
 
-    assert pinned == "https://[2001:4860:4860::8888]:8443/data.json"
-    assert original_host == "site.example:8443"
+    assert pinned == "https://[2001:4860:4860::8888]:443/data.json"
+    # 443 是 https 默认端口，Host header 保持裸域名（与既有行为一致）。
+    assert original_host == "site.example"
+
+
+def test_reelshort_client_rejects_non_whitelisted_upstream_port():
+    client = ReelShortClient(
+        "https://site.example", "id", 3, resolver=lambda host: ["93.184.216.34"]
+    )
+
+    with pytest.raises(UpstreamError, match="unsafe upstream URL"):
+        client._validate_url("https://site.example:8443/data.json", "blocked", "unsafe upstream URL")
+
+    assert client.diagnostics.snapshot()["counters"] == {"upstream_port_blocked": 1}
 
 
 def test_pinned_https_transport_uses_original_hostname_for_tls(monkeypatch):
@@ -1796,3 +1853,325 @@ def test_reelshort_client_from_env_rejects_invalid_numeric_limits(monkeypatch):
     monkeypatch.setenv("REELSHORT_REQUEST_TIMEOUT_SECONDS", "not-a-number")
     with pytest.raises(ValueError, match="REELSHORT_REQUEST_TIMEOUT_SECONDS"):
         ReelShortClient.from_env()
+
+
+# ---------------------------------------------------------------------------
+# P2-6 / P2-16 / P3-21：内容源健壮性、出网收紧与内部鉴权
+# ---------------------------------------------------------------------------
+
+
+class ContractStubClient:
+    """直接返回上游形态数据的桩，用于验证映射层的容错转换。"""
+
+    def __init__(
+        self,
+        *,
+        video_payload=None,
+        episodes_payload=None,
+        episodes_error=None,
+        book_info_payload=None,
+        search_payload=None,
+        shelf_payload=None,
+    ):
+        self.diagnostics = app_module.ProviderDiagnostics()
+        self._video_payload = video_payload
+        self._episodes_payload = episodes_payload
+        self._episodes_error = episodes_error
+        self._book_info_payload = book_info_payload
+        self._search_payload = search_payload
+        self._shelf_payload = shelf_payload
+        self.episodes_calls = 0
+
+    def search(self, keywords, locale="en"):
+        return self._search_payload if self._search_payload is not None else []
+
+    def shelf(self, shelf_name, locale="en"):
+        return self._shelf_payload if self._shelf_payload is not None else []
+
+    def episodes(self, book_id, filtered_title, locale="en"):
+        self.episodes_calls += 1
+        if self._episodes_error is not None:
+            raise self._episodes_error
+        return self._episodes_payload if self._episodes_payload is not None else {"book": {}, "episodes": []}
+
+    def video(self, book_id, episode_num, filtered_title, chapter_id, locale="en"):
+        return self._video_payload if self._video_payload is not None else {}
+
+
+def token_gate_app(token=INTERNAL_TOKEN, client=None):
+    return create_app(client=client or ContractStubClient(), internal_token=token)
+
+
+def test_non_health_endpoint_requires_internal_token(monkeypatch):
+    app = token_gate_app()
+
+    response = app.test_client().get("/diagnostics")
+
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "missing internal token"}
+
+
+def test_non_health_endpoint_rejects_invalid_internal_token():
+    app = token_gate_app()
+
+    response = app.test_client().get("/diagnostics", headers={INTERNAL_TOKEN_HEADER: "wrong-token"})
+
+    assert response.status_code == 403
+    assert response.get_json() == {"error": "invalid internal token"}
+
+
+def test_valid_internal_token_allows_non_health_endpoint():
+    app = token_gate_app()
+
+    response = app.test_client().get("/diagnostics", headers={INTERNAL_TOKEN_HEADER: INTERNAL_TOKEN})
+
+    assert response.status_code == 200
+    assert response.get_json()["service"] == "reelshort-content-provider"
+
+
+def test_health_stays_anonymous_even_without_internal_token():
+    app = token_gate_app(token="")
+
+    response = app.test_client().get("/health")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"service": "reelshort-content-provider", "status": "UP"}
+
+
+def test_unconfigured_internal_token_fails_closed_for_content_endpoints():
+    app = token_gate_app(token="")
+
+    response = app.test_client().get("/api/v1/reelshort/search?keywords=love")
+
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "content provider internal token is not configured"}
+
+
+def test_unexpected_exception_records_diagnostics_and_returns_502():
+    class ExplodingClient(ContractStubClient):
+        def search(self, keywords, locale="en"):
+            raise RuntimeError("boom")
+
+    stub = ExplodingClient()
+    app = create_app(client=stub, internal_token=INTERNAL_TOKEN)
+
+    response = authed_test_client(app).get("/api/v1/reelshort/search?keywords=love")
+
+    assert response.status_code == 502
+    assert response.get_json() == {"error": "content provider internal error"}
+    assert stub.diagnostics.snapshot()["counters"] == {"unexpected_error": 1}
+    event = stub.diagnostics.snapshot()["recent_events"][0]
+    assert event["context"]["error_type"] == "RuntimeError"
+
+
+def test_diagnostic_context_truncates_long_external_input():
+    stub = ContractStubClient()
+    long_keywords = "k" * 500
+
+    stub.diagnostics.record("search_empty", keywords=long_keywords)
+
+    context = stub.diagnostics.snapshot()["recent_events"][0]["context"]["keywords"]
+    assert len(context) <= app_module.DIAGNOSTIC_VALUE_MAX_LENGTH + 3
+    assert context.startswith("k" * 10)
+
+
+def test_video_keeps_video_url_when_next_episode_lookup_fails(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        ok = True
+
+        def json(self):
+            return {
+                "pageProps": {
+                    "data": {
+                        "video_url": "https://cdn.example.com/video.m3u8",
+                        "serial_number": 2,
+                        "duration": 90,
+                    }
+                }
+            }
+
+    monkeypatch.setattr("app.requests.get", lambda *args, **kwargs: FakeResponse())
+    client = ReelShortClient("https://site.example", "id", 3, build_id="build-1")
+    monkeypatch.setattr(
+        client,
+        "episodes",
+        lambda *args, **kwargs: (_ for _ in ()).throw(UpstreamError(502, "upstream request failed")),
+    )
+
+    video = client.video("book-1", 2, "love-story", "chapter-2")
+
+    assert video == {
+        "video_url": "https://cdn.example.com/video.m3u8",
+        "episode": 2,
+        "duration": 90,
+        "next_episode": None,
+    }
+    assert client.diagnostics.snapshot()["counters"] == {"next_episode_unavailable": 1}
+
+
+def test_video_tolerates_malformed_duration_and_serial_number(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        ok = True
+
+        def json(self):
+            return {
+                "pageProps": {
+                    "data": {
+                        "video_url": "https://cdn.example.com/video.m3u8",
+                        "serial_number": "not-a-number",
+                        "duration": "not-a-number",
+                    }
+                }
+            }
+
+    monkeypatch.setattr("app.requests.get", lambda *args, **kwargs: FakeResponse())
+    client = ReelShortClient("https://site.example", "id", 3, build_id="build-1")
+    monkeypatch.setattr(
+        client,
+        "episodes",
+        lambda *args, **kwargs: {"book": {}, "episodes": [{"episode": 2, "chapter_id": "chapter-2"}]},
+    )
+
+    video = client.video("book-1", 2, "love-story", "chapter-2")
+
+    assert video["episode"] == 2
+    assert video["duration"] == 0
+    assert video["next_episode"] is None
+
+
+def test_map_book_tolerates_non_numeric_chapter_count():
+    mapped = ReelShortClient("https://site.example", "id", 3)._map_book(
+        {"book_id": "book-1", "book_title": "Love Story", "chapter_count": "not-a-number"}
+    )
+
+    assert mapped["chapter_count"] == 0
+
+
+def test_map_chapters_tolerates_non_numeric_serial_number():
+    mapped = ReelShortClient("https://site.example", "id", 3)._map_chapters(
+        [
+            {"serial_number": "1", "chapter_id": "chapter-1"},
+            {"serial_number": "abc", "chapter_id": "chapter-2"},
+            {"serial_number": 3, "chapter_id": "chapter-3"},
+        ]
+    )
+
+    assert [episode["episode"] for episode in mapped] == [1, 3]
+
+
+def test_home_shelf_books_tolerate_malformed_fallback_structure(monkeypatch):
+    client = ReelShortClient("https://site.example", "id", 3)
+    monkeypatch.setattr(
+        client,
+        "_get_locale_data",
+        lambda *args, **kwargs: {
+            "pageProps": {"fallback": {"/api/ms/hall/webInfo": {"bookShelfList": "not-a-list"}}}
+        },
+    )
+
+    assert client._home_shelf_books("recommend") == []
+
+
+def test_book_info_maps_upstream_error_code_to_502_and_records_diagnostics(monkeypatch):
+    client = ReelShortClient("https://site.example", "id", 3)
+    monkeypatch.setattr(
+        client,
+        "_get",
+        lambda path, params=None: {"code": 500, "msg": "internal error", "data": None},
+    )
+
+    with pytest.raises(UpstreamError) as error:
+        client._book_info("book-1")
+
+    assert error.value.status_code == 502
+    assert client.diagnostics.snapshot()["counters"] == {"book_info_upstream_error": 1}
+
+
+def test_book_info_returns_data_when_code_is_zero(monkeypatch):
+    client = ReelShortClient("https://site.example", "id", 3)
+    monkeypatch.setattr(
+        client,
+        "_get",
+        lambda path, params=None: {"code": 0, "data": {"online_base": [{"serial_number": 1}]}},
+    )
+
+    assert client._book_info("book-1") == {"online_base": [{"serial_number": 1}]}
+
+
+def test_book_info_tolerates_missing_data_payload(monkeypatch):
+    client = ReelShortClient("https://site.example", "id", 3)
+    monkeypatch.setattr(client, "_get", lambda path, params=None: {"code": 0})
+
+    assert client._book_info("book-1") == {}
+
+
+def test_reelshort_client_rejects_redirect_to_non_whitelisted_port(monkeypatch):
+    monkeypatch.setattr(
+        "app.requests.get",
+        lambda *args, **kwargs: StreamingResponse(302, headers={"Location": "https://cdn.example:8443/data.json"}),
+    )
+    client = ReelShortClient(
+        "https://site.example", "id", 3, build_id="build", resolver=lambda host: ["93.184.216.34"]
+    )
+
+    with pytest.raises(UpstreamError, match="unsafe redirect"):
+        client._get("/data.json")
+
+    assert client.diagnostics.snapshot()["counters"] == {"upstream_port_blocked": 1}
+
+
+def test_reelshort_client_rejects_https_to_http_downgrade(monkeypatch):
+    monkeypatch.setattr(
+        "app.requests.get",
+        lambda *args, **kwargs: StreamingResponse(302, headers={"Location": "http://cdn.example/data.json"}),
+    )
+    client = ReelShortClient(
+        "https://site.example", "id", 3, build_id="build", resolver=lambda host: ["93.184.216.34"]
+    )
+
+    with pytest.raises(UpstreamError, match="unsafe redirect"):
+        client._get("/data.json")
+
+    assert client.diagnostics.snapshot()["counters"] == {"upstream_downgrade_blocked": 1}
+
+
+def test_reelshort_client_allows_https_redirect_on_default_port(monkeypatch):
+    responses = [
+        StreamingResponse(302, headers={"Location": "https://cdn.example/data.json"}),
+        StreamingResponse(body=b'{"ok": true}'),
+    ]
+    monkeypatch.setattr("app.requests.get", lambda *args, **kwargs: responses.pop(0))
+    client = ReelShortClient(
+        "https://site.example", "id", 3, build_id="build", resolver=lambda host: ["93.184.216.34"]
+    )
+
+    assert client._get("/data.json") == {"ok": True}
+    assert client.diagnostics.snapshot()["counters"] == {}
+
+
+def test_run_app_requires_internal_token_for_non_loopback_host(monkeypatch):
+    monkeypatch.setenv("CONTENT_PROVIDER_HOST", "0.0.0.0")
+    monkeypatch.delenv(INTERNAL_TOKEN_ENV, raising=False)
+
+    with pytest.raises(RuntimeError, match=INTERNAL_TOKEN_ENV):
+        app_module.run_app()
+
+
+def test_run_app_allows_loopback_host_without_internal_token(monkeypatch):
+    captured = {}
+
+    class FakeApp:
+        def run(self, host, port):
+            captured["host"] = host
+            captured["port"] = port
+
+    monkeypatch.setattr(app_module, "create_app", lambda: FakeApp())
+    monkeypatch.setenv("CONTENT_PROVIDER_HOST", "127.0.0.1")
+    monkeypatch.setenv("CONTENT_PROVIDER_PORT", "5000")
+    monkeypatch.delenv(INTERNAL_TOKEN_ENV, raising=False)
+
+    app_module.run_app()
+
+    assert captured == {"host": "127.0.0.1", "port": 5000}

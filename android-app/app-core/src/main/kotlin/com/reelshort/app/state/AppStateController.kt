@@ -14,7 +14,6 @@ import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WatchProgressReport
 import com.reelshort.app.data.requiresVip
 import com.reelshort.app.network.ApiClientException
-import com.reelshort.app.network.GeoIpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -24,12 +23,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 
-class AppStateController(private val dataSource: AppDataSource) {
+class AppStateController(
+    private val dataSource: AppDataSource,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+) {
     private val mutableState = MutableStateFlow(AppUiState(apiBaseUrl = dataSource.apiBaseUrl))
     private var rewardReportInFlight = false
     private var pendingCompletionReport: PendingCompletionReport? = null
     private var sessionRestored = false
-    private var geoChecked = false
+    private var progressReportFailureCount = 0
+    private var progressReportRetryAtMillis = 0L
     private var searchRequestVersion = 0L
     private var playbackRequestVersion = 0L
     private var pendingVipEpisodeRequestVersion: Long? = null
@@ -92,33 +95,6 @@ class AppStateController(private val dataSource: AppDataSource) {
                 )
             }
         }
-    }
-
-    /**
-     * Check the user's IP geo-location once at startup. If mainland China is detected, set
-     * [AppUiState.geoBlocked] to block the app. Fail-open: any error leaves the app usable.
-     */
-    suspend fun checkGeoRestriction() {
-        if (geoChecked) return
-        geoChecked = true
-        try {
-            val countryCode = dataSource.checkGeoIp()
-            if (countryCode != null && GeoIpClient.BLOCKED_COUNTRIES.contains(countryCode.uppercase())) {
-                mutableState.update { it.copy(geoBlocked = true) }
-            }
-        }
-        catch (_: Exception) {
-            // Fail-open: geo-IP check failure should not block the app
-        }
-    }
-
-    /**
-     * Force-set geo-blocked state (used when local device checks indicate China).
-     */
-    fun setGeoBlocked() {
-        if (geoChecked) return
-        geoChecked = true
-        mutableState.update { it.copy(geoBlocked = true) }
     }
 
     suspend fun loadSavedCredentials() = runWithLoading(ErrorContext.DIAGNOSTIC) {
@@ -672,23 +648,6 @@ class AppStateController(private val dataSource: AppDataSource) {
         }
     }
 
-    suspend fun reportProgress(positionSeconds: Int, durationSeconds: Int) = runWithLoading(ErrorContext.PLAYBACK) {
-        val current = state.value
-        val book = current.selectedBook ?: throw IllegalStateException("未选择剧集")
-        val episode = current.selectedEpisode ?: throw IllegalStateException("未选择分集")
-        val progress = dataSource.reportWatchProgress(book, episode, positionSeconds, durationSeconds)
-        val history = dataSource.loadWatchHistory()
-        val points = dataSource.loadPointAccount()
-        mutableState.update {
-            it.copy(
-                watchHistory = history,
-                pointAccount = points,
-                playback = it.playback.withProgressReport(progress),
-                isLoading = false,
-            )
-        }
-    }
-
     suspend fun reportProgressSilently(positionSeconds: Int, durationSeconds: Int) {
         val current = state.value
         val playback = current.playback
@@ -705,6 +664,12 @@ class AppStateController(private val dataSource: AppDataSource) {
             if (localProgress.progressPercent >= 100 && !playback.rewardClaimed) {
                 pendingCompletionReport = PendingCompletionReport(requestVersion, positionSeconds, durationSeconds)
             }
+            return
+        }
+        // W5-9：上报失败后按 5s → 15s → 60s 退避（上限 5 分钟）跳过重试，
+        // 避免弱网下播放页每秒轮询变成每秒一次失败请求；退避期间仍更新本地进度。
+        if (nowMillis() < progressReportRetryAtMillis) {
+            mutableState.update { it.copy(playback = localProgress) }
             return
         }
         if (!shouldPersistPlaybackProgress(
@@ -730,6 +695,8 @@ class AppStateController(private val dataSource: AppDataSource) {
             if (!isActivePlaybackRequest(requestVersion)) {
                 return
             }
+            progressReportFailureCount = 0
+            progressReportRetryAtMillis = 0L
             mutableState.update {
                 it.copy(
                     watchHistory = upsertWatchHistory(it.watchHistory, progress),
@@ -753,6 +720,8 @@ class AppStateController(private val dataSource: AppDataSource) {
             }
             throw error
         } catch (_: Throwable) {
+            progressReportFailureCount += 1
+            progressReportRetryAtMillis = nowMillis() + progressReportBackoffSeconds(progressReportFailureCount) * 1_000L
             if (isActivePlaybackRequest(requestVersion)) {
                 mutableState.update {
                     it.copy(
@@ -1102,11 +1071,6 @@ class AppStateController(private val dataSource: AppDataSource) {
         vipPaywallGeneration++
     }
 
-    suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) = runWithLoading(ErrorContext.ACCOUNT) {
-        requireAuthenticatedAccount()
-        dataSource.submitBankCard(holderName, cardNumber, expiryMonth, expiryYear, cvv)
-    }
-
     suspend fun submitWithdrawal(pointAmount: Int) = runAccountOperation(AccountOperation.WITHDRAWAL) {
         requireAuthenticatedAccount()
         dataSource.submitWithdrawal(pointAmount)
@@ -1240,13 +1204,17 @@ class AppStateController(private val dataSource: AppDataSource) {
         val paywallAuthenticationFailed = state.value.vipPaywallVisible &&
             error is ApiClientException &&
             error.statusCode == 401
+        // W5-4：受保护接口返回 401 说明本地 Bearer Token 已失效，必须清掉本机会话，
+        // 否则 Me 页会继续显示"已登录"；"记住密码"凭据保留，用户可直接重新登录。
+        val expiredSession = isExpiredSessionError(error, errorContext)
         val clearVipPaymentState = blockedAccount || paywallAuthenticationFailed
-        if (blockedAccount) {
+        val clearLocalSession = blockedAccount || expiredSession
+        if (clearLocalSession) {
             dataSource.clearSession()
         }
         mutableState.update {
             it.copy(
-                session = if (blockedAccount) null else it.session,
+                session = if (clearLocalSession) null else it.session,
                 isLoading = false,
                 errorMessage = userFacingErrorMessage(error, errorContext),
                 messageTrigger = it.messageTrigger + 1,
@@ -1571,6 +1539,22 @@ class AppStateController(private val dataSource: AppDataSource) {
             error.statusCode == 401 &&
             (context == ErrorContext.ACCOUNT || context == ErrorContext.PLAYBACK || context == ErrorContext.SOCIAL)
 
+    /** 钱包/提现类接口的"当前密码错误"不是会话失效，必须与 401 会话过期区分开。 */
+    private fun isInvalidCurrentPasswordError(error: Throwable): Boolean =
+        error is ApiClientException &&
+            error.message?.contains("invalid current password", ignoreCase = true) == true
+
+    /**
+     * 401 是否代表本地会话已失效：只在受保护动作（账户、播放、社交）上成立；
+     * 登录/注册失败与"当前密码错误"都保留原会话。
+     */
+    private fun isExpiredSessionError(error: Throwable, context: ErrorContext): Boolean =
+        error is ApiClientException &&
+            error.statusCode == 401 &&
+            context != ErrorContext.LOGIN &&
+            context != ErrorContext.REGISTER &&
+            !isInvalidCurrentPasswordError(error)
+
     private fun isVipRequiredError(error: Throwable): Boolean =
         error is ApiClientException &&
             error.statusCode == 403 &&
@@ -1610,6 +1594,11 @@ class AppStateController(private val dataSource: AppDataSource) {
         if (error is ApiClientException && error.statusCode == 409 && context == ErrorContext.REGISTER) {
             return usernameExistsMessage()
         }
+        // W5-11：钱包改绑/解绑等资金操作的"当前密码错误"（后端 403 + invalid current password，
+        // 历史版本为 401）走友好文案，不再被当成"登录状态已失效"。
+        if (isInvalidCurrentPasswordError(error)) {
+            return invalidCurrentPasswordMessage()
+        }
         if (error is ApiClientException && error.statusCode == 401) {
             return "登录状态已失效，请重新登录。"
         }
@@ -1644,6 +1633,12 @@ class AppStateController(private val dataSource: AppDataSource) {
         when (state.value.language) {
             AppLanguage.ENGLISH -> "Username already exists."
             else -> "Username already exists."
+        }
+
+    private fun invalidCurrentPasswordMessage(): String =
+        when (state.value.language) {
+            AppLanguage.ENGLISH -> "Current password is incorrect."
+            else -> "Current password is incorrect."
         }
 
     private fun vipOrderCreatedMessage(): String =

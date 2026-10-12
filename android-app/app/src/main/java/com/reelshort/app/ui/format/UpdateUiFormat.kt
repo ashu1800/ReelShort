@@ -59,7 +59,7 @@ internal fun updateStrings(language: AppLanguage): UpdateStrings = when (languag
         install = "Install",
         storageError = "There isn't enough storage space for this update.",
         verificationError = "The downloaded APK failed security verification and was deleted.",
-        invalidReleaseError = "This GitHub Release is incomplete or invalid.",
+        invalidReleaseError = "This update package is incomplete or invalid. Please try again later.",
         downloadError = "The update couldn't be downloaded. Try again.",
         installError = "Android couldn't open the installer. Check the installation permission and try again.",
     )

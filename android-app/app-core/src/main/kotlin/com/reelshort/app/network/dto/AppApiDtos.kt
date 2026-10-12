@@ -180,15 +180,6 @@ data class VipOrderDto(
 )
 
 @Serializable
-data class BankCardBindRequestDto(
-    val cardNumber: String,
-    val expiryMonth: String,
-    val expiryYear: String,
-    val cvv: String,
-    val holderName: String,
-)
-
-@Serializable
 data class WithdrawalSummaryDto(
     val balance: Int,
     val frozenPoints: Int,
@@ -246,6 +237,15 @@ data class CommentDto(
     val username: String,
     val content: String,
     val createdAt: String,
+)
+
+/** 评论分页响应：后端 `GET /api/app/social/books/{bookId}/comments` 现在按页返回。 */
+@Serializable
+data class CommentPageDto(
+    val comments: List<CommentDto>,
+    val hasMore: Boolean = false,
+    val page: Int = 0,
+    val size: Int = 20,
 )
 
 @Serializable

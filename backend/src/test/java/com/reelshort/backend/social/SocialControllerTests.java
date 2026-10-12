@@ -3,6 +3,7 @@ package com.reelshort.backend.social;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -94,19 +95,54 @@ class SocialControllerTests {
 		// 评论列表对游客开放阅读
 		mockMvc.perform(get("/api/app/social/books/book-comment/comments"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.length()", greaterThan(1)))
-				.andExpect(jsonPath("$.data[0].content").value("nice drama"));
+				.andExpect(jsonPath("$.data.comments.length()", greaterThan(1)))
+				.andExpect(jsonPath("$.data.comments[0].content").value("nice drama"))
+				.andExpect(jsonPath("$.data.page").value(0))
+				.andExpect(jsonPath("$.data.size").value(20));
+	}
+
+	@Test
+	void commentsPageSizeIsCapped() throws Exception {
+		mockMvc.perform(get("/api/app/social/books/book-page-cap/comments").param("size", "500"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+	}
+
+	@Test
+	void commentsRejectNegativePage() throws Exception {
+		mockMvc.perform(get("/api/app/social/books/book-page-negative/comments").param("page", "-1"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+	}
+
+	@Test
+	void commentsOutOfRangePageReturnsEmptyPage() throws Exception {
+		mockMvc.perform(get("/api/app/social/books/book-page-out-of-range/comments").param("page", "5000"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.comments.length()").value(0))
+				.andExpect(jsonPath("$.data.hasMore").value(false));
+	}
+
+	@Test
+	void commentsRespectRequestedPageSize() throws Exception {
+		mockMvc.perform(get("/api/app/social/books/book-page-size/comments").param("size", "5"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.comments.length()", greaterThan(0)))
+				.andExpect(jsonPath("$.data.comments.length()", lessThanOrEqualTo(5)))
+				.andExpect(jsonPath("$.data.size").value(5));
 	}
 
 	@Test
 	void emptyCommentsReturnDisplayFallbacks() throws Exception {
 		MvcResult result = mockMvc.perform(get("/api/app/social/books/book-empty-comments/comments"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.length()", greaterThan(0)))
-				.andExpect(jsonPath("$.data[0].content").isNotEmpty())
+				.andExpect(jsonPath("$.data.comments.length()", greaterThan(0)))
+				.andExpect(jsonPath("$.data.comments[0].content").isNotEmpty())
 				.andReturn();
 
-		JsonNode comments = objectMapper.readTree(result.getResponse().getContentAsString()).get("data");
+		JsonNode comments = objectMapper.readTree(result.getResponse().getContentAsString())
+				.get("data")
+				.get("comments");
 		for (JsonNode comment : comments) {
 			assertThat(comment.get("username").asText()).doesNotContainPattern("\\d");
 		}

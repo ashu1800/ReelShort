@@ -30,6 +30,8 @@ import com.reelshort.backend.points.PointTransactionRepository;
 
 @SpringBootTest
 @TestPropertySource(properties = {
+		// 打款执行能力默认关闭；本集成测试显式开启，覆盖签名/广播/确认链路。
+		"reelshort.withdrawal.payout.enabled=true",
 		"reelshort.eth.required-confirmations=2",
 		"reelshort.tron.required-confirmations=2",
 		"reelshort.bsc.required-confirmations=2",

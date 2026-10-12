@@ -53,6 +53,7 @@ class SystemConfigControllerTests {
 		systemConfigService.update(SystemConfigRegistry.WITHDRAW_USDT_PER_50_POINTS, "0.14");
 		systemConfigService.update(SystemConfigRegistry.WITHDRAW_MINIMUM_USDT, "10");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
+		systemConfigService.update(SystemConfigRegistry.VIP_COLLECTION_ADDRESS, "");
 		jdbcTemplate.update("delete from point_daily_earning_quotas");
 		jdbcTemplate.update("delete from point_daily_earning_rules");
 	}
@@ -202,8 +203,36 @@ class SystemConfigControllerTests {
 	}
 
 	@Test
-	void appTokenCannotAccessAdminSystemConfigs() throws Exception {
-		String appToken = registerAndExtractAppToken("config-boundary-user");
+	void vipCollectionAddressIsValidatedOnUpdateAndCanBeCleared() throws Exception {
+		String adminToken = adminLogin();
+
+		// P2-17: 非法资金收款地址必须拒绝，并独立事务留审计
+		updateConfig(adminToken, "vip.collection-address", "T-not-base58check")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+
+		mockMvc.perform(get("/api/admin/audit-logs")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[*].action", hasItem("SYSTEM_CONFIG_UPDATE_FAILED")));
+
+		updateConfig(adminToken, "vip.collection-address", "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.value").value("TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE"));
+
+		// 允许清空（表示未配置链上 VIP 收款地址）
+		updateConfig(adminToken, "vip.collection-address", "")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.value").value(""));
+
+		// 其他配置项仍然拒绝空值
+		updateConfig(adminToken, "points.watch.seconds-per-point", "")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value(400));
+	}
+
+	@Test
+	void appTokenCannotAccessAdminSystemConfigs() throws Exception {		String appToken = registerAndExtractAppToken("config-boundary-user");
 
 		mockMvc.perform(get("/api/admin/system/configs")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + appToken))

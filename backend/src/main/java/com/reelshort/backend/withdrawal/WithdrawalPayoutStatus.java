@@ -6,5 +6,8 @@ public enum WithdrawalPayoutStatus {
 	BROADCASTED,
 	MANUAL_REVIEW,
 	CONFIRMED,
-	FAILED_RETRYABLE
+	FAILED_RETRYABLE,
+
+	/** 管理员受审计地作废一个未确认的打款尝试，用于解除卡死的 ACTIVE attempt。 */
+	VOIDED
 }

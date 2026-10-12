@@ -61,7 +61,7 @@ class WalletWithdrawalTransferControllerTests {
 	}
 
 	@Test
-	void walletBindSucceedsWithoutSmsAndBankCardAlwaysFailsFaceVerification() throws Exception {
+	void walletBindSucceedsAndBankCardEndpointIsRetired() throws Exception {
 		RegisteredUser user = createUser("wallet-bind");
 
 		mockMvc.perform(put("/api/app/wallet")
@@ -78,6 +78,7 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(jsonPath("$.data.network").value("ERC20"))
 				.andExpect(jsonPath("$.data.walletAddress").value(VALID_ETH_ADDRESS));
 
+		// 银行卡提现已彻底下线：卡号/CVV 不再被接口接收，固定返回 410，响应不回显任何卡数据。
 		mockMvc.perform(post("/api/app/wallet/bank-card")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
 				.contentType(MediaType.APPLICATION_JSON)
@@ -90,8 +91,8 @@ class WalletWithdrawalTransferControllerTests {
 						  "cvv": "123"
 						}
 						"""))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data").value("face verification failed"));
+				.andExpect(status().isGone())
+				.andExpect(jsonPath("$.data").doesNotExist());
 	}
 
 	@Test
@@ -154,6 +155,20 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.status").value("APPROVED"));
 
+		// P1-2: 出金必须留下 WITHDRAWAL 流水（负数、余额快照、幂等键），否则积分余额与流水永久不一致。
+		// 注意：point_transactions 的流水类型列名是 source（不是 type）。
+		org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForMap(
+				"select amount, balance_after, idempotency_key from point_transactions "
+						+ "where user_id = ? and source = 'WITHDRAWAL'",
+				user.userId()))
+				.containsEntry("amount", -3969)
+				.containsEntry("balance_after", 31)
+				.containsEntry("idempotency_key", "withdrawal:" + withdrawalId);
+		// 重复人工确认不得写入第二条流水
+		org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+				"select count(*) from point_transactions where user_id = ? and source = 'WITHDRAWAL'",
+				Integer.class, user.userId())).isEqualTo(1);
+
 		mockMvc.perform(get("/api/app/withdrawals/summary")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token()))
 				.andExpect(status().isOk())
@@ -166,6 +181,42 @@ class WalletWithdrawalTransferControllerTests {
 	void manualErc20ConfirmationStillRequiresAnAuthenticatedAdminSession() throws Exception {
 		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/manual-confirm", UUID.randomUUID()))
 				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void voidPayoutAttemptEndpointRequiresAdminReasonAndAnActiveAttempt() throws Exception {
+		String adminToken = adminLogin();
+		RegisteredUser user = createUser("void-attempt");
+		adjustPoints(adminToken, user.userId(), 4000, "seed void attempt");
+		bindWallet(user.token(), VALID_ETH_ADDRESS);
+		String withdrawalId = JsonPath.read(mockMvc.perform(post("/api/app/withdrawals")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"pointAmount\":3969}"))
+				.andExpect(status().isOk())
+				.andReturn().getResponse().getContentAsString(), "$.data.id");
+
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/payout-attempt/void",
+				UUID.fromString(withdrawalId))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"reason\":\"stuck attempt cleanup\"}"))
+				.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/payout-attempt/void",
+				UUID.fromString(withdrawalId))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"reason\":\"  \"}"))
+				.andExpect(status().isBadRequest());
+
+		// 默认关闭打款执行能力时不会产生 ACTIVE attempt：作废入口必须如实返回 409，而不是静默成功。
+		mockMvc.perform(post("/api/admin/withdrawals/{withdrawalId}/payout-attempt/void",
+				UUID.fromString(withdrawalId))
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"reason\":\"stuck attempt cleanup\"}"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.message").value("withdrawal has no active payout attempt"));
 	}
 
 	@Test
@@ -358,7 +409,7 @@ class WalletWithdrawalTransferControllerTests {
 						  "password": "WrongPassword"
 						}
 						""".formatted(VALID_ETH_ADDRESS)))
-				.andExpect(status().isUnauthorized())
+				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value("invalid current password"));
 
 		mockMvc.perform(put("/api/app/wallet")
@@ -384,7 +435,7 @@ class WalletWithdrawalTransferControllerTests {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + user.token())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"password\":\"WrongPassword\"}"))
-				.andExpect(status().isUnauthorized())
+				.andExpect(status().isForbidden())
 				.andExpect(jsonPath("$.message").value("invalid current password"));
 
 		mockMvc.perform(post("/api/app/wallet/unbind")

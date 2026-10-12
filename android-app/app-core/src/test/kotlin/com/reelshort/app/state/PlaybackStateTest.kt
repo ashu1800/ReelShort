@@ -34,4 +34,22 @@ class PlaybackStateTest {
             playbackProgressSample(positionMilliseconds = 59_940, durationMilliseconds = 60_000, completed = true),
         )
     }
+
+    @Test
+    fun progressReportFailuresUseTheFiveFifteenSixtySecondBackoffLadder() {
+        assertEquals(0, progressReportBackoffSeconds(0))
+        assertEquals(0, progressReportBackoffSeconds(-3))
+        assertEquals(5, progressReportBackoffSeconds(1))
+        assertEquals(15, progressReportBackoffSeconds(2))
+        assertEquals(60, progressReportBackoffSeconds(3))
+        // 阶梯用尽后保持 60s，不会无限放大。
+        assertEquals(60, progressReportBackoffSeconds(4))
+        assertEquals(60, progressReportBackoffSeconds(50))
+    }
+
+    @Test
+    fun progressReportBackoffNeverExceedsTheFiveMinuteCap() {
+        assertEquals(listOf(5, 15, 60), PlaybackProgressRetryBackoffSeconds)
+        assertTrue(PlaybackProgressRetryBackoffSeconds.max() <= PlaybackProgressRetryBackoffMaxSeconds)
+    }
 }

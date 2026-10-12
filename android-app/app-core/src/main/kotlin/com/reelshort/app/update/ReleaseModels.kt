@@ -13,6 +13,8 @@ data class ReleaseAsset(
 data class ReleaseInfo(
     val tagName: String,
     val version: SemanticVersion,
+    /** 发布清单里的 versionCode，用于拒绝"降级安装"。 */
+    val versionCode: Long,
     val title: String,
     val body: String,
     val publishedAt: String,

@@ -24,9 +24,17 @@ npm run build
 - 积分调整：`POST /api/admin/users/{userId}/points/adjust`
 - 用户观看记录：`GET /api/admin/users/{userId}/watch-records`
 - 用户积分流水：`GET /api/admin/users/{userId}/point-records`
-- 订单管理：`GET /api/admin/orders`
+- 用户提现记录：`GET /api/admin/users/{userId}/withdrawals`
+- 提现申请：`GET /api/admin/withdrawals`
+- 提现打款统计：`GET /api/admin/withdrawals/stats`
+- 提现人工确认：`POST /api/admin/withdrawals/{withdrawalId}/manual-confirm`
+- 提现拒绝：`POST /api/admin/withdrawals/{withdrawalId}/reject`
+- VIP 订单：`GET /api/admin/vip/orders`
+- VIP 订单确认：`POST /api/admin/vip/orders/{orderId}/confirm`
+- VIP 订单拒绝：`POST /api/admin/vip/orders/{orderId}/reject`
 - 内容缓存：`GET /api/admin/content/cache`
 - 内容货架刷新：`POST /api/admin/content/cache/shelves/{shelfType}/refresh`
+- 内容货架按语言刷新：`POST /api/admin/content/cache/shelves/{shelfType}/refresh-locales`
 - 系统配置：`GET /api/admin/system/configs`
 - 系统配置更新：`POST /api/admin/system/configs/{configKey}`
 - 运行诊断：`GET /api/admin/system/runtime`

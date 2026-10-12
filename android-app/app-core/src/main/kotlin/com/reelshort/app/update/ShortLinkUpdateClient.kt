@@ -14,7 +14,15 @@ class ShortLinkUpdateClient(
     private val endpoint: String = DEFAULT_ENDPOINT,
     private val userAgent: String,
     private val json: Json = Json { ignoreUnknownKeys = true },
+    cosBucket: String = DEFAULT_COS_BUCKET,
+    cosRegion: String = DEFAULT_COS_REGION,
 ) : ReleaseUpdateClient {
+    /**
+     * 只接受本桶的 COS 域名（<bucket>.cos.<region>.myqcloud.com）。
+     * 此前只校验 `.myqcloud.com` 后缀，任意其它账号的 COS 桶都能让 App 下载并安装其 APK。
+     */
+    private val allowedCosHosts: Set<String> = setOf("$cosBucket.cos.$cosRegion.myqcloud.com")
+
     override suspend fun fetchLatestStable(): ReleaseInfo = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(endpoint)
@@ -53,6 +61,7 @@ class ShortLinkUpdateClient(
         return ReleaseInfo(
             tagName = tagName,
             version = version,
+            versionCode = versionCode,
             title = title.ifBlank { "ShortLink $tagName" },
             body = releaseNotes.take(MAX_RELEASE_NOTES_CHARS),
             publishedAt = publishedAt,
@@ -67,12 +76,11 @@ class ShortLinkUpdateClient(
         if (uri.scheme != "https" || uri.port != -1 || uri.userInfo != null) {
             throw ReleaseUpdateException.InvalidRelease("asset URL must be HTTPS without port or userinfo")
         }
-        // COS pre-signed download URLs are served from <bucket>.cos.<region>.myqcloud.com and carry
-        // signing query parameters, so we only pin to the COS domain suffix and require the path to
-        // end with the expected object file name.
+        // COS 预签名下载链接由 <bucket>.cos.<region>.myqcloud.com 提供并带签名查询参数，
+        // 因此这里精确校验桶域名（含地域），再要求路径以期望的对象文件名结尾。
         val host = uri.host
-        if (host == null || !host.endsWith(COS_HOST_SUFFIX)) {
-            throw ReleaseUpdateException.InvalidRelease("asset URL must be a COS domain")
+        if (host == null || host !in allowedCosHosts) {
+            throw ReleaseUpdateException.InvalidRelease("asset URL must be the ShortLink COS bucket")
         }
         val path = uri.rawPath ?: ""
         if (uri.rawFragment != null || !path.endsWith("/$expectedName")) {
@@ -113,7 +121,10 @@ class ShortLinkUpdateClient(
 
     companion object {
         const val DEFAULT_ENDPOINT = "https://shortlink.hjj888.cc/api/app/release/latest"
-        private const val COS_HOST_SUFFIX = ".myqcloud.com"
+
+        /** 默认 COS 桶与地域（与发布脚本 COS_BUCKET/COS_REGION 保持一致，Android 层用 BuildConfig 覆盖）。 */
+        const val DEFAULT_COS_BUCKET = "update-1259596907"
+        const val DEFAULT_COS_REGION = "ap-chengdu"
         private const val APK_CONTENT_TYPE = "application/vnd.android.package-archive"
         private const val MAX_JSON_BYTES = 65_536L
         private const val MAX_RELEASE_NOTES_CHARS = 4_000

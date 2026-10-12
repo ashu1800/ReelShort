@@ -2,9 +2,14 @@ param(
     [switch]$SkipContentProvider,
     [switch]$SkipBackend,
     [switch]$SkipAdminWeb,
+    [switch]$SkipAdminWebContracts,
     [switch]$SkipAndroid,
+    [switch]$SkipAndroidPackage,
+    [switch]$SkipInfraChecks,
+    [switch]$SkipScriptTests,
     [switch]$SkipDiffCheck,
     [switch]$AllowUntrackedFiles,
+    [switch]$AllowDirtyTree,
     [switch]$InstallApk,
     [string]$Adb = "adb"
 )
@@ -46,6 +51,33 @@ function Invoke-Native {
     if ($LASTEXITCODE -ne 0) {
         throw "$FilePath exited with code $LASTEXITCODE"
     }
+}
+
+function Resolve-PowerShellHost {
+    foreach ($candidate in @("pwsh", "powershell")) {
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            return $command.Source
+        }
+    }
+    throw "Neither pwsh nor powershell is available to run nested verification scripts."
+}
+
+# Runs a nested script in a child shell: some verification scripts call `exit`, which would otherwise
+# terminate this baseline process before the failure summary is printed.
+function Invoke-ScriptFile {
+    param(
+        [string]$Path,
+        [string[]]$Arguments = @()
+    )
+
+    $shell = Resolve-PowerShellHost
+    $shellArguments = if ($env:OS -eq "Windows_NT") {
+        @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $Path) + $Arguments
+    } else {
+        @("-NoProfile", "-File", $Path) + $Arguments
+    }
+    Invoke-Native $shell $shellArguments
 }
 
 Invoke-Step "Show git baseline" {
@@ -94,22 +126,74 @@ if (-not $SkipAdminWeb) {
     }
 }
 
+if (-not $SkipAdminWeb -and -not $SkipAdminWebContracts) {
+    $adminWebContracts = Join-Path $adminWebDir "tests"
+    if (Test-Path -LiteralPath $adminWebContracts) {
+        Invoke-Step "admin-web contract tests" {
+            Push-Location $adminWebDir
+            try {
+                Invoke-Native "npm" @("run", "test:contracts")
+            } finally {
+                Pop-Location
+            }
+        }
+    }
+}
+
 if (-not $SkipAndroid) {
-    Invoke-Step "Android unit tests and debug APK" {
+    Invoke-Step "Android unit tests" {
         Push-Location $androidDir
         try {
-            Invoke-Native ".\gradlew.bat" @(":app-core:test", ":app:testDebugUnitTest", ":app:assembleDebug", "--no-daemon")
+            Invoke-Native ".\gradlew.bat" @(":app-core:test", ":app:testDebugUnitTest", "--no-daemon")
         } finally {
             Pop-Location
         }
     }
 
-    if ($InstallApk) {
-        Invoke-Step "Install debug APK to emulator" {
-            if (-not (Test-Path $apkPath)) {
-                throw "APK not found: $apkPath"
+    if (-not $SkipAndroidPackage) {
+        Invoke-Step "Android debug APK packaging (requires ANDROID_SIGNING_*)" {
+            Push-Location $androidDir
+            try {
+                Invoke-Native ".\gradlew.bat" @(":app:assembleDebug", "--no-daemon")
+            } finally {
+                Pop-Location
             }
-            Invoke-Native $Adb @("install", "-r", $apkPath)
+        }
+
+        if ($InstallApk) {
+            Invoke-Step "Install debug APK to emulator" {
+                if (-not (Test-Path $apkPath)) {
+                    throw "APK not found: $apkPath"
+                }
+                Invoke-Native $Adb @("install", "-r", $apkPath)
+            }
+        }
+    }
+}
+
+if (-not $SkipInfraChecks) {
+    $infraVerification = Join-Path $repoRoot "infra/scripts/verify-backup-scripts.ps1"
+    if (Test-Path -LiteralPath $infraVerification) {
+        Invoke-Step "infra static verification" {
+            Invoke-ScriptFile $infraVerification
+        }
+    }
+}
+
+if (-not $SkipScriptTests) {
+    $scriptTests = Join-Path $repoRoot "scripts/tests"
+    if (Test-Path -LiteralPath $scriptTests) {
+        Invoke-Step "publish script regression tests" {
+            Push-Location $repoRoot
+            try {
+                Invoke-Native "python" @("-m", "pytest", "scripts/tests/test_publish_android.py")
+            } finally {
+                Pop-Location
+            }
+        }
+
+        Invoke-Step "release baseline regression tests" {
+            Invoke-ScriptFile (Join-Path $scriptTests "verify-release-baseline-tests.ps1")
         }
     }
 }
@@ -130,6 +214,23 @@ if (-not $SkipDiffCheck) {
             Invoke-Native "git" @("diff", "--cached", "--check")
         } finally {
             Pop-Location
+        }
+    }
+
+    if (-not $AllowDirtyTree) {
+        Invoke-Step "git modified tracked files" {
+            Push-Location $repoRoot
+            try {
+                $modifiedFiles = @(& git status --porcelain --untracked-files=no)
+                if ($LASTEXITCODE -ne 0) {
+                    throw "git exited with code $LASTEXITCODE"
+                }
+                if ($modifiedFiles.Count -gt 0) {
+                    throw "Uncommitted tracked changes found: $($modifiedFiles -join '; '). Commit or stash them, or pass -AllowDirtyTree for an intentional local build."
+                }
+            } finally {
+                Pop-Location
+            }
         }
     }
 

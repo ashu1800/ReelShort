@@ -41,6 +41,59 @@ class WatchServiceTests {
 	}
 
 	@Test
+	void completedRecordIsNotRewoundByLateReport() {
+		UUID userId = UUID.randomUUID();
+		watchService.reportProgress(userId, request("book-monotonic-done", 1, 100, 100));
+
+		WatchRecordResponse response = watchService.reportProgress(userId,
+				request("book-monotonic-done", 1, 8, 100));
+
+		assertThat(response.progressPercent()).isEqualTo(100);
+		assertThat(response.positionSeconds()).isEqualTo(100);
+	}
+
+	@Test
+	void completedRecordKeepsMetadataFromLatestReport() {
+		UUID userId = UUID.randomUUID();
+		watchService.reportProgress(userId, request("book-monotonic-meta", 1, 100, 100));
+
+		WatchRecordResponse response = watchService.reportProgress(userId, new WatchProgressRequest(
+				"book-monotonic-meta", "Renamed Title", "renamed-title", 1, "chapter-renamed", 5, 100));
+
+		assertThat(response.progressPercent()).isEqualTo(100);
+		assertThat(response.bookTitle()).isEqualTo("Renamed Title");
+		WatchRecord record = watchRecordRepository
+				.findByUserIdAndBookIdAndEpisodeNum(userId, "book-monotonic-meta", 1)
+				.orElseThrow();
+		assertThat(record.filteredTitle()).isEqualTo("renamed-title");
+		assertThat(record.chapterId()).isEqualTo("chapter-renamed");
+	}
+
+	@Test
+	void lowerProgressFromAnotherDeviceDoesNotRewindRecord() {
+		UUID userId = UUID.randomUUID();
+		watchService.reportProgress(userId, request("book-monotonic-rewind", 2, 90, 100));
+
+		WatchRecordResponse response = watchService.reportProgress(userId,
+				request("book-monotonic-rewind", 2, 30, 100));
+
+		assertThat(response.progressPercent()).isEqualTo(90);
+		assertThat(response.positionSeconds()).isEqualTo(90);
+	}
+
+	@Test
+	void forwardProgressStillApplies() {
+		UUID userId = UUID.randomUUID();
+		watchService.reportProgress(userId, request("book-monotonic-forward", 3, 20, 100));
+
+		WatchRecordResponse response = watchService.reportProgress(userId,
+				request("book-monotonic-forward", 3, 75, 100));
+
+		assertThat(response.progressPercent()).isEqualTo(75);
+		assertThat(response.positionSeconds()).isEqualTo(75);
+	}
+
+	@Test
 	void historyIsScopedByUser() {
 		UUID userId = UUID.randomUUID();
 		UUID otherUserId = UUID.randomUUID();

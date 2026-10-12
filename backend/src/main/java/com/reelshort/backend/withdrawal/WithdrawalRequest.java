@@ -71,13 +71,17 @@ public class WithdrawalRequest {
 	@Column(name = "reviewed_at")
 	private OffsetDateTime reviewedAt;
 
+	/** 客户端提交幂等键（可选），用于超时重试时复用同一笔申请。 */
+	@Column(name = "idempotency_key", length = 128)
+	private String idempotencyKey;
+
 	protected WithdrawalRequest() {
 	}
 
 	private WithdrawalRequest(UUID id, UUID userId, int pointAmount, int feeAmount, BigDecimal usdtAmount,
 			BigDecimal usdtPerPoint, BigDecimal usdtPer50Points, BigDecimal cnyPerPoint, BigDecimal cnyPerUsd,
 			BigDecimal minimumUsd,
-			String network, String walletAddress, OffsetDateTime createdAt) {
+			String network, String walletAddress, String idempotencyKey, OffsetDateTime createdAt) {
 		this.id = id;
 		this.userId = userId;
 		this.pointAmount = pointAmount;
@@ -90,19 +94,29 @@ public class WithdrawalRequest {
 		this.minimumUsd = minimumUsd;
 		this.network = network;
 		this.walletAddress = walletAddress;
+		this.idempotencyKey = idempotencyKey;
 		this.status = WithdrawalStatus.PENDING;
 		this.createdAt = createdAt;
 	}
 
 	public static WithdrawalRequest create(UUID userId, int pointAmount, int feeAmount,
 			WithdrawalConversion conversion, String network, String walletAddress) {
+		return create(userId, pointAmount, feeAmount, conversion, network, walletAddress, null);
+	}
+
+	public static WithdrawalRequest create(UUID userId, int pointAmount, int feeAmount,
+			WithdrawalConversion conversion, String network, String walletAddress, String idempotencyKey) {
 		// L4: 用 HALF_UP 而非 UNNECESSARY，避免配置小数过多时抛 ArithmeticException
 		BigDecimal normalizedRate = conversion.usdtPerPoint().setScale(8, RoundingMode.HALF_UP);
 		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, feeAmount,
 				conversion.usdtAmount(pointAmount), normalizedRate,
 				conversion.usdtPer50Points().setScale(8, RoundingMode.HALF_UP), null, null, null,
-				network, walletAddress,
+				network, walletAddress, idempotencyKey,
 				OffsetDateTime.now());
+	}
+
+	public String idempotencyKey() {
+		return idempotencyKey;
 	}
 
 	public void approve(String txHash, String note, String reviewedBy) {

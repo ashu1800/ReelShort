@@ -49,6 +49,7 @@ async function refreshShelf() {
   }
 }
 
+// W6a: 内容源只提供 English 单语言，这里按 locale 列表串行刷新全部货架
 async function refreshShelfLocales() {
   refreshingLocales.value = true
   try {
@@ -56,12 +57,12 @@ async function refreshShelfLocales() {
     const successCount = results.filter((result) => result.status === 'SUCCESS').length
     const failedCount = results.length - successCount
     if (failedCount > 0) {
-      ElMessage.warning(`双语刷新完成：成功 ${successCount} / 失败 ${failedCount}`)
+      ElMessage.warning(`全部语言刷新完成：成功 ${successCount} / 失败 ${failedCount}`)
     } else {
-      ElMessage.success(`双语刷新完成：成功 ${successCount}`)
+      ElMessage.success(`全部语言刷新完成：成功 ${successCount}`)
     }
   } catch {
-    ElMessage.error('双语货架刷新失败')
+    ElMessage.error('全部语言货架刷新失败')
     refreshingLocales.value = false
     return
   }
@@ -110,7 +111,7 @@ onMounted(loadStatus)
           />
         </el-select>
         <el-button :loading="refreshing" type="primary" @click="refreshShelf">刷新货架</el-button>
-        <el-button :loading="refreshingLocales" @click="refreshShelfLocales">刷新双语货架</el-button>
+        <el-button :loading="refreshingLocales" @click="refreshShelfLocales">刷新全部语言</el-button>
         <el-button @click="loadStatus">刷新状态</el-button>
       </div>
     </div>

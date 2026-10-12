@@ -13,6 +13,7 @@ class UpdateCoordinatorTest {
     private val release = ReleaseInfo(
         tagName = "v0.2.0",
         version = SemanticVersion(0, 2, 0),
+        versionCode = 7,
         title = "ShortLink v0.2.0",
         body = "Notes",
         publishedAt = "2026-07-13T12:00:00Z",
@@ -50,6 +51,37 @@ class UpdateCoordinatorTest {
         coordinator.checkForUpdate(manual = false)
 
         assertEquals(release, assertIs<UpdateState.Available>(coordinator.state.value).release)
+    }
+
+    @Test
+    fun rejectsReleaseWithLowerVersionCodeThanTheInstalledBuild() = runTest {
+        val downgrade = release.copy(versionCode = 6)
+        val coordinator = coordinator(client = FakeReleaseClient(downgrade), currentVersionCode = 7)
+
+        coordinator.checkForUpdate(manual = true)
+
+        val failed = assertIs<UpdateState.Failed>(coordinator.state.value)
+        assertEquals(UpdateFailureReason.INVALID_RELEASE, failed.reason)
+        assertNull(failed.release)
+    }
+
+    @Test
+    fun downgradeRejectionStaysSilentForAutomaticChecks() = runTest {
+        val downgrade = release.copy(versionCode = 6)
+        val coordinator = coordinator(client = FakeReleaseClient(downgrade), currentVersionCode = 7)
+
+        coordinator.checkForUpdate(manual = false)
+
+        assertIs<UpdateState.Idle>(coordinator.state.value)
+    }
+
+    @Test
+    fun acceptsReleaseWithTheSameVersionCodeAsTheInstalledBuild() = runTest {
+        val coordinator = coordinator(client = FakeReleaseClient(release.copy(versionCode = 7)), currentVersionCode = 7)
+
+        coordinator.checkForUpdate(manual = false)
+
+        assertIs<UpdateState.Available>(coordinator.state.value)
     }
 
     @Test
@@ -122,10 +154,12 @@ class UpdateCoordinatorTest {
     private fun coordinator(
         client: ReleaseUpdateClient = FakeReleaseClient(release),
         downloader: ReleaseDownloader = FakeDownloader("apk".toByteArray()),
+        currentVersionCode: Long = 7,
     ) = UpdateCoordinator(
         releaseClient = client,
         downloader = downloader,
         currentVersion = SemanticVersion(0, 1, 0),
+        currentVersionCode = currentVersionCode,
         availableBytes = { Long.MAX_VALUE },
     )
 

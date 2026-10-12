@@ -43,11 +43,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -73,13 +71,11 @@ import com.reelshort.app.data.PointRecord
 import com.reelshort.app.data.WatchRecord
 import com.reelshort.app.data.WalletInfo
 import com.reelshort.app.data.WithdrawalRecord
-import com.reelshort.app.data.WithdrawalSummary
 import com.reelshort.app.state.AuthMode
 import com.reelshort.app.state.AccountOperation
 import com.reelshort.app.ui.components.AvatarGradient
 import com.reelshort.app.ui.components.GoldOutlinedButton
 import com.reelshort.app.ui.components.LoginTextField
-import com.reelshort.app.ui.components.TextFieldKind
 import com.reelshort.app.ui.components.ListRow
 import com.reelshort.app.ui.components.MetaPill
 import com.reelshort.app.ui.components.OrderRow
@@ -99,7 +95,6 @@ import com.reelshort.app.ui.format.guestAccountEntryLabels
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.updateStrings
 import com.reelshort.app.ui.format.walletSheetShouldDismiss
-import com.reelshort.app.ui.format.withdrawalConversionLines
 import com.reelshort.app.ui.format.withdrawalPointAmountPlaceholder
 import com.reelshort.app.ui.format.withdrawalRecordDetail
 import com.reelshort.app.ui.format.withdrawalStatusLabel
@@ -152,7 +147,6 @@ internal fun AccountScreen(
     onUnbindWallet: (String) -> Unit,
     onRefreshAccount: () -> Unit,
     onChangePassword: (String, String) -> Unit,
-    onSubmitBankCard: (String, String, String, String, String) -> Unit,
     onLogout: () -> Unit,
     language: AppLanguage,
 ) {
@@ -160,7 +154,6 @@ internal fun AccountScreen(
     var walletSheetVisible by remember { mutableStateOf(false) }
     var lastHandledWalletMutationVersion by remember { mutableStateOf(walletMutationVersion) }
     var passwordSheetVisible by remember { mutableStateOf(false) }
-    var bankCardSheetVisible by remember { mutableStateOf(false) }
     var supportDialogVisible by remember { mutableStateOf(false) }
     var pendingConfirmation by remember { mutableStateOf<PendingAccountConfirmation?>(null) }
     val copy = strings(language)
@@ -245,11 +238,11 @@ internal fun AccountScreen(
                         onClick = { passwordSheetVisible = true },
                     )
                     AccountMenuDivider()
+                    // 银行卡入口保持只读：不再采集或上传任何银行卡敏感信息。
                     AccountMenuRow(
                         icon = Icons.AutoMirrored.Rounded.ReceiptLong,
                         title = copy.accountBankCardTitle,
-                        subtitle = copy.accountBankCardSubtitle,
-                        onClick = { bankCardSheetVisible = true },
+                        subtitle = copy.accountBankCardUnsupported,
                     )
                 }
             }
@@ -317,17 +310,6 @@ internal fun AccountScreen(
             onDismiss = { passwordSheetVisible = false },
             onChangePassword = onChangePassword,
             isSubmitting = accountOperation != null,
-        )
-    }
-
-    if (bankCardSheetVisible) {
-        BankCardBottomSheet(
-            language = language,
-            isLoading = false,
-            onSubmit = { holder, number, month, year, cvv ->
-                onSubmitBankCard(holder, number, month, year, cvv)
-            },
-            onDismiss = { bankCardSheetVisible = false },
         )
     }
 
@@ -885,64 +867,6 @@ private fun WalletBottomSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WithdrawalBottomSheet(
-    summary: WithdrawalSummary?,
-    withdrawals: List<WithdrawalRecord>,
-    walletNetwork: String?,
-    language: AppLanguage,
-    onDismiss: () -> Unit,
-    onSubmitWithdrawal: (Int) -> Unit,
-    isSubmitting: Boolean,
-) {
-    val copy = strings(language)
-    var points by remember { mutableStateOf("") }
-    var pointsFocused by remember { mutableStateOf(false) }
-    val amount = points.toIntOrNull() ?: 0
-    val minimumPoints = summary?.minimumPoints ?: Int.MAX_VALUE
-    val availablePoints = summary?.availablePoints ?: 0
-    AccountFormBottomSheet(onDismiss = onDismiss) {
-        SheetForm(title = copy.accountWithdrawTitle) {
-            withdrawalConversionLines(summary, amount, language).forEach { line ->
-                Text(
-                    line,
-                    color = TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            Text(
-                summary?.walletAddress?.let { addr ->
-                    val net = walletNetwork ?: "ERC20"
-                    "$net · $addr"
-                } ?: copy.accountWithdrawWalletRequired,
-                color = if (summary?.walletAddress == null) DangerText else TextSecondary,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            LoginTextField(
-                value = points,
-                onValueChange = { points = it.filter(Char::isDigit) },
-                label = copy.accountWithdrawPointAmountLabel,
-                enabled = true,
-                kind = TextFieldKind.POINT_AMOUNT,
-                idlePlaceholder = withdrawalPointAmountPlaceholder(points, pointsFocused, language),
-                onFocusChanged = { pointsFocused = it },
-            )
-            PrimaryActionButton(
-                text = copy.accountWithdrawSubmitAction,
-                enabled = !isSubmitting && summary?.walletAddress != null && amount >= minimumPoints && amount <= availablePoints,
-                onClick = {
-                    onSubmitWithdrawal(amount)
-                    if (commercialSheetAutoDismissesAfterSubmit()) {
-                        onDismiss()
-                    }
-                },
-            )
-            withdrawals.take(3).forEach { WithdrawalRow(it, language) }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 private fun PasswordBottomSheet(
     language: AppLanguage,
     onDismiss: () -> Unit,
@@ -966,72 +890,6 @@ private fun PasswordBottomSheet(
                     }
                 },
             )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun BankCardBottomSheet(
-    language: AppLanguage,
-    isLoading: Boolean,
-    onSubmit: (String, String, String, String, String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val copy = strings(language)
-    var holderName by remember { mutableStateOf("") }
-    var cardNumber by remember { mutableStateOf("") }
-    var expiryMonth by remember { mutableStateOf("") }
-    var expiryYear by remember { mutableStateOf("") }
-    var cvv by remember { mutableStateOf("") }
-    var faceStep by remember { mutableStateOf(false) }
-    AccountFormBottomSheet(onDismiss = onDismiss) {
-        SheetForm(title = copy.accountBankCardTitle) {
-            if (!faceStep) {
-                LabeledField(copy.accountBankCardHolderLabel, holderName, { holderName = it })
-                Spacer(Modifier.height(8.dp))
-                LabeledField(copy.accountBankCardNumberLabel, cardNumber, { cardNumber = it.filter { c -> c.isDigit() } })
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LabeledField("MM", expiryMonth, { expiryMonth = it.filter { c -> c.isDigit() }.take(2) }, Modifier.weight(1f))
-                    LabeledField("YY", expiryYear, { expiryYear = it.filter { c -> c.isDigit() }.take(2) }, Modifier.weight(1f))
-                    LabeledField("CVV", cvv, { cvv = it.filter { c -> c.isDigit() }.take(4) }, Modifier.weight(1f))
-                }
-                Spacer(Modifier.height(16.dp))
-                GoldOutlinedButton(
-                    copy.authContinue, true,
-                    {
-                        if (holderName.isNotBlank() && cardNumber.length >= 13 && expiryMonth.length == 2 && expiryYear.length == 2 && cvv.length >= 3) {
-                            faceStep = true
-                        }
-                    },
-                    Modifier.fillMaxWidth(), PrimaryGold,
-                )
-            } else {
-                Text(
-                    "Performing face verification...",
-                    color = TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Spacer(Modifier.height(16.dp))
-                CircularProgressIndicator(color = PrimaryGold, strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "Verification failed",
-                    color = DangerText,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Spacer(Modifier.height(16.dp))
-                GoldOutlinedButton(
-                    "Retry", !isLoading,
-                    {
-                        onSubmit(holderName, cardNumber, expiryMonth, expiryYear, cvv)
-                    },
-                    Modifier.fillMaxWidth(), PrimaryGold,
-                )
-                Spacer(Modifier.height(8.dp))
-                GoldOutlinedButton(copy.authClose, true, onDismiss, Modifier.fillMaxWidth(), PrimaryGold)
-            }
         }
     }
 }
@@ -1186,23 +1044,4 @@ private fun AccountMenuDivider() {
             .height(1.dp)
             .background(Divider),
     )
-}
-
-@Composable
-private fun LabeledField(
-    label: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier) {
-        Text(label, color = TextSecondary, style = MaterialTheme.typography.labelSmall)
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            textStyle = MaterialTheme.typography.bodyMedium,
-        )
-    }
 }

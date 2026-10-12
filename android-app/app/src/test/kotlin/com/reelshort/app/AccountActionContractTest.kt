@@ -83,16 +83,17 @@ class AccountActionContractTest {
             "app/src/main/java/com/reelshort/app/ui/components/TextField.kt",
             "android-app/app/src/main/java/com/reelshort/app/ui/components/TextField.kt",
         )
-        val accountSource = readSourceFile(
-            "src/main/java/com/reelshort/app/ui/screens/account/AccountScreen.kt",
-            "app/src/main/java/com/reelshort/app/ui/screens/account/AccountScreen.kt",
-            "android-app/app/src/main/java/com/reelshort/app/ui/screens/account/AccountScreen.kt",
+        // 提现数量输入框的唯一实现在资金中心的提现页（Me 页旧的无二次确认提现弹层已删除）。
+        val withdrawalSource = readSourceFile(
+            "src/main/java/com/reelshort/app/ui/screens/account/WithdrawalScreen.kt",
+            "app/src/main/java/com/reelshort/app/ui/screens/account/WithdrawalScreen.kt",
+            "android-app/app/src/main/java/com/reelshort/app/ui/screens/account/WithdrawalScreen.kt",
         )
 
         assertTrue(textFieldSource.contains("idlePlaceholder: String? = null"))
         assertTrue(textFieldSource.contains("val fieldLabel = idlePlaceholder ?: label"))
         assertFalse(textFieldSource.contains("placeholder = placeholder"))
-        assertTrue(accountSource.contains("idlePlaceholder = withdrawalPointAmountPlaceholder(points, pointsFocused, language)"))
+        assertTrue(withdrawalSource.contains("idlePlaceholder = withdrawalPointAmountPlaceholder(pointsText, pointsFocused, language)"))
     }
 
     private fun readSourceFile(vararg candidates: String): String {

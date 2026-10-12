@@ -148,10 +148,6 @@ class ReelShortViewModel(
         viewModelScope.launch { controller.loadAccountSnapshot() }
     }
 
-    fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
-        viewModelScope.launch { controller.submitBankCard(holderName, cardNumber, expiryMonth, expiryYear, cvv) }
-    }
-
     fun submitWithdrawal(pointAmount: Int) {
         viewModelScope.launch { controller.submitWithdrawal(pointAmount) }
     }
@@ -248,6 +244,16 @@ class ReelShortViewModel(
     }
 
     companion object {
+        /**
+         * 读取当前已安装包的 versionCode；读不到时回退到编译期常量，保证防降级校验始终有一个下限。
+         */
+        internal fun installedVersionCode(context: android.content.Context): Long =
+            runCatching {
+                androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(
+                    context.packageManager.getPackageInfo(context.packageName, 0),
+                )
+            }.getOrElse { BuildConfig.VERSION_CODE.toLong() }
+
         fun factory(application: Application): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -269,13 +275,18 @@ class ReelShortViewModel(
                         .build()
                     val currentVersion = SemanticVersion.parse(BuildConfig.VERSION_NAME)
                         ?: error("VERSION_NAME must use X.Y.Z")
+                    // 已安装包的 versionCode 从 PackageManager 读取，用于拒绝清单里的降级包。
+                    val installedVersionCode = installedVersionCode(context)
                     val updateCoordinator = UpdateCoordinator(
                         releaseClient = ShortLinkUpdateClient(
                             httpClient = updateHttpClient,
                             userAgent = "ShortLink-Android/${BuildConfig.VERSION_NAME}",
+                            cosBucket = BuildConfig.REELSHORT_COS_BUCKET,
+                            cosRegion = BuildConfig.REELSHORT_COS_REGION,
                         ),
                         downloader = OkHttpReleaseDownloader(updateHttpClient),
                         currentVersion = currentVersion,
+                        currentVersionCode = installedVersionCode,
                     )
                     val updateInstaller = AndroidUpdateInstaller(context)
                     lateinit var repository: AppRepository

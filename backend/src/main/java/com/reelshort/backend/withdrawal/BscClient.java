@@ -57,7 +57,9 @@ public class BscClient {
 			return Credentials.create(hexPrivateKey).getAddress();
 		}
 		catch (Exception exception) {
-			throw new WithdrawalException(400, "invalid hot wallet private key: " + exception.getMessage());
+			// 固定文案 + 只记录异常类型：避免把私钥相关细节回显给调用方或写进日志。
+			log.warn("Rejected invalid hot wallet private key ({})", exception.getClass().getSimpleName());
+			throw new WithdrawalException(400, "invalid hot wallet private key");
 		}
 	}
 
@@ -133,7 +135,9 @@ public class BscClient {
 			credentials = Credentials.create(hexPrivateKey);
 		}
 		catch (Exception exception) {
-			throw new WithdrawalException(400, "invalid hot wallet private key: " + exception.getMessage());
+			// 固定文案 + 只记录异常类型：避免把私钥相关细节回显给调用方或写进日志。
+			log.warn("Rejected invalid hot wallet private key ({})", exception.getClass().getSimpleName());
+			throw new WithdrawalException(400, "invalid hot wallet private key");
 		}
 		// 金额按 BSC USDT 的 18 decimals 换算（与以太坊的 6 位不同）。
 		Function transferFunction = new Function("transfer",

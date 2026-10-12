@@ -31,7 +31,12 @@
 - `SYSTEM_ALERT_READ`：读取系统异常告警。
 - `SYSTEM_ALERT_WRITE`：确认系统异常告警。
 - `ORDER_READ`：读取充值订单。
+- `ORDER_WRITE`：VIP 订单人工确认/拒绝与过期后补单。
 - `PAYMENT_EVENT_READ`：读取支付回调事件。
+- `WITHDRAWAL_READ`：读取提现申请与打款统计。
+- `WITHDRAWAL_WRITE`：提现人工确认、拒绝与作废打款 attempt。
+
+> 后台 Web 当前只提供控制台、用户、提现、VIP 订单、内容缓存、系统配置、运行诊断、异常告警、系统日志和审计日志视图。`GET /api/admin/orders`（充值订单）与 `GET /api/admin/payments/events`（支付事件）仍保留后端接口，但**没有对应的后台页面**，只能通过接口或脚本查询。
 
 ## `POST /api/admin/auth/login`
 
@@ -116,16 +121,9 @@ Authorization: Bearer <admin-token>
     "total": 10,
     "disabled": 1
   },
-  "orders": {
+  "vipOrders": {
     "total": 5,
-    "created": 2,
-    "paid": 3,
-    "totalAmountCents": 9900
-  },
-  "payments": {
-    "total": 4,
-    "processed": 3,
-    "rejected": 1
+    "totalUsdt": "12.5"
   },
   "content": {
     "bookCount": 120,
@@ -138,18 +136,22 @@ Authorization: Bearer <admin-token>
 }
 ```
 
+字段说明：`users.total` / `users.disabled` 为账号总数与禁用数；`vipOrders.total` 为 VIP 订单数，`vipOrders.totalUsdt` 为已确认订单应付 USDT 合计（字符串，去掉尾随零）；`content` 为内容缓存计数；`auditLogs.latest` 为最近审计记录。
+
 ## `GET /api/admin/users`
 
-返回用户列表，按创建时间倒序排列。
+返回用户列表，按创建时间倒序排列。**当前没有分页**，全量返回（P2-17 分页项未闭环）。
 
 列表项字段：
 
 - `id`
-- `username`
+- `username`（账号唯一标识；后端响应中没有 `phone*` 字段）
 - `status`
 - `vip`
 - `vipUntil`
 - `pointBalance`
+- `frozenPoints`
+- `availablePoints`
 - `createdAt`
 
 ## `GET /api/admin/users/{userId}`
@@ -164,8 +166,14 @@ Authorization: Bearer <admin-token>
 - `vip`
 - `vipUntil`
 - `pointBalance`
+- `frozenPoints`
+- `availablePoints`
+- `walletNetwork`
+- `walletAddress`
+- `walletUpdatedAt`
 - `watchRecordCount`
 - `pointRecordCount`
+- `withdrawalRecordCount`
 - `createdAt`
 
 ## `POST /api/admin/users/{userId}/status`
@@ -184,8 +192,9 @@ Authorization: Bearer <admin-token>
 
 - `ACTIVE`
 - `DISABLED`
+- `BLACKLISTED`
 
-用户禁用后，既有 App Token 后续访问 `/api/app/**` 会返回 `403`。
+用户禁用或拉黑后，既有 App Token 后续访问 `/api/app/**` 会返回 `403`。
 
 该操作会写入后台审计日志，动作为 `USER_STATUS_CHANGED`。
 
@@ -214,7 +223,8 @@ Authorization: Bearer <admin-token>
 ```json
 {
   "amount": 10,
-  "reason": "manual campaign grant"
+  "reason": "manual campaign grant",
+  "idempotencyKey": "00000000-0000-0000-0000-000000000000"
 }
 ```
 
@@ -223,6 +233,7 @@ Authorization: Bearer <admin-token>
 - `amount` 不能为 `0`，可为正数或负数。
 - 调整后余额不能小于 `0`。
 - `reason` 必填，最长 255。
+- `idempotencyKey` **必填**，最长 64；服务端按管理员、目标用户和请求键组成作用域，同一作用域重复请求返回首次结果，不重复改余额或写流水（缺少或空白时返回 `400`）。
 - 成功后生成 `ADMIN_ADJUSTMENT` 积分流水，并写入后台审计日志 `POINTS_ADJUSTED`。
 
 ## `GET /api/admin/users/{userId}/watch-records`
@@ -249,7 +260,15 @@ Authorization: Bearer <admin-token>
 
 ## `GET /api/admin/orders`
 
-返回所有用户充值订单，按创建时间倒序排列。详见 `docs/api/orders.md`。
+返回所有用户充值订单，按创建时间倒序排列。详见 `docs/api/orders.md`。后台 Web 当前没有对应页面。
+
+## `GET /api/admin/vip/orders`
+
+返回 VIP 订单列表。要求 `ORDER_WRITE` 的确认/拒绝接口与过期后补单详见 `docs/api/orders.md` 与 `docs/plans/2026-10-12-review-remediation-design.md`。
+
+## `GET /api/admin/withdrawals`
+
+提现申请、人工确认、拒绝、作废打款 attempt 与打款统计详见 `docs/api/withdrawals.md`。
 
 ## `GET /api/admin/system/configs`
 
@@ -363,7 +382,8 @@ Authorization: Bearer <admin-token>
 - 告警唯一键为 `runtime:dependency:<name>`。
 - `database` 依赖为 `CRITICAL`，其他依赖为 `WARNING`。
 - 依赖恢复为 `UP` 后，对应 `OPEN` 或 `ACKNOWLEDGED` 告警会转为 `RESOLVED`。
-- `content-provider` 依赖为 `UP` 但运行诊断 detail 含 `diagnostics events=` 时，额外生成 `runtime:dependency:content-provider:diagnostics` 的 `WARNING` 告警；诊断恢复 clean 或内容源不可用时，该诊断告警会转为 `RESOLVED`。
+- `content-provider` 依赖为 `UP` 且诊断事件计数**高于上一次评估的水位线**时，额外生成 `runtime:dependency:content-provider:diagnostics` 的 `WARNING` 告警；计数不再增长、诊断恢复 clean 或内容源不可用时，该诊断告警转为 `RESOLVED`（首次观测只记录基线，不告警）。内容源诊断计数器是进程内累计值，永不回落，因此采用水位线判定，避免告警长期 OPEN。
+- 除管理员手动调用本接口外，后端每 5 分钟自动评估一次（`reelshort.system.alerts.evaluation-initial-delay` 默认 `1m`、`reelshort.system.alerts.evaluation-interval` 默认 `5m`）。
 
 ## `POST /api/admin/system/alerts/{alertId}/acknowledge`
 
@@ -405,11 +425,17 @@ Authorization: Bearer <admin-token>
 
 ## `POST /api/admin/content/cache/shelves/{shelfType}/refresh`
 
-刷新指定内容货架缓存。成功后写入审计日志 `CONTENT_CACHE_REFRESHED`。
+刷新指定内容货架缓存。成功后写入审计日志 `CONTENT_CACHE_REFRESHED`。详见 `docs/api/content-cache.md`。
 
-错误：
+## `GET /api/admin/payments/events`
+
+返回支付回调事件，需要 `PAYMENT_EVENT_READ`。详见 `docs/api/payment-events-admin.md`。后台 Web 当前没有对应页面。
+
+## 通用错误
 
 - `400`：请求字段缺失、UUID 或状态格式不合法。
 - `401`：未提供有效后台 Token，或使用了 App Token。
 - `403`：后台账号已登录但缺少接口所需权限。
-- `404`：用户不存在。
+- `404`：目标资源不存在。
+- `409`：状态机冲突（`conflict`）。响应文案固定为 `conflict`，不回显内部异常消息。
+- `429`：命中后台限流规则（详见 `docs/api/rate-limit.md`）或凭证锁定。

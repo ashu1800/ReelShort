@@ -2,14 +2,17 @@ package com.reelshort.backend.social;
 
 import java.util.List;
 
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.reelshort.backend.auth.CurrentUser;
+import com.reelshort.backend.social.SocialDtos.CommentPageResponse;
 import com.reelshort.backend.social.SocialDtos.CommentRequest;
 import com.reelshort.backend.social.SocialDtos.CommentResponse;
 import com.reelshort.backend.social.SocialDtos.FavoriteBookResponse;
@@ -20,11 +23,20 @@ import com.reelshort.backend.system.web.RequestIdFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 
 @RestController
+@Validated
 @RequestMapping("/api/app/social")
 public class SocialController {
+
+	/** P2-16：评论分页默认页大小；不传分页参数的旧客户端拿到的就是第一页。 */
+	private static final int DEFAULT_COMMENT_PAGE_SIZE = 20;
+
+	/** P2-16：评论分页上限，避免单次请求全量加载。 */
+	private static final int MAX_COMMENT_PAGE_SIZE = 50;
 
 	private final SocialService socialService;
 
@@ -66,9 +78,11 @@ public class SocialController {
 	}
 
 	@GetMapping("/books/{bookId}/comments")
-	public ApiResponse<List<CommentResponse>> listComments(@PathVariable @NotBlank String bookId,
+	public ApiResponse<CommentPageResponse> listComments(@PathVariable @NotBlank String bookId,
+			@RequestParam(defaultValue = "0") @Min(0) int page,
+			@RequestParam(defaultValue = "" + DEFAULT_COMMENT_PAGE_SIZE) @Min(1) @Max(MAX_COMMENT_PAGE_SIZE) int size,
 			HttpServletRequest httpRequest) {
-		return ApiResponse.success(socialService.listComments(bookId), requestId(httpRequest));
+		return ApiResponse.success(socialService.listComments(bookId, page, size), requestId(httpRequest));
 	}
 
 	@GetMapping("/my/favorites")

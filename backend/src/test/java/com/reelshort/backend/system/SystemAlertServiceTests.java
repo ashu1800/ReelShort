@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -27,7 +28,15 @@ class SystemAlertServiceTests {
 	private final Map<String, SystemAlert> alerts = new LinkedHashMap<>();
 	private final SystemAlertRepository repository = repository();
 	private final Clock clock = Clock.fixed(Instant.parse("2026-06-27T10:00:00Z"), ZoneOffset.UTC);
-	private final SystemAlertService service = new SystemAlertService(repository, clock);
+	private SystemAlertService service;
+
+	@BeforeEach
+	void resetState() {
+		// 每个用例都从空告警表和新的水位线基线开始，避免用例之间互相污染。
+		alerts.clear();
+		SystemAlertService.resetDiagnosticsWatermarks();
+		service = new SystemAlertService(repository, clock);
+	}
 
 	@Test
 	void downDependencyCreatesOpenAlert() {
@@ -81,12 +90,26 @@ class SystemAlertServiceTests {
 	}
 
 	@Test
-	void contentProviderDiagnosticsEventsCreateWarningAlert() {
+	void firstDiagnosticsObservationOnlySetsWatermark() {
+		// P3-20：改为水位线判定后，首次观测只记录基线，不因历史累计事件误告警。
 		SystemRuntimeResponse runtime = runtime(List.of(RuntimeDependencyStatus.up(
 				"content-provider",
 				"reachable; diagnostics events=3, next_data_404=2, video_url_missing=1")));
 
 		List<SystemAlertResponse> alerts = service.evaluate(runtime);
+
+		assertThat(alerts).isEmpty();
+	}
+
+	@Test
+	void newContentProviderDiagnosticsEventsCreateWarningAlert() {
+		service.evaluate(runtime(List.of(RuntimeDependencyStatus.up(
+				"content-provider", "reachable; diagnostics events=3, next_data_404=3"))));
+		SystemAlertService laterService = new SystemAlertService(repository,
+				Clock.fixed(Instant.parse("2026-06-27T10:30:00Z"), ZoneOffset.UTC));
+
+		List<SystemAlertResponse> alerts = laterService.evaluate(runtime(List.of(RuntimeDependencyStatus.up(
+				"content-provider", "reachable; diagnostics events=5, next_data_404=4, search_empty=1"))));
 
 		assertThat(alerts).hasSize(1);
 		SystemAlertResponse alert = alerts.get(0);
@@ -94,14 +117,38 @@ class SystemAlertServiceTests {
 		assertThat(alert.status()).isEqualTo(SystemAlertStatus.OPEN.name());
 		assertThat(alert.severity()).isEqualTo(SystemAlertSeverity.WARNING.name());
 		assertThat(alert.title()).isEqualTo("Content provider diagnostics reported events");
-		assertThat(alert.detail()).contains("diagnostics events=3");
+		assertThat(alert.detail()).contains("diagnostics events=5");
+	}
+
+	@Test
+	void unchangedDiagnosticsCounterResolvesWarningAlert() {
+		// 计数器不再增长（内容源已恢复但累计值保持）时应自动 resolve，而不是长期粘滞 OPEN。
+		service.evaluate(runtime(List.of(RuntimeDependencyStatus.up(
+				"content-provider", "reachable; diagnostics events=2, search_empty=2"))));
+		SystemAlertService alertingService = new SystemAlertService(repository,
+				Clock.fixed(Instant.parse("2026-06-27T10:10:00Z"), ZoneOffset.UTC));
+		alertingService.evaluate(runtime(List.of(RuntimeDependencyStatus.up(
+				"content-provider", "reachable; diagnostics events=4, search_empty=4"))));
+		SystemAlertService laterService = new SystemAlertService(repository,
+				Clock.fixed(Instant.parse("2026-06-27T10:15:00Z"), ZoneOffset.UTC));
+
+		List<SystemAlertResponse> alerts = laterService.evaluate(runtime(List.of(RuntimeDependencyStatus.up(
+				"content-provider", "reachable; diagnostics events=4, search_empty=4"))));
+
+		SystemAlertResponse alert = alerts.get(0);
+		assertThat(alert.alertKey()).isEqualTo("runtime:dependency:content-provider:diagnostics");
+		assertThat(alert.status()).isEqualTo(SystemAlertStatus.RESOLVED.name());
+		assertThat(alert.resolvedAt()).isEqualTo("2026-06-27T10:15:00Z");
 	}
 
 	@Test
 	void cleanContentProviderDiagnosticsResolvesWarningAlert() {
 		service.evaluate(runtime(List.of(RuntimeDependencyStatus.up(
-				"content-provider",
-				"reachable; diagnostics events=2, search_empty=2"))));
+				"content-provider", "reachable; diagnostics events=2, search_empty=2"))));
+		SystemAlertService alertingService = new SystemAlertService(repository,
+				Clock.fixed(Instant.parse("2026-06-27T10:12:00Z"), ZoneOffset.UTC));
+		alertingService.evaluate(runtime(List.of(RuntimeDependencyStatus.up(
+				"content-provider", "reachable; diagnostics events=4, search_empty=4"))));
 		SystemAlertService laterService = new SystemAlertService(repository,
 				Clock.fixed(Instant.parse("2026-06-27T10:15:00Z"), ZoneOffset.UTC));
 
@@ -112,6 +159,16 @@ class SystemAlertServiceTests {
 		assertThat(alert.alertKey()).isEqualTo("runtime:dependency:content-provider:diagnostics");
 		assertThat(alert.status()).isEqualTo(SystemAlertStatus.RESOLVED.name());
 		assertThat(alert.resolvedAt()).isEqualTo("2026-06-27T10:15:00Z");
+	}
+
+	@Test
+	void scheduledEvaluationIsConfigured() throws Exception {
+		// P3-20：evaluate 挂到定时任务，而不是只靠管理员手动触发。
+		java.lang.reflect.Method method = Class
+				.forName("com.reelshort.backend.system.alerts.SystemAlertEvaluationService")
+				.getDeclaredMethod("evaluateScheduled");
+
+		assertThat(method.isAnnotationPresent(org.springframework.scheduling.annotation.Scheduled.class)).isTrue();
 	}
 
 	private SystemRuntimeResponse runtime(List<RuntimeDependencyStatus> dependencies) {

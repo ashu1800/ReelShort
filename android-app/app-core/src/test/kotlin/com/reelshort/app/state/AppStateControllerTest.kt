@@ -191,10 +191,19 @@ class AppStateControllerTest {
         assertEquals("内容暂时加载失败，可以稍后刷新。", state.errorMessage)
     }
 
+    /**
+     * W5-4：401 表示本机 Bearer Token 已失效，必须清理本地会话并弹出登录面板；
+     * 同时必须保留"记住密码"凭据，让用户可以直接重新登录。
+     *
+     * 说明：本用例此前断言 `session != null`（旧行为：401 后 Me 页仍显示"已登录"），
+     * 该断言固化的正是审查报告 P3-3 要修的问题，因此改为断言清理后的真实状态。
+     */
     @Test
-    fun accountUnauthorizedErrorShowsExpiredSessionMessageAndAuthPrompt() = runTest {
+    fun accountUnauthorizedErrorClearsSessionButKeepsRememberedCredentials() = runTest {
+        val credentials = SavedCredentials(username = "demo", password = "Password123", rememberPassword = true)
         val dataSource = FakeAppDataSource(
             restoredSession = AuthSession(username = "demo", token = "expired-token", tokenType = "Bearer"),
+            savedCredentials = credentials,
         )
         dataSource.accountError = ApiClientException(401, null, "unauthorized")
         val controller = AppStateController(dataSource)
@@ -205,9 +214,44 @@ class AppStateControllerTest {
 
         val state = controller.state.value
         assertEquals(AppScreen.ACCOUNT, state.screen)
+        assertNull(state.session)
+        assertEquals(credentials, state.savedCredentials)
         assertEquals("登录状态已失效，请重新登录。", state.errorMessage)
         assertEquals(true, state.authPromptVisible)
         assertFalse(state.isLoading)
+        assertTrue(dataSource.calls.contains("clear"), "401 必须清理本机会话：${dataSource.calls}")
+    }
+
+    @Test
+    fun walletPasswordErrorKeepsSessionAndShowsFriendlyMessage() = runTest {
+        val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+        dataSource.walletMutationError = ApiClientException(403, null, "invalid current password")
+
+        controller.bindWallet("ERC20", "0x1111111111111111111111111111111111111111", "WrongPassword1")
+
+        val state = controller.state.value
+        assertEquals("Current password is incorrect.", state.errorMessage)
+        assertEquals("demo", state.session?.username)
+        assertFalse(dataSource.calls.contains("clear"), "钱包密码错误不是会话失效：${dataSource.calls}")
+    }
+
+    @Test
+    fun failedLoginDoesNotClearAnExistingSession() = runTest {
+        val dataSource = FakeAppDataSource(
+            loginError = ApiClientException(401, null, "invalid username or password"),
+            restoredSession = AuthSession("demo", "token-demo", "Bearer"),
+        )
+        val controller = AppStateController(dataSource)
+        controller.restoreSession()
+        dataSource.calls.clear()
+
+        controller.login("demo", "wrong")
+
+        assertEquals("Invalid username or password.", controller.state.value.errorMessage)
+        assertFalse(dataSource.calls.contains("clear"), "登录失败不是会话失效：${dataSource.calls}")
     }
 
     @Test
@@ -1513,29 +1557,61 @@ class AppStateControllerTest {
         assertEquals(0, state.playback.progressPercent)
     }
 
+    /**
+     * W5-9：进度上报失败后按 5s → 15s → 60s 退避，弱网下不再每秒重试；
+     * 退避期间仍然更新本地播放位置，退避到期或上报成功后恢复即时上报。
+     */
     @Test
-    fun reportProgressRefreshesHistoryAndPointAccount() = runTest {
+    fun failedProgressReportsBackOffBeforeRetrying() = runTest {
+        var now = 0L
         val dataSource = FakeAppDataSource(restoredSession = AuthSession("demo", "token-demo", "Bearer"))
         dataSource.watchHistory = listOf(dataSource.watchRecord())
-        val controller = AppStateController(dataSource)
-
+        val controller = AppStateController(dataSource, nowMillis = { now })
         controller.restoreSession()
         dataSource.calls.clear()
         controller.openBook(dataSource.books.first())
-        controller.reportProgress(positionSeconds = 150, durationSeconds = 200)
+        dataSource.progressError = IllegalStateException("backend unavailable")
 
-        val state = controller.state.value
-        assertEquals(75, dataSource.lastProgress?.progressPercent)
-        assertEquals(150, state.playback.positionSeconds)
-        assertEquals(200, state.playback.durationSeconds)
-        assertEquals(75, state.playback.progressPercent)
-        assertEquals(150, state.playback.lastReportedPositionSeconds)
-        assertEquals(listOf("book-1"), state.watchHistory.map { it.bookId })
-        assertEquals(25, state.pointAccount?.balance)
-        assertEquals(
-            listOf("episodes:book-1", "history", "points", "snapshot:book-1:1", "video:book-1:1", "like-status:book-1", "favorite-status:book-1", "comments:book-1", "progress:book-1:1:150", "history", "points"),
-            dataSource.calls,
-        )
+        fun progressCalls() = dataSource.calls.count { it.startsWith("progress:") }
+
+        // 首次失败：立即进入 5s 退避窗口。
+        controller.reportProgressSilently(positionSeconds = 15, durationSeconds = 200)
+        assertEquals(1, progressCalls())
+
+        now = 4_000
+        controller.reportProgressSilently(positionSeconds = 31, durationSeconds = 200)
+        assertEquals(1, progressCalls())
+        assertEquals(31, controller.state.value.playback.positionSeconds)
+
+        // 5s 到期后重试，第二次失败把窗口拉长到 15s。
+        now = 5_000
+        controller.reportProgressSilently(positionSeconds = 31, durationSeconds = 200)
+        assertEquals(2, progressCalls())
+
+        now = 19_000
+        controller.reportProgressSilently(positionSeconds = 46, durationSeconds = 200)
+        assertEquals(2, progressCalls())
+
+        now = 20_000
+        controller.reportProgressSilently(positionSeconds = 46, durationSeconds = 200)
+        assertEquals(3, progressCalls())
+
+        // 第三次失败后窗口为 60s。
+        now = 79_000
+        controller.reportProgressSilently(positionSeconds = 61, durationSeconds = 200)
+        assertEquals(3, progressCalls())
+
+        now = 80_000
+        controller.reportProgressSilently(positionSeconds = 61, durationSeconds = 200)
+        assertEquals(4, progressCalls())
+
+        // 成功后清零退避：下一条进度按 15s 间隔正常上报。
+        dataSource.progressError = null
+        now = 140_000
+        controller.reportProgressSilently(positionSeconds = 77, durationSeconds = 200)
+        assertEquals(5, progressCalls())
+        assertEquals(77, controller.state.value.playback.lastReportedPositionSeconds)
+        assertFalse(controller.state.value.playback.rewardReportError)
     }
 
     @Test
@@ -2616,8 +2692,6 @@ class AppStateControllerTest {
             return ApiHealthStatus(status = "UP", service = "fake-backend")
         }
 
-        override suspend fun checkGeoIp(): String? = null
-
         override suspend fun login(username: String, password: String): AuthSession {
             calls += "login:$username"
             loginError?.let { throw it }
@@ -2804,11 +2878,6 @@ class AppStateControllerTest {
             calls += "vip:latest"
             latestVipOrderError?.let { throw it }
             return latestVipOrder
-        }
-
-        override suspend fun submitBankCard(holderName: String, cardNumber: String, expiryMonth: String, expiryYear: String, cvv: String) {
-            calls += "bank-card"
-            throw IllegalStateException("Bank card withdrawal is not supported")
         }
 
         override suspend fun loadWithdrawalSummary(): WithdrawalSummary {

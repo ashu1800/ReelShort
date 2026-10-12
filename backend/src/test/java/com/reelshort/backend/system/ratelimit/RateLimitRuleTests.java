@@ -36,7 +36,7 @@ class RateLimitRuleTests {
 	}
 
 	@Test
-	void keyResolverUsesFirstForwardedIpWhenNoPrincipalExists() {
+	void keyResolverUsesNearestUntrustedForwardedIpWhenNoPrincipalExists() {
 		// H3: trusted-proxies 白名单为空时仅信任 loopback；10.0.0.2 不再被自动信任
 		RateLimitKeyResolver resolver = new RateLimitKeyResolver("");
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/app/auth/login");
@@ -47,6 +47,20 @@ class RateLimitRuleTests {
 
 		// 10.0.0.2 不在白名单 → 返回最近的不可信 IP（即 10.0.0.2）
 		assertThat(key).isEqualTo("app-login:IP:10.0.0.2");
+	}
+
+	@Test
+	void keyResolverIgnoresClientForgedLeftmostForwardedValue() {
+		// P1-6: XFF 最左值是客户端可伪造的。限流键必须取"从右往左第一个不可信地址"，
+		// 否则攻击者每个请求换一个伪造 IP 就能绕过限流桶。
+		RateLimitKeyResolver resolver = new RateLimitKeyResolver("10.0.0.2");
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/app/auth/login");
+		request.addHeader("X-Forwarded-For", "1.2.3.4, 198.51.100.200, 10.0.0.2");
+		request.setRemoteAddr("127.0.0.1");
+
+		String key = resolver.resolveKey("app-login", request);
+
+		assertThat(key).isEqualTo("app-login:IP:198.51.100.200");
 	}
 
 	@Test

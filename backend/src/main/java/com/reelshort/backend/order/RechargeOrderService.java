@@ -45,15 +45,18 @@ public class RechargeOrderService {
 				.toList();
 	}
 
+	/**
+	 * 内部/测试入口：不校验金额，结算路径必须使用带 {@code expectedAmountCents} 的重载。
+	 */
 	@Transactional
-	public RechargeOrderResponse settlePaid(String orderNo, String paymentChannel) {
+	RechargeOrderResponse settlePaid(String orderNo, String paymentChannel) {
 		return orderSettlementLocks.withOrderLock(orderNo, () -> settlePaidLocked(orderNo, paymentChannel));
 	}
 
 	@Transactional
 	public RechargeOrderResponse settlePaid(String orderNo, String paymentChannel, int expectedAmountCents) {
 		return orderSettlementLocks.withOrderLock(orderNo, () -> {
-			RechargeOrder order = rechargeOrderRepository.findByOrderNo(orderNo)
+			RechargeOrder order = rechargeOrderRepository.findByOrderNoForUpdate(orderNo)
 					.orElseThrow(() -> new IllegalArgumentException("order not found"));
 			if (order.amountCents() != expectedAmountCents) {
 				throw new IllegalArgumentException("payment amount mismatch");
@@ -63,7 +66,7 @@ public class RechargeOrderService {
 	}
 
 	private RechargeOrderResponse settlePaidLocked(String orderNo, String paymentChannel) {
-		RechargeOrder order = rechargeOrderRepository.findByOrderNo(orderNo)
+		RechargeOrder order = rechargeOrderRepository.findByOrderNoForUpdate(orderNo)
 				.orElseThrow(() -> new IllegalArgumentException("order not found"));
 		return settlePaid(order, paymentChannel);
 	}

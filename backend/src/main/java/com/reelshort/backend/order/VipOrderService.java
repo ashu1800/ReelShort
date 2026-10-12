@@ -193,20 +193,26 @@ public class VipOrderService {
 				snapshot.receivingWalletAddress(), snapshot.tokenContractAddress(), snapshot.payableAmount());
 		IncomingTransfer verified = tronClient.verifyIncomingTransfer(transfer);
 		if (transactionTemplate == null) {
-			return confirmTransfer(orderId, verified, adminUsername);
+			return confirmTransfer(orderId, verified, adminUsername, true);
 		}
-		return transactionTemplate.execute(status -> confirmTransfer(orderId, verified, adminUsername));
+		return transactionTemplate.execute(status -> confirmTransfer(orderId, verified, adminUsername, true));
 	}
 
 	@Transactional
 	public VipOrder autoConfirm(UUID orderId, IncomingTransfer transfer) {
-		return confirmTransfer(orderId, transfer, "auto-confirm");
+		return confirmTransfer(orderId, transfer, "auto-confirm", false);
 	}
 
-	private VipOrder confirmTransfer(UUID orderId, IncomingTransfer transfer, String confirmedBy) {
+	/**
+	 * @param allowExpired 仅管理员人工路径为 true：允许对 EXPIRED 订单做"链上已核验的过期后补单"，
+	 *                     避免用户在有效期内已付款却因确认延迟而既拿不到 VIP 也无法退款。
+	 */
+	private VipOrder confirmTransfer(UUID orderId, IncomingTransfer transfer, String confirmedBy,
+			boolean allowExpired) {
 		VipOrder order = vipOrderRepository.findByIdForUpdate(orderId)
 				.orElseThrow(() -> new AdminException(404, "VIP order not found"));
-		if (!"PENDING".equals(order.status())) {
+		boolean recoveringExpired = allowExpired && "EXPIRED".equals(order.status());
+		if (!"PENDING".equals(order.status()) && !recoveringExpired) {
 			if (order.txHash() != null && order.txHash().equalsIgnoreCase(transfer.txHash())) {
 				return order;
 			}
@@ -216,10 +222,18 @@ public class VipOrderService {
 		if (vipOrderRepository.existsByTxHash(normalizedTxHash)) {
 			throw new AdminException(409, "transaction has already been consumed");
 		}
-		if (!VipPaymentMatcher.matches(order, transfer, tronProperties.getRequiredConfirmations())) {
+		if (!(recoveringExpired
+				? VipPaymentMatcher.matchesLatePayment(order, transfer, tronProperties.getRequiredConfirmations())
+				: VipPaymentMatcher.matches(order, transfer, tronProperties.getRequiredConfirmations()))) {
 			throw new AdminException(409, "transaction does not match this VIP order");
 		}
-		order.confirm(normalizedTxHash, confirmedBy, transfer.blockTimestamp(), transfer.confirmationCount());
+		if (recoveringExpired) {
+			order.recoverExpired(normalizedTxHash, confirmedBy, transfer.blockTimestamp(),
+					transfer.confirmationCount());
+		}
+		else {
+			order.confirm(normalizedTxHash, confirmedBy, transfer.blockTimestamp(), transfer.confirmationCount());
+		}
 		entitlementService.grantMonth(order.userId());
 		VipOrder saved = vipOrderRepository.save(order);
 		if ("auto-confirm".equals(confirmedBy)) {
@@ -227,7 +241,9 @@ public class VipOrderService {
 					"status=CONFIRMED, txHash=" + saved.txHash());
 		}
 		else if (adminAuditService != null) {
-			adminAuditService.record(confirmedBy, "VIP_ORDER_CONFIRM_VERIFIED", "VIP_ORDER", saved.id(),
+			adminAuditService.record(confirmedBy,
+					recoveringExpired ? "VIP_ORDER_RECOVERED_AFTER_EXPIRY" : "VIP_ORDER_CONFIRM_VERIFIED",
+					"VIP_ORDER", saved.id(),
 					"status=CONFIRMED, confirmedBy=" + saved.confirmedBy() + ", txHash=" + saved.txHash());
 		}
 		return saved;

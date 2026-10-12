@@ -23,7 +23,6 @@ import androidx.media3.common.util.UnstableApi
 import com.reelshort.app.state.AppScreen
 import com.reelshort.app.ui.MainShell
 import com.reelshort.app.ui.ReelShortViewModel
-import com.reelshort.app.ui.components.GeoBlockedScreen
 import com.reelshort.app.ui.components.LoadingDialog
 import com.reelshort.app.ui.components.TopErrorToast
 import com.reelshort.app.ui.components.UpdateDialog
@@ -124,7 +123,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
     val onRefreshAccount = remember(viewModel) { viewModel::refreshAccount }
     val onSubmitWithdrawal = remember(viewModel) { viewModel::submitWithdrawal }
     val onChangePassword = remember(viewModel) { viewModel::changePassword }
-    val onSubmitBankCard = remember(viewModel) { viewModel::submitBankCard }
 
     // 播放器与收藏页为全屏沉浸式，系统返回键回到上一级而非退出 App
     BackHandler(enabled = state.screen == AppScreen.PLAYER) {
@@ -180,7 +178,6 @@ private fun ReelShortApp(viewModel: ReelShortViewModel) {
                 onBackFromFundsChild = onBackFromFundsChild,
                 onSubmitWithdrawal = onSubmitWithdrawal,
                 onChangePassword = onChangePassword,
-                onSubmitBankCard = onSubmitBankCard,
                 onRefreshAccount = onRefreshAccount,
             )
             VipPaymentBottomSheet(

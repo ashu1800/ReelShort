@@ -39,8 +39,8 @@ public class AuthController {
 
 	@GetMapping("/captcha")
 	public ApiResponse<CaptchaResponse> captcha(HttpServletRequest httpRequest) {
-		CaptchaChallenge challenge = captchaService.generate();
-		return ApiResponse.success(new CaptchaResponse(challenge.id().toString(), challenge.imageBase64()),
+		CaptchaService.GeneratedCaptcha challenge = captchaService.generate();
+		return ApiResponse.success(new CaptchaResponse(challenge.captchaId(), challenge.imageBase64()),
 				requestId(httpRequest));
 	}
 

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import com.reelshort.backend.social.SocialDtos.CommentPageResponse;
 import com.reelshort.backend.social.SocialDtos.CommentResponse;
 import com.reelshort.backend.social.SocialDtos.FavoriteBookResponse;
 import com.reelshort.backend.social.SocialDtos.FavoriteRequest;
@@ -77,9 +78,10 @@ class SocialServiceTests {
 		CommentResponse second = socialService.addComment(userId, "alice-" + userId, bookId, "world");
 
 		assertThat(first.content()).isEqualTo("hello");
-		List<CommentResponse> list = socialService.listComments(bookId);
+		List<CommentResponse> list = socialService.listComments(bookId, 0, 20).comments();
 		assertThat(list).extracting(CommentResponse::content).startsWith("world", "hello");
-		assertThat(list).hasSizeGreaterThan(2);
+		// 伪评论只补足展示密度，单页永远不超过请求的 size，也不会少于真实评论条数。
+		assertThat(list).hasSizeBetween(2, 20);
 		assertThat(commentRepository.countByBookId(bookId)).isEqualTo(2);
 	}
 
@@ -90,16 +92,80 @@ class SocialServiceTests {
 
 		ToggleResponse like = socialService.likeStatus(userId, bookId);
 		ToggleResponse favorite = socialService.favoriteStatus(userId, bookId);
-		List<CommentResponse> first = socialService.listComments(bookId);
-		List<CommentResponse> second = socialService.listComments(bookId);
+		List<CommentResponse> first = socialService.listComments(bookId, 0, 20).comments();
+		List<CommentResponse> second = socialService.listComments(bookId, 0, 20).comments();
 
 		assertThat(like.active()).isFalse();
 		assertThat(like.count()).isPositive();
 		assertThat(favorite.active()).isFalse();
 		assertThat(favorite.count()).isPositive();
 		assertThat(first).isNotEmpty();
-		assertThat(second).containsExactlyInAnyOrderElementsOf(first);
+		assertThat(second).containsExactlyElementsOf(first);
 		assertThat(commentRepository.countByBookId(bookId)).isZero();
+	}
+
+	@Test
+	void commentsArePagedWithCappedSizeAndHasMore() {
+		UUID userId = UUID.randomUUID();
+		String bookId = findHotBookId();
+
+		CommentPageResponse first = socialService.listComments(bookId, 0, 20);
+		CommentPageResponse second = socialService.listComments(bookId, 1, 20);
+
+		assertThat(first.comments()).hasSize(20);
+		assertThat(first.page()).isZero();
+		assertThat(first.size()).isEqualTo(20);
+		assertThat(first.hasMore()).isTrue();
+		assertThat(second.comments()).hasSize(20);
+		// 分页之间不能重复返回同一条伪评论。
+		assertThat(second.comments()).doesNotContainAnyElementsOf(first.comments());
+	}
+
+	@Test
+	void commentsPageCapsFakeCommentsWithRealCommentsFirst() {
+		UUID userId = UUID.randomUUID();
+		String bookId = "book-page-real-" + userId;
+		socialService.addComment(userId, "bob-" + userId, bookId, "real-1");
+		socialService.addComment(userId, "bob-" + userId, bookId, "real-2");
+
+		CommentPageResponse page = socialService.listComments(bookId, 0, 5);
+
+		assertThat(page.comments()).hasSize(5);
+		assertThat(page.comments()).extracting(CommentResponse::content).startsWith("real-2", "real-1");
+		assertThat(commentRepository.countByBookId(bookId)).isEqualTo(2);
+	}
+
+	@Test
+	void commentsPageOutOfRangeReturnsEmptyWithoutMore() {
+		String bookId = findHotBookId();
+
+		CommentPageResponse page = socialService.listComments(bookId, 10_000, 20);
+
+		assertThat(page.comments()).isEmpty();
+		assertThat(page.hasMore()).isFalse();
+	}
+
+	@Test
+	void commentsPageForBookWithoutRealCommentsIsBoundedByRequestedSize() {
+		String bookId = "book-cold-page";
+
+		CommentPageResponse page = socialService.listComments(bookId, 0, 50);
+		CommentPageResponse beyondLast = socialService.listComments(bookId, 1, 50);
+
+		// 伪评论条数按热度分档，单页永远不会超过请求的 size，超界页返回空且没有更多。
+		assertThat(page.comments()).hasSizeBetween(1, 50);
+		assertThat(beyondLast.comments()).isEmpty();
+		assertThat(beyondLast.hasMore()).isFalse();
+	}
+
+	@Test
+	void commentsPageIsStablePerPage() {
+		String bookId = findHotBookId();
+
+		CommentPageResponse first = socialService.listComments(bookId, 0, 10);
+		CommentPageResponse second = socialService.listComments(bookId, 0, 10);
+
+		assertThat(second.comments()).containsExactlyElementsOf(first.comments());
 	}
 
 	@Test
@@ -108,11 +174,11 @@ class SocialServiceTests {
 
 		ToggleResponse like = socialService.likeStatus(UUID.randomUUID(), hotBookId);
 		ToggleResponse favorite = socialService.favoriteStatus(UUID.randomUUID(), hotBookId);
-		List<CommentResponse> comments = socialService.listComments(hotBookId);
+		List<CommentResponse> comments = socialService.listComments(hotBookId, 0, 50).comments();
 
 		assertThat(like.count()).isGreaterThanOrEqualTo(1_000);
 		assertThat(favorite.count()).isGreaterThanOrEqualTo(120);
-		assertThat(comments).hasSizeGreaterThanOrEqualTo(100);
+		assertThat(comments).hasSize(50);
 		assertThat(displayFallbacks.hotnessTier(hotBookId)).isEqualTo(SocialDisplayFallbacks.HotnessTier.HOT);
 	}
 

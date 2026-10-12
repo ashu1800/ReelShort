@@ -10,7 +10,17 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $envPath = (Resolve-Path -LiteralPath (Join-Path $repoRoot $EnvFile)).Path
 $composePath = (Resolve-Path -LiteralPath (Join-Path $repoRoot "infra/docker-compose.yml")).Path
-$outputRootPath = Join-Path $repoRoot $OutputRoot
+
+# The retention step below removes directories recursively, so the output root must be confined to the
+# repository: reject absolute paths and any ".." escape before anything is created or deleted.
+if ([System.IO.Path]::IsPathRooted($OutputRoot)) {
+    throw "-OutputRoot must be a relative path inside the repository: $OutputRoot"
+}
+$outputRootPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
+$repoRootPrefix = $repoRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+if (-not $outputRootPath.StartsWith($repoRootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "-OutputRoot must stay inside the repository ($repoRoot): $outputRootPath"
+}
 $timestamp = "{0}-{1}" -f (Get-Date -Format "yyyyMMdd-HHmmss-fff"), ([Guid]::NewGuid().ToString("N").Substring(0, 8))
 $backupDir = Join-Path $outputRootPath $timestamp
 $databaseDumpPath = Join-Path $backupDir "database.dump"
@@ -139,9 +149,12 @@ try {
 
     if ($RetentionDays -gt 0 -and (Test-Path -LiteralPath $outputRootPath)) {
         $cutoff = (Get-Date).AddDays(-$RetentionDays)
-        Get-ChildItem -LiteralPath $outputRootPath -Directory |
-            Where-Object { $_.LastWriteTime -lt $cutoff } |
-            Remove-Item -Recurse -Force
+        $expired = @(Get-ChildItem -LiteralPath $outputRootPath -Directory |
+            Where-Object { $_.LastWriteTime -lt $cutoff })
+        foreach ($directory in $expired) {
+            Write-Host "Retention: removing expired backup directory $($directory.FullName)"
+            Remove-Item -LiteralPath $directory.FullName -Recurse -Force
+        }
     }
 
     Write-Host "Backup completed: $backupDir"

@@ -4,9 +4,11 @@ import java.math.BigInteger;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 @Service
+@ConditionalOnProperty(prefix = "reelshort.withdrawal.payout", name = "enabled", havingValue = "true")
 public class WithdrawalPayoutCoordinator {
 
 	private final WithdrawalPayoutTransactionService transactionService;

@@ -45,6 +45,27 @@ class VipPaymentMatcherTests {
 				20)).isFalse();
 	}
 
+	@Test
+	void latePaymentRecoveryAcceptsOnlyExpiredOrdersWithinTheOriginalWindow() {
+		VipOrder expired = order();
+		expired.expire();
+		IncomingTransfer paidInTime = transfer(expired, ADDRESS, CONTRACT, expired.payableAmount(),
+				expired.createdAt().plusSeconds(10), 20, true);
+
+		// 有效期内已付款、确认晚于过期：管理员可以补单
+		assertThat(VipPaymentMatcher.matchesLatePayment(expired, paidInTime, 20)).isTrue();
+		// 但补单路径不接受 PENDING（那是正常确认）或已终态订单
+		assertThat(VipPaymentMatcher.matchesLatePayment(order(), paidInTime, 20)).isFalse();
+		// 付款时间晚于有效期：即使过期后补单也不接受
+		assertThat(VipPaymentMatcher.matchesLatePayment(expired,
+				transfer(expired, ADDRESS, CONTRACT, expired.payableAmount(), expired.expiresAt().plusNanos(1), 20,
+						true), 20)).isFalse();
+		// 其余条件与正常确认完全一致
+		assertThat(VipPaymentMatcher.matchesLatePayment(expired,
+				transfer(expired, ADDRESS, CONTRACT, expired.payableAmount(),
+						expired.createdAt().plusSeconds(10), 19, true), 20)).isFalse();
+	}
+
 	private VipOrder order() {
 		return VipOrder.create(UUID.randomUUID(), "VIP-matcher", new BigDecimal("15"), 1, 20,
 				ADDRESS, CONTRACT);

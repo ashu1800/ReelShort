@@ -1,6 +1,7 @@
 package com.reelshort.backend.release;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -82,10 +83,11 @@ class ReleaseServiceTests {
 		when(releaseRepository.save(org.mockito.ArgumentMatchers.any(AppRelease.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0));
 
-		PublishReleaseRequest request = new PublishReleaseRequest("0.4.3", 7, "new-key.apk", "new-key.sha256", 200L,
+		PublishReleaseRequest request = new PublishReleaseRequest("0.4.3", 8, "new-key.apk", "new-key.sha256", 200L,
 				20L, "2222222222222222222222222222222222222222222222222222222222222222", "New", "New notes", true, 2);
 		AppRelease saved = releaseService.publish(request);
 
+		assertThat(saved.versionCode()).isEqualTo(8L);
 		assertThat(saved.apkObjectKey()).isEqualTo("new-key.apk");
 		assertThat(saved.apkSizeBytes()).isEqualTo(200L);
 		assertThat(saved.apkSha256())
@@ -93,5 +95,36 @@ class ReleaseServiceTests {
 		assertThat(saved.title()).isEqualTo("New");
 		assertThat(saved.mandatory()).isTrue();
 		assertThat(saved.minimumVersionCode()).isEqualTo(2L);
+	}
+
+	@Test
+	void publishKeepsSameVersionCodeIdempotent() {
+		AppRelease existing = AppRelease.create("0.4.3", 7, "old-key.apk", "old-key.sha256", 100L, 10L,
+				"0000000000000000000000000000000000000000000000000000000000000000", "Old", "Old notes", false, 1);
+		when(releaseRepository.findByVersionName("0.4.3")).thenReturn(Optional.of(existing));
+		when(releaseRepository.save(org.mockito.ArgumentMatchers.any(AppRelease.class)))
+				.thenAnswer(invocation -> invocation.getArgument(0));
+
+		PublishReleaseRequest request = new PublishReleaseRequest("0.4.3", 7, "rebuilt-key.apk",
+				"rebuilt-key.sha256", 300L, 30L,
+				"3333333333333333333333333333333333333333333333333333333333333333", "", "", false, 1);
+		AppRelease saved = releaseService.publish(request);
+
+		assertThat(saved.versionCode()).isEqualTo(7L);
+		assertThat(saved.apkObjectKey()).isEqualTo("rebuilt-key.apk");
+	}
+
+	@Test
+	void publishRejectsDecreasingVersionCode() {
+		AppRelease existing = AppRelease.create("0.4.3", 7, "old-key.apk", "old-key.sha256", 100L, 10L,
+				"0000000000000000000000000000000000000000000000000000000000000000", "Old", "Old notes", false, 1);
+		when(releaseRepository.findByVersionName("0.4.3")).thenReturn(Optional.of(existing));
+
+		PublishReleaseRequest request = new PublishReleaseRequest("0.4.3", 6, "new-key.apk", "new-key.sha256", 200L,
+				20L, "2222222222222222222222222222222222222222222222222222222222222222", "New", "New notes", true, 2);
+
+		assertThatThrownBy(() -> releaseService.publish(request))
+				.isInstanceOf(ReleaseException.class)
+				.hasMessageContaining("versionCode");
 	}
 }

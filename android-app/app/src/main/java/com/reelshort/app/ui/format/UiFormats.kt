@@ -354,8 +354,6 @@ internal fun messageVisualTone(type: UiMessageType): MessageVisualTone =
 
 internal fun topMessageUsesLiveRegion(): Boolean = true
 
-internal fun bankCardEntryCollectsSensitiveData(): Boolean = false
-
 internal fun accountConfirmationTitle(language: AppLanguage): String = "Confirm action"
 
 internal fun accountConfirmationBody(summary: String, language: AppLanguage): String =

@@ -16,7 +16,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,10 +31,13 @@ import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.data.WithdrawalRecord
 import com.reelshort.app.state.AccountOperation
 import com.reelshort.app.state.AppUiState
+import com.reelshort.app.ui.components.LoginTextField
 import com.reelshort.app.ui.components.PrimaryActionButton
 import com.reelshort.app.ui.components.SurfacePanel
+import com.reelshort.app.ui.components.TextFieldKind
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.format.withdrawalConversionLines
+import com.reelshort.app.ui.format.withdrawalPointAmountPlaceholder
 import com.reelshort.app.ui.format.withdrawalStatusLabel
 import com.reelshort.app.ui.theme.DangerText
 import com.reelshort.app.ui.theme.Panel
@@ -55,6 +57,7 @@ internal fun WithdrawalScreen(
     val copy = strings(language)
     val summary = state.withdrawalSummary
     var pointsText by remember { mutableStateOf("") }
+    var pointsFocused by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
     val points = pointsText.toIntOrNull() ?: 0
     val loggedIn = state.session != null
@@ -81,12 +84,14 @@ internal fun WithdrawalScreen(
                                 color = if (summary?.walletAddress == null) DangerText else TextSecondary,
                                 style = MaterialTheme.typography.bodySmall,
                             )
-                            OutlinedTextField(
+                            LoginTextField(
                                 value = pointsText,
                                 onValueChange = { pointsText = it.filter(Char::isDigit) },
-                                label = { Text(copy.accountWithdrawPointAmountLabel) },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
+                                label = copy.accountWithdrawPointAmountLabel,
+                                enabled = true,
+                                kind = TextFieldKind.POINT_AMOUNT,
+                                idlePlaceholder = withdrawalPointAmountPlaceholder(pointsText, pointsFocused, language),
+                                onFocusChanged = { pointsFocused = it },
                             )
                             val minimum = summary?.minimumPoints ?: Int.MAX_VALUE
                             val available = summary?.availablePoints ?: 0

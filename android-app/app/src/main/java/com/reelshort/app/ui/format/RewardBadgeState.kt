@@ -62,7 +62,9 @@ internal fun rewardBadgeState(
         RewardBadgeVisualState.UNAVAILABLE -> rewardBadgeUnavailableLabel(language)
         RewardBadgeVisualState.WAITING -> rewardBadgeWaitingLabel(language)
     }
-    val displayedPoints = if (rewardClaimed && awardedPoints > 0) awardedPoints else estimatedRewardPoints
+    // 结算后一律显示服务端实际到账积分：每日限额命中时 awardedPoints=0，圆环必须显示 0，
+    // 否则会出现"圆环显示预计积分、实际没到账"的口径不一致。
+    val displayedPoints = if (rewardClaimed) awardedPoints else estimatedRewardPoints
     val pointsText = displayedPoints.coerceAtLeast(0).toString()
     return RewardBadgeState(
         accessibilityText = accessibilityText,

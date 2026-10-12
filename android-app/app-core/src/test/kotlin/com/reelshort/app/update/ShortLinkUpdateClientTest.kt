@@ -28,6 +28,7 @@ class ShortLinkUpdateClientTest : Closeable {
         assertNotNull(release)
         assertEquals("v0.4.2", release.tagName)
         assertEquals(SemanticVersion(0, 4, 2), release.version)
+        assertEquals(6L, release.versionCode)
         assertEquals("ShortLink-v0.4.2.apk", release.apkAsset.name)
         assertEquals("ShortLink-v0.4.2.apk.sha256", release.sha256Asset.name)
         assertEquals(12_345_678, release.apkAsset.sizeBytes)
@@ -48,6 +49,53 @@ class ShortLinkUpdateClientTest : Closeable {
     @Test
     fun rejectsNonCosHost() = runTest {
         server.enqueue(MockResponse().setBody(manifestJson(apkUrl = "https://evil.example.com/releases/android/ShortLink-v0.4.2.apk")))
+
+        assertFailsWith<ReleaseUpdateException.InvalidRelease> { client.fetchLatestStable() }
+    }
+
+    @Test
+    fun rejectsOtherCosBucketsEvenWhenTheyShareTheAccountSuffix() = runTest {
+        // 同一腾讯云账号下的其它桶也必须是非法下载源，只允许 ShortLink 自己的桶。
+        server.enqueue(
+            MockResponse().setBody(
+                manifestJson(apkUrl = "https://other-bucket-1259596907.cos.ap-chengdu.myqcloud.com/releases/android/ShortLink-v0.4.2.apk"),
+            ),
+        )
+
+        assertFailsWith<ReleaseUpdateException.InvalidRelease> { client.fetchLatestStable() }
+    }
+
+    @Test
+    fun rejectsSameBucketNameInAnotherCosRegion() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                manifestJson(apkUrl = "https://update-1259596907.cos.ap-shanghai.myqcloud.com/releases/android/ShortLink-v0.4.2.apk"),
+            ),
+        )
+
+        assertFailsWith<ReleaseUpdateException.InvalidRelease> { client.fetchLatestStable() }
+    }
+
+    @Test
+    fun rejectsBucketHostUsedAsAPrefixOfAnotherDomain() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                manifestJson(apkUrl = "https://update-1259596907.cos.ap-chengdu.myqcloud.com.evil.example/releases/android/ShortLink-v0.4.2.apk"),
+            ),
+        )
+
+        assertFailsWith<ReleaseUpdateException.InvalidRelease> { client.fetchLatestStable() }
+    }
+
+    @Test
+    fun rejectsChecksumUrlFromAnotherCosBucket() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                manifestJson(
+                    sha256Url = "https://other-bucket-1259596907.cos.ap-chengdu.myqcloud.com/releases/android/ShortLink-v0.4.2.apk.sha256",
+                ),
+            ),
+        )
 
         assertFailsWith<ReleaseUpdateException.InvalidRelease> { client.fetchLatestStable() }
     }
@@ -77,6 +125,7 @@ class ShortLinkUpdateClientTest : Closeable {
     private fun manifestJson(
         versionName: String = "0.4.2",
         apkUrl: String = "https://update-1259596907.cos.ap-chengdu.myqcloud.com/releases/android/ShortLink-v0.4.2.apk?q-sign-algorithm=sha1",
+        sha256Url: String = "https://update-1259596907.cos.ap-chengdu.myqcloud.com/releases/android/ShortLink-v0.4.2.apk.sha256?q-sign-algorithm=sha1",
     ): String = """
         {
           "versionName": "$versionName",
@@ -85,7 +134,7 @@ class ShortLinkUpdateClientTest : Closeable {
           "releaseNotes": "Bug fixes",
           "publishedAt": "2026-07-14T10:00:00Z",
           "apkUrl": "$apkUrl",
-          "sha256Url": "https://update-1259596907.cos.ap-chengdu.myqcloud.com/releases/android/ShortLink-v0.4.2.apk.sha256?q-sign-algorithm=sha1",
+          "sha256Url": "$sha256Url",
           "sizeBytes": 12345678,
           "sha256SizeBytes": 65,
           "apkSha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",

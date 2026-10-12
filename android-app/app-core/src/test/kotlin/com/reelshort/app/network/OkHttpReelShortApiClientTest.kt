@@ -554,14 +554,19 @@ class OkHttpReelShortApiClientTest {
     fun listCommentsReadsGuestEndpointWithoutBearerToken() = runTest {
         MockWebServer().use { server ->
             server.enqueue(successBody("""
-                [
-                  {
-                    "id": "00000000-0000-0000-0000-000000000010",
-                    "username": "social-carol",
-                    "content": "nice drama",
-                    "createdAt": "2026-06-29T10:28:00Z"
-                  }
-                ]
+                {
+                  "comments": [
+                    {
+                      "id": "00000000-0000-0000-0000-000000000010",
+                      "username": "social-carol",
+                      "content": "nice drama",
+                      "createdAt": "2026-06-29T10:28:00Z"
+                    }
+                  ],
+                  "hasMore": true,
+                  "page": 0,
+                  "size": 20
+                }
             """.trimIndent()))
             val client = client(server, token = null)
 

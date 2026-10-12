@@ -13,9 +13,9 @@ public final class SocialDtos {
 
 	/** 收藏请求：携带剧的快照字段，便于"我的收藏"列表无需回查内容源即可展示。 */
 	public record FavoriteRequest(
-			@NotBlank String bookTitle,
-			@NotBlank String filteredTitle,
-			String coverUrl,
+			@NotBlank @Size(max = 255) String bookTitle,
+			@NotBlank @Size(max = 255) String filteredTitle,
+			@Size(max = 512) String coverUrl,
 			@jakarta.validation.constraints.Min(0) int chapterCount) {
 	}
 
@@ -39,6 +39,18 @@ public final class SocialDtos {
 			return new CommentResponse(comment.id(), comment.username(), comment.content(),
 					comment.createdAt().toString());
 		}
+	}
+
+	/**
+	 * 评论分页响应（P2-16）。
+	 *
+	 * <p>真实评论按 {@code created_at desc} 分页且始终排在伪评论之前；{@code hasMore} 表示后面还有内容。
+	 */
+	public record CommentPageResponse(
+			java.util.List<CommentResponse> comments,
+			boolean hasMore,
+			int page,
+			int size) {
 	}
 
 	/** "我的收藏"列表项，复用剧的快照字段。 */

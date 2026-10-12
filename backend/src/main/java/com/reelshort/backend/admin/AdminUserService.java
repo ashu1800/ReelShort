@@ -74,35 +74,57 @@ public class AdminUserService {
 
 	@Transactional
 	public AdminUserDetailResponse changeStatus(String adminUsername, UUID userId, UserStatus status) {
-		UserAccount user = user(userId);
-		user.changeStatus(status);
-		UserAccount savedUser = userAccountRepository.save(user);
-		adminAuditService.record(adminUsername, "USER_STATUS_CHANGED", "USER", userId,
-				"Changed user status to " + status);
-		return detailResponse(savedUser);
+		try {
+			UserAccount user = user(userId);
+			user.changeStatus(status);
+			UserAccount savedUser = userAccountRepository.save(user);
+			adminAuditService.recordIndependent(adminUsername, "USER_STATUS_CHANGED", "USER", userId,
+					"Changed user status to " + status);
+			return detailResponse(savedUser);
+		}
+		catch (RuntimeException exception) {
+			// P2-12: 失败路径用 REQUIRES_NEW 留痕，外层业务事务回滚不影响取证
+			adminAuditService.recordIndependent(adminUsername, "USER_STATUS_CHANGE_FAILED", "USER", userId,
+					failureSummary(exception));
+			throw exception;
+		}
 	}
 
 	@Transactional
 	public AdminUserDetailResponse setVip(String adminUsername, UUID userId, OffsetDateTime vipUntil) {
-		UserAccount user = userForUpdate(userId);
-		if (!vipUntil.isAfter(OffsetDateTime.now())) {
-			throw new AdminException(400, "vip expiry must be in the future");
+		try {
+			UserAccount user = userForUpdate(userId);
+			if (!vipUntil.isAfter(OffsetDateTime.now())) {
+				throw new AdminException(400, "vip expiry must be in the future");
+			}
+			user.grantVip(vipUntil);
+			UserAccount savedUser = userAccountRepository.save(user);
+			adminAuditService.recordIndependent(adminUsername, "USER_VIP_SET", "USER", userId,
+					"Set user VIP until " + vipUntil);
+			return detailResponse(savedUser);
 		}
-		user.grantVip(vipUntil);
-		UserAccount savedUser = userAccountRepository.save(user);
-		adminAuditService.record(adminUsername, "USER_VIP_SET", "USER", userId,
-				"Set user VIP until " + vipUntil);
-		return detailResponse(savedUser);
+		catch (RuntimeException exception) {
+			adminAuditService.recordIndependent(adminUsername, "USER_VIP_SET_FAILED", "USER", userId,
+					failureSummary(exception));
+			throw exception;
+		}
 	}
 
 	@Transactional
 	public AdminUserDetailResponse cancelVip(String adminUsername, UUID userId) {
-		UserAccount user = userForUpdate(userId);
-		user.clearVip();
-		UserAccount savedUser = userAccountRepository.save(user);
-		adminAuditService.record(adminUsername, "USER_VIP_CANCELLED", "USER", userId,
-				"Cancelled current user VIP entitlement");
-		return detailResponse(savedUser);
+		try {
+			UserAccount user = userForUpdate(userId);
+			user.clearVip();
+			UserAccount savedUser = userAccountRepository.save(user);
+			adminAuditService.recordIndependent(adminUsername, "USER_VIP_CANCELLED", "USER", userId,
+					"Cancelled current user VIP entitlement");
+			return detailResponse(savedUser);
+		}
+		catch (RuntimeException exception) {
+			adminAuditService.recordIndependent(adminUsername, "USER_VIP_CANCEL_FAILED", "USER", userId,
+					failureSummary(exception));
+			throw exception;
+		}
 	}
 
 	@Transactional
@@ -111,25 +133,32 @@ public class AdminUserService {
 		if (amount == 0) {
 			throw new AdminException(400, "bad request");
 		}
-		UserAccount user = userForUpdate(userId);
-		String normalizedReason = reason.trim();
-		String scopedKey = scopedIdempotencyKey(adminUsername, userId, idempotencyKey);
-		var existing = pointTransactionRepository.findByIdempotencyKey(scopedKey);
-		if (existing.isPresent()) {
-			var original = existing.get();
-			if (original.amount() != amount || !Objects.equals(original.reason(), normalizedReason)) {
-				throw new AdminException(409, "idempotency key reused with different request");
+		try {
+			UserAccount user = userForUpdate(userId);
+			String normalizedReason = reason.trim();
+			String scopedKey = scopedIdempotencyKey(adminUsername, userId, idempotencyKey);
+			var existing = pointTransactionRepository.findByIdempotencyKey(scopedKey);
+			if (existing.isPresent()) {
+				var original = existing.get();
+				if (original.amount() != amount || !Objects.equals(original.reason(), normalizedReason)) {
+					throw new AdminException(409, "idempotency key reused with different request");
+				}
+				int frozenPoints = original.frozenPointsAfter() == null
+						? accountSnapshot(userId).frozenPoints()
+						: original.frozenPointsAfter();
+				return detailResponse(user, original.balanceAfter(), frozenPoints,
+						original.balanceAfter() - frozenPoints);
 			}
-			int frozenPoints = original.frozenPointsAfter() == null
-					? accountSnapshot(userId).frozenPoints()
-					: original.frozenPointsAfter();
-			return detailResponse(user, original.balanceAfter(), frozenPoints,
-					original.balanceAfter() - frozenPoints);
+			PointAccountResponse account = pointsService.adjustByAdmin(userId, amount, normalizedReason, scopedKey);
+			adminAuditService.recordIndependent(adminUsername, "POINTS_ADJUSTED", "USER", userId,
+					"Adjusted points by " + amount + ": " + normalizedReason);
+			return detailResponse(user, account.balance(), account.frozenPoints(), account.availablePoints());
 		}
-		PointAccountResponse account = pointsService.adjustByAdmin(userId, amount, normalizedReason, scopedKey);
-		adminAuditService.record(adminUsername, "POINTS_ADJUSTED", "USER", userId,
-				"Adjusted points by " + amount + ": " + normalizedReason);
-		return detailResponse(user, account.balance(), account.frozenPoints(), account.availablePoints());
+		catch (RuntimeException exception) {
+			adminAuditService.recordIndependent(adminUsername, "POINTS_ADJUST_FAILED", "USER", userId,
+					failureSummary(exception));
+			throw exception;
+		}
 	}
 
 	@Transactional(readOnly = true)
@@ -210,5 +239,18 @@ public class AdminUserService {
 	}
 
 	private record AccountSnapshot(int balance, int frozenPoints, int availablePoints) {
+	}
+
+	/**
+	 * P2-12: 失败摘要限长（admin_audit_logs.summary 为 varchar(512)），避免审计写入本身失败而掩盖原始异常。
+	 */
+	private String failureSummary(RuntimeException exception) {
+		String message = exception.getMessage() == null || exception.getMessage().isBlank()
+				? exception.getClass().getSimpleName()
+				: exception.getMessage();
+		if (message.length() > 200) {
+			message = message.substring(0, 200);
+		}
+		return "status=FAILED (" + message + ")";
 	}
 }

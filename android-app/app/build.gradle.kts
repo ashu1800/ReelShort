@@ -65,6 +65,11 @@ android {
 
     val reelshortApiBaseUrl = providers.gradleProperty("reelshortApiBaseUrl")
         .orElse("https://shortlink.hjj888.cc/api/app")
+    // COS 桶名与地域用于 App 更新下载链接的精确域名校验（只接受本桶域名，避免任意账号桶通过后缀匹配）。
+    val reelshortCosBucket = providers.gradleProperty("reelshortCosBucket")
+        .orElse("update-1259596907")
+    val reelshortCosRegion = providers.gradleProperty("reelshortCosRegion")
+        .orElse("ap-chengdu")
     defaultConfig {
         applicationId = "com.reelshort.app"
         minSdk = 26
@@ -73,6 +78,8 @@ android {
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "REELSHORT_API_BASE_URL", reelshortApiBaseUrl.get().asBuildConfigString())
+        buildConfigField("String", "REELSHORT_COS_BUCKET", reelshortCosBucket.get().asBuildConfigString())
+        buildConfigField("String", "REELSHORT_COS_REGION", reelshortCosRegion.get().asBuildConfigString())
     }
 
     signingConfigs {
@@ -142,7 +149,12 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
-val officialPackagingTask = Regex("^(assemble|package|bundle|sign)(Debug|Release).*$")
+// Only final APK/AAB producers require the pinned official keystore. The name is anchored at the end and
+// matched case-sensitively so AGP's intermediate and test helpers (packageDebugResources,
+// assembleDebugUnitTest, packageDebugUnitTestForUnitTest, assembleDebugAndroidTest) stay runnable without
+// ANDROID_SIGNING_* secrets; packaging those artifacts still triggers validation through package<b>Debug</b>.
+val officialPackagingTask = Regex("^(assemble|bundle|package)([A-Za-z0-9]+)?(Debug|Release)$")
+
 gradle.taskGraph.whenReady {
     if (allTasks.any { task -> task.project == project && officialPackagingTask.matches(task.name) }) {
         validateOfficialSigning()

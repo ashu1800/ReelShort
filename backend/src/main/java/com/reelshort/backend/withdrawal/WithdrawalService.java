@@ -13,6 +13,7 @@ import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +21,8 @@ import com.reelshort.backend.admin.AdminException;
 import com.reelshort.backend.admin.AdminAuditService;
 import com.reelshort.backend.points.PointAccount;
 import com.reelshort.backend.points.PointAccountRepository;
+import com.reelshort.backend.points.PointTransaction;
+import com.reelshort.backend.points.PointTransactionRepository;
 import com.reelshort.backend.system.concurrency.UserActionLocks;
 import com.reelshort.backend.system.config.SystemConfigRegistry;
 import com.reelshort.backend.system.config.SystemConfigService;
@@ -36,11 +39,13 @@ public class WithdrawalService {
 	private final WithdrawalRequestRepository withdrawalRequestRepository;
 	private final UserWalletRepository userWalletRepository;
 	private final PointAccountRepository pointAccountRepository;
+	private final PointTransactionRepository pointTransactionRepository;
 	private final SystemConfigService systemConfigService;
 	private final UserActionLocks userActionLocks;
 	private final UserAccountRepository userAccountRepository;
-	private final WithdrawalPayoutCoordinator payoutCoordinator;
+	private final ObjectProvider<WithdrawalPayoutCoordinator> payoutCoordinatorProvider;
 	private final PayoutBalancePreflightService balancePreflight;
+	private final PayoutAttemptReconciler payoutAttemptReconciler;
 	private final WithdrawalPayoutAttemptRepository payoutAttemptRepository;
 	private final EthereumProperties ethereumProperties;
 	private final TronProperties tronProperties;
@@ -50,26 +55,42 @@ public class WithdrawalService {
 
 	public WithdrawalService(WithdrawalRequestRepository withdrawalRequestRepository,
 			UserWalletRepository userWalletRepository, PointAccountRepository pointAccountRepository,
+			PointTransactionRepository pointTransactionRepository,
 			SystemConfigService systemConfigService,
 			UserActionLocks userActionLocks, UserAccountRepository userAccountRepository,
-			WithdrawalPayoutCoordinator payoutCoordinator,
+			ObjectProvider<WithdrawalPayoutCoordinator> payoutCoordinatorProvider,
 			PayoutBalancePreflightService balancePreflight,
+			PayoutAttemptReconciler payoutAttemptReconciler,
 			WithdrawalPayoutAttemptRepository payoutAttemptRepository,
 			EthereumProperties ethereumProperties, TronProperties tronProperties, BscProperties bscProperties,
 			AdminAuditService adminAuditService) {
 		this.withdrawalRequestRepository = withdrawalRequestRepository;
 		this.userWalletRepository = userWalletRepository;
 		this.pointAccountRepository = pointAccountRepository;
+		this.pointTransactionRepository = pointTransactionRepository;
 		this.systemConfigService = systemConfigService;
 		this.userActionLocks = userActionLocks;
 		this.userAccountRepository = userAccountRepository;
-		this.payoutCoordinator = payoutCoordinator;
+		this.payoutCoordinatorProvider = payoutCoordinatorProvider;
 		this.balancePreflight = balancePreflight;
+		this.payoutAttemptReconciler = payoutAttemptReconciler;
 		this.payoutAttemptRepository = payoutAttemptRepository;
 		this.ethereumProperties = ethereumProperties;
 		this.tronProperties = tronProperties;
 		this.bscProperties = bscProperties;
 		this.adminAuditService = adminAuditService;
+	}
+
+	/**
+	 * 自动打款执行能力默认关闭（{@code reelshort.withdrawal.payout.enabled=false}）：关闭时打款编排 Bean
+	 * 不参与装配，任何触发路径都 fail-closed 返回 410，避免签名/广播代码被意外调用。
+	 */
+	private WithdrawalPayoutCoordinator requirePayoutCoordinator() {
+		WithdrawalPayoutCoordinator coordinator = payoutCoordinatorProvider.getIfAvailable();
+		if (coordinator == null) {
+			throw new WithdrawalException(410, "automatic payout is disabled");
+		}
+		return coordinator;
 	}
 
 	@Transactional(readOnly = true)
@@ -112,7 +133,32 @@ public class WithdrawalService {
 
 	@Transactional
 	public WithdrawalResponse create(UUID userId, int pointAmount) {
+		return create(userId, pointAmount, null);
+	}
+
+	/**
+	 * 提交提现申请。支持可选的客户端幂等键，并强制"同一用户同时只有一笔 PENDING"，
+	 * 避免超时重试或连点导致重复冻结积分与管理员重复外付。
+	 */
+	@Transactional
+	public WithdrawalResponse create(UUID userId, int pointAmount, String idempotencyKey) {
+		String key = idempotencyKey == null || idempotencyKey.isBlank() ? null : idempotencyKey.trim();
+		if (key != null && key.length() > 128) {
+			throw new AdminException(400, "idempotency key is too long");
+		}
 		return userActionLocks.withUserLock(userId, () -> {
+			if (key != null) {
+				WithdrawalRequest existing = withdrawalRequestRepository.findByIdempotencyKey(key).orElse(null);
+				if (existing != null) {
+					if (!existing.userId().equals(userId)) {
+						throw new AdminException(409, "idempotency key is already used");
+					}
+					return WithdrawalResponse.from(existing);
+				}
+			}
+			if (withdrawalRequestRepository.existsByUserIdAndStatus(userId, WithdrawalStatus.PENDING)) {
+				throw new AdminException(409, "withdrawal already pending");
+			}
 			int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
 			WithdrawalConversion conversion = conversion(feePercent);
 			// 需求2: pointAmount 是用户输入的扣除总额。手续费从中扣除，不再额外扣。
@@ -145,7 +191,7 @@ public class WithdrawalService {
 			}
 			pointAccountRepository.save(account);
 			WithdrawalRequest request = WithdrawalRequest.create(userId, pointAmount, feeAmount, conversion,
-					wallet.network(), wallet.walletAddress());
+					wallet.network(), wallet.walletAddress(), key);
 			return WithdrawalResponse.from(withdrawalRequestRepository.save(request));
 		});
 	}
@@ -199,7 +245,7 @@ public class WithdrawalService {
 						List.of(request), tronPrivateKey, ethPrivateKey, bepPrivateKey);
 			}
 			String privateKey = selectPrivateKey(request.network(), tronPrivateKey, ethPrivateKey, bepPrivateKey);
-			attempt = payoutCoordinator.prepareAndBroadcast(withdrawalId, privateKey,
+			attempt = requirePayoutCoordinator().prepareAndBroadcast(withdrawalId, privateKey,
 					adminUsername);
 		}
 		catch (RuntimeException exception) {
@@ -247,12 +293,81 @@ public class WithdrawalService {
 				throw new AdminException(409, exception.getMessage());
 			}
 			pointAccountRepository.save(account);
+			// 出金必须留下积分流水：否则 sum(point_transactions.amount) 与余额永久不一致，用户与运营都无法对账。
+			// PointTransaction.withdrawal 自带幂等键 withdrawal:<id>，重复确认不会写入第二条。
+			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(),
+					request.totalDeductedPoints(), account.balance(), request.id().toString()));
 			request.approve(null, "manual external ERC20 payout confirmed", adminUsername);
 			return adminResponse(withdrawalRequestRepository.save(request), active);
 		});
 		recordAuditSafely(adminUsername, "WITHDRAWAL_MANUAL_CONFIRMED", withdrawalId,
 				payoutAuditSummary(request, "MANUAL_CONFIRMED", null));
 		return response;
+	}
+
+	/**
+	 * 管理员受审计地作废卡死的 ACTIVE 打款尝试，解除"既不能确认也不能拒绝"的死结。
+	 * 打款执行能力关闭时依然可用：只做只读链上核对，不签名、不广播。
+	 *
+	 * <ul>
+	 *   <li>SIGNING / PREPARED：尚未广播，直接作废并释放 active_slot；</li>
+	 *   <li>BROADCASTED 且链上确认数达标：转为 MANUAL_REVIEW，由管理员走人工确认（资金可能已到账）；</li>
+	 *   <li>BROADCASTED 且链上查无或失败：作废并释放 active_slot；</li>
+	 *   <li>链上状态未定（PENDING/UNKNOWN）：拒绝并提示稍后重试，不改变现状。</li>
+	 * </ul>
+	 */
+	@Transactional
+	public WithdrawalResponse voidActivePayoutAttempt(UUID withdrawalId, String reason, String adminUsername) {
+		if (reason == null || reason.isBlank()) {
+			throw new AdminException(400, "void reason is required");
+		}
+		return withPayoutExecutionLock(() -> {
+			WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
+			WithdrawalPayoutAttempt active = payoutAttemptRepository
+					.findByWithdrawalRequestIdAndActiveSlot(withdrawalId, "ACTIVE")
+					.orElseThrow(() -> new AdminException(409, "withdrawal has no active payout attempt"));
+			if (active.status() == WithdrawalPayoutStatus.MANUAL_REVIEW) {
+				throw new AdminException(409,
+						"payout attempt is already in manual review; use manual confirmation");
+			}
+			if (active.status() == WithdrawalPayoutStatus.BROADCASTED) {
+				PayoutChainStatus chainStatus = payoutAttemptReconciler.inspect(active);
+				if (chainStatus.state() == PayoutChainState.CONFIRMED) {
+					if (chainStatus.confirmations() >= requiredConfirmationsFor(active.network())) {
+						active.markManualReview("on-chain transfer confirmed; manual confirmation required");
+						payoutAttemptRepository.save(active);
+						recordAuditSafely(adminUsername, "WITHDRAWAL_PAYOUT_ATTEMPT_MANUAL_REVIEW", withdrawalId,
+								payoutAuditSummary(request, active.status().name(), active.txHash()));
+						return adminResponse(request, active);
+					}
+					// 已上链但确认数不足：绝不作废，否则可能"链上已转账 + 本地退还积分"造成双花。
+					throw new AdminException(409, "payout confirmations are not final yet; retry later");
+				}
+				if (chainStatus.state() != PayoutChainState.NOT_FOUND
+						&& chainStatus.state() != PayoutChainState.FAILED) {
+					throw new AdminException(409, "payout chain state is not final yet; retry later");
+				}
+			}
+			try {
+				active.markVoided(adminUsername, reason.trim());
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(409, exception.getMessage());
+			}
+			payoutAttemptRepository.save(active);
+			recordAuditSafely(adminUsername, "WITHDRAWAL_PAYOUT_ATTEMPT_VOIDED", withdrawalId,
+					payoutAuditSummary(request, active.status().name(), active.txHash()));
+			return adminResponse(request, active);
+		});
+	}
+
+	private int requiredConfirmationsFor(String network) {
+		return switch (network) {
+			case "TRC20" -> tronProperties.getRequiredConfirmations();
+			case "ERC20" -> ethereumProperties.getRequiredConfirmations();
+			case "BEP20" -> bscProperties.getRequiredConfirmations();
+			default -> throw new AdminException(400, "unsupported withdrawal network: " + network);
+		};
 	}
 
 	@Transactional
@@ -368,7 +483,7 @@ public class WithdrawalService {
 			WithdrawalPayoutAttempt attempt;
 			try {
 				String privateKey = selectPrivateKey(request.network(), tronPrivateKey, ethPrivateKey, bepPrivateKey);
-				attempt = payoutCoordinator.prepareAndBroadcast(withdrawalId, privateKey, adminUsername);
+				attempt = requirePayoutCoordinator().prepareAndBroadcast(withdrawalId, privateKey, adminUsername);
 			}
 			catch (Exception exception) {
 				String errorMessage = payoutErrorMessage(exception);

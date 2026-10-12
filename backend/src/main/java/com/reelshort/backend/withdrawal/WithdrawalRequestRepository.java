@@ -16,6 +16,10 @@ public interface WithdrawalRequestRepository extends JpaRepository<WithdrawalReq
 
 	List<WithdrawalRequest> findByUserIdOrderByCreatedAtDesc(UUID userId);
 
+	Optional<WithdrawalRequest> findByIdempotencyKey(String idempotencyKey);
+
+	boolean existsByUserIdAndStatus(UUID userId, WithdrawalStatus status);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select request from WithdrawalRequest request where request.id = :withdrawalId")
 	Optional<WithdrawalRequest> findByIdForUpdate(UUID withdrawalId);

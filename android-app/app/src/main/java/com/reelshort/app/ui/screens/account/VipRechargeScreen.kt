@@ -28,12 +28,12 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.reelshort.app.data.AppLanguage
 import com.reelshort.app.state.AccountOperation
 import com.reelshort.app.state.AppUiState
 import com.reelshort.app.ui.components.GoldOutlinedButton
 import com.reelshort.app.ui.components.PrimaryActionButton
+import com.reelshort.app.ui.components.QrCodeImage
 import com.reelshort.app.ui.components.SurfacePanel
 import com.reelshort.app.ui.format.strings
 import com.reelshort.app.ui.theme.DangerText
@@ -111,7 +111,7 @@ private fun VipPaymentDetails(address: String, copy: com.reelshort.app.ui.format
     Text(copy.vipPayAddress, color = TextSecondary, modifier = Modifier.fillMaxWidth())
     Text(address.ifBlank { "N/A" }, color = TextPrimary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     if (address.isNotBlank()) {
-        AsyncImage("https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$address", copy.vipPayQrHint, Modifier.size(184.dp))
+        QrCodeImage(address, copy.vipPayQrHint, Modifier.size(184.dp))
         GoldOutlinedButton(copy.vipPayCopy, !busy, { clipboard.setText(AnnotatedString(address)) }, Modifier.fillMaxWidth().size(48.dp), PrimaryGold)
     }
 }

@@ -185,6 +185,25 @@ class RewardBadgeContractTest {
     }
 
     @Test
+    fun dailyLimitSettlementShowsZeroAwardedPointsInsteadOfTheEstimate() {
+        val state = rewardBadgeState(
+            progressPercent = 100,
+            estimatedRewardPoints = 5,
+            isReporting = false,
+            hasError = false,
+            language = AppLanguage.ENGLISH,
+            rewardClaimed = true,
+            rewardStatus = WatchRewardStatus.DAILY_LIMIT_REACHED,
+            awardedPoints = 0,
+        )
+
+        assertEquals("Daily limit reached", state.accessibilityText)
+        assertEquals("0", state.pointsText)
+        assertEquals(RewardBadgeVisualState.DAILY_LIMIT, state.visualState)
+        assertEquals("Reward progress: Daily limit reached, 0 points", rewardBadgeContentDescription(state, AppLanguage.ENGLISH))
+    }
+
+    @Test
     fun rewardIndicatorKeepsNumericContentSeparateFromAccessibleStatus() {
         val state = rewardBadgeState(
             progressPercent = 18,

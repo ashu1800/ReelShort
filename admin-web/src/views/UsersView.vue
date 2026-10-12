@@ -241,7 +241,7 @@ onMounted(loadUsers)
     <el-table v-loading="loading" :data="users" border>
       <el-table-column label="账号" min-width="190">
         <template #default="{ row }">
-          <div class="mono">{{ row.phoneE164 || row.username }}</div>
+          <div class="mono">{{ row.username }}</div>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="120">
@@ -275,8 +275,8 @@ onMounted(loadUsers)
         <template v-if="selectedUser">
           <div class="detail-summary">
             <div>
-              <div class="muted">手机号账号</div>
-              <strong>{{ selectedUser.phoneE164 || selectedUser.username }}</strong>
+              <div class="muted">账号</div>
+              <strong class="mono">{{ selectedUser.username }}</strong>
             </div>
             <div>
               <div class="muted">状态</div>

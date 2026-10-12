@@ -26,9 +26,9 @@ infra/backups/YYYYMMDD-HHMMSS-fff-<random>/
 - 当前部署说明和备份恢复手册快照。
 - 当前 Flyway 迁移脚本快照。
 
-`infra/backups/` 已被 Git 忽略，不能提交到仓库。每次备份目录都包含毫秒时间和随机后缀，快速连续执行也不会复用已有目录或继承旧备份文件。
+`infra/backups/` 已被 Git 忽略，不能提交到仓库。每次备份目录都包含毫秒时间和随机后缀，快速连续执行也不会复用已有目录或继承旧备份文件。生产库转储一律只允许通过本脚本产生并落在 `infra/backups/`；历史上误放在仓库根目录的 `reelshort-prod-db-backup-*` 已迁入该目录，`.gitignore` 也已补上 `reelshort-prod-db-backup-*/`、`*.dump`、`database.dump` 防回归。
 
-默认不会备份 `infra/.env`，避免数据库口令、超级 Token、短信供应商密钥和支付回调密钥以明文进入备份。仅在确实需要配置灾备时，才显式传入 `-IncludeEncryptedConfig`。脚本在 Windows 上使用 DPAPI `CurrentUser` 将配置直接加密为 `config/environment.dpapi`，不会创建明文临时文件；密文只能由同一台 Windows 主机上同一用户上下文解密。
+默认不会备份 `infra/.env`，避免数据库口令、超级 Token、内部共享密钥和支付回调密钥以明文进入备份。仅在确实需要配置灾备时，才显式传入 `-IncludeEncryptedConfig`。脚本在 Windows 上使用 DPAPI `CurrentUser` 将配置直接加密为 `config/environment.dpapi`，不会创建明文临时文件；密文只能由同一台 Windows 主机上同一用户上下文解密。
 
 备份目录会在 Windows 上移除继承 ACL，仅授予当前用户完全控制；非 Windows 上输出根和单次备份目录设置为 `0700`，`database.dump` 和 `manifest.json` 设置为 `0600`。ACL、`chmod` 或 DPAPI 加密失败时脚本会失败，不会继续生成权限过宽的备份，也不会回退为明文配置备份。非 Windows 主机仍可执行默认数据库备份，但传入 `-IncludeEncryptedConfig` 会被明确拒绝；需要跨平台配置灾备时，应使用部署平台提供的密钥管理或加密备份系统。
 
@@ -48,6 +48,8 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/backup.ps1 `
   -OutputRoot infra/backups `
   -RetentionDays 14
 ```
+
+`-OutputRoot` 必须是仓库内的相对路径。脚本会解析绝对路径并拒绝任何逃出仓库根目录的取值（`..`、绝对路径），因为保留期清理使用 `Remove-Item -Recurse -Force`，误传会把仓库之外的目录递归删除并改写 ACL。达到保留期的目录会在删除前逐个打印完整路径。
 
 显式加密备份部署配置（仅 Windows）：
 
@@ -97,7 +99,7 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/restore.ps1 `
 
 启用配置恢复时，脚本会先完成路径校验、受限目录创建、DPAPI 解密和安全 `CreateNew` 写入，确认配置准备成功后才调用 `pg_restore`。如果数据库工具随后失败，脚本会删除本次新建的配置文件并报告失败；数据库工具自身不是跨资源事务，数据库可能已经发生部分变更，必须按数据库恢复演练和备份回滚处理。
 
-检查恢复内容后再替换正式配置；恢复完成后必须轮换数据库密码、管理员凭据、内部超级 Token、短信供应商密钥、支付回调密钥及其他所有恢复出的秘密，然后才能重新开放服务。不得把恢复文件提交到 Git 或复制到不受控目录。
+检查恢复内容后再替换正式配置；恢复完成后必须轮换数据库密码、管理员凭据、内部超级 Token、内容源内部共享密钥、支付回调密钥及其他所有恢复出的秘密，然后才能重新开放服务。不得把恢复文件提交到 Git 或复制到不受控目录。
 
 ## 恢复演练清单
 
@@ -109,8 +111,8 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/restore.ps1 `
 - 按恢复步骤停止写入服务。
 - 执行 `infra/scripts/restore.ps1 -ConfirmRestore`。
 - 启动 backend 和 nginx。
-- 检查 `http://localhost/actuator/health`。
-- 登录后台，抽查用户、订单、积分流水、观看记录和内容缓存。
+- 检查容器内后端健康：`docker compose --env-file infra/.env exec backend curl -fsS http://127.0.0.1:8080/actuator/health`（不要用宿主机 `http://localhost/actuator/health`，该路径会命中后台 SPA 兜底并返回 200 HTML）。
+- 登录后台，抽查用户、VIP 订单、提现申请、积分流水、观看记录和内容缓存。
 - 确认 Redis 清空后不影响核心业务数据正确性。
 - 若演练配置恢复，确认使用同一 Windows 用户可解密、其他用户不可解密，并在演练后轮换或销毁恢复出的秘密。
 

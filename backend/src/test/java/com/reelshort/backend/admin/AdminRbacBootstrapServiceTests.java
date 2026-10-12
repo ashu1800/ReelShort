@@ -29,6 +29,12 @@ class AdminRbacBootstrapServiceTests {
 	private AdminPermissionRepository adminPermissionRepository;
 
 	@Autowired
+	private AdminAuthService adminAuthService;
+
+	@Autowired
+	private AdminProperties adminProperties;
+
+	@Autowired
 	private EntityManager entityManager;
 
 	@Test
@@ -61,6 +67,43 @@ class AdminRbacBootstrapServiceTests {
 		assertThat(permissionCodes).isEqualTo(AdminPermissions.ALL);
 		assertThat(joinCount("admin_user_roles")).isEqualTo(1);
 		assertThat(joinCount("role_permissions")).isEqualTo(AdminPermissions.ALL.size());
+	}
+
+	@Test
+	void bootstrapRotatesStoredPasswordHashFromConfiguration() {
+		AdminUser admin = adminUserRepository.findByUsername("admin").orElseThrow();
+		// 模拟"配置轮换前的库内哈希"：与当前配置不一致
+		admin.changePasswordHash("$2b$12$oldhasholdhasholdhasholdhasholdhasholdhasholdhasholdhashol");
+		adminUserRepository.saveAndFlush(admin);
+		entityManager.clear();
+
+		bootstrapService.bootstrap();
+		entityManager.flush();
+		entityManager.clear();
+
+		// P2-13: 配置的哈希必须真正生效（而不是像修复前那样被静默忽略）
+		assertThat(adminUserRepository.findByUsername("admin").orElseThrow().passwordHash())
+				.isEqualTo(adminProperties.passwordHash());
+		// 测试 profile 的管理员口令 Admin123 可用
+		assertThat(adminAuthService.login(adminProperties.username(), "Admin123").token()).isNotBlank();
+	}
+
+	@Test
+	void bootstrapDoesNotRestoreManuallyRevokedSuperAdminRole() {
+		AdminUser admin = adminUserRepository.findByUsername("admin").orElseThrow();
+		AdminRole superAdminRole = adminRoleRepository.findByCode("SUPER_ADMIN").orElseThrow();
+		admin.revokeRole(superAdminRole);
+		adminUserRepository.saveAndFlush(admin);
+		entityManager.flush();
+		entityManager.clear();
+
+		bootstrapService.bootstrap();
+		entityManager.flush();
+		entityManager.clear();
+
+		// P2-13: 重启不再静默还原被运维收回的权限
+		assertThat(adminUserRepository.findByUsername("admin").orElseThrow().roles()).isEmpty();
+		assertThat(joinCount("admin_user_roles")).isZero();
 	}
 
 	private long joinCount(String tableName) {

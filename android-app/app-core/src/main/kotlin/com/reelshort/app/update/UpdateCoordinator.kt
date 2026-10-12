@@ -1,9 +1,11 @@
 package com.reelshort.app.update
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -44,6 +46,8 @@ class UpdateCoordinator(
     private val releaseClient: ReleaseUpdateClient,
     private val downloader: ReleaseDownloader,
     private val currentVersion: SemanticVersion,
+    /** 当前已安装包的 versionCode（由 Android 层从 PackageManager 读取），用于拒绝降级安装。 */
+    private val currentVersionCode: Long = 0L,
     private val availableBytes: (File) -> Long = { it.usableSpace },
     private val maxApkBytes: Long = MAX_APK_BYTES,
 ) {
@@ -55,6 +59,10 @@ class UpdateCoordinator(
         mutableState.value = UpdateState.Checking(manual)
         try {
             val release = releaseClient.fetchLatestStable()
+            // 防降级：清单里的 versionCode 低于本机已安装版本时直接拒绝，避免被诱导安装旧包。
+            if (release != null && release.versionCode < currentVersionCode) {
+                throw ReleaseUpdateException.InvalidRelease("versionCode is lower than the installed build")
+            }
             mutableState.value = when {
                 release == null -> if (manual) UpdateState.UpToDate(currentVersion) else UpdateState.Idle
                 release.version > currentVersion -> UpdateState.Available(release)
@@ -77,6 +85,14 @@ class UpdateCoordinator(
             is UpdateState.Failed -> current.release
             else -> null
         } ?: return
+        // W5-3：APK 上限 250MB，删除临时文件、剩余空间探测、SHA-256 校验与原子搬移都是阻塞 IO，
+        // 必须切到 Dispatchers.IO，否则会在主线程（viewModelScope = Main.immediate）冻结 UI。
+        withContext(Dispatchers.IO) {
+            downloadAvailableBlocking(release, cacheDir)
+        }
+    }
+
+    private suspend fun downloadAvailableBlocking(release: ReleaseInfo, cacheDir: File) {
         val updatesDir = File(cacheDir, "updates").also { it.mkdirs() }
         val partialFile = File(updatesDir, "${release.apkAsset.name}.part")
         val finalFile = File(updatesDir, release.apkAsset.name)

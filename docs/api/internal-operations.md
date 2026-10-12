@@ -22,14 +22,19 @@ Token 缺失返回 `401 unauthorized`，Token 错误返回 `403 forbidden`。
   "message": "success",
   "data": {
     "userId": "00000000-0000-0000-0000-000000000000",
-    "account": "+14155550101",
+    "account": "shortlink_user",
     "status": "ACTIVE",
     "balance": 120,
     "frozenPoints": 20,
-    "availablePoints": 100
+    "availablePoints": 100,
+    "vip": true,
+    "vipUntil": "2030-01-15 12:30:00",
+    "walletAddress": "0x0000000000000000000000000000000000000001"
   }
 }
 ```
+
+`account` 是账号唯一标识 `username`（认证模型已收敛为用户名，不再有手机号账号）。
 
 ## `GET /api/internal/operations/users/{userId}/watch-reward-task`
 
