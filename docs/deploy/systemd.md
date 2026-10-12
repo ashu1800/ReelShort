@@ -134,7 +134,8 @@ User=reelshort
 Group=reelshort
 WorkingDirectory=/srv/reelshort/backend
 EnvironmentFile=/etc/reelshort/backend.env
-ExecStart=/usr/bin/java -XX:MaxRAMPercentage=38 -XX:+ExitOnOutOfMemoryError -jar /srv/reelshort/backend/app.jar
+# 运行展开目录 + 版本化 classes（薄更新，见第 13 节），首次部署见第 2 节说明
+ExecStart=/usr/bin/java -XX:MaxRAMPercentage=38 -XX:+ExitOnOutOfMemoryError -cp /srv/reelshort/backend/classes:/srv/reelshort/backend/app/BOOT-INF/lib/* com.reelshort.backend.BackendApplication
 SuccessExitStatus=143
 Restart=always
 RestartSec=5
@@ -308,3 +309,61 @@ curl -sS -X POST https://<域名>/api/admin/auth/login -H 'Content-Type: applica
 - `REELSHORT_TRUSTED_PROXIES` 从 Docker 子网改为 `127.0.0.1/32`。
 - `admin-web` 静态文件由宿主机 Nginx 直接托管，不再有内部 nginx 容器；`/api/` 直接反代到 `127.0.0.1:8080`。
 - `CONTENT_PROVIDER_HOST` 固定 `127.0.0.1`（不对外开放），因此内容源除 `/health` 外仍要求 `X-Content-Provider-Token`。
+
+## 13. 日常更新：只上传真正变化的部分（薄更新）
+
+首次部署要传 133 MB 的 fat jar，但**这个 jar 里 99.6% 是永不变化的第三方依赖**（实测：`BOOT-INF/lib` 138.6 MB / 219 个 jar，`BOOT-INF/classes` 仅 1.39 MB）。因此生产后端按"展开目录 + 版本化 classes"运行，日常更新只需替换 classes：
+
+```
+/srv/reelshort/backend/
+├── app/                       # 首次由 app.jar 展开（zipfile 解开即可，无需 unzip）
+│   └── BOOT-INF/lib/          # 第三方依赖 138 MB —— 只有升级依赖版本才需要动
+├── app.jar                    # 保留完整 jar，用于彻底回滚
+├── classes -> releases/classes-<版本>/classes     # 应用代码（符号链接，当前生效版本）
+└── releases/
+    ├── classes-initial-<日期>/                     # 首次部署时的代码，回滚点
+    └── classes-<版本>/classes/                     # 每次更新新增一个版本目录
+```
+
+准备上传物（本地，自动构建 + 只提取 classes + 打印上传指令）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/scripts/stage-backend-update.ps1 -Version 20261013-1
+```
+
+切换生效（服务器）：
+
+```bash
+# 1) 上传到 /srv/reelshort/backend/releases/classes-20261013-1（SFTP 目录上传）
+chown -R reelshort:reelshort /srv/reelshort/backend/releases/classes-20261013-1
+ln -sfn /srv/reelshort/backend/releases/classes-20261013-1/classes /srv/reelshort/backend/classes
+systemctl restart reelshort-backend
+curl -sS http://127.0.0.1:8080/actuator/health        # {"status":"UP"}
+```
+
+各改动类型的实际上传量（链路实测约 90-230 KB/s）：
+
+| 改动 | 上传内容 | 大小 | 是否重启 |
+|---|---|---|---|
+| 后端 Java/配置/Flyway 迁移 | `releases/classes-<版本>` + 重指符号链接 | **约 1.4 MB** | 重启 backend |
+| 后台前端 | `admin-web/dist` | **约 1.4 MB** | 不需要 |
+| 内容源 Python | `content-provider/app.py` | **约 42 KB** | 重启 content-provider |
+| systemd / Nginx / 环境文件 | 对应配置文件 | KB 级 | 按需 reload/restart |
+| 依赖版本变更（少见） | `app/BOOT-INF/lib` 中变化的 jar（或重传 app.jar 后重新展开） | 几 MB 起 | 重启 backend |
+
+回滚：
+
+```bash
+# 代码回滚（秒级，无需重新上传）
+ln -sfn /srv/reelshort/backend/releases/classes-initial-20261012/classes /srv/reelshort/backend/classes
+systemctl restart reelshort-backend
+# 彻底回滚到 fat jar 运行方式
+# 把 ExecStart 换回：-jar /srv/reelshort/backend/app.jar
+```
+
+注意：
+
+- 版本化目录是**新目录**，天然不存在"已删除的旧 class 残留"问题；旧的 `releases/classes-*` 可以定期人工清理（每个约 2.4 MB）。
+- `bootJar` 会同时产出 `backend-0.0.1-SNAPSHOT-plain.jar`（瘦包，没有 `BOOT-INF`），提取脚本必须使用可执行包 `backend-0.0.1-SNAPSHOT.jar`。
+- Flyway 迁移随 classes 一起更新，重启即自动执行；`ddl-auto=validate` 会校验结构。
+- 首次部署若直接采用本形态，可省掉 fat jar 传输之外的一切步骤：`python3 -m zipfile -e app.jar app/` 展开后再建符号链接即可（`unzip` 未安装也能工作）。
