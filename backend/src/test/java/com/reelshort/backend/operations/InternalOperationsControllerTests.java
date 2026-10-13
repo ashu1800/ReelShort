@@ -282,20 +282,18 @@ class InternalOperationsControllerTests {
 		String firstBookId = JsonPath.read(firstTask.getResponse().getContentAsString(), "$.data.bookId");
 		String otherBookId = firstBookId.equals("book-old") ? "book-new" : "book-old";
 
-		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
-				.header("X-Internal-Super-Token", TOKEN))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.bookId").value(firstBookId))
-				.andExpect(jsonPath("$.data.episodeNum").value(1));
-
 		reportCompletedWatch(user.userId(), firstBookId, 1);
 
-		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
-				.header("X-Internal-Super-Token", TOKEN))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.bookId").value(firstBookId))
-				.andExpect(jsonPath("$.data.episodeNum").value(2))
-				.andExpect(jsonPath("$.data.currentProgressPercent").value(0));
+		// 有未领取记录（第 1 集已领奖 → 续播第 2 集）时，重复 GET 必须稳定返回同一 (短剧, 分集)：
+		// 这条路径不经过随机取样，才真正覆盖「重复 GET 不换剧」。
+		for (int attempt = 0; attempt < 2; attempt++) {
+			mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+					.header("X-Internal-Super-Token", TOKEN))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.data.bookId").value(firstBookId))
+					.andExpect(jsonPath("$.data.episodeNum").value(2))
+					.andExpect(jsonPath("$.data.currentProgressPercent").value(0));
+		}
 
 		reportCompletedWatch(user.userId(), firstBookId, 2);
 
@@ -325,6 +323,114 @@ class InternalOperationsControllerTests {
 				.andExpect(jsonPath("$.data.currentProgressPercent").value(0))
 				.andExpect(jsonPath("$.data.estimatedRewardPoints").value(5))
 				.andExpect(jsonPath("$.data.canReport").value(true));
+	}
+
+	@Test
+	void watchRewardTaskSkipsAlreadyClaimedEpisodesInsideDrama() throws Exception {
+		// 重看旧集会让「最新记录」回到较早的集：续播必须跳过其后所有已领奖集，不能 off-by-one。
+		RegisteredUser user = createUser("4155550721", "Password123");
+		clearContentCaches();
+		seedCachedContent("book-skip", "Skip Drama", "skip-drama", 4);
+		seedRuntimeDurations("book-skip", 4);
+		reportCompletedWatch(user.userId(), "book-skip", 1);
+		reportCompletedWatch(user.userId(), "book-skip", 2);
+		reportCompletedWatch(user.userId(), "book-skip", 3);
+		reportCompletedWatch(user.userId(), "book-skip", 2);
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-skip"))
+				.andExpect(jsonPath("$.data.episodeNum").value(4))
+				.andExpect(jsonPath("$.data.currentProgressPercent").value(0));
+	}
+
+	@Test
+	void watchRewardTaskFallsBackWhenLatestEpisodeIsBeyondEpisodeList() throws Exception {
+		// 记录集号大于剧集列表（缓存过期或上游分集变动）时必须安全回退，不能抛异常。
+		RegisteredUser user = createUser("4155550722", "Password123");
+		clearContentCaches();
+		seedCachedContent("book-beyond", "Beyond Drama", "beyond-drama", 2);
+		seedCachedContent("book-target", "Target Drama", "target-drama", 2);
+		seedRuntimeDurations("book-beyond", 5);
+		seedRuntimeDurations("book-target", 2);
+		reportCompletedWatch(user.userId(), "book-beyond", 5);
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-target"))
+				.andExpect(jsonPath("$.data.episodeNum").value(1));
+	}
+
+	@Test
+	void watchRewardTaskKeepsEpisodeWatchedBeforeVipWithoutClaim() throws Exception {
+		// 非 VIP 期间看完不写领取记录：升级 VIP 后必须仍返回同一集（可补发），不能跳到下一集。
+		com.reelshort.backend.TestAppUsers.RegisteredUser plain = com.reelshort.backend.TestAppUsers
+				.register(mockMvc, objectMapper, "4155550723", "Password123");
+		clearContentCaches();
+		seedCachedContent("book-claimless", "Claimless Drama", "claimless-drama", 2);
+		seedRuntimeDurations("book-claimless", 2);
+		watchService.reportProgress(plain.userId(), new WatchProgressRequest("book-claimless", "Claimless Drama",
+				"claimless-drama", 1, "chapter-1", 300, 300));
+		grantVip(plain.userId());
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", plain.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-claimless"))
+				.andExpect(jsonPath("$.data.episodeNum").value(1))
+				.andExpect(jsonPath("$.data.currentProgressPercent").value(100));
+	}
+
+	@Test
+	void watchRewardTaskReturnsNotFoundWhenEveryCachedDramaIsWatched() throws Exception {
+		// 用户看完全部候选片库：没有「从未观看的短剧」可用时保持既有 404 契约。
+		RegisteredUser user = createUser("4155550724", "Password123");
+		clearContentCaches();
+		seedCachedContent("book-only", "Only Drama", "only-drama", 2);
+		seedRuntimeDurations("book-only", 2);
+		reportCompletedWatch(user.userId(), "book-only", 1);
+		reportCompletedWatch(user.userId(), "book-only", 2);
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value("watch reward task not found"));
+	}
+
+	@Test
+	void watchRewardTaskDoesNotHoldTransactionOnContinuationPath() throws Exception {
+		// 续播分支（取剧集列表 + 逐集取权威时长）同样必须在无数据库事务的上下文里调用内容源。
+		RegisteredUser user = createUser("4155550725", "Password123");
+		clearContentCaches();
+		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(
+				"book-tx-cont", "Tx Cont Drama", "tx-cont-drama", "", "Tx cont description", 2)));
+		runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create("book-tx-cont", 1, "chapter-1", 300));
+		org.mockito.BDDMockito
+				.given(contentProvider.getEpisodesDetail("book-tx-cont", "tx-cont-drama", ContentLocale.ENGLISH))
+				.willAnswer(invocation -> {
+					assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+					return new ContentEpisodesDetail(java.util.Optional.empty(), List.of(
+							new ContentEpisode(1, "chapter-1", "Episode 1", "First episode"),
+							new ContentEpisode(2, "chapter-2", "Episode 2", "Second episode")));
+				});
+		org.mockito.BDDMockito
+				.given(contentProvider.getVideoUrl("book-tx-cont", 2, "tx-cont-drama", "chapter-2",
+						ContentLocale.ENGLISH))
+				.willAnswer(invocation -> {
+					assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+					return new com.reelshort.backend.content.ContentVideo(
+							"https://example.test/tx-cont-2.m3u8", 2, 300, null);
+				});
+		reportCompletedWatch(user.userId(), "book-tx-cont", 1);
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-tx-cont"))
+				.andExpect(jsonPath("$.data.episodeNum").value(2))
+				.andExpect(jsonPath("$.data.durationSeconds").value(300));
 	}
 
 	@Test
@@ -777,15 +883,20 @@ class InternalOperationsControllerTests {
 				""".formatted(progressPercent);
 	}
 
-	private static final Map<String, DramaInfo> DRAMAS = Map.of(
-			"book-old", new DramaInfo("Old Drama", "old-drama"),
-			"book-new", new DramaInfo("New Drama", "new-drama"),
-			"book-next", new DramaInfo("Next Drama", "next-drama"),
-			"book-finished", new DramaInfo("Finished Drama", "finished-drama"),
-			"book-fresh", new DramaInfo("Fresh Drama", "fresh-drama"),
-			"book-y", new DramaInfo("Y Drama", "y-drama"),
-			"book-x", new DramaInfo("X Drama", "x-drama"),
-			"book-z", new DramaInfo("Z Drama", "z-drama"));
+	private static final Map<String, DramaInfo> DRAMAS = Map.ofEntries(
+			Map.entry("book-old", new DramaInfo("Old Drama", "old-drama")),
+			Map.entry("book-new", new DramaInfo("New Drama", "new-drama")),
+			Map.entry("book-next", new DramaInfo("Next Drama", "next-drama")),
+			Map.entry("book-finished", new DramaInfo("Finished Drama", "finished-drama")),
+			Map.entry("book-fresh", new DramaInfo("Fresh Drama", "fresh-drama")),
+			Map.entry("book-y", new DramaInfo("Y Drama", "y-drama")),
+			Map.entry("book-x", new DramaInfo("X Drama", "x-drama")),
+			Map.entry("book-z", new DramaInfo("Z Drama", "z-drama")),
+			Map.entry("book-skip", new DramaInfo("Skip Drama", "skip-drama")),
+			Map.entry("book-beyond", new DramaInfo("Beyond Drama", "beyond-drama")),
+			Map.entry("book-target", new DramaInfo("Target Drama", "target-drama")),
+			Map.entry("book-only", new DramaInfo("Only Drama", "only-drama")),
+			Map.entry("book-tx-cont", new DramaInfo("Tx Cont Drama", "tx-cont-drama")));
 
 	private record DramaInfo(String title, String filteredTitle) {
 	}

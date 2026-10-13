@@ -93,7 +93,7 @@ public class InternalOperationsService {
 		Optional<WatchRecord> latest = watchRecordRepository.findFirstByUserIdOrderByUpdatedAtDesc(user.id());
 		if (latest.isPresent()) {
 			InternalWatchRewardTaskResponse continued = continueLatestTask(latest.get(), claimed);
-			if (continued != null && continued.canReport()) {
+			if (continued != null) {
 				return continued;
 			}
 		}
@@ -129,13 +129,14 @@ public class InternalOperationsService {
 	/**
 	 * 续播：以用户最近一条观看记录所属短剧为准。该集未领取奖励时原样返回该集（保留原有进度展示）；
 	 * 已领取时返回同一部短剧后续第一个未被领取的分集（逐集跳过已领奖集，可容忍重看旧集造成的记录回退）。
-	 * 整部短剧已播完或后续分集取不到权威时长时返回 null，由调用方改走「随机未观看短剧第 1 集」。
+	 * 返回 null 的三种情况都交由调用方改走「随机未观看短剧第 1 集」：这部短剧已播完、
+	 * 该集本身取不到权威时长（内容源异常或上游没给时长，异常路径已记 WARN）、该集所在短剧上游不可用。
 	 */
 	private InternalWatchRewardTaskResponse continueLatestTask(WatchRecord record, Set<String> claimedKeys) {
 		if (!claimedKeys.contains(record.bookId() + "#" + record.episodeNum())) {
-			int duration = resolveDuration(record.bookId(), record.episodeNum(), record.filteredTitle(),
+			Integer duration = resolveDurationOrNull(record.bookId(), record.episodeNum(), record.filteredTitle(),
 					record.chapterId());
-			if (duration <= 0) {
+			if (duration == null || duration <= 0) {
 				return null;
 			}
 			return task(record.userId(), record.bookId(), record.bookTitle(), "", record.filteredTitle(),
@@ -153,8 +154,12 @@ public class InternalOperationsService {
 			if (claimedKeys.contains(record.bookId() + "#" + episode.episode())) {
 				continue;
 			}
-			int duration = resolveDuration(record.bookId(), episode.episode(), record.filteredTitle(),
+			Integer duration = resolveDurationOrNull(record.bookId(), episode.episode(), record.filteredTitle(),
 					episode.chapterId());
+			if (duration == null) {
+				// 同一部短剧内的上游失败是系统性的：不再逐集重试，避免在一部剧里连打上百次视频接口。
+				break;
+			}
 			if (duration > 0) {
 				return task(record.userId(), record.bookId(), record.bookTitle(), "", record.filteredTitle(),
 						episode.episode(), episode.chapterId(), episode.title(), duration, 0);
@@ -182,8 +187,9 @@ public class InternalOperationsService {
 			if (first == null) {
 				continue;
 			}
-			int duration = resolveDuration(book.bookId(), first.episode(), book.filteredTitle(), first.chapterId());
-			if (duration > 0) {
+			Integer duration = resolveDurationOrNull(book.bookId(), first.episode(), book.filteredTitle(),
+					first.chapterId());
+			if (duration != null && duration > 0) {
 				return task(userId, book.bookId(), book.title(), book.description(), book.filteredTitle(),
 						first.episode(), first.chapterId(), first.title(), duration, 0);
 			}
@@ -211,8 +217,10 @@ public class InternalOperationsService {
 		}
 	}
 
+	/** 列表已按集号升序，第 1 集必须存在（缺第 1 集的短剧按候选不可用处理）。 */
 	private ContentEpisode firstEpisode(List<ContentEpisode> episodes) {
-		return episodes.stream().filter(episode -> episode.episode() == 1).findFirst().orElse(null);
+		ContentEpisode first = episodes.get(0);
+		return first.episode() == 1 ? first : null;
 	}
 
 	/**
@@ -233,8 +241,10 @@ public class InternalOperationsService {
 			return books;
 		}
 		int window = WATCH_REWARD_CANDIDATE_WINDOW;
-		int maxPage = (int) ((total - window) / window);
-		int page = bookOrderRandom.get().nextInt(maxPage + 1);
+		// 按整页数（含末页不足一屏的部分）取随机页：旧算法用 (total - window) / window 会让末尾
+		// 不足一屏的那些短剧永远取不到（生产片库 559 本时约 28% 的剧不可达）。
+		int pageCount = (int) ((total + window - 1) / window);
+		int page = bookOrderRandom.get().nextInt(pageCount);
 		List<ContentBookCache> sampled = new ArrayList<>(contentBookCacheRepository
 				.findUnwatchedBooksOrderByUpdatedAtDesc(ContentLocale.ENGLISH, 0, userId,
 						PageRequest.of(page, window)));
@@ -262,18 +272,27 @@ public class InternalOperationsService {
 				quota.remainingPoints(), false);
 	}
 
-	private int resolveDuration(String bookId, int episodeNum, String filteredTitle, String chapterId) {
-		return runtimeCacheRepository.findByBookIdAndEpisodeNumAndChapterId(bookId, episodeNum, chapterId)
-				.map(cache -> cache.durationSeconds())
-				.orElseGet(() -> {
-					try {
-						return contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId,
-								ContentLocale.ENGLISH).duration();
-					}
-					catch (RuntimeException exception) {
-						return 0;
-					}
-				});
+	/**
+	 * 解析权威时长。返回 durationSeconds：缓存命中或上游返回即用；0 表示上游确实没给出时长；
+	 * **null 表示上游调用失败**（已记 WARN）。调用方用 null 区分「这一集没有时长」与「这个内容源暂时不可用」，
+	 * 前者可以继续试同一部短剧的下一集，后者应当放弃该短剧而不是逐集重试。
+	 */
+	private Integer resolveDurationOrNull(String bookId, int episodeNum, String filteredTitle, String chapterId) {
+		Optional<Integer> cached = runtimeCacheRepository
+				.findByBookIdAndEpisodeNumAndChapterId(bookId, episodeNum, chapterId)
+				.map(cache -> cache.durationSeconds());
+		if (cached.isPresent()) {
+			return cached.get();
+		}
+		try {
+			return contentCacheService.getVideoUrl(bookId, episodeNum, filteredTitle, chapterId, ContentLocale.ENGLISH)
+					.duration();
+		}
+		catch (RuntimeException exception) {
+			log.warn("Cannot resolve authoritative duration for bookId={} episode={} chapterId={}: {}", bookId,
+					episodeNum, chapterId, failureSummary(exception));
+			return null;
+		}
 	}
 
 	private UserAccount activeUser(UUID userId) {
