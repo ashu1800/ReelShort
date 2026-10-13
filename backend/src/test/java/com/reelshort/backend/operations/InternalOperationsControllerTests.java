@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 
@@ -166,13 +167,6 @@ class InternalOperationsControllerTests {
 				.andExpect(jsonPath("$.data.targetProgressPercent").doesNotExist())
 				.andExpect(jsonPath("$.data.estimatedRewardPoints").value(1))
 				.andExpect(jsonPath("$.data.canReport").value(true));
-
-		pointsService.awardWatchProgress(user.userId(), "book-existing", 2, 100, 100);
-
-		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
-				.header("X-Internal-Super-Token", TOKEN))
-				.andExpect(status().isNotFound())
-				.andExpect(jsonPath("$.message").value("watch reward task not found"));
 	}
 
 	@Test
@@ -196,6 +190,7 @@ class InternalOperationsControllerTests {
 
 	@Test
 	void watchRewardTaskFallbackSkipsFullyClaimedCachedEpisode() throws Exception {
+		// 用户没有任何观看记录，仅有的缓存短剧第 1 集已领奖 → 按「看过」跳过该剧 → 无候选返回 404。
 		RegisteredUser user = createUser("4155550708", "Password123");
 		clearContentCaches();
 		seedCachedContent("book-claimed-cache", "Claimed Drama", "claimed-drama");
@@ -269,39 +264,15 @@ class InternalOperationsControllerTests {
 	}
 
 	@Test
-	void watchRewardTaskPicksBooksInRandomOrderButKeepsEpisodeOrder() throws Exception {
+	void watchRewardTaskFollowsOpsFlowWithoutSwitchingDrama() throws Exception {
+		// 运营脚本真实流程：GET 任务 → POST 上报 100% → 再 GET。同一部短剧必须按集数推进，
+		// 且在没有新的观看记录时重复 GET 不能每次都换一部短剧的第一集。
 		RegisteredUser user = createUser("4155550714", "Password123");
 		clearContentCaches();
-		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(
-				"book-old", "Old Drama", "old-drama", "", "Old description", 2)));
-		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(
-				"book-new", "New Drama", "new-drama", "", "New description", 2)));
-		org.mockito.BDDMockito
-				.given(contentProvider.getEpisodesDetail("book-old", "old-drama", ContentLocale.ENGLISH))
-				.willReturn(new ContentEpisodesDetail(java.util.Optional.empty(), List.of(
-						new ContentEpisode(1, "chapter-old-1", "Episode 1", "First episode"),
-						new ContentEpisode(2, "chapter-old-2", "Episode 2", "Second episode"))));
-		org.mockito.BDDMockito
-				.given(contentProvider.getEpisodesDetail("book-new", "new-drama", ContentLocale.ENGLISH))
-				.willReturn(new ContentEpisodesDetail(java.util.Optional.empty(), List.of(
-						new ContentEpisode(1, "chapter-new-1", "Episode 1", "First episode"),
-						new ContentEpisode(2, "chapter-new-2", "Episode 2", "Second episode"))));
-		org.mockito.BDDMockito
-				.given(contentProvider.getVideoUrl("book-old", 1, "old-drama", "chapter-old-1", ContentLocale.ENGLISH))
-				.willReturn(new com.reelshort.backend.content.ContentVideo(
-						"https://example.test/old-1.m3u8", 1, 300, null));
-		org.mockito.BDDMockito
-				.given(contentProvider.getVideoUrl("book-old", 2, "old-drama", "chapter-old-2", ContentLocale.ENGLISH))
-				.willReturn(new com.reelshort.backend.content.ContentVideo(
-						"https://example.test/old-2.m3u8", 1, 300, null));
-		org.mockito.BDDMockito
-				.given(contentProvider.getVideoUrl("book-new", 1, "new-drama", "chapter-new-1", ContentLocale.ENGLISH))
-				.willReturn(new com.reelshort.backend.content.ContentVideo(
-						"https://example.test/new-1.m3u8", 1, 300, null));
-		org.mockito.BDDMockito
-				.given(contentProvider.getVideoUrl("book-new", 2, "new-drama", "chapter-new-2", ContentLocale.ENGLISH))
-				.willReturn(new com.reelshort.backend.content.ContentVideo(
-						"https://example.test/new-2.m3u8", 1, 300, null));
+		seedCachedContent("book-old", "Old Drama", "old-drama", 2);
+		seedCachedContent("book-new", "New Drama", "new-drama", 2);
+		seedRuntimeDurations("book-old", 2);
+		seedRuntimeDurations("book-new", 2);
 
 		MvcResult firstTask = mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
 				.header("X-Internal-Super-Token", TOKEN))
@@ -309,22 +280,104 @@ class InternalOperationsControllerTests {
 				.andExpect(jsonPath("$.data.episodeNum").value(1))
 				.andReturn();
 		String firstBookId = JsonPath.read(firstTask.getResponse().getContentAsString(), "$.data.bookId");
-
-		pointsService.awardWatchProgress(user.userId(), firstBookId, 1, 100, 300);
+		String otherBookId = firstBookId.equals("book-old") ? "book-new" : "book-old";
 
 		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
 				.header("X-Internal-Super-Token", TOKEN))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.bookId").value(firstBookId))
-				.andExpect(jsonPath("$.data.episodeNum").value(2));
+				.andExpect(jsonPath("$.data.episodeNum").value(1));
 
-		pointsService.awardWatchProgress(user.userId(), firstBookId, 2, 100, 300);
+		reportCompletedWatch(user.userId(), firstBookId, 1);
 
 		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
 				.header("X-Internal-Super-Token", TOKEN))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.bookId").value(firstBookId.equals("book-old") ? "book-new" : "book-old"))
+				.andExpect(jsonPath("$.data.bookId").value(firstBookId))
+				.andExpect(jsonPath("$.data.episodeNum").value(2))
+				.andExpect(jsonPath("$.data.currentProgressPercent").value(0));
+
+		reportCompletedWatch(user.userId(), firstBookId, 2);
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value(otherBookId))
 				.andExpect(jsonPath("$.data.episodeNum").value(1));
+	}
+
+	@Test
+	void watchRewardTaskAdvancesToNextEpisodeWhenLatestEpisodeClaimed() throws Exception {
+		RegisteredUser user = createUser("4155550717", "Password123");
+		clearContentCaches();
+		seedCachedContent("book-next", "Next Drama", "next-drama", 3);
+		seedRuntimeDurations("book-next", 3);
+		// 用户从第 2 集开始看（没有第 1 集记录），看完第 2 集后应续到第 3 集。
+		reportCompletedWatch(user.userId(), "book-next", 2);
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-next"))
+				.andExpect(jsonPath("$.data.episodeNum").value(3))
+				.andExpect(jsonPath("$.data.chapterId").value("chapter-3"))
+				.andExpect(jsonPath("$.data.episodeTitle").value("Episode 3"))
+				.andExpect(jsonPath("$.data.currentProgressPercent").value(0))
+				.andExpect(jsonPath("$.data.estimatedRewardPoints").value(5))
+				.andExpect(jsonPath("$.data.canReport").value(true));
+	}
+
+	@Test
+	void watchRewardTaskFallsBackToUnwatchedDramaAfterLatestDramaFinished() throws Exception {
+		RegisteredUser user = createUser("4155550718", "Password123");
+		clearContentCaches();
+		seedCachedContent("book-finished", "Finished Drama", "finished-drama", 2);
+		seedCachedContent("book-fresh", "Fresh Drama", "fresh-drama", 2);
+		seedRuntimeDurations("book-finished", 2);
+		seedRuntimeDurations("book-fresh", 2);
+		reportCompletedWatch(user.userId(), "book-finished", 1);
+		reportCompletedWatch(user.userId(), "book-finished", 2);
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-fresh"))
+				.andExpect(jsonPath("$.data.episodeNum").value(1))
+				.andExpect(jsonPath("$.data.chapterId").value("chapter-1"))
+				.andExpect(jsonPath("$.data.canReport").value(true));
+	}
+
+	@Test
+	void watchRewardTaskIgnoresOlderUnfinishedDramaWhenLatestDramaFinished() throws Exception {
+		// 续播只认最近一条观看记录所属短剧：更早的短剧还有没看完的分集也不回退续播。
+		RegisteredUser user = createUser("4155550720", "Password123");
+		clearContentCaches();
+		seedCachedContent("book-y", "Y Drama", "y-drama", 2);
+		seedCachedContent("book-x", "X Drama", "x-drama", 2);
+		seedCachedContent("book-z", "Z Drama", "z-drama", 2);
+		seedRuntimeDurations("book-y", 2);
+		seedRuntimeDurations("book-x", 2);
+		seedRuntimeDurations("book-z", 2);
+		reportPartialWatch(user.userId(), "book-y", 1, 90);
+		reportCompletedWatch(user.userId(), "book-x", 1);
+		reportCompletedWatch(user.userId(), "book-x", 2);
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookId").value("book-z"))
+				.andExpect(jsonPath("$.data.episodeNum").value(1));
+	}
+
+	@Test
+	void watchRewardTaskRejectsNonVipUser() throws Exception {
+		com.reelshort.backend.TestAppUsers.RegisteredUser plain = com.reelshort.backend.TestAppUsers
+				.register(mockMvc, objectMapper, "4155550719", "Password123");
+
+		mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", plain.userId())
+				.header("X-Internal-Super-Token", TOKEN))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.message").value("non-VIP users cannot earn watch rewards"));
 	}
 
 	@Test
@@ -638,12 +691,63 @@ class InternalOperationsControllerTests {
 	}
 
 	private void seedCachedContent(String bookId, String title, String filteredTitle) throws Exception {
+		seedCachedContent(bookId, title, filteredTitle, 2);
+	}
+
+	private void seedCachedContent(String bookId, String title, String filteredTitle, int episodeCount)
+			throws Exception {
 		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(bookId, title, filteredTitle, "",
-				"Cached description", 2)));
-		String episodesJson = objectMapper.writeValueAsString(List.of(
-				new ContentEpisode(1, "chapter-1", "Episode 1", "First episode"),
-				new ContentEpisode(2, "chapter-2", "Episode 2", "Second episode")));
-		contentEpisodeCacheRepository.save(ContentEpisodeCache.create(bookId, filteredTitle, episodesJson, 2));
+				"Cached description", episodeCount)));
+		List<ContentEpisode> episodes = new java.util.ArrayList<>();
+		for (int episode = 1; episode <= episodeCount; episode++) {
+			episodes.add(new ContentEpisode(episode, "chapter-" + episode, "Episode " + episode,
+					"Episode " + episode + " description"));
+		}
+		contentEpisodeCacheRepository.save(ContentEpisodeCache.create(bookId, filteredTitle,
+				objectMapper.writeValueAsString(episodes), episodeCount));
+	}
+
+	/** 权威时长缓存：章节编号与 seedCachedContent 的 chapter-N 约定保持一致。 */
+	private void seedRuntimeDurations(String bookId, int episodeCount) {
+		for (int episode = 1; episode <= episodeCount; episode++) {
+			runtimeCacheRepository.save(ContentEpisodeRuntimeCache.create(bookId, episode, "chapter-" + episode, 300));
+		}
+	}
+
+	/** 走运营上报接口模拟「看完一集」：同时写入观看记录与领取记录，与真实运营脚本流程一致。 */
+	private void reportCompletedWatch(UUID userId, String bookId, int episodeNum) throws Exception {
+		DramaInfo info = drama(bookId);
+		mockMvc.perform(post("/api/internal/operations/users/{userId}/watch-progress", userId)
+				.header("X-Internal-Super-Token", TOKEN)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+						{
+						  "bookId": "%s",
+						  "bookTitle": "%s",
+						  "filteredTitle": "%s",
+						  "episodeNum": %d,
+						  "chapterId": "chapter-%d",
+						  "positionSeconds": 300,
+						  "durationSeconds": 300,
+						  "progressPercent": 100,
+						  "reason": "ops flow simulation"
+						}
+						""".formatted(bookId, info.title(), info.filteredTitle(), episodeNum, episodeNum)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.progressPercent").value(100));
+	}
+
+	/** 直接走观看服务上报未完成进度：只写观看记录，不产生领取记录。 */
+	private void reportPartialWatch(UUID userId, String bookId, int episodeNum, int positionSeconds) {
+		DramaInfo info = drama(bookId);
+		watchService.reportProgress(userId, new WatchProgressRequest(bookId, info.title(), info.filteredTitle(),
+				episodeNum, "chapter-" + episodeNum, positionSeconds, 300));
+	}
+
+	private static DramaInfo drama(String bookId) {
+		DramaInfo info = DRAMAS.get(bookId);
+		assertThat(info).as("test drama metadata for %s", bookId).isNotNull();
+		return info;
 	}
 
 	private void clearContentCaches() {
@@ -671,6 +775,19 @@ class InternalOperationsControllerTests {
 				  "reason": "ops invalid simulation"
 				}
 				""".formatted(progressPercent);
+	}
+
+	private static final Map<String, DramaInfo> DRAMAS = Map.of(
+			"book-old", new DramaInfo("Old Drama", "old-drama"),
+			"book-new", new DramaInfo("New Drama", "new-drama"),
+			"book-next", new DramaInfo("Next Drama", "next-drama"),
+			"book-finished", new DramaInfo("Finished Drama", "finished-drama"),
+			"book-fresh", new DramaInfo("Fresh Drama", "fresh-drama"),
+			"book-y", new DramaInfo("Y Drama", "y-drama"),
+			"book-x", new DramaInfo("X Drama", "x-drama"),
+			"book-z", new DramaInfo("Z Drama", "z-drama"));
+
+	private record DramaInfo(String title, String filteredTitle) {
 	}
 
 	private record RegisteredUser(UUID userId, String account) {

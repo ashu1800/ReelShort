@@ -12,5 +12,7 @@ public interface WatchRecordRepository extends JpaRepository<WatchRecord, UUID> 
 
 	List<WatchRecord> findByUserIdOrderByUpdatedAtDesc(UUID userId);
 
+	Optional<WatchRecord> findFirstByUserIdOrderByUpdatedAtDesc(UUID userId);
+
 	long countByUserId(UUID userId);
 }
