@@ -523,6 +523,54 @@ class InternalOperationsControllerTests {
 	}
 
 	@Test
+	void watchRewardTaskLogsWarnWhenDurationLookupFailsForLatestEpisode() throws Exception {
+		// R1 回归：最近那集取不到权威时长（内容源异常）时必须留下 WARN，并退化为随机换剧；
+		// 旧实现在这里静默吞掉异常，用户当前短剧被换掉却没有任何日志可查。
+		RegisteredUser user = createUser("4155550726", "Password123");
+		clearContentCaches();
+		contentBookCacheRepository.save(ContentBookCache.from(new ContentBook(
+				"book-dur-fail", "Dur Fail Drama", "dur-fail-drama", "", "Dur fail description", 2)));
+		seedCachedContent("book-dur-ok", "Dur Ok Drama", "dur-ok-drama", 2);
+		seedRuntimeDurations("book-dur-ok", 2);
+		// 未看完第 1 集（40%）：不产生领取记录；该集权威时长缓存缺失且视频接口 503。
+		watchService.reportProgress(user.userId(), new WatchProgressRequest("book-dur-fail", "Dur Fail Drama",
+				"dur-fail-drama", 1, "chapter-1", 120, 300));
+		org.mockito.BDDMockito
+				.given(contentProvider.getVideoUrl("book-dur-fail", 1, "dur-fail-drama", "chapter-1",
+						ContentLocale.ENGLISH))
+				.willThrow(new com.reelshort.backend.content.ContentProviderException(503,
+						"video upstream unavailable"));
+
+		ch.qos.logback.classic.Logger operationsLogger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory
+				.getLogger(com.reelshort.backend.operations.InternalOperationsService.class);
+		ch.qos.logback.classic.Level previousLevel = operationsLogger.getLevel();
+		ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+				new ch.qos.logback.core.read.ListAppender<>();
+		appender.start();
+		operationsLogger.addAppender(appender);
+		operationsLogger.setLevel(ch.qos.logback.classic.Level.WARN);
+		try {
+			// 该集无法上报（POST 要求权威时长），因此退化为另一部未观看短剧的第 1 集。
+			mockMvc.perform(get("/api/internal/operations/users/{userId}/watch-reward-task", user.userId())
+					.header("X-Internal-Super-Token", TOKEN))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.data.bookId").value("book-dur-ok"))
+					.andExpect(jsonPath("$.data.episodeNum").value(1));
+		}
+		finally {
+			operationsLogger.detachAppender(appender);
+			operationsLogger.setLevel(previousLevel);
+		}
+
+		assertThat(appender.list)
+				.anySatisfy(event -> {
+					assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.WARN);
+					assertThat(event.getFormattedMessage()).contains("book-dur-fail")
+							.contains("ContentProviderException");
+				});
+	}
+
+	@Test
 	void watchRewardTaskSkipsBookWhenProviderFailsAndContinuesToNext() throws Exception {
 		// 鲁棒性回归保护：当上游 provider 对某本书返回 5xx（episode_cache 缺失需现拉），
 		// 应跳过该书继续遍历下一本，而非让整次调用失败或返回 404。
