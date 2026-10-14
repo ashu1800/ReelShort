@@ -227,7 +227,7 @@ internal fun AccountScreen(
                     AccountMenuRow(
                         icon = Icons.Rounded.MonetizationOn,
                         title = copy.accountWalletTitle,
-                        subtitle = wallet?.let { "${it.network} · ${it.walletAddress}" } ?: "仅支持 ERC20 钱包",
+                        subtitle = wallet?.let { "${it.network} · ${it.walletAddress}" } ?: copy.accountWalletNetworkHint,
                         onClick = { walletSheetVisible = true },
                     )
                     AccountMenuDivider()

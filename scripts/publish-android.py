@@ -47,6 +47,10 @@ RELEASE_SIGNING_DIR = ANDROID_DIR / "release-signing"
 RELEASE_SIGNING_CONFIG = RELEASE_SIGNING_DIR / "signing-config.txt"
 RELEASE_KEYSTORE = RELEASE_SIGNING_DIR / "shortlink-release.jks"
 EXPECTED_RELEASE_CERT_SHA256 = "c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9"
+# 生产入口在 Cloudflare 后面，其 browser-integrity 校验会按 User-Agent 拦截（Python 默认的
+# "Python-urllib/x.y" 会拿到 403 "error code: 1010"）。所有后端请求都必须显式带上这个 UA，
+# 否则 fetch_latest_release 会静默返回 None，导致 versionCode 预检被跳过、交互式建议值退化成 1。
+PUBLISHER_USER_AGENT = "ShortLinkPublisher/1.0"
 
 
 class PublishError(Exception):
@@ -164,7 +168,10 @@ def fetch_latest_release(config: dict) -> dict | None:
         import urllib.request
         req = urllib.request.Request(
             f"{config['RELEASE_BACKEND_URL'].rstrip('/')}/api/internal/release/latest",
-            headers={"X-Internal-Super-Token": config["REELSHORT_INTERNAL_SUPER_TOKEN"]})
+            headers={
+                "X-Internal-Super-Token": config["REELSHORT_INTERNAL_SUPER_TOKEN"],
+                "User-Agent": PUBLISHER_USER_AGENT,
+            })
         with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - trusted internal URL
             return json.loads(resp.read()).get("data") or None
     except Exception:
@@ -369,7 +376,7 @@ def publish_to_backend(config: dict, version_name: str, version_code: int, relea
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST", headers={
         "Content-Type": "application/json",
-        "User-Agent": "ShortLinkPublisher/1.0",
+        "User-Agent": PUBLISHER_USER_AGENT,
         "X-Internal-Super-Token": config["REELSHORT_INTERNAL_SUPER_TOKEN"],
     })
     try:

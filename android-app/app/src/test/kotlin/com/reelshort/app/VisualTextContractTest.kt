@@ -164,6 +164,20 @@ class VisualTextContractTest {
     }
 
     @Test
+    fun accountWalletRowShowsLocalizedEnglishNetworkHint() {
+        assertEquals("ERC20 wallets only", strings(AppLanguage.ENGLISH).accountWalletNetworkHint)
+
+        val accountSource = readSourceFile(
+            "src/main/java/com/reelshort/app/ui/screens/account/AccountScreen.kt",
+            "app/src/main/java/com/reelshort/app/ui/screens/account/AccountScreen.kt",
+            "android-app/app/src/main/java/com/reelshort/app/ui/screens/account/AccountScreen.kt",
+        )
+
+        assertTrue(accountSource.contains("?: copy.accountWalletNetworkHint"))
+        assertTrue(!accountSource.contains("仅支持 ERC20 钱包"))
+    }
+
+    @Test
     fun withdrawalRecordDetailSheetUsesDedicatedEmptyCopy() {
         assertEquals(
             "No withdrawal records yet",

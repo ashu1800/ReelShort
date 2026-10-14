@@ -2,6 +2,7 @@ import importlib.util
 import os
 import tempfile
 import unittest
+import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
@@ -104,6 +105,48 @@ class PublishAndroidTests(unittest.TestCase):
         _, _, notes = publisher.resolve_inputs(args, {})
 
         self.assertEqual("", notes)
+
+    def test_release_preflight_sends_publisher_user_agent(self):
+        """
+        生产入口在 Cloudflare 后面，Python 默认 UA 会被 browser-integrity 校验拦成 403
+        "error code: 1010"，fetch_latest_release 会静默返回 None 并让 versionCode 预检失效
+        （交互式建议值退化为 1）。这里锁定该请求始终携带发布者 UA。
+        """
+        captured = {}
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def read(self):
+                return b'{"code":0,"message":"success","data":{"versionName":"0.9.0","versionCode":42}}'
+
+        def fake_urlopen(req, timeout=None):
+            captured["headers"] = {k.lower(): v for k, v in req.headers.items()}
+            captured["url"] = req.full_url
+            return _Response()
+
+        config = {"RELEASE_BACKEND_URL": "https://example.test/", "REELSHORT_INTERNAL_SUPER_TOKEN": "token"}
+
+        with patch.object(urllib.request, "urlopen", fake_urlopen):
+            latest = publisher.fetch_latest_release(config)
+
+        self.assertEqual(42, latest["versionCode"])
+        self.assertEqual("https://example.test/api/internal/release/latest", captured["url"])
+        self.assertEqual(publisher.PUBLISHER_USER_AGENT, captured["headers"]["user-agent"])
+        self.assertNotIn("python-urllib", captured["headers"]["user-agent"].lower())
+
+    def test_version_code_suggestion_advances_past_published_release(self):
+        config = {"RELEASE_BACKEND_URL": "https://example.test", "REELSHORT_INTERNAL_SUPER_TOKEN": "token"}
+
+        with patch.object(publisher, "fetch_latest_release", return_value={"versionCode": 42}):
+            self.assertEqual(43, publisher.suggest_version_code(config))
+
+        with patch.object(publisher, "fetch_latest_release", return_value=None):
+            self.assertEqual(1, publisher.suggest_version_code(config))
 
 
 if __name__ == "__main__":
