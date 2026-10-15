@@ -406,7 +406,10 @@ class _ContinueWatching extends StatelessWidget {
               return SizedBox(
                 width: 136,
                 child: PosterCard(
-                  title: book?.filteredTitle ?? record.bookTitle,
+                  title:
+                      (book?.title ?? '').isNotEmpty
+                      ? book!.title
+                      : record.bookTitle,
                   coverUrl: book?.coverUrl,
                   episodeCount: book?.chapterCount ?? 0,
                   currentEpisode: record.episode,

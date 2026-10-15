@@ -310,7 +310,7 @@ class _SearchResultRow extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: Semantics(
         button: true,
-        label: book.filteredTitle,
+        label: book.title,
         child: InkWell(
           borderRadius: BorderRadius.circular(shapes.radiusControl),
           onTap: () => controller.openBook(book),
@@ -321,7 +321,7 @@ class _SearchResultRow extends StatelessWidget {
                 width: 88,
                 height: 132,
                 child: PosterCard(
-                  title: book.filteredTitle,
+                  title: book.title,
                   coverUrl: book.coverUrl,
                   episodeCount: book.chapterCount,
                 ),
@@ -333,7 +333,7 @@ class _SearchResultRow extends StatelessWidget {
                   children: <Widget>[
                     const SizedBox(height: 4),
                     Text(
-                      book.filteredTitle,
+                      book.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: roles.body.copyWith(color: colors.textPrimary),

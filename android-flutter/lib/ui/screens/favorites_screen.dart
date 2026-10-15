@@ -60,7 +60,7 @@ class FavoritesScreen extends StatelessWidget {
                             for (final BookSummary book in state.favorites)
                               PosterCard(
                                 key: ValueKey<String>('favorite-${book.id}'),
-                                title: book.filteredTitle,
+                                title: book.title,
                                 coverUrl: book.coverUrl,
                                 episodeCount: book.chapterCount,
                                 onTap: () => context

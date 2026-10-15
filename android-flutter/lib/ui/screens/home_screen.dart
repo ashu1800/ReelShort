@@ -10,6 +10,7 @@ import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/formatting/app_strings.dart';
+import '../../theme/app_colors.dart';
 import '../../data/models/app_models.dart';
 import '../../state/app_state_controller.dart';
 import '../../state/app_ui_state.dart';
@@ -29,35 +30,43 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: RefreshIndicator.adaptive(
-        onRefresh: () => context.read<AppStateController>().refreshHomeWithPull(),
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: <Widget>[
-            const SliverToBoxAdapter(child: SizedBox(height: 8)),
-            if (state.isLoading && state.homeShelf.isEmpty)
-              const SliverToBoxAdapter(child: AppSkeletonList(itemHeight: 204, itemCount: 4))
-            else if (state.homeShelf.isEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 48),
-                  child: Center(
-                    child: AppEmptyState(
-                      icon: Icons.movie_filter_outlined,
-                      // The shared shelf-empty copy with a working "go to
-                      // search" action, like the Kotlin `homeEmptyState`.
-                      title: copy.homeEmptyTitle,
-                      body: copy.homeEmptyMessage,
-                      actionLabel: copy.homeEmptyAction,
-                      onAction: context.read<AppStateController>().showSearch,
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator.adaptive(
+          onRefresh: () =>
+              context.read<AppStateController>().refreshHomeWithPull(),
+          color: Theme.of(context).extension<AppColors>()!.accentPrimary,
+          backgroundColor: Theme.of(context).extension<AppColors>()!.surface,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: <Widget>[
+              const SliverToBoxAdapter(child: SizedBox(height: 8)),
+              if (state.isLoading && state.homeShelf.isEmpty)
+                const SliverToBoxAdapter(
+                  child: AppSkeletonList(itemHeight: 204, itemCount: 4),
+                )
+              else if (state.homeShelf.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    child: Center(
+                      child: AppEmptyState(
+                        icon: Icons.movie_filter_outlined,
+                        // The shared shelf-empty copy with a working "go to
+                        // search" action, like the Kotlin `homeEmptyState`.
+                        title: copy.homeEmptyTitle,
+                        body: copy.homeEmptyMessage,
+                        actionLabel: copy.homeEmptyAction,
+                        onAction: context.read<AppStateController>().showSearch,
+                      ),
                     ),
                   ),
-                ),
-              )
-            else
-              _ShelfGrid(books: state.homeShelf),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
+                )
+              else
+                _ShelfGrid(books: state.homeShelf),
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            ],
+          ),
         ),
       ),
     );
@@ -77,7 +86,9 @@ class _ShelfGrid extends StatelessWidget {
       builder: (BuildContext context, SliverConstraints constraints) {
         // GridCells.Adaptive(136.dp): floor(availableWidth / 136dp), at least one column.
         final int columns =
-            (constraints.crossAxisExtent / _gridColumnsMinWidth()).floor().clamp(1, 6);
+            (constraints.crossAxisExtent / _gridColumnsMinWidth())
+                .floor()
+                .clamp(1, 6);
         final double tileWidth = constraints.crossAxisExtent / columns;
         // 2:3 poster area plus the reserved overlay, matching the Kotlin card proportions.
         final double tileHeight = tileWidth * 1.5 + 48;
@@ -89,11 +100,14 @@ class _ShelfGrid extends StatelessWidget {
             crossAxisSpacing: 12,
             childAspectRatio: tileWidth / tileHeight,
           ),
-          delegate: SliverChildBuilderDelegate((BuildContext context, int index) {
+          delegate: SliverChildBuilderDelegate((
+            BuildContext context,
+            int index,
+          ) {
             final BookSummary book = books[index];
             return PosterCard(
               key: ValueKey<String>('home-book-${book.id}'),
-              title: book.filteredTitle,
+              title: book.title,
               coverUrl: book.coverUrl,
               episodeCount: book.chapterCount,
               onTap: () => controller.openBook(book),

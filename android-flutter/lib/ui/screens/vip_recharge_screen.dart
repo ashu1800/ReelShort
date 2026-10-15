@@ -58,18 +58,19 @@ class VipRechargeScreen extends StatelessWidget {
     final AppUiState state = controller.state;
     final AppStrings copy = strings(state.language);
 
-    return Column(
-      children: <Widget>[
-        _VipHeader(title: copy.vipPayTitle, onBack: controller.backToFunds),
-        Expanded(
-          child: ListView(
-            padding: _pagePadding,
-            children: <Widget>[
-              _VipOrderPanel(copy: copy),
-            ],
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        children: <Widget>[
+          _VipHeader(title: copy.vipPayTitle, onBack: controller.backToFunds),
+          Expanded(
+            child: ListView(
+              padding: _pagePadding,
+              children: <Widget>[_VipOrderPanel(copy: copy)],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -129,11 +130,13 @@ class _VipOrderPanelState extends State<_VipOrderPanel> {
     final bool loggedIn = state.session != null;
     final AccountOperation? operation = state.accountOperation;
     final VipOrder? latest = state.latestVipOrder;
-    final VipOrder? pending =
-        latest != null && latest.status == 'PENDING' ? latest : null;
+    final VipOrder? pending = latest != null && latest.status == 'PENDING'
+        ? latest
+        : null;
     // `activePending`: an order with no expiry, or one whose countdown still
     // runs. An expired PENDING order falls through to the create branch.
-    final bool pendingLive = pending != null &&
+    final bool pendingLive =
+        pending != null &&
         (pending.expiresAt == null || remainingSeconds(pending.expiresAt) > 0);
 
     return DecoratedBox(
@@ -153,9 +156,8 @@ class _VipOrderPanelState extends State<_VipOrderPanel> {
             if (!loggedIn) ...<Widget>[
               Text(
                 widget.copy.fundsLoginRequired,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: colors.accentPrimary,
-                    ),
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(color: colors.accentPrimary),
               ),
               const SizedBox(height: _panelGap),
               AppButton(
@@ -166,30 +168,27 @@ class _VipOrderPanelState extends State<_VipOrderPanel> {
             ] else if (state.vipActive) ...<Widget>[
               Text(
                 widget.copy.vipActiveLabel,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: colors.accentSuccess,
-                    ),
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(color: colors.accentSuccess),
               ),
               if (state.vipUntil != null)
                 Text(
                   '${widget.copy.vipExpiryLabel}${state.vipUntil}',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colors.textSecondary,
-                      ),
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: colors.textSecondary),
                 ),
-            ] else if (latest != null && latest.status == 'CONFIRMED') ...<Widget>[
+            ] else if (latest != null &&
+                latest.status == 'CONFIRMED') ...<Widget>[
               _VipAmountLine(order: latest, copy: widget.copy),
               Text(
                 '${widget.copy.vipPayOrderNo}${latest.orderNo}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.textSecondary,
-                    ),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: colors.textSecondary),
               ),
               Text(
                 widget.copy.vipPayStatusConfirmed,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.accentSuccess,
-                    ),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: colors.accentSuccess),
               ),
               const SizedBox(height: _panelGap),
               _VipRefreshButton(
@@ -306,7 +305,8 @@ class _VipPendingDetailsState extends State<_VipPendingDetails> {
           style: textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
         ),
         _VipPaymentDetails(
-          address: widget.order.receivingWalletAddress ??
+          address:
+              widget.order.receivingWalletAddress ??
               controller.state.vipCollectionAddress,
           copy: widget.copy,
           busy: operation != null,
@@ -344,8 +344,8 @@ class _VipAmountLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final AppTypography typography =
-        Theme.of(context).extension<AppTypography>()!;
+    final AppTypography typography = Theme.of(context)
+        .extension<AppTypography>()!;
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     return Text(
       '${copy.vipPayAmount}${order.effectiveAmount} USDT',
@@ -421,8 +421,9 @@ class _QrCodeImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppStrings copy =
-        strings(context.watch<AppStateController>().state.language);
+    final AppStrings copy = strings(
+      context.watch<AppStateController>().state.language,
+    );
     return Semantics(
       label: copy.vipPayQrHint,
       child: QrImageView(
@@ -463,7 +464,8 @@ class _VipCreateSection extends StatelessWidget {
     final AppStateController controller = context.watch<AppStateController>();
     final AppUiState state = controller.state;
     final VipOrder? order = latest;
-    final bool canCreate = state.session != null &&
+    final bool canCreate =
+        state.session != null &&
         !state.vipActive &&
         operation == null &&
         (order == null ||
@@ -491,8 +493,9 @@ class _VipCreateSection extends StatelessWidget {
         ),
         const SizedBox(height: _panelGap),
         AppButton(
-          label: operation != null ? copy.vipPayCreating : copy
-              .accountVipUnlockAction,
+          label: operation != null
+              ? copy.vipPayCreating
+              : copy.accountVipUnlockAction,
           onPressed: canCreate
               ? () {
                   unawaited(controller.createVipOrder());

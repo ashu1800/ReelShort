@@ -291,6 +291,30 @@ UI 宿主接线审计，修复了「状态机在跑、界面没接线」的一�
 
 ---
 
+## 8.1 首轮 UI 评审打磨（2026-10-15，接 §8）
+
+真机验收通过后对重构 UI 做了一轮评审，以下不足已修复（验收账号凭据同步改为
+`--dart-define` 注入，不再出现在任何源码里）：
+
+| # | 不足 | 修复 |
+| --- | --- | --- |
+| P1 | 首页/搜索/继续观看的标题渲染成 `filteredTitle` 搜索 slug（如 `the-alpha-s-forbidden-bunny`）——对 Kotlin `PosterCard` 用 `book.title` 的**视觉回归** | 全部展示位改回 `book.title`；继续观看回退链与 Kotlin 一致（`title` 非空 → `record.bookTitle`） |
+| P2 | 播放器底部信息区固定 16px 底边距，全面屏手势条压住选集入口 | 底部信息与右侧动作栏均按 `MediaQuery.viewPaddingOf.bottom` 抬升 |
+| P3 | 播放器无任何播放控制 | 新增：点击暂停/恢复（暂停时显示居中播放按钮）；中间区域竖滑切上/下一集（列表顺序，阈值 80px 或速度 400）；左侧 1/4 区域竖滑调亮度、右侧 1/4 调音量（带居中指示胶囊，`screen_brightness` 应用级亮度、退出播放器恢复系统值） |
+| P4 | 双击点赞缺失 | 双击视频表面触发点赞（mediumImpact 触感） |
+| P5 | 首页/资金/提现/VIP 页标题贴状态栏 | 各页补 `SafeArea(top)`；资金页 SafeArea 提到 Column 外层使标题一同内缩 |
+| P6 | 海报 → 播放器直切无过渡 | 播放器并入 shell 的 AnimatedSwitcher，入场 slide-up + 淡入、退出反向 |
+| P7 | 奖励圆环点击目标 44px | 放大到 48dp（圆环视觉保持 44） |
+| P8 | 下拉刷新指示器为平台默认配色 | 使用设计系统的 `accentPrimary`/`surface` |
+| P9 | 点赞/收藏无触感反馈 | 切换时 `HapticFeedback.selectionClick` |
+| P10 | 评论弹层固定 0.7 屏高，键盘弹出时顶部可能被裁 | 高度按键盘内边距收缩（`min(0.7h, h - inset - 120)`） |
+
+进度条可拖动快进**刻意未做**（Kotlin 版同样无此能力，属后续功能而非对齐范畴）。
+真机复核：标题人类可读、播放中画面、点击暂停出现播放按钮、上滑切到 EP 02、底部选集栏
+完整位于手势条上方，均截图确认。
+
+---
+
 ## 9. 相关文档
 
 - 设计系统与主题：[design-system.md](design-system.md)

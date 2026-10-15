@@ -89,17 +89,18 @@ class _AppShellState extends State<AppShell> {
     final AppStateController controller = context.watch<AppStateController>();
     final AppUiState state = controller.state;
 
-    final Widget content = state.screen == AppScreen.player
-        // The player owns the whole surface, including the system navigation area.
-        ? const PlayerScreen()
-        : Scaffold(
-            backgroundColor: Theme.of(context).extension<AppColors>()!.canvas,
-            body: _ShellBody(state: state),
-            bottomNavigationBar: _AppNavigationBar(
+    // The player renders inside the same switcher so entering it rides the
+    // slide-up transition instead of popping in flat.
+    final Widget content = Scaffold(
+      backgroundColor: Theme.of(context).extension<AppColors>()!.canvas,
+      body: _ShellBody(state: state),
+      bottomNavigationBar: state.screen == AppScreen.player
+          ? null
+          : _AppNavigationBar(
               screen: state.screen,
               onSelect: (AppScreen target) => _navigate(controller, target),
             ),
-          );
+    );
 
     return PopScope(
       canPop: !_interceptsSystemBack(state.screen),
@@ -177,9 +178,24 @@ class _ShellBody extends StatelessWidget {
     return AnimatedSwitcher(
       duration: motion.reelChange,
       // The "reel change" is a short crossfade: screens are not related enough in this design
-      // for a directional wipe to read as navigation rather than as noise.
+      // for a directional wipe to read as navigation rather than as noise. The player is the
+      // one exception — a full-screen takeover deserves a slide-up entrance.
       switchInCurve: motion.reelChangeCurve,
       switchOutCurve: motion.reelChangeCurve.flipped,
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        final bool isPlayer =
+            child is KeyedSubtree && child.child is PlayerScreen;
+        if (isPlayer) {
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+            child: FadeTransition(opacity: animation, child: child),
+          );
+        }
+        return FadeTransition(opacity: animation, child: child);
+      },
       child: KeyedSubtree(
         key: ValueKey<AppScreen>(state.screen),
         child: _ScreenFor(screen: state.screen),

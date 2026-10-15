@@ -78,7 +78,7 @@ class _DetailContent extends StatelessWidget {
             leading: BackButton(onPressed: controller.openHome),
             flexibleSpace: FlexibleSpaceBar(
               background: PosterCard(
-                title: book.filteredTitle,
+                title: book.title,
                 coverUrl: book.coverUrl,
                 episodeCount: book.chapterCount,
               ),
@@ -90,7 +90,7 @@ class _DetailContent extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text(book.filteredTitle, style: roles.displayLarge),
+                  Text(book.title, style: roles.displayLarge),
                   const SizedBox(height: 8),
                   Text(
                     book.description.trim().isNotEmpty

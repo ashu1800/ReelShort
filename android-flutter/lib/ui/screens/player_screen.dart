@@ -13,7 +13,9 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/formatting/app_strings.dart';
@@ -33,6 +35,20 @@ const Duration _tickInterval = Duration(seconds: 1);
 
 /// How long the `+N pt` overlay stays up.
 const Duration _rewardToastDuration = Duration(milliseconds: 1100);
+
+/// How long the brightness/volume feedback pill stays after a drag ends.
+const Duration _gestureFeedbackFade = Duration(milliseconds: 700);
+
+/// Which behaviour a vertical drag maps to, decided by where it started:
+/// the left edge drives brightness, the right edge drives volume, and the
+/// middle of the surface swipes to the previous/next episode.
+enum _PlayerDragZone { none, brightness, volume, episode }
+
+/// Minimum travel before an episode swipe fires.
+const double _episodeSwipeDistance = 80;
+
+/// Pixels of drag travel per 1.0 step of brightness/volume.
+const double _gesturePixelsPerUnit = 300;
 
 /// `formatCount` of the Kotlin action rail: millions collapse to `%.1fM`,
 /// thousands to a whole `Nk`, zero renders nothing.
@@ -87,6 +103,21 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// Mirrors the Kotlin `hasFirstReady` flag gating the cover overlay.
   bool _hasFirstReady = false;
 
+  /// Whether the controller reports playing; drives the pause overlay.
+  bool _wasPlaying = false;
+
+  /// Active vertical-drag behaviour and its scratch state.
+  _PlayerDragZone _dragZone = _PlayerDragZone.none;
+  double? _dragStartBrightness;
+  double? _dragStartVolume;
+  double _episodeDragDy = 0;
+
+  /// Center-pill feedback for brightness/volume drags.
+  Timer? _gestureHideTimer;
+  IconData? _gestureIcon;
+  String? _gestureLabel;
+  double? _gestureValue;
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +137,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
     _rewardToastTimer?.cancel();
+    _gestureHideTimer?.cancel();
+    // The brightness drag only altered this window's brightness; hand the
+    // system value back so leaving the player never leaves a dim screen.
+    if (_dragStartBrightness != null) {
+      unawaited(
+        ScreenBrightness.instance
+            .resetApplicationScreenBrightness()
+            .catchError((Object _) {}),
+      );
+    }
     _video?.dispose();
     super.dispose();
   }
@@ -193,13 +234,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
     _video = controller;
     controller.addListener(() {
-      if (!mounted ||
-          !identical(_video, controller) ||
-          !controller.value.hasError ||
-          _playerError) {
+      if (!mounted || !identical(_video, controller)) {
         return;
       }
-      setState(() => _playerError = true);
+      final bool playing = controller.value.isPlaying;
+      if (playing != _wasPlaying && mounted) {
+        setState(() => _wasPlaying = playing);
+      }
+      if (controller.value.hasError && !_playerError && mounted) {
+        setState(() => _playerError = true);
+      }
     });
     controller.initialize().then((_) {
       if (!mounted || !identical(_video, controller)) {
@@ -275,6 +319,154 @@ class _PlayerScreenState extends State<PlayerScreen>
     return state.playback.durationSeconds * 1000;
   }
 
+  // ---------------------------------------------------------------------------
+  // Surface gestures: tap pauses, double-tap likes, vertical drags drive
+  // brightness (left edge), volume (right edge) or episode swipe (middle).
+  // ---------------------------------------------------------------------------
+
+  bool get _surfaceInteractive =>
+      !_playerError && _video != null && _video!.value.isInitialized;
+
+  void _togglePlayPause() {
+    final VideoPlayerController? video = _video;
+    if (!_surfaceInteractive || video == null) {
+      return;
+    }
+    if (video.value.isPlaying) {
+      unawaited(video.pause());
+    } else {
+      unawaited(video.play());
+    }
+  }
+
+  void _onDoubleTapLike() {
+    if (!_surfaceInteractive) {
+      return;
+    }
+    // Social failures surface through the global message host; a 401 opens
+    // the auth sheet right here over the player (contract rule 29).
+    unawaited(HapticFeedback.mediumImpact());
+    unawaited(_controller.toggleLike());
+  }
+
+  void _onVerticalDragStart(DragStartDetails details) {
+    _dragZone = _PlayerDragZone.none;
+    if (!_surfaceInteractive) {
+      return;
+    }
+    final double width = MediaQuery.sizeOf(context).width;
+    final double x = details.localPosition.dx;
+    if (x <= width * 0.25) {
+      _dragZone = _PlayerDragZone.brightness;
+      unawaited(
+        ScreenBrightness.instance.application.then((double value) {
+          _dragStartBrightness = value.clamp(0.05, 1.0);
+        }).catchError((Object _) {
+          _dragZone = _PlayerDragZone.none;
+        }),
+      );
+    } else if (x >= width * 0.75) {
+      _dragZone = _PlayerDragZone.volume;
+      _dragStartVolume = _video!.value.volume;
+    } else {
+      _dragZone = _PlayerDragZone.episode;
+      _episodeDragDy = 0;
+    }
+  }
+
+  void _onVerticalDragUpdate(DragUpdateDetails details) {
+    switch (_dragZone) {
+      case _PlayerDragZone.brightness:
+        final double? start = _dragStartBrightness;
+        if (start == null) {
+          return;
+        }
+        final double value = (start - details.delta.dy / _gesturePixelsPerUnit)
+            .clamp(0.05, 1.0);
+        unawaited(
+          ScreenBrightness.instance
+              .setApplicationScreenBrightness(value)
+              .catchError((Object _) {}),
+        );
+        _showGestureFeedback(Icons.brightness_6_outlined, 'Brightness', value);
+      case _PlayerDragZone.volume:
+        final double? start = _dragStartVolume;
+        final VideoPlayerController? video = _video;
+        if (start == null || video == null) {
+          return;
+        }
+        final double value =
+            (start - details.delta.dy / _gesturePixelsPerUnit).clamp(0.0, 1.0);
+        unawaited(video.setVolume(value));
+        _showGestureFeedback(Icons.volume_up_outlined, 'Volume', value);
+      case _PlayerDragZone.episode:
+        _episodeDragDy += details.delta.dy;
+      case _PlayerDragZone.none:
+        break;
+    }
+  }
+
+  void _onVerticalDragEnd(DragEndDetails details) {
+    switch (_dragZone) {
+      case _PlayerDragZone.episode:
+        final double velocity = details.primaryVelocity ?? 0;
+        if (velocity < -400 || _episodeDragDy < -_episodeSwipeDistance) {
+          _swipeEpisode(1);
+        } else if (velocity > 400 || _episodeDragDy > _episodeSwipeDistance) {
+          _swipeEpisode(-1);
+        }
+      case _PlayerDragZone.brightness ||
+      _PlayerDragZone.volume:
+        _gestureHideTimer?.cancel();
+        _gestureHideTimer = Timer(_gestureFeedbackFade, () {
+          if (mounted) {
+            setState(() {
+              _gestureIcon = null;
+              _gestureLabel = null;
+              _gestureValue = null;
+            });
+          }
+        });
+      case _PlayerDragZone.none:
+        break;
+    }
+    _dragZone = _PlayerDragZone.none;
+  }
+
+  /// `direction` 1 = next, -1 = previous, in list order — the same ordering
+  /// `playerErrorNextEpisode` uses for the error-overlay shortcut.
+  void _swipeEpisode(int direction) {
+    final AppUiState state = _state;
+    final EpisodeSummary? current = state.playback.episode;
+    if (state.episodes.isEmpty || current == null) {
+      return;
+    }
+    final int index = state.episodes.indexWhere(
+      (EpisodeSummary episode) =>
+          episode.number == current.number &&
+          episode.chapterId == current.chapterId,
+    );
+    if (index < 0) {
+      return;
+    }
+    final int target = index + direction;
+    if (target < 0 || target >= state.episodes.length) {
+      return;
+    }
+    unawaited(_controller.openPlayer(state.episodes[target]));
+  }
+
+  void _showGestureFeedback(IconData icon, String label, double value) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _gestureIcon = icon;
+      _gestureLabel = label;
+      _gestureValue = value;
+    });
+  }
+
   void _handleBack() {
     // Back target = `playerReturnScreen ?? home`, resolved by the state layer.
     _controller.backToPlaybackSource();
@@ -314,38 +506,78 @@ class _PlayerScreenState extends State<PlayerScreen>
           colors.brightness == Brightness.dark ? Colors.black : colors.canvas,
       body: Stack(
         children: <Widget>[
-          // Video surface with its full-bleed overlays.
+          // Video surface with its full-bleed overlays and gestures.
           Positioned.fill(
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                if (videoReady)
-                  ClipRect(
-                    // RESIZE_MODE_ZOOM: fill the surface and crop, no letterbox.
-                    child: FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: video.value.size.width.toDouble(),
-                        height: video.value.size.height.toDouble(),
-                        child: VideoPlayer(video),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              // Tap pauses, double-tap likes, edge drags drive brightness and
+              // volume, and a middle drag swipes to the next/previous episode.
+              onTap: _togglePlayPause,
+              onDoubleTap: _onDoubleTapLike,
+              onVerticalDragStart: _onVerticalDragStart,
+              onVerticalDragUpdate: _onVerticalDragUpdate,
+              onVerticalDragEnd: _onVerticalDragEnd,
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  if (videoReady)
+                    ClipRect(
+                      // RESIZE_MODE_ZOOM: fill the surface and crop, no letterbox.
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: video.value.size.width.toDouble(),
+                          height: video.value.size.height.toDouble(),
+                          child: VideoPlayer(video),
+                        ),
+                      ),
+                    )
+                  else
+                    _CoverOverlay(state: state),
+                  // Paused state: a large translucent play affordance.
+                  if (videoReady && !_wasPlaying)
+                    Center(
+                      child: ExcludeSemantics(
+                        child: Container(
+                          width: 72,
+                          height: 72,
+                          decoration: const BoxDecoration(
+                            color: Colors.black45,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 48,
+                          ),
+                        ),
                       ),
                     ),
-                  )
-                else
-                  _CoverOverlay(state: state),
-                switch (overlay) {
-                  PlayerOverlayMode.error => _ErrorOverlay(
-                    onRetry: _retryPlayback,
-                    onNext: errorNextEpisode == null
-                        ? null
-                        : () => _controller.openPlayer(errorNextEpisode),
-                    onBack: _handleBack,
-                  ),
-                  PlayerOverlayMode.buffering => _BufferingOverlay(state: state),
-                  PlayerOverlayMode.coverLoading ||
-                  PlayerOverlayMode.none => const SizedBox.shrink(),
-                },
-              ],
+                  // Brightness/volume drag feedback pill.
+                  if (_gestureLabel != null)
+                    Center(
+                      child: _GestureFeedbackPill(
+                        icon: _gestureIcon!,
+                        label: _gestureLabel!,
+                        value: _gestureValue!,
+                      ),
+                    ),
+                  switch (overlay) {
+                    PlayerOverlayMode.error => _ErrorOverlay(
+                      onRetry: _retryPlayback,
+                      onNext: errorNextEpisode == null
+                          ? null
+                          : () => _controller.openPlayer(errorNextEpisode),
+                      onBack: _handleBack,
+                    ),
+                    PlayerOverlayMode.buffering => _BufferingOverlay(
+                      state: state,
+                    ),
+                    PlayerOverlayMode.coverLoading ||
+                    PlayerOverlayMode.none => const SizedBox.shrink(),
+                  },
+                ],
+              ),
             ),
           ),
           // Top bar: back button, reward ring, `+N pt` toast.
@@ -400,7 +632,11 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             ),
           // Right action rail: like, comments, favourite.
-          Positioned(right: 12, bottom: 140, child: _ActionRail(state: state)),
+          Positioned(
+            right: 12,
+            bottom: MediaQuery.viewPaddingOf(context).bottom + 120,
+            child: _ActionRail(state: state),
+          ),
           // Bottom info: titles, description, progress, episode selector.
           Positioned(left: 0, right: 0, bottom: 0, child: _BottomInfo(state: state)),
         ],
@@ -642,16 +878,20 @@ class _RewardRing extends StatelessWidget {
         onTap: () => _openRewardInfoSheet(context),
         customBorder: const CircleBorder(),
         child: SizedBox(
-          width: 44,
-          height: 44,
+          width: 48,
+          height: 48,
           child: Stack(
             alignment: Alignment.center,
             children: <Widget>[
-              CircularProgressIndicator(
-                value: badge.ringProgress,
-                strokeWidth: 3,
-                color: ringColor,
-                backgroundColor: Colors.white24,
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: CircularProgressIndicator(
+                  value: badge.ringProgress,
+                  strokeWidth: 3,
+                  color: ringColor,
+                  backgroundColor: Colors.white24,
+                ),
               ),
               Text(
                 badge.pointsText,
@@ -705,6 +945,64 @@ class _RewardRing extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Center pill shown while a brightness/volume drag is in progress.
+class _GestureFeedbackPill extends StatelessWidget {
+  const _GestureFeedbackPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, color: Colors.white, size: 20),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 96,
+            height: 4,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  const ColoredBox(color: Colors.white24),
+                  FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: value.clamp(0.0, 1.0),
+                    child: const ColoredBox(color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${(value.clamp(0.0, 1.0) * 100).round()}%',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -787,7 +1085,10 @@ class _ActionRail extends StatelessWidget {
               : Colors.white,
           label: _formatCount(state.interaction.likeCount),
           semanticLabel: _formatCount(state.interaction.likeCount),
-          onTap: controller.toggleLike,
+          onTap: () {
+            unawaited(HapticFeedback.selectionClick());
+            return controller.toggleLike();
+          },
         ),
         const SizedBox(height: 22),
         _RailAction(
@@ -807,7 +1108,10 @@ class _ActionRail extends StatelessWidget {
               : Colors.white,
           label: copy.playerFavoriteLabel,
           semanticLabel: copy.playerFavoriteLabel,
-          onTap: controller.toggleFavorite,
+          onTap: () {
+            unawaited(HapticFeedback.selectionClick());
+            return controller.toggleFavorite();
+          },
         ),
       ],
     );
@@ -916,10 +1220,17 @@ class _CommentSheetState extends State<_CommentSheet> {
     final AppStrings copy = strings(state.language);
     final bool canSend = _draft.text.trim().isNotEmpty;
 
+    // Cap the sheet so an open keyboard never pushes its top off-screen.
+    final double screenHeight = MediaQuery.sizeOf(context).height;
+    final double keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final double sheetHeight = screenHeight * 0.7 < screenHeight - keyboardInset - 120
+        ? screenHeight * 0.7
+        : screenHeight - keyboardInset - 120;
+
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      padding: EdgeInsets.only(bottom: keyboardInset),
       child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.7,
+        height: sheetHeight,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -1092,6 +1403,10 @@ class _BottomInfo extends StatelessWidget {
         : (playback.book?.description ?? '');
     final int progressPercent = playback.progressPercent.clamp(0, 100);
 
+    // Ride above the system gesture area: the episode selector must never
+    // sit under the navigation bar (Kotlin used `navigationBarsPadding`).
+    final double navInset = MediaQuery.viewPaddingOf(context).bottom;
+
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
@@ -1101,7 +1416,7 @@ class _BottomInfo extends StatelessWidget {
           colors: <Color>[Colors.transparent, Color(0xE6000000)],
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(16, 32, 84, 16),
+      padding: EdgeInsets.fromLTRB(16, 32, 84, 16 + navInset),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,

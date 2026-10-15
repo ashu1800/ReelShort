@@ -45,6 +45,7 @@ dependencies:
   video_player: ^2.14.1
   cached_network_image: ^4.0.4
   qr_flutter: ^4.1.0
+  screen_brightness: ^2.1.0
   package_info_plus: ^10.2.2
   path_provider: ^2.1.6
   flutter_localizations:

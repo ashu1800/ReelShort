@@ -65,26 +65,29 @@ class WithdrawalScreen extends StatelessWidget {
     final AppStrings copy = strings(state.language);
     final bool loggedIn = state.session != null;
 
-    return Column(
-      children: <Widget>[
-        _WithdrawalHeader(
-          title: copy.accountWithdrawTitle,
-          onBack: controller.backToFunds,
-        ),
-        Expanded(
-          child: ListView(
-            padding: _pagePadding,
-            children: <Widget>[
-              if (!loggedIn)
-                _GuestPanel(copy: copy, onSignIn: controller.showAuthPrompt)
-              else
-                _WithdrawalFormSection(copy: copy),
-              const SizedBox(height: _sectionGap),
-              _WithdrawalHistorySection(copy: copy),
-            ],
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        children: <Widget>[
+          _WithdrawalHeader(
+            title: copy.accountWithdrawTitle,
+            onBack: controller.backToFunds,
           ),
-        ),
-      ],
+          Expanded(
+            child: ListView(
+              padding: _pagePadding,
+              children: <Widget>[
+                if (!loggedIn)
+                  _GuestPanel(copy: copy, onSignIn: controller.showAuthPrompt)
+                else
+                  _WithdrawalFormSection(copy: copy),
+                const SizedBox(height: _sectionGap),
+                _WithdrawalHistorySection(copy: copy),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -239,8 +242,10 @@ class _WithdrawalFormState extends State<_WithdrawalForm> {
     if (submitting) {
       return false;
     }
-    final WithdrawalSummary? summary =
-        context.read<AppStateController>().state.withdrawalSummary;
+    final WithdrawalSummary? summary = context
+        .read<AppStateController>()
+        .state
+        .withdrawalSummary;
     final int minimum = summary?.minimumPoints ?? _noSummaryMinimum;
     final int available = summary?.availablePoints ?? 0;
     return summary?.walletAddress != null &&
@@ -341,8 +346,11 @@ class _AmountStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        for (final String line
-            in withdrawalConversionLines(summary, points, state.language))
+        for (final String line in withdrawalConversionLines(
+          summary,
+          points,
+          state.language,
+        ))
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Text(
@@ -431,18 +439,18 @@ class _ConfirmStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          accountConfirmationTitle(language),
-          style: textTheme.titleMedium,
-        ),
+        Text(accountConfirmationTitle(language), style: textTheme.titleMedium),
         const SizedBox(height: _panelGap),
         Text(
           '${copy.accountWithdrawSubmitAction}: '
           '$points${copy.accountPointsSuffix}',
           style: textTheme.bodyLarge,
         ),
-        for (final String line
-            in withdrawalConversionLines(summary, points, language))
+        for (final String line in withdrawalConversionLines(
+          summary,
+          points,
+          language,
+        ))
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
@@ -501,10 +509,7 @@ class _WithdrawalHistorySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          copy.accountWithdrawalRecordsTitle,
-          style: textTheme.titleMedium,
-        ),
+        Text(copy.accountWithdrawalRecordsTitle, style: textTheme.titleMedium),
         const SizedBox(height: _panelGap),
         if (state.withdrawals.isEmpty)
           AppEmptyState(
@@ -534,11 +539,13 @@ class _WithdrawalHistoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppTypography typography =
-        Theme.of(context).extension<AppTypography>()!;
+    final AppTypography typography = Theme.of(context)
+        .extension<AppTypography>()!;
     final TextTheme textTheme = Theme.of(context).textTheme;
-    final AppLanguage language =
-        context.watch<AppStateController>().state.language;
+    final AppLanguage language = context
+        .watch<AppStateController>()
+        .state
+        .language;
     final String statusLabel = withdrawalStatusLabel(record.status, language);
     // Rejected reasons and settlement tx hashes ride along, exactly like the
     // Kotlin `withdrawalRecordDetail` line.
@@ -578,9 +585,7 @@ class _WithdrawalHistoryRow extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '${record.network} · ${record.walletAddress}',
-              style: textTheme.bodySmall?.copyWith(
-                color: colors.textSecondary,
-              ),
+              style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
             ),
             if (detail != null)
               Text(

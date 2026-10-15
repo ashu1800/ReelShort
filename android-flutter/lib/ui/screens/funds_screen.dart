@@ -62,71 +62,74 @@ class FundsScreen extends StatelessWidget {
     final AppStrings copy = strings(state.language);
     final bool loggedIn = state.session != null;
 
-    return Column(
-      children: <Widget>[
-        Padding(
-          padding: _titlePadding,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              copy.fundsTitle,
-              style: Theme.of(context).textTheme.titleLarge,
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        children: <Widget>[
+          Padding(
+            padding: _titlePadding,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                copy.fundsTitle,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
             ),
           ),
-        ),
-        Expanded(
-          child: state.isLoading
-              ? AppSkeletonList(
-                  itemHeight: _skeletonItemHeight,
-                  itemCount: 5,
-                  padding: _pagePadding,
-                )
-              : ListView(
-                  padding: _pagePadding,
-                  children: <Widget>[
-                    _BalancePanel(
-                      state: state,
-                      copy: copy,
-                      loggedIn: loggedIn,
-                    ),
-                    const SizedBox(height: _sectionGap),
-                    _FundsActionTile(
-                      icon: Icons.account_balance_wallet,
-                      title: copy.fundsWithdrawalAction,
-                      subtitle: copy.fundsWithdrawalSubtitle,
-                      onTap: () {
-                        if (loggedIn) {
-                          unawaited(controller.openWithdrawal());
-                        } else {
-                          controller.showAuthPrompt();
-                        }
-                      },
-                    ),
-                    const SizedBox(height: _sectionGap),
-                    _FundsActionTile(
-                      icon: Icons.workspace_premium,
-                      title: copy.fundsVipRechargeAction,
-                      subtitle: copy.fundsVipRechargeSubtitle,
-                      onTap: () {
-                        if (loggedIn) {
-                          unawaited(controller.openVipRecharge());
-                        } else {
-                          controller.showAuthPrompt();
-                        }
-                      },
-                    ),
-                    const SizedBox(height: _sectionGap),
-                    _LedgerSection(state: state, copy: copy),
-                    const SizedBox(height: _sectionGap),
-                    _VipOrdersSection(state: state, copy: copy),
-                    if (state.orders.isNotEmpty) ...<Widget>[
+          Expanded(
+            child: state.isLoading
+                ? AppSkeletonList(
+                    itemHeight: _skeletonItemHeight,
+                    itemCount: 5,
+                    padding: _pagePadding,
+                  )
+                : ListView(
+                    padding: _pagePadding,
+                    children: <Widget>[
+                      _BalancePanel(
+                        state: state,
+                        copy: copy,
+                        loggedIn: loggedIn,
+                      ),
                       const SizedBox(height: _sectionGap),
-                      _RechargeOrdersSection(state: state, copy: copy),
+                      _FundsActionTile(
+                        icon: Icons.account_balance_wallet,
+                        title: copy.fundsWithdrawalAction,
+                        subtitle: copy.fundsWithdrawalSubtitle,
+                        onTap: () {
+                          if (loggedIn) {
+                            unawaited(controller.openWithdrawal());
+                          } else {
+                            controller.showAuthPrompt();
+                          }
+                        },
+                      ),
+                      const SizedBox(height: _sectionGap),
+                      _FundsActionTile(
+                        icon: Icons.workspace_premium,
+                        title: copy.fundsVipRechargeAction,
+                        subtitle: copy.fundsVipRechargeSubtitle,
+                        onTap: () {
+                          if (loggedIn) {
+                            unawaited(controller.openVipRecharge());
+                          } else {
+                            controller.showAuthPrompt();
+                          }
+                        },
+                      ),
+                      const SizedBox(height: _sectionGap),
+                      _LedgerSection(state: state, copy: copy),
+                      const SizedBox(height: _sectionGap),
+                      _VipOrdersSection(state: state, copy: copy),
+                      if (state.orders.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: _sectionGap),
+                        _RechargeOrdersSection(state: state, copy: copy),
+                      ],
                     ],
-                  ],
-                ),
-        ),
-      ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -256,9 +259,7 @@ class _VipStatusBadge extends StatelessWidget {
           Flexible(
             child: Text(
               '${copy.accountVipExpiryPrefix}${state.vipUntil}',
-              style: textTheme.bodySmall?.copyWith(
-                color: colors.textSecondary,
-              ),
+              style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
             ),
           ),
         ],
@@ -358,16 +359,13 @@ class _LedgerSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final TextTheme textTheme = Theme.of(context).textTheme;
-    final List<PointRecord> records = state.pointAccount?.records ??
-        const <PointRecord>[];
+    final List<PointRecord> records =
+        state.pointAccount?.records ?? const <PointRecord>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          copy.accountPointRecordsTitle,
-          style: textTheme.titleMedium,
-        ),
+        Text(copy.accountPointRecordsTitle, style: textTheme.titleMedium),
         const SizedBox(height: _panelGap),
         if (records.isEmpty)
           AppEmptyState(
@@ -420,17 +418,12 @@ class _VipOrdersSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          copy.vipRecordsTitle,
-          style: textTheme.titleMedium,
-        ),
+        Text(copy.vipRecordsTitle, style: textTheme.titleMedium),
         const SizedBox(height: _panelGap),
         if (state.vipOrders.isEmpty)
           Text(
             copy.accountVipNoOrders,
-            style: textTheme.bodyMedium?.copyWith(
-              color: colors.textSecondary,
-            ),
+            style: textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
           )
         else
           for (final VipOrder order in state.vipOrders)
@@ -450,8 +443,8 @@ class _VipOrderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppTypography typography =
-        Theme.of(context).extension<AppTypography>()!;
+    final AppTypography typography = Theme.of(context)
+        .extension<AppTypography>()!;
     final TextTheme textTheme = Theme.of(context).textTheme;
     final String status = order.status.toUpperCase();
     final String statusLabel = switch (status) {
@@ -488,10 +481,7 @@ class _VipOrderCard extends StatelessWidget {
                       color: colors.textSecondary,
                     ),
                   ),
-                  Text(
-                    order.createdAt,
-                    style: textTheme.labelSmall,
-                  ),
+                  Text(order.createdAt, style: textTheme.labelSmall),
                 ],
               ),
             ),
@@ -522,10 +512,7 @@ class _RechargeOrdersSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          copy.accountOrdersTitle,
-          style: textTheme.titleMedium,
-        ),
+        Text(copy.accountOrdersTitle, style: textTheme.titleMedium),
         const SizedBox(height: _panelGap),
         _Panel(
           child: Column(
