@@ -54,7 +54,7 @@ python tool/port_app_ui_state.py
 
 ### 发布相关入口
 
-发布沿用 `android-app` 的既有链路，本次重构**不修改** `scripts/publish-android.py` 与 `scripts/verify-release-baseline.ps1`：
+发布已切换到 Flutter 应用（Kotlin 版进入维护淘汰）：`scripts/publish-android.py` 默认构建 `android-flutter/`（`--source kotlin` 可回退旧链路），flutter CLI 按 FLUTTER_BIN > PATH > `C:\Users\12801\flutter\3.47.7\bin` 发现；
 
 - 后端 `GET /api/app/release/latest`（游客可访问）返回版本清单与 COS 预签名下载地址。
 - 打包需要一个 versionCode 高于线上 `0.9.1 (43)` 的 APK：`pubspec.yaml` 已设为 `0.9.2+44`。
