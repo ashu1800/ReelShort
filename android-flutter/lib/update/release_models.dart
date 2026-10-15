@@ -24,6 +24,15 @@ const int maxReleaseNotesChars = 4000;
 /// Default COS bucket of the ShortLink update objects (`DEFAULT_COS_BUCKET`).
 const String defaultCosBucket = 'update-1259596907';
 
+/// Manifest deadline. Kotlin OkHttp used connect 15 s / read 60 s; a single
+/// 60 s whole-request deadline reproduces the read bound. Without it a
+/// black-holed connection parks the state machine in `Checking` forever and
+/// every later manual check is a silent no-op.
+const Duration updateManifestTimeout = Duration(seconds: 60);
+
+/// Whole-download deadline, mirroring the Kotlin 15-minute call timeout.
+const Duration updateDownloadCallTimeout = Duration(minutes: 15);
+
 /// Default COS region of the ShortLink update objects (`DEFAULT_COS_REGION`).
 const String defaultCosRegion = 'ap-chengdu';
 

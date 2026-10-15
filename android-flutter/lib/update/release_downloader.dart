@@ -68,7 +68,8 @@ class HttpReleaseDownloader implements ReleaseDownloader {
       final IOSink sink = destination.openWrite();
       int downloaded = 0;
       try {
-        await for (final List<int> chunk in response.stream) {
+        await for (final List<int> chunk
+            in response.stream.timeout(updateDownloadCallTimeout)) {
           if (isCancelled?.call() ?? false) {
             throw const DownloadCancelledException();
           }
@@ -99,7 +100,8 @@ class HttpReleaseDownloader implements ReleaseDownloader {
     }
     final BytesBuilder builder = BytesBuilder(copy: false);
     int total = 0;
-    await for (final List<int> chunk in response.stream) {
+    await for (final List<int> chunk
+        in response.stream.timeout(const Duration(minutes: 2))) {
       total += chunk.length;
       if (total > maxChecksumBytes) {
         throw const InvalidChecksumException();
@@ -137,10 +139,16 @@ class HttpReleaseDownloader implements ReleaseDownloader {
   }
 
   /// `GET` [url] with the updater User-Agent, rejecting non-2xx responses.
+  ///
+  /// The response headers carry a 60 s deadline (the Kotlin read timeout); the
+  /// body streams carry a 15-minute whole-call deadline so a stalled
+  /// connection can never park a download forever.
   Future<http.StreamedResponse> _send(String url) async {
     final http.Request request = http.Request('GET', Uri.parse(url))
       ..headers['User-Agent'] = updaterUserAgent;
-    final http.StreamedResponse response = await httpClient.send(request);
+    final http.StreamedResponse response = await httpClient
+        .send(request)
+        .timeout(const Duration(seconds: 60));
     if (response.statusCode < 200 || response.statusCode > 299) {
       throw ReleaseHttpException(response.statusCode);
     }

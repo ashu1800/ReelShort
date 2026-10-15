@@ -8,6 +8,7 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'release_models.dart';
@@ -59,7 +60,15 @@ class ShortLinkUpdateClient implements ReleaseUpdateClient {
     final http.Request request = http.Request('GET', Uri.parse(endpoint))
       ..headers['Accept'] = 'application/json'
       ..headers['User-Agent'] = userAgent;
-    final http.StreamedResponse response = await httpClient.send(request);
+    if (kDebugMode) {
+      debugPrint('[update] GET $endpoint');
+    }
+    final http.StreamedResponse response = await httpClient
+        .send(request)
+        .timeout(updateManifestTimeout);
+    if (kDebugMode) {
+      debugPrint('[update] <- ${response.statusCode}');
+    }
     if (!_isSuccessful(response.statusCode)) {
       throw ReleaseHttpException(response.statusCode);
     }

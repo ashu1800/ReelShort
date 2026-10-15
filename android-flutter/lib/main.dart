@@ -100,11 +100,18 @@ class ShortLinkApp extends StatelessWidget {
   final AppStateController controller;
   final UpdateCoordinator updateCoordinator;
 
+  /// The dialog host sits above the Navigator (to overlay every route), so it
+  /// cannot resolve a Navigator from its own context; this key reaches the
+  /// Navigator's context for `showDialog`.
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<AppStateController>.value(
       value: controller,
       child: MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'ShortLink',
         debugShowCheckedModeBanner: false,
         // The system setting decides the theme; both palettes are first-class in the design
@@ -136,6 +143,7 @@ class ShortLinkApp extends StatelessWidget {
             coordinator: updateCoordinator,
             child: _UpdateHost(
               coordinator: updateCoordinator,
+              navigatorKey: navigatorKey,
               child: child ?? const SizedBox.shrink(),
             ),
           ),
@@ -155,9 +163,17 @@ class ShortLinkApp extends StatelessWidget {
 /// a manual check that ends in `UpToDate` / `Failed` (no release) surfaces a 4 s
 /// toast before dropping back to `Idle`.
 class _UpdateHost extends StatefulWidget {
-  const _UpdateHost({required this.coordinator, required this.child});
+  const _UpdateHost({
+    required this.coordinator,
+    required this.navigatorKey,
+    required this.child,
+  });
 
   final UpdateCoordinator coordinator;
+
+  /// Navigator of the app; dialogs must be pushed from below it.
+  final GlobalKey<NavigatorState> navigatorKey;
+
   final Widget child;
 
   @override
@@ -204,9 +220,10 @@ class _UpdateHostState extends State<_UpdateHost> {
       return;
     }
     if (shouldShowUpdateDialog(state)) {
-      if (!_dialogOpen) {
+      final BuildContext? navigatorContext = widget.navigatorKey.currentContext;
+      if (!_dialogOpen && navigatorContext != null) {
         _dialogOpen = true;
-        showUpdateDialog(context).whenComplete(() {
+        showUpdateDialog(navigatorContext).whenComplete(() {
           _dialogOpen = false;
           // The dialog may have closed while a visible state was already set;
           // re-evaluate so the dialog reopens instead of waiting for a change.
