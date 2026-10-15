@@ -1,0 +1,10 @@
+[Unit]
+Description=Card service database backup (卡密服务数据库备份)
+After=cardservice.service
+
+[Service]
+Type=oneshot
+User=cardservice
+Group=cardservice
+EnvironmentFile=/etc/cardservice/cardservice.env
+ExecStart=/srv/cardservice/current/cardservice -backup /var/backups/cardservice -backup-keep 14

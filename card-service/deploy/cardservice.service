@@ -1,0 +1,33 @@
+[Unit]
+Description=Card service (卡密服务)
+Documentation=https://card.hjj888.cc
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cardservice
+Group=cardservice
+WorkingDirectory=/srv/cardservice
+EnvironmentFile=/etc/cardservice/cardservice.env
+
+# 版本化发布 + 符号链接切换（回滚只需重指 current 并重启）
+ExecStart=/srv/cardservice/current/cardservice
+
+Restart=always
+RestartSec=5
+SuccessExitStatus=143
+TimeoutStopSec=20
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/cardservice /var/log/cardservice
+
+LimitNOFILE=65535
+StandardOutput=append:/var/log/cardservice/cardservice-stdout.log
+StandardError=append:/var/log/cardservice/cardservice-stderr.log
+
+[Install]
+WantedBy=multi-user.target

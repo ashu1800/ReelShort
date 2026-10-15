@@ -1,0 +1,292 @@
+/**
+ * 全局样式：中性灰底 + 白色内容卡 + 单一强调色（墨绿 #2f6f5e）。
+ * 间距只用 4/8/12/16/24/32 阶梯，圆角统一 6px，避免大面积阴影与渐变。
+ */
+
+:root {
+  /* 颜色 */
+  --c-bg: #f5f6f8;
+  --c-surface: #ffffff;
+  --c-surface-muted: #f7f8fa;
+  --c-border: #e3e6ea;
+  --c-border-strong: #d3d8de;
+  --c-text: #1f2430;
+  --c-text-regular: #3d4553;
+  --c-text-secondary: #5b6472;
+  --c-text-muted: #8b94a3;
+  --c-accent: #2f6f5e;
+  --c-accent-hover: #26594b;
+  --c-accent-soft: #eaf1ef;
+  --c-danger: #b4352f;
+  --c-warning: #a8730f;
+  --c-sidebar: #1f2430;
+  --c-sidebar-hover: #2b3242;
+  --c-sidebar-text: #c8cedb;
+  --c-sidebar-muted: #7d879a;
+
+  /* 间距阶梯 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* 字号层次 */
+  --fs-page-title: 20px;
+  --fs-section-title: 16px;
+  --fs-body: 14px;
+  --fs-meta: 12px;
+
+  /* 形状 */
+  --radius: 6px;
+  --row-height: 40px;
+  --sidebar-width: 216px;
+  --topbar-height: 52px;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC",
+    "Hiragino Sans GB", "Source Han Sans SC", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--c-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--c-accent-hover);
+}
+
+/* 页面骨架 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.page-title {
+  font-size: var(--fs-page-title);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.page-subtitle {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-meta);
+  margin-top: var(--space-1);
+}
+
+.panel {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+}
+
+.panel + .panel {
+  margin-top: 0;
+}
+
+.panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.panel-title {
+  font-size: var(--fs-section-title);
+  font-weight: 600;
+}
+
+.panel-hint {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-meta);
+}
+
+/* 筛选区：紧凑排列，label 与控件同行 */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.filter-label {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-meta);
+}
+
+.table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.table-toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: var(--space-2);
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.text-muted {
+  color: var(--c-text-muted);
+  font-size: var(--fs-meta);
+}
+
+.text-strong {
+  font-weight: 600;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.truncate {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.form-hint {
+  color: var(--c-text-secondary);
+  font-size: var(--fs-meta);
+  line-height: 1.6;
+}
+
+.form-error {
+  color: var(--c-danger);
+  font-size: var(--fs-meta);
+}
+
+.stack-2 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stack-3 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.row-2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 表格紧凑化：行高约 40px，内容不换行 */
+.el-table {
+  font-size: var(--fs-body);
+  --el-table-border-color: var(--c-border);
+  --el-table-header-bg-color: var(--c-surface-muted);
+  --el-table-header-text-color: var(--c-text-regular);
+  --el-table-row-hover-bg-color: #f4f7f6;
+}
+
+.el-table .el-table__cell {
+  padding: 8px 0;
+}
+
+.el-table th.el-table__cell {
+  font-weight: 600;
+}
+
+.el-descriptions__label {
+  color: var(--c-text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
