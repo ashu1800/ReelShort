@@ -1,0 +1,35 @@
+# Static analysis configuration for the Flutter rewrite of the ShortLink app.
+#
+# `flutter analyze` must stay clean; verification instructions live in
+# docs/toolchain.md.
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+  language:
+    strict-casts: true
+    strict-raw-types: true
+  errors:
+    # Treat dead code and unused declarations as build failures so that parity
+    # gaps do not hide as warnings.
+    dead_code: error
+    unused_element: error
+    unused_import: error
+    unused_local_variable: error
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_print
+    - prefer_single_quotes
+    - unawaited_futures
+    - unnecessary_parenthesis
+    - use_string_buffers
+    # Disabled deliberately: this lint fires on `_field = param` in named-parameter
+    # constructors, but Dart forbids private named parameters, so the "use an
+    # initializing formal" fix it suggests does not compile. Injected collaborators
+    # are kept private, so the lint can never be satisfied here.
+    - prefer_initializing_formals: false

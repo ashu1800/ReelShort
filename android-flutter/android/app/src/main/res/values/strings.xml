@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- User-visible app name. The brand is unchanged from the Kotlin app. -->
+    <string name="app_name">ShortLink</string>
+</resources>

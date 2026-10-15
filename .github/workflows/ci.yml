@@ -94,3 +94,29 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app-core:test :app:testDebugUnitTest --no-daemon
+
+  android-flutter:
+    name: Android Flutter analyze and tests (no signing secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # No APK step on purpose: every packaging task validates the pinned official signing
+    # certificate and fails without ANDROID_SIGNING_*, so packaging belongs to the release
+    # pipeline only. Analysis and the Dart test suite need no secrets.
+    steps:
+      - name: Check out
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+      - name: Resolve packages
+        working-directory: android-flutter
+        run: flutter pub get
+      - name: Analyze
+        working-directory: android-flutter
+        run: flutter analyze
+      - name: Dart tests
+        working-directory: android-flutter
+        run: flutter test

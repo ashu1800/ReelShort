@@ -1,0 +1,320 @@
+{
+  "source": "android-app/app-core/src/main/kotlin/com/reelshort/app/state/AppUiState.kt",
+  "enum_count": 4,
+  "field_count": 47,
+  "enums": {
+    "AppScreen": [
+      "login",
+      "home",
+      "search",
+      "detail",
+      "player",
+      "account",
+      "funds",
+      "withdrawal",
+      "vipRecharge",
+      "favorites"
+    ],
+    "AuthMode": [
+      "login",
+      "register"
+    ],
+    "AccountOperation": [
+      "walletVerification",
+      "passwordVerification",
+      "walletMutation",
+      "withdrawal",
+      "pointTransfer",
+      "passwordChange"
+    ],
+    "UiMessageType": [
+      "success",
+      "error",
+      "info"
+    ]
+  },
+  "fields": [
+    {
+      "name": "screen",
+      "type": "AppScreen",
+      "nullable": false,
+      "default": "AppScreen.home"
+    },
+    {
+      "name": "language",
+      "type": "AppLanguage",
+      "nullable": false,
+      "default": "AppLanguage.defaultLanguage"
+    },
+    {
+      "name": "authMode",
+      "type": "AuthMode",
+      "nullable": false,
+      "default": "AuthMode.login"
+    },
+    {
+      "name": "isLoading",
+      "type": "bool",
+      "nullable": false,
+      "default": "false"
+    },
+    {
+      "name": "errorMessage",
+      "type": "String",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "messageTrigger",
+      "type": "int",
+      "nullable": false,
+      "default": "0"
+    },
+    {
+      "name": "messageType",
+      "type": "UiMessageType",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "apiBaseUrl",
+      "type": "String",
+      "nullable": false,
+      "default": "''"
+    },
+    {
+      "name": "apiHealthStatus",
+      "type": "ApiHealthStatus",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "session",
+      "type": "AuthSession",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "savedCredentials",
+      "type": "SavedCredentials",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "authPromptVisible",
+      "type": "bool",
+      "nullable": false,
+      "default": "false"
+    },
+    {
+      "name": "captchaId",
+      "type": "String",
+      "nullable": false,
+      "default": "''"
+    },
+    {
+      "name": "captchaImageBase64",
+      "type": "String",
+      "nullable": false,
+      "default": "''"
+    },
+    {
+      "name": "pendingPlaybackEpisode",
+      "type": "EpisodeSummary",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "vipActive",
+      "type": "bool",
+      "nullable": false,
+      "default": "false"
+    },
+    {
+      "name": "vipPaywallVisible",
+      "type": "bool",
+      "nullable": false,
+      "default": "false"
+    },
+    {
+      "name": "vipPaywallLoading",
+      "type": "bool",
+      "nullable": false,
+      "default": "false"
+    },
+    {
+      "name": "pendingVipEpisode",
+      "type": "EpisodeSummary",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "homeShelf",
+      "type": "List<BookSummary>",
+      "nullable": false,
+      "default": "const <BookSummary>[]"
+    },
+    {
+      "name": "isHomeRefreshing",
+      "type": "bool",
+      "nullable": false,
+      "default": "false"
+    },
+    {
+      "name": "searchQuery",
+      "type": "String",
+      "nullable": false,
+      "default": "''"
+    },
+    {
+      "name": "searchResults",
+      "type": "List<BookSummary>",
+      "nullable": false,
+      "default": "const <BookSummary>[]"
+    },
+    {
+      "name": "selectedBook",
+      "type": "BookSummary",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "episodes",
+      "type": "List<EpisodeSummary>",
+      "nullable": false,
+      "default": "const <EpisodeSummary>[]"
+    },
+    {
+      "name": "selectedEpisode",
+      "type": "EpisodeSummary",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "currentVideoUrl",
+      "type": "VideoUrl",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "playback",
+      "type": "PlaybackState",
+      "nullable": false,
+      "default": "const PlaybackState()"
+    },
+    {
+      "name": "playerReturnScreen",
+      "type": "AppScreen",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "watchHistory",
+      "type": "List<WatchRecord>",
+      "nullable": false,
+      "default": "const <WatchRecord>[]"
+    },
+    {
+      "name": "continueWatchingBooks",
+      "type": "Map<String, BookSummary>",
+      "nullable": false,
+      "default": "const <String, BookSummary>{}"
+    },
+    {
+      "name": "pointAccount",
+      "type": "PointAccount",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "orders",
+      "type": "List<RechargeOrderSummary>",
+      "nullable": false,
+      "default": "const <RechargeOrderSummary>[]"
+    },
+    {
+      "name": "wallet",
+      "type": "WalletInfo",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "walletMutationVersion",
+      "type": "int",
+      "nullable": false,
+      "default": "0"
+    },
+    {
+      "name": "vipUntil",
+      "type": "String",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "vipPriceUsdt",
+      "type": "String",
+      "nullable": false,
+      "default": "''"
+    },
+    {
+      "name": "vipCollectionAddress",
+      "type": "String",
+      "nullable": false,
+      "default": "''"
+    },
+    {
+      "name": "latestVipOrder",
+      "type": "VipOrder",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "vipOrders",
+      "type": "List<VipOrder>",
+      "nullable": false,
+      "default": "const <VipOrder>[]"
+    },
+    {
+      "name": "withdrawalSubmissionVersion",
+      "type": "int",
+      "nullable": false,
+      "default": "0"
+    },
+    {
+      "name": "accountOperation",
+      "type": "AccountOperation",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "withdrawalSummary",
+      "type": "WithdrawalSummary",
+      "nullable": true,
+      "default": "null"
+    },
+    {
+      "name": "withdrawals",
+      "type": "List<WithdrawalRecord>",
+      "nullable": false,
+      "default": "const <WithdrawalRecord>[]"
+    },
+    {
+      "name": "interaction",
+      "type": "BookInteractionState",
+      "nullable": false,
+      "default": "const BookInteractionState()"
+    },
+    {
+      "name": "comments",
+      "type": "List<Comment>",
+      "nullable": false,
+      "default": "const <Comment>[]"
+    },
+    {
+      "name": "favorites",
+      "type": "List<BookSummary>",
+      "nullable": false,
+      "default": "const <BookSummary>[]"
+    }
+  ]
+}
