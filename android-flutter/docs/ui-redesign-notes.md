@@ -301,6 +301,86 @@ Phase 4 才是**外观真正变化**的阶段：前四个阶段（令牌/组件/
   3. 骨架块尺寸（200/80/56/96×14/180×40）是文档化的命名常量，若 Phase 5 想严格 token 化可提成
      骨架专用令牌。
 
+### 7.6 Player（播放器）重设计规格（Phase 4-3，冻结 2026-10-16）
+
+现状问题：`player_screen.dart`（1724 行）几乎全是私有实现且**直接写裸色值**——`Colors.black45` /
+`Colors.white` / `Colors.white24` / `Colors.black38` / `Colors.black54` / `Colors.white70` 等，
+而设计系统早已有 `AppMedia` 令牌（`onMedia` / `onMediaSecondary` / `glass` / `glassStrong` /
+`glassDanger` / `divider` / `scrim` / `cellIdle` / `cellSelected` / `gradientBase`）；
+`_EpisodeSheet` 用等高网格，未使用设计系统的签名元素 `EpisodeSpine.full`
+（design-system §5 明确写 full 用于「Detail page, **player episode drawer**」）；
+顶栏返回按钮、右侧动作栏、选集格各自的命中区与语义各自为政。
+
+目标结构（**只改表现层**，手势/奖励/进度/门控逻辑一行不动）：
+
+1. **媒体 chrome 令牌化**：播放器内所有覆盖层颜色只能来自 `AppMedia` / `AppColors`
+   （禁止 `Colors.white*` / `Colors.black*` 字面量，`Colors.transparent` 除外）。
+2. **顶栏**：返回触达 ≥44×44、tooltip 与语义走 `AppUiCopy.back`、底板 `AppMedia.glass`；
+   奖励圆环保留现有几何与显示门控（`vipActive && estimatedRewardPoints != null`），配色走
+   `accentReward`/`onReward`、圆心数字走 `numeric` 角色；`+N pt` 浮层与奖励错误横幅令牌化。
+3. **右侧动作栏**：`like` / `comments` / `favorite` 三项统一 44px 命中区、玻璃底圆形底板、
+   `AppMedia.onMedia` 图标与计数；选中态必须是**第二通道**（实心图标 + accent 色），计数仍走
+   `formatCount`；语义标签保持 `AppUiCopy.playerLike/playerComments/playerFavorite` 与既有文案。
+4. **底部信息区**：加 `AppMedia.gradientBase` → 透明的底部渐变保证文字可读；标题/集标题/简介走
+   排版角色并限行；进度条走令牌（轨道 + 已完成色）；选集入口改成明确按钮
+   （文案 `AppUiCopy.playerEpisodes` + 当前集号）。
+5. **选集抽屉**：改用 `EpisodeSpine.full`——每个 tick 44×44 命中区，行内展示集号 + 标题 + VIP 锁；
+   保留既有行为：点当前集**只关闭抽屉**、点其它集切换、VIP 锁走付费层、已看/进行中/当前态正确。
+6. **评论抽屉**：用 `AppSheet` 外壳 + `AppEmptyState`（空态）/`AppInlineLoading`（加载态）；
+   列表行令牌化；行为不变（提交闸门、提交后清空草稿、成功后重拉、分页仍只取数组）。
+7. **覆盖层**：`_CoverOverlay` / `_BufferingOverlay` / `_ErrorOverlay` 令牌化；错误层三个动作改
+   `AppButton`（Retry primary / Next secondary / Back tertiary），覆盖优先级
+   （error > cover > buffering）与门控不变。
+8. **回归硬约束**：单击暂停、双击点赞、左右 1/4 竖滑亮度/音量、中间竖滑切集（阈值 80px 或速度
+   400）、奖励领取与上报、进度采样（约 15s / 完成）、VIP 门禁、自动播放与历史续播、错误重试重建
+   播放器、后台暂停、`Episodes` 重复点击当前集只关面板 —— 行为与文案全部不变；`AppStrings` 不改。
+
+检查项（前两屏踩过的坑，本轮必查）：每个新按钮/可达元素的**变体选择**
+（`AppButton` 默认 primary，一个区域只允许一个 primary）与**命中区 ≥44**。
+
+### 7.7 Phase 4-3 结果（Player）
+
+- 交付：`player_screen.dart` 表现层重写（1724 → 1752 行，全部媒体 chrome 令牌化、
+  `Colors.*`/`Color(0x` 零命中）、新增 `test/player_screen_test.dart` 23 条、
+  `AppUiCopy` 追加 1 个无障碍语义常量 `playerCommentSend`（评论发送键此前无标签，TalkBack 只报"按钮"）。
+  顶栏返回 40 → 44 且语义从屏名 'Player' 改为 `AppUiCopy.back`；动作栏三项 44px 玻璃底板 + 选中态
+  实心图标/强调色双通道 + 语义标签补全（原来 like/comments 只播报裸数字）；底部信息区改用
+  `AppMedia.bottomCopyGradient` + 明确成按钮的选集入口；**选集抽屉从等高网格换成 `EpisodeSpine.full`**
+  （每 tick 44×44、相邻不重叠、四态 + VIP 门锁，点当前集只关、点其它集切换、锁集走付费层）；
+  评论抽屉套 `AppSheet` + `AppEmptyState`/`AppInlineLoading`；错误层三动作改
+  `AppButton`（primary/secondary/tertiary，primary 恰 1 个）并改为纵向堆叠。
+- **本轮抓到并修掉的三个缺陷（都是真机/自查才能发现）：**
+  1. 错误覆盖层动作 Row 在 360dp 下 `RenderFlex` 溢出 75px → 改纵向堆叠；
+  2. **底部选集入口在视频上不可读**：`AppButton(secondary)` 的 `textPrimary` 前景压在媒体面上，
+     浅色主题下实测 1.05–1.12:1 → 换成令牌化媒体面按钮 `_MediaButton`
+     （`media.glass` + `media.divider` + `media.onMedia`，16–19:1）；
+  3. 全文件「媒体面用面牌前景」自查（对比度最差 1.05:1）：奖励失败横幅 `accentDanger` → `onMedia`、
+     底部集标题 `accentPrimary` → `onMedia`、**奖励圆环圆心数字内容相依（中灰视频仅 1.54:1）**
+     → 加 48px 玻璃底板（几何不变）+ 数字改 `onMedia`，静默态弧色改 `onMediaSecondary`；
+     错误卡则整体改回 `colors.surface` 平面（让 `AppButton` 的四个变体回到它们被设计时的平面）。
+- 验证：`flutter analyze` 0 issue、`flutter test` 全量 **207 用例全绿**；verifier 两轮（task-22/24）
+  独立取证增量缺陷 0——含自建假 `VideoPlayerPlatform` 端到端验证单击暂停/双击点赞（不误触单击）、
+  git diff 证明手势/阈值/采样/领奖/VIP 门控/重试逻辑逐字未改、`EpisodeSpine.full` 6 tick 实测
+  44×44 且相邻交集为空、以及**自己实现 WCAG 公式**复核错误层两主题六个配对（5.07–18.10）全 ≥4.5。
+- 真机（雷电 Android 14 / 360×640dp，登录态）：改造前 `30-player-before.png` 与
+  `31-player-episodes-before.png`（等高网格），改造后 `43-player-final.png` 与
+  `44-player-episodes-final.png`；三条竖滑手势真机复核通过（左 1/4 → 41% 亮度胶囊、
+  右 1/4 → 100% 音量胶囊、中间竖滑 EP 05 → EP 06），证据 `38–42-*.png`。
+- 已知取舍 / 后续项：
+  1. 评论空态由生成串 `playerCommentsEmpty` 改为 `AppUiCopy` 两段式 ⇒ 该生成文案在 lib/ 内成为
+     孤儿，建议改 Kotlin 源时清理；底部选集入口与 `playerEpisodeSelectorPrefix` 现在有两个
+     'Episodes' 来源，建议 Phase 5 统一。
+  2. 点赞强调色由裸值粉 `#FF5C7A` 改为 `accentDanger`（令牌合规必然；语义略过载，若要保粉色应新增
+     `accentLike` 令牌而不是回退裸值）；动作栏选中色 3.46–4.14:1 属"图形 ≥3:1 达标、文字 4.5:1
+     未达"，靠实心/描边形状通道兜底。
+  3. 奖励说明弹层仍是本地 `showModalBottomSheet` + 硬编码内边距（surface 平面、令牌合规），
+     套 `AppSheet` 留 Phase 5。
+  4. 三项 widget 层未能取证、建议真机复核：Retry 重建播放器（harness 里错误层走的是"无控制器"
+     分支）、奖励失败横幅文字色的运行时证据、圆环 `onMediaSecondary` 静默分支（本轮输入都落在
+     `accentReward`）。
+
+
+
 
 
 
