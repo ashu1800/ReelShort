@@ -6,7 +6,10 @@ contract for that language: every token, every rule and every deliberate
 deviation from the original.
 
 The implementation lives in `lib/theme/` (tokens and theme assembly) and
-`lib/ui/components/` (the components built from those tokens).
+`lib/ui/components/` (the components built from those tokens). The app shell
+adds one layer on top of both: `lib/ui/routing/` holds the declarative page
+stack and the back-priority contract, and `AppSubPage` is the shared chrome a
+pushed sub-page wears (§4.1).
 
 ---
 
@@ -191,6 +194,27 @@ and dark, because shape is not a brightness concern.
 The rule of thumb: **radius grows with the size of the thing and shrinks with its
 interactivity.** A 4 px pill is a chip; a 20 px corner is artwork.
 
+### 4.1 Sub-page chrome
+
+`AppSubPage` is the one place a pushed sub-page gets its frame. Before it, three
+screens carried three private `_pagePadding` constants, two different title
+roles (`displayLarge` on one screen, `titleLarge` on another) and one page with
+no header at all.
+
+| Part | Token |
+| --- | --- |
+| Page inset | The `pageHorizontal` / `pageTopInset` / `pageBottomInset` roles, composed into one `EdgeInsets` (`pageBottomInset + viewInsets.bottom` when the host does not resize for the keyboard) |
+| Title | `AppTypography.screenTitle` — the single page-title role, also what `appBarTheme.titleTextStyle` uses |
+| Back affordance | 44 px target, `AppUiCopy.back` as both tooltip and semantic label |
+| Top safe area | Handled once by the chrome, so no screen needs its own `SafeArea` |
+| Keyboard | `MediaQuery.viewInsets.bottom` added to the bottom inset when the host does not resize |
+
+It deliberately builds no `Scaffold`: the shell owns the canvas and the bottom
+navigation bar, and a nested scaffold would paint a second background and answer
+the keyboard with its own resize. `pageBottomInset` is reserved inside the
+scroll view, which is what keeps a section heading from ending up half-hidden
+behind the navigation bar.
+
 ---
 
 ## 5. The Episode Spine
@@ -229,9 +253,17 @@ replaces the original app's episode grid.
 
 | Size | Orientation | Interactive | Where |
 | --- | --- | --- | --- |
-| `full` | Vertical, 16 px rows | Yes — each tick is its own merged `Semantics` node with a tap action | Detail page, player episode drawer |
+| `full` | Vertical; 16 px visual rows, **44 px pitch** | Yes — each tick is its own merged `Semantics` node with a tap action, and its target is a 44 × 44 square (`episodeSpineMinTargetExtent`) | Detail page, player episode drawer |
 | `mini` | Vertical, 12 px rows | No | Inside a poster card |
 | `inline` | Horizontal dash run, wraps | No | Dense ledger/history rows |
+
+**The full-size target, not the tick, is 44 px.** The visual tick keeps its own
+geometry (60 % / full width, 4–5 px tall) and is centred inside a 44 px row, so
+the row pitch equals the target extent and two neighbouring targets share an edge
+without ever overlapping. Widening the row to 44 px is unavoidable: the old
+interactive row was ~23 × 16 px, which is below the platform minimum in both
+directions. A tick without an `onTap` keeps the 16 px row, so an informational
+spine does not grow.
 
 `mini` takes an `availableHeight` and scales itself with `FittedBox` rather than
 overflowing the artwork it annotates. `PosterCard` measures its own inner height
@@ -248,8 +280,10 @@ episode count.
 
 `EpisodeSpine.describe(ticks, language)` builds the summary announced to screen
 readers (for example `12 eps, 2 Watched, Current EP 03, 1 in progress`) using
-**only** strings that already exist in `AppStrings`, so the description stays
-localisable and the component introduces no new user-visible wording.
+**only** strings that already exist in `AppStrings` plus the redesign-only
+`AppUiCopy` entries (the in-progress word, which `AppStrings` never had), so the
+description stays localisable and the component introduces no new user-visible
+wording of its own.
 
 See §6 for how `full` keeps its ticks reachable while still announcing that
 summary.
@@ -346,7 +380,14 @@ These are enforced by the test suite in §8, not merely intended.
    focus itself.
 7. **Target size.** `AppButton` guarantees a 44 px minimum height itself, so a
    compact toolbar cannot shrink it below the touch target. The theme sets
-   `MaterialTapTargetSize.padded` for Material controls.
+   `MaterialTapTargetSize.padded` for Material controls. Four components carry
+   their own minimum, because their visual geometry is smaller than a finger:
+   * `EpisodeSpine.full` ticks: 44 × 44, row pitch included (§5);
+   * `AppSubPage` back affordance: `AppSubPage.backHitSize` (44);
+   * `AppTextField` password reveal toggle: 44 × 44 while the glyph stays small;
+   * `AppMessageBar` close button: 44 × 44 while the icon stays 18 px.
+   Each of these is asserted by a `tester.getRect`/`getSize` assertion rather
+   than by eye.
 8. **Responsive from 320 px to 1440 px, at any text scale.** Components either
    grow, wrap or restructure — they never clip:
    * `AppLedgerRow` stacks its label above its value below 260 px or above 1.6×
@@ -356,6 +397,13 @@ These are enforced by the test suite in §8, not merely intended.
      `posterOverlayTitleMaxLines(fontScale)` lines (2, dropping to 1 at 1.3×).
    * `EpisodeSpine.mini` scales down instead of overflowing.
    * `AppButton` labels wrap to two lines then ellipsise.
+   * `AppSkeleton` with no explicit `width` fills the incoming constraints, so the
+     placeholder covers the same box the real content will: a skeleton needs a
+     **bounded** width parent (a panel, a list, a sliver), and an unbounded one
+     (a bare `Row`, a horizontal `ListView`) must pass `width` explicitly.
+     `AppSkeletonList` rows therefore measure `parent width − padding`, which is
+     asserted rather than assumed — a zero-width plate is invisible, and that is
+     exactly the failure this contract exists to prevent.
 9. **Non-interactive means non-interactive.** `AppEmptyState` renders a real
    `AppButton` when an action callback exists, and a **non-interactive pill** with
    no tap action, no focus node and no ink response when it does not — so a
@@ -376,8 +424,32 @@ The design system is covered by a widget test suite that exercises:
 * the WCAG audit of §2, over every role in both brightnesses;
 * merged-semantics and screen-reader-activation paths for every interactive
   component (this is what caught the dropped tap actions);
+* the empty state's pill contract: priority of action over pill label, that a
+  callback without a label never becomes a dead button, and that the pill
+  exposes no tap action and no focus;
+* the text field's IME contract: reveal/mask without losing text, caret or
+  focus, outside taps closing the keyboard for touch and mouse alike, and
+  `next` still walking straight to the following field;
+* the skeleton variants flattening to a static `surfaceAlt` plate under reduced
+  motion, the poster-grid skeleton deriving its column count from the width, and
+  every skeleton filling its bounded parent instead of collapsing to zero width
+  (measured with `tester.getSize`, in both motion modes, including the real
+  `FundsScreen` loading state);
+* the measured hit targets of §7.7 (spine ticks, reveal toggle, message-bar
+  close), including that neighbouring spine targets never overlap;
 * reduced-motion collapse, the episode-spine description contract, the VIP gate
   boundary, and that the reel-change builder is installed on all six platforms.
+
+The shell's navigation contract lives next to these suites, because it protects
+the same token-level guarantees at the app level:
+
+* `test/routing_contract_test.dart` — the pure `buildRouteStack` /
+  `resolveBackOutcome` / `shellExitForPoppedDestination` functions, with no
+  widget pumped;
+* `test/navigation_shell_test.dart` — the wired shell: back priority (sheet,
+  then pushed page, then `FUNDS` → `ACCOUNT`, then exit), the crossfade on a tab
+  switch, the sub-page chrome, and that the global message bar stays reachable
+  above a modal sheet.
 
 ---
 

@@ -315,6 +315,65 @@ UI 宿主接线审计，修复了「状态机在跑、界面没接线」的一�
 
 ---
 
+## 8.2 Phase 3 声明式路由与全屏子页外壳（2026-10-16，接 §8.1）
+
+Phase 3 把 shell 从「按 `state.screen` 命令式换屏」改成「由状态推导页面栈」，契约集中在
+`lib/ui/routing/app_route_stack.dart`（纯函数）+ `lib/ui/routing/app_router_pages.dart`（Page/Widget 映射）。
+
+### 页面栈
+
+- **一级 Tab 是唯一的 root page**（`shell-root`）。切 Tab 是同一 route 的 in-place update，
+  仍是 §4.2 的 220 ms 交叉淡入，不压栈、不进历史；高亮判据保持 `state.screen == tab`。
+- **子页是真 pushed page**：`favorites` / `withdrawal` / `vipRecharge` / `player` / `detail`。
+  因此它们吃到 `appTheme` 已安装的 reel-change 转场，`player` 保留 §8.1 P6 的上滑 + 淡入。
+- `LOGIN` 保留原行为：不渲染内容、导航栏保留、无高亮 Tab（作为独立 root destination 建模）。
+- 底部栏可见性：仅 `player` 全屏隐藏，其余不变（`shellShowsNavigationBar`）。
+
+### 系统返回优先级（一次返回只产生一个动作）
+
+| 优先级 | 条件 | 动作 |
+| --- | --- | --- |
+| 1 | 认证面板已打开 | 只关面板，屏幕不动 |
+| 2 | VIP 付费层已打开 | 只关付费层 |
+| 3 | 页面栈有 pushed page（或屏幕自己开的弹层） | 弹栈；framework 移除页后按 `shellExitForPoppedDestination` 派发 `backToAccount` / `backToFunds` / `backToPlaybackSource` |
+| 4 | `FUNDS`（一级 Tab 但 Kotlin `BackHandler` 有返回目标） | `backToAccount()` |
+| 5 | 其余一级 Tab 根 | `canPop: true`，交平台退出 App |
+
+`onDidRemovePage` **只在命令式移除时回调**：`Navigator.pop` / `maybePop` 与命令式替换
+（`navigator.dart` 的 `if (pageBased && imperativeRemoval)` 分支）。`pages` 列表被状态收缩、
+同 key 声明式换 page 类型、`removeRoute` 都不回调，所以点 Tab 收缩栈本身不会误触发返回动作。
+派发前 shell 会再按**当前** controller 状态推导一次页面栈，只有当被移除页仍被当前状态期望时才
+派发 transition —— 这同时挡住了「系统返回与用户下一刻的切 Tab 落在同一个 microtask 窗口」的
+竞态（`test/navigation_shell_test.dart` 有回归用例）。
+
+### 全屏子页外壳
+
+`AppSubPage`（`lib/ui/components/app_sub_page.dart`）统一了子页的页面内边距、`screenTitle` 标题角色、
+≥44px 返回触达、顶部安全区与 `pageBottomInset` 预留；`favorites` / `withdrawal` / `vipRecharge`
+三个屏幕删掉了自绘 header、`Scaffold`、`SafeArea` 与私有 `_pagePadding`/`_titlePadding`。
+`favorites` 因此首次有了标题与返回键（此前无 header）。
+
+### 弹层返回优先级与 z-order
+
+- 认证面板与 VIP 付费层仍是状态机持有（`authPromptVisible` / `vipPaywallVisible`），但宿主改为
+  **root navigator 的模态路由**（`AppSheet.show`）：scrim、拖拽句柄、焦点陷阱、`scopesRoute` 语义、
+  返回键关闭全部来自 route；`PopScope(canPop: !busy)` 保留 busy 期间的关闭门禁。
+- 全局消息条从 shell 的 Stack **上移到 `MaterialApp.builder`**（root Navigator 之上），恢复
+  Kotlin z-index 2 的语义：弹层打开时错误消息不被 scrim 压暗，也不被 modal barrier 的
+  `BlockSemantics` 排除出无障碍树。宿主自带一层对输入透明的 `Overlay`（消息条的关闭按钮带
+  tooltip，而 root Navigator 之上没有 Overlay 可用），`test/navigation_shell_test.dart` 用
+  「消息可见时点 Discover 仍能切页」锁定这一层不吞输入。
+
+### 已知偏差（刻意保留）
+
+- **busy 期间拖拽可关面板**：Flutter `ModalBottomSheetRoute` 的拖拽走 `Navigator.pop`，绕过
+  `PopScope`；scrim 点击走 `maybePop`、系统返回走 route pop，两者仍在门禁内。
+  Kotlin 内联面板无拖拽，故这里是「新 affordance 带来的一点门禁空隙」，不是行为倒退。
+- **`detail` 仍是 HomeScreen 占位**：`AppScreen.detail` 从不由状态机赋值（§4.1 G1），Phase 4 接入
+  详情页时需同时给它一个真实返回目标（当前 `shellExitForPoppedDestination(detail)` = `home`）。
+
+---
+
 ## 9. 相关文档
 
 - 设计系统与主题：[design-system.md](design-system.md)
