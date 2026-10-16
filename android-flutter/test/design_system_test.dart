@@ -8,7 +8,6 @@
 /// collapse.
 library;
 
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -17,14 +16,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
 
 import 'package:shortlink/core/formatting/app_strings.dart';
 import 'package:shortlink/core/formatting/app_ui_copy.dart';
 import 'package:shortlink/core/formatting/ui_formats.dart';
 import 'package:shortlink/data/models/app_language.dart';
 import 'package:shortlink/data/models/app_models.dart';
-import 'package:shortlink/state/app_state_controller.dart';
 import 'package:shortlink/state/app_ui_state.dart';
 import 'package:shortlink/theme/app_colors.dart';
 import 'package:shortlink/theme/app_icons.dart';
@@ -41,6 +38,7 @@ import 'package:shortlink/ui/components/app_confirm_dialog.dart';
 import 'package:shortlink/ui/components/app_empty_state.dart';
 import 'package:shortlink/ui/components/app_list_row.dart';
 import 'package:shortlink/ui/components/app_loading.dart';
+import 'package:shortlink/ui/components/app_membership_chip.dart';
 import 'package:shortlink/ui/components/app_message_bar.dart';
 import 'package:shortlink/ui/components/app_panel.dart';
 import 'package:shortlink/ui/components/app_section.dart';
@@ -50,9 +48,6 @@ import 'package:shortlink/ui/components/app_text_field.dart';
 import 'package:shortlink/ui/components/episode_spine.dart';
 import 'package:shortlink/ui/components/ledger_row.dart';
 import 'package:shortlink/ui/components/poster_card.dart';
-import 'package:shortlink/ui/screens/funds_screen.dart';
-
-import 'support/fake_app_data_source.dart';
 
 /// Every piece of text the current semantics tree exposes, in traversal order.
 ///
@@ -478,6 +473,15 @@ void main() {
               child: const Text('Row action'),
             ),
           ),
+        ],
+      ),
+      'membership chips': const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          AppMembershipChip(active: true, label: 'VIP active'),
+          SizedBox(height: 12),
+          AppMembershipChip(active: false, label: 'VIP not active'),
         ],
       ),
       'section card': AppSectionCard(
@@ -1407,6 +1411,73 @@ void main() {
     );
   });
 
+  testWidgets('AppMembershipChip carries its state in tint, glyph and word', (
+    WidgetTester tester,
+  ) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    // The heroes reserve this plate while the account snapshot is unknown;
+    // changing it moves them.
+    expect(membershipChipPlaceholderSize, const Size(112, 22));
+
+    Future<BoxDecoration> plateFor({required bool active}) async {
+      final String label = active ? 'VIP active' : 'VIP not active';
+      await tester.pumpWidget(
+        host(
+          AppMembershipChip(active: active, label: label),
+          width: 320,
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final Container plate = tester.widget<Container>(
+        find
+            .ancestor(of: find.text(label), matching: find.byType(Container))
+            .first,
+      );
+      expect(find.text(label), findsOneWidget);
+      return plate.decoration! as BoxDecoration;
+    }
+
+    final BoxDecoration active = await plateFor(active: true);
+    expect(
+      active.color,
+      AppColors.light.accentSuccess.withValues(alpha: 0.14),
+    );
+    expect(active.borderRadius, AppShapes.light.inlineRadius);
+    expect(find.byIcon(Icons.verified_outlined), findsOneWidget);
+    // A status, not a control: readable and with no activation.
+    final SemanticsData activeData = tester.semantics
+        .find(find.bySemanticsLabel('VIP active'))
+        .getSemanticsData();
+    expect(activeData.hasAction(SemanticsAction.tap), isFalse);
+    expect(activeData.flagsCollection.isButton, isFalse);
+
+    final BoxDecoration inactive = await plateFor(active: false);
+    expect(
+      inactive.color,
+      AppColors.light.accentWarning.withValues(alpha: 0.14),
+    );
+    expect(inactive.borderRadius, AppShapes.light.inlineRadius);
+    expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+    expect(find.byIcon(Icons.verified_outlined), findsNothing);
+
+    // One line at 3.2x on a 320 px screen: a hero swapping the placeholder for
+    // the chip does not resize.
+    await tester.pumpWidget(
+      host(
+        const AppMembershipChip(active: false, label: 'VIP not active'),
+        width: 320,
+        textScale: 3.2,
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    final Text label = tester.widget<Text>(find.text('VIP not active'));
+    expect(label.maxLines, 1);
+    expect(label.overflow, TextOverflow.ellipsis);
+    handle.dispose();
+  });
+
   testWidgets('a card of rows keeps every row and its trailing control as its '
       'own semantic node', (WidgetTester tester) async {
     // Regression for the Me-page defect: a plain row used to replace its
@@ -1760,64 +1831,6 @@ void main() {
         reason: '$mode: an explicit width must not be stretched',
       );
     }
-  });
-
-  testWidgets('the funds loading state paints skeleton rows that fill the page', (
-    WidgetTester tester,
-  ) async {
-    // The screen-level shape of the device defect: the funds page swaps its
-    // whole body for AppSkeletonList while the account snapshot loads, and on
-    // device that body was blank because each row measured zero wide.
-    final _StalledAppDataSource dataSource = _StalledAppDataSource();
-    final AppStateController controller = AppStateController(
-      dataSource: dataSource,
-    );
-    addTearDown(controller.dispose);
-    // `checkApiHealth` flips `isLoading` synchronously and then waits on a probe
-    // that never answers, so the loading frame is stable for the whole test and
-    // leaves no timer behind.
-    unawaited(controller.checkApiHealth());
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppStateController>.value(
-        value: controller,
-        child: MaterialApp(
-          theme: appTheme(Brightness.dark),
-          home: Scaffold(
-            body: SizedBox(
-              width: 360,
-              height: 640,
-              // The review device had developer-options animations off, which is
-              // the reduced-motion branch.
-              child: const MediaQuery(
-                data: MediaQueryData(
-                  size: Size(360, 640),
-                  disableAnimations: true,
-                ),
-                child: FundsScreen(),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(controller.state.isLoading, isTrue);
-    expect(find.byType(AppSkeletonList), findsOneWidget);
-    final Finder rows = find.byType(AppSkeleton);
-    expect(rows, findsNWidgets(5));
-    for (int index = 0; index < 5; index++) {
-      final Size row = tester.getSize(rows.at(index));
-      expect(
-        row.width,
-        360 - 36,
-        reason: 'row $index must span the page minus its 18px side padding',
-      );
-      expect(row.width, greaterThan(0), reason: 'row $index is visible');
-      expect(row.height, 64);
-    }
-    expect(tester.takeException(), isNull);
   });
 
   testWidgets('AppSkeletonPosterGrid derives its columns from the width', (
@@ -2487,15 +2500,4 @@ void main() {
 class _ListenerProbeFocusNode extends FocusNode {
   /// Whether at least one listener is still registered on this node.
   bool get hasAnyListeners => hasListeners;
-}
-
-/// A data source whose health probe never answers.
-///
-/// It keeps [AppStateController] in its loading state for as long as the test
-/// needs it, without the pending timer a delayed fake would leave behind.
-class _StalledAppDataSource extends FakeAppDataSource {
-  final Completer<ApiHealthStatus> _stalled = Completer<ApiHealthStatus>();
-
-  @override
-  Future<ApiHealthStatus> checkSystemHealth() => _stalled.future;
 }

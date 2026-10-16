@@ -30,6 +30,7 @@ import 'package:shortlink/theme/app_typography.dart';
 import 'package:shortlink/ui/components/app_button.dart';
 import 'package:shortlink/ui/components/app_list_row.dart';
 import 'package:shortlink/ui/components/app_loading.dart';
+import 'package:shortlink/ui/components/app_membership_chip.dart';
 import 'package:shortlink/ui/components/app_section.dart';
 import 'package:shortlink/ui/components/poster_card.dart';
 import 'package:shortlink/ui/screens/account_screen.dart';
@@ -610,7 +611,7 @@ void main() {
       final Size placeholder = tester.getSize(find.byType(AppSkeleton));
       expect(
         placeholder.height,
-        closeTo(accountMembershipChipPlaceholderSize.height * scale, 0.5),
+        closeTo(membershipChipPlaceholderSize.height * scale, 0.5),
         reason: 'the plate follows the text scale at $scale',
       );
 

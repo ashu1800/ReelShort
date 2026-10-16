@@ -36,6 +36,7 @@ import '../../update/update_state.dart';
 import '../components/app_button.dart';
 import '../components/app_list_row.dart';
 import '../components/app_loading.dart';
+import '../components/app_membership_chip.dart';
 import '../components/app_section.dart';
 import '../components/app_text_field.dart';
 import '../components/poster_card.dart';
@@ -69,14 +70,6 @@ const double _posterTrackHeight = 204;
 
 /// Shown in the version row until the platform reports the build.
 const String _versionPlaceholder = '--';
-
-/// Size of the neutral plate that stands in for the membership chip until the
-/// account snapshot arrives, at 1x text scale. The plate is scaled by the
-/// ambient text scale and the real chip's label is capped at one line, so the
-/// hero does not resize when the state lands (the delta stays under 20 px even
-/// at 3.2x, where an uncapped label used to add 166 px). Exposed so a test can
-/// measure the resize.
-const Size accountMembershipChipPlaceholderSize = Size(112, 22);
 
 /// The Me screen.
 class AccountScreen extends StatelessWidget {
@@ -215,7 +208,7 @@ class _IdentityHero extends StatelessWidget {
                         style: roles.body.copyWith(color: colors.textSecondary),
                       )
                     else if (vipKnown)
-                      _MembershipChip(
+                      AppMembershipChip(
                         active: vip,
                         label: vip
                             ? copy.accountVipStatusActive
@@ -223,12 +216,8 @@ class _IdentityHero extends StatelessWidget {
                       )
                     else
                       AppSkeleton(
-                        width:
-                            accountMembershipChipPlaceholderSize.width *
-                            textScale,
-                        height:
-                            accountMembershipChipPlaceholderSize.height *
-                            textScale,
+                        width: membershipChipPlaceholderSize.width * textScale,
+                        height: membershipChipPlaceholderSize.height * textScale,
                         radius: shapes.radiusInline,
                       ),
                     if (!guest && vip && expiry.isNotEmpty) ...<Widget>[
@@ -298,61 +287,6 @@ class _HeroMonogram extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// The membership chip: a tinted pill with a glyph and a word, so the state is
-/// never carried by the tint alone.
-class _MembershipChip extends StatelessWidget {
-  const _MembershipChip({required this.active, required this.label});
-
-  final bool active;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
-    final AppIconSize icons = appIconSizeOf(context);
-    final AppSpacing spacing = appSpacingOf(context);
-    final Color accent = active ? colors.accentSuccess : colors.accentWarning;
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: spacing.space3,
-        vertical: spacing.space1,
-      ),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.14),
-        borderRadius: shapes.inlineRadius,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(
-            active ? Icons.verified_outlined : Icons.lock_outline,
-            size: icons.sm,
-            color: accent,
-          ),
-          SizedBox(width: spacing.space1),
-          Flexible(
-            child: Text(
-              label,
-              // One line at every text scale: the chip is a status badge, and
-              // an uncapped label used to add 166 px to the hero at 3.2x. The
-              // full wording stays in the semantics label.
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: accent,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
