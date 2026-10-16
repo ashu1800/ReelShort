@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../theme/app_colors.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_shapes.dart';
+import '../../theme/app_spacing.dart';
 
 /// Visual weight of an [AppButton].
 enum AppButtonVariant {
@@ -18,10 +20,20 @@ enum AppButtonVariant {
 
   /// Text only; for tertiary actions inside dense content.
   tertiary,
+
+  /// Filled with the danger accent; destructive or irreversible actions.
+  destructive,
 }
 
-/// Size of the button's leading glyph.
-const double _iconSize = 18;
+/// Density of an [AppButton].
+enum AppButtonSize {
+  /// Default: comfortable padding for a form or a page action.
+  regular,
+
+  /// Dense variant for toolbars, dialogs and inline rows. The 44 px minimum
+  /// touch target is still guaranteed.
+  compact,
+}
 
 /// Diameter of the button-level progress spinner.
 const double _spinnerDiameter = 18;
@@ -32,12 +44,6 @@ const double _spinnerStroke = 2;
 /// Minimum hit target guaranteed by the widget itself, independent of the
 /// ambient theme, so a compact toolbar cannot shrink it.
 const double _minimumHeight = 44;
-
-/// Horizontal padding inside every variant.
-const EdgeInsets _horizontalPadding = EdgeInsets.symmetric(
-  horizontal: 20,
-  vertical: 12,
-);
 
 /// A themed action button.
 ///
@@ -55,6 +61,7 @@ class AppButton extends StatefulWidget {
     required this.label,
     required this.onPressed,
     this.variant = AppButtonVariant.primary,
+    this.size = AppButtonSize.regular,
     this.icon,
     this.isLoading = false,
     this.isExpanded = false,
@@ -74,6 +81,9 @@ class AppButton extends StatefulWidget {
 
   /// Visual weight.
   final AppButtonVariant variant;
+
+  /// Density: regular for pages and forms, compact for toolbars and dialogs.
+  final AppButtonSize size;
 
   /// Optional leading glyph.
   final IconData? icon;
@@ -122,8 +132,19 @@ class _AppButtonState extends State<AppButton> {
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppIconSize icons = appIconSizeOf(context);
     final TextTheme textTheme = Theme.of(context).textTheme;
     final Color foreground = _foregroundColor(colors);
+    final EdgeInsetsGeometry padding = widget.size == AppButtonSize.compact
+        ? EdgeInsets.symmetric(
+            horizontal: spacing.space4,
+            vertical: spacing.space2,
+          )
+        : EdgeInsets.symmetric(
+            horizontal: spacing.space5,
+            vertical: spacing.space3,
+          );
 
     final Widget content = Row(
       mainAxisSize: MainAxisSize.min,
@@ -139,12 +160,16 @@ class _AppButtonState extends State<AppButton> {
             ),
           )
         else if (widget.icon != null)
-          Icon(widget.icon, size: _iconSize, color: foreground),
-        if (widget.isLoading || widget.icon != null) const SizedBox(width: 8),
+          Icon(widget.icon, size: icons.md, color: foreground),
+        if (widget.isLoading || widget.icon != null)
+          SizedBox(width: spacing.space2),
         Flexible(
           child: Text(
             widget.label,
-            maxLines: 2,
+            // Two lines covers every localised label at 1x; beyond that the
+            // button grows rather than clipping the label at large text scales,
+            // up to a bound so a pathological string cannot own the viewport.
+            maxLines: 3,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: textTheme.labelLarge?.copyWith(color: foreground),
@@ -176,6 +201,7 @@ class _AppButtonState extends State<AppButton> {
             autofocus: widget.autofocus,
             shape: RoundedRectangleBorder(borderRadius: shapes.controlRadius),
             decoration: _decoration(colors, shapes),
+            padding: padding,
             onPressed: _isEnabled ? widget.onPressed : null,
             onHoverChanged: _setHovered,
             onFocusChanged: _setFocused,
@@ -189,12 +215,13 @@ class _AppButtonState extends State<AppButton> {
   /// Foreground colour for the current variant and enabled state.
   Color _foregroundColor(AppColors colors) {
     if (!_isEnabled) {
-      return colors.textSecondary;
+      return colors.onDisabled;
     }
     return switch (widget.variant) {
       AppButtonVariant.primary => colors.onAccent,
       AppButtonVariant.secondary => colors.textPrimary,
       AppButtonVariant.tertiary => colors.accentPrimary,
+      AppButtonVariant.destructive => colors.onDanger,
     };
   }
 
@@ -203,12 +230,15 @@ class _AppButtonState extends State<AppButton> {
     AppButtonVariant.primary => colors.onAccent,
     AppButtonVariant.secondary => colors.textPrimary,
     AppButtonVariant.tertiary => colors.accentPrimary,
+    AppButtonVariant.destructive => colors.onDanger,
   };
 
   BoxDecoration _decoration(AppColors colors, AppShapes shapes) {
     if (!_isEnabled) {
+      // Disabled fills must differ from `surfaceAlt`: a disabled button painted
+      // in the same tone as the panel it sits on disappears.
       return BoxDecoration(
-        color: colors.surfaceAlt,
+        color: colors.surfaceDisabled,
         borderRadius: shapes.controlRadius,
         border: Border.all(
           color: colors.hairline,
@@ -218,6 +248,7 @@ class _AppButtonState extends State<AppButton> {
     }
     final Color fill = switch (widget.variant) {
       AppButtonVariant.primary => colors.accentPrimary,
+      AppButtonVariant.destructive => colors.accentDanger,
       AppButtonVariant.secondary => _hovered || _focused
           ? _washColor(colors).withValues(alpha: 0.06)
           : Colors.transparent,
@@ -252,6 +283,7 @@ class _FocusableSurface extends StatelessWidget {
   const _FocusableSurface({
     required this.shape,
     required this.decoration,
+    required this.padding,
     required this.onPressed,
     required this.onHoverChanged,
     required this.onFocusChanged,
@@ -265,6 +297,9 @@ class _FocusableSurface extends StatelessWidget {
 
   /// Background, border and focus ring.
   final Decoration decoration;
+
+  /// Inner padding resolved from the button's density.
+  final EdgeInsetsGeometry padding;
 
   /// Activation callback; null disables the surface.
   final VoidCallback? onPressed;
@@ -313,7 +348,7 @@ class _FocusableSurface extends StatelessWidget {
           canRequestFocus: false,
           excludeFromSemantics: true,
           customBorder: shape,
-          child: Padding(padding: _horizontalPadding, child: child),
+          child: Padding(padding: padding, child: child),
         ),
       ),
     ),

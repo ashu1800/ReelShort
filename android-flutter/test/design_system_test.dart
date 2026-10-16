@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shortlink/core/formatting/app_strings.dart';
+import 'package:shortlink/core/formatting/app_ui_copy.dart';
 import 'package:shortlink/core/formatting/ui_formats.dart';
 import 'package:shortlink/data/models/app_language.dart';
 import 'package:shortlink/data/models/app_models.dart';
@@ -29,10 +30,18 @@ import 'package:shortlink/theme/app_shapes.dart';
 import 'package:shortlink/theme/app_spacing.dart';
 import 'package:shortlink/theme/app_theme.dart';
 import 'package:shortlink/theme/app_typography.dart';
+import 'package:shortlink/ui/components/app_amount_block.dart';
+import 'package:shortlink/ui/components/app_bottom_action_bar.dart';
 import 'package:shortlink/ui/components/app_button.dart';
+import 'package:shortlink/ui/components/app_confirm_dialog.dart';
 import 'package:shortlink/ui/components/app_empty_state.dart';
+import 'package:shortlink/ui/components/app_list_row.dart';
 import 'package:shortlink/ui/components/app_loading.dart';
 import 'package:shortlink/ui/components/app_message_bar.dart';
+import 'package:shortlink/ui/components/app_panel.dart';
+import 'package:shortlink/ui/components/app_section.dart';
+import 'package:shortlink/ui/components/app_segmented_control.dart';
+import 'package:shortlink/ui/components/app_sheet.dart';
 import 'package:shortlink/ui/components/app_text_field.dart';
 import 'package:shortlink/ui/components/episode_spine.dart';
 import 'package:shortlink/ui/components/ledger_row.dart';
@@ -298,6 +307,111 @@ void main() {
             divider: false,
           ),
         ],
+      ),
+      'panels': Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const AppPanel(child: Text('Panel body copy that can wrap')),
+          const SizedBox(height: 12),
+          AppPanel(
+            onTap: () {},
+            semanticLabel: 'Tappable panel',
+            child: const Text('Tappable panel'),
+          ),
+          const SizedBox(height: 12),
+          const AppPanel(selected: true, child: Text('Selected panel')),
+        ],
+      ),
+      'list rows': Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          AppListRow(
+            title: 'Watch history',
+            subtitle: 'Pick up from your last episode',
+            leadingIcon: Icons.history,
+            showChevron: true,
+            onTap: () {},
+          ),
+          const AppListRow(
+            title: 'Disabled row',
+            subtitle: 'No action is exposed',
+            leadingIcon: Icons.lock_outline,
+          ),
+          AppListRow(
+            title: 'Last row of a group',
+            leadingIcon: Icons.person_outline,
+            showChevron: true,
+            divider: false,
+            trailing: const Text('v0.9.2'),
+            onTap: () {},
+          ),
+        ],
+      ),
+      'section card': AppSectionCard(
+        title: 'Details',
+        actionLabel: AppUiCopy.seeAll,
+        onAction: () {},
+        children: <Widget>[
+          const AppListRow(title: 'Points', trailing: Text('1,234'), divider: false),
+          const AppListRow(title: 'Orders', trailing: Text('3'), divider: false),
+        ],
+      ),
+      'amounts': const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          AppAmountBlock(label: 'Available balance', value: '1,234,567', unit: 'pt'),
+          SizedBox(height: 12),
+          AppAmountBlock(value: '12.34', unit: 'USDT', size: AppAmountSize.inline),
+          SizedBox(height: 12),
+          AppAmountBlock(
+            label: 'Points earned today',
+            value: '245',
+            size: AppAmountSize.hero,
+          ),
+        ],
+      ),
+      'bottom action bar': AppBottomActionBar(
+        children: <Widget>[
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.secondary,
+            onPressed: () {},
+          ),
+          AppButton(
+            label: 'Confirm',
+            variant: AppButtonVariant.destructive,
+            onPressed: () {},
+          ),
+        ],
+      ),
+      'segmented control': AppSegmentedControl<String>(
+        value: 'login',
+        semanticLabel: 'Authentication mode',
+        options: const <AppSegmentedOption<String>>[
+          AppSegmentedOption<String>(value: 'login', label: 'Sign in'),
+          AppSegmentedOption<String>(value: 'register', label: 'Create account'),
+        ],
+        onChanged: (String _) {},
+      ),
+      'confirm dialog': AppConfirmDialog(
+        title: 'Sign out?',
+        body:
+            'You can sign in again at any time; your points and orders stay on your account.',
+        confirmLabel: 'Sign out',
+        cancelLabel: 'Cancel',
+        destructive: true,
+        onConfirm: () {},
+        onCancel: () {},
+      ),
+      'sheet body': AppSheet(
+        title: 'Wallet',
+        onClose: () {},
+        child: const AppListRow(
+          title: 'ERC20 wallet',
+          subtitle: 'Bind, replace or unbind',
+          divider: false,
+        ),
       ),
     };
 
@@ -1029,5 +1143,184 @@ void main() {
     expect(find.byType(SlideTransition), findsWidgets);
     expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('list rows expose exactly one activation, disabled rows none', (
+    WidgetTester tester,
+  ) async {
+    int taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: Scaffold(
+          body: Column(
+            children: <Widget>[
+              AppListRow(
+                title: 'Watch history',
+                subtitle: 'Pick up from your last episode',
+                leadingIcon: Icons.history,
+                showChevron: true,
+                semanticLabel: 'Watch history',
+                onTap: () => taps++,
+              ),
+              const AppListRow(
+                title: 'Disabled row',
+                leadingIcon: Icons.lock_outline,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final SemanticsHandle handle = tester.ensureSemantics();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Watch history'));
+    expect(taps, 1);
+
+    // One merged node per row, with the action on that node; the disabled row
+    // exposes no action at all (§7.3, §7.9).
+    final SemanticsProperties enabled = tester
+        .widget<Semantics>(
+          find.byWidgetPredicate(
+            (Widget widget) =>
+                widget is Semantics &&
+                widget.properties.label == 'Watch history',
+          ),
+        )
+        .properties;
+    expect(enabled.onTap, isNotNull);
+    expect(enabled.button, isTrue);
+
+    final SemanticsProperties disabled = tester
+        .widget<Semantics>(
+          find.byWidgetPredicate(
+            (Widget widget) =>
+                widget is Semantics &&
+                widget.properties.label == 'Disabled row',
+          ),
+        )
+        .properties;
+    expect(disabled.onTap, isNull);
+    expect(disabled.button, isNot(true));
+    handle.dispose();
+  });
+
+  testWidgets('segmented control marks the selection with a checkmark', (
+    WidgetTester tester,
+  ) async {
+    String value = 'login';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: Scaffold(
+          body: AppSegmentedControl<String>(
+            value: value,
+            options: const <AppSegmentedOption<String>>[
+              AppSegmentedOption<String>(value: 'login', label: 'Sign in'),
+              AppSegmentedOption<String>(
+                value: 'register',
+                label: 'Create account',
+              ),
+            ],
+            onChanged: (String next) => value = next,
+          ),
+        ),
+      ),
+    );
+
+    // State is never carried by colour alone: the selected option carries a
+    // checkmark and the `selected` semantic flag.
+    expect(find.byIcon(Icons.check), findsOneWidget);
+    final SemanticsHandle handle = tester.ensureSemantics();
+    await tester.pumpAndSettle();
+    final SemanticsProperties selected = tester
+        .widget<Semantics>(
+          find.byWidgetPredicate(
+            (Widget widget) =>
+                widget is Semantics && widget.properties.label == 'Sign in',
+          ),
+        )
+        .properties;
+    expect(selected.selected, isTrue);
+    expect(selected.onTap, isNotNull);
+    await tester.tap(find.text('Create account'));
+    expect(value, 'register');
+    handle.dispose();
+  });
+
+  testWidgets('sheeted content is a route: back cancels it and a barrier '
+      'blocks the page behind', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => Center(
+              child: AppButton(
+                label: 'Open wallet',
+                onPressed: () => AppSheet.show<void>(
+                  context,
+                  title: 'Wallet',
+                  child: const Text('Wallet sheet body'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open wallet'));
+    await tester.pumpAndSettle();
+    expect(find.text('Wallet sheet body'), findsOneWidget);
+    expect(find.byType(ModalBarrier), findsWidgets);
+    // The sheet is a route that scopes the reading order to itself, so a screen
+    // reader cannot walk into the page behind it.
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) => widget is Semantics && widget.properties.scopesRoute == true,
+      ),
+      findsWidgets,
+    );
+
+    // The system back gesture must close the sheet instead of leaving the app:
+    // that was the audited defect of the old always-mounted Stack overlays.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Wallet sheet body'), findsNothing);
+    expect(find.text('Open wallet'), findsOneWidget);
+  });
+
+  testWidgets('confirmation dialog keeps its actions reachable at 2x text', (
+    WidgetTester tester,
+  ) async {
+    bool confirmed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(320, 640),
+            textScaler: TextScaler.linear(2),
+          ),
+          child: Scaffold(
+            body: AppConfirmDialog(
+              title: 'Sign out?',
+              body: 'You can sign in again at any time.',
+              confirmLabel: 'Sign out',
+              cancelLabel: 'Cancel',
+              destructive: true,
+              onConfirm: () => confirmed = true,
+              onCancel: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Sign out'));
+    expect(confirmed, isTrue);
   });
 }
