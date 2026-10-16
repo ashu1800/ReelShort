@@ -231,5 +231,77 @@ Phase 4 才是**外观真正变化**的阶段：前四个阶段（令牌/组件/
   4. 3.2× 下 VIP chip 标签视觉省略（语义仍播报完整文案），这是把高度差压到 ≤40px 的代价。
   5. 四个弹层内部（观看历史/改密/钱包/确认）仍有 16 处历史硬编码间距，留待 Phase 4/5 清理。
 
+### 7.4 Funds（资金中心）重设计规格（Phase 4-2，冻结 2026-10-16）
+
+现状问题：标题是 16px `titleLarge`（Me/子页已是 `screenTitle`）；`_Panel`、`_FundsActionTile`、
+`_LedgerRecordRow`、`_VipOrderCard` 全是手写容器；四个私有 spacing 常量（18/16/14/10）；
+分区标题是 14px `titleMedium` 小写；加载态用通用 `AppSkeletonList` 而不是与到达内容同形。
+
+目标结构（自上而下，全部走令牌与共享组件）：
+
+1. **页面标题**：`screenTitle` + `copy.fundsTitle`，页面内边距 `appSpacingOf(context).pagePadding`。
+2. **余额 hero**（不新增业务能力，只重排信息层次）：
+   - 登录态：VIP 用 `premiumSurface` + `accentPrimary`/`strokeEmphasis` 描边（与 Me hero 同一语言），
+     非 VIP 用 `surface` + `hairline`；VIP 状态 compact chip（`accentSuccess`/`accentWarning` +
+     图标 + `accountVipStatusActive`/`Inactive`，有到期日时附 `accountVipExpiryPrefix` +
+     `dateOnlyLabel(vipUntil)`）；**可用积分作为主数字**（`AppAmountBlock` / `numericHero`），
+     总积分次之，`Credited today` / `Frozen points` 用 `AppLedgerRow`（冻结 > 0 时值色
+     `accentWarning`）。
+   - **快照未知时不得显示 0 或「VIP not active」**：与 Me 页同一契约，渲染中性骨架占位。
+   - 游客态：hero 显示 `fundsSubtitle` + `fundsLoginRequired` + 主 CTA
+     （`AppUiCopy.fundsGuestAction`，→ `showAuthPrompt()`），不渲染任何指标。
+3. **ACTIONS**（`AppUiCopy.fundsActionsSection`）：2 列按钮网格——`AppButton` primary
+   「Withdraw」+ secondary「VIP recharge」（`isExpanded` + 图标），标签仍是
+   `fundsWithdrawalAction` / `fundsVipRechargeAction`（副标题 `fundsWithdrawalSubtitle` /
+   `fundsVipRechargeSubtitle` 作为按钮下方 caption 或按钮描述保留可见）；行为不变：
+   登录 → `openWithdrawal()` / `openVipRecharge()`，游客 → `showAuthPrompt()`。
+4. **POINT RECORDS**（`accountPointRecordsTitle`）：`AppSectionHeader` + `AppSectionCard`
+   （`AppLedgerRow` 列表）；空态 `AppEmptyState` + `AppUiCopy.fundsPointRecordsEmptyTitle/Body`。
+5. **VIP ORDERS**（`vipRecordsTitle`）：`AppSectionHeader` + `AppSectionCard`；订单卡保留状态映射
+   （`vipPayStatusPending/Confirmed/Rejected`）、`vipPayAmount` + `effectiveAmount USDT`；
+   空态 `AppUiCopy.fundsVipOrdersEmptyTitle/Body`。
+6. **ORDERS**（legacy `accountOrdersTitle`，仅 `state.orders` 非空）：同样分区化，只读。
+7. **加载态**：用 `AppSkeletonText` / `AppSkeleton` 拼出与到达内容同形的骨架（hero 块 +
+   ACTIONS 两格 + 列表行），不再使用通用 `AppSkeletonList`。
+8. 规则同 §7.1：无裸色值 / 无硬编码间距；`AppSectionCard` 里混装可点/不可点行必须遵守 §7.2；
+   `trailing` 不吞语义；`subtitle` 放机器值（长文本）时用单行省略。
+
+不做的事：不新增入口（不加充提以外的能力）；不改任何行为与文案（区块只读语义、空态文案、
+订单状态映射、游客可见性）；不改 `AppStrings`；不动 shell/路由；不重做三个弹层内部。
+
+### 7.5 Phase 4-2 结果（Funds）
+
+- 交付：`funds_screen.dart` 结构重做（`screenTitle` 22px 页标题 → 余额 hero：可用积分作主数字
+  `AppAmountBlock(hero)` + `pts`，Total/Credited/Frozen 退为 `AppLedgerRow`，VIP 用 premiumSurface +
+  描边 + chip + 到期；快照未知用中性骨架占位、不显示 0、不显示 VIP 文案；游客态零指标 + 主 CTA →
+  `ACTIONS` 两列按钮 + caption → `POINT RECORDS` / `VIP ORDERS` / legacy `ORDERS` 三个分区卡 →
+  加载态换成与内容同形的骨架），新增 `test/funds_screen_test.dart` 16 条。
+- **本轮抓到并修掉的两个缺陷**：
+  1. hero 的 chip + 到期 `Row` 在 3.2× 下 `RenderFlex` 溢出 169px（非弹性子项拿到无界宽度）——
+     两侧改 `Flexible` 后消失，由 320px+3.2× 用例锁定；
+  2. **ACTIONS 两个按钮都是实心 primary**（`AppButton.variant` 默认 `primary`，其文档写明
+     「exactly one per screen region」）——真机截图发现、`_ActionTile` 加 `variant` 参数后
+     Withdraw = primary / VIP recharge = secondary。这条是「真机截图 + 代码核对」才发现的，
+     widget 层行为断言不会覆盖变体选择，值得作为后续屏幕的检查项。
+- **结构性收获**：`_MembershipChip` 到达第二个消费者，抽成
+  `lib/ui/components/app_membership_chip.dart`（含 `membershipChipPlaceholderSize`），Me/Funds 改引用；
+  同时消除了 `funds_screen.dart` → `account_screen.dart` 的**屏幕 import 屏幕**依赖
+  （校验：`lib/ui/screens` 内 `import '.../screens/...'` 零命中）。抽取值差异为零
+  （Me hero 高度差逐位复现 1× +2.0 / 2× −7.0 / 3.2× −16.4，|Δ|≤40）。
+- 验证：`flutter analyze` 0 issue、`flutter test` 全量 **188 用例全绿**；verifier 两轮（task-18/20）
+  独立取证增量缺陷 0（行为 parity 6 条、hero 四态 4 条、加载态形状 3 组、令牌合规、语义契约、
+  320@3.2×/360/1440 × 减少动效两态、按钮变体表、chip 零差异、跨屏依赖 grep）。
+- 真机证据：雷电模拟器（Android 14 / 360×640dp，登录态）`artifacts/ui-review/ldplayer/`
+  —— `14/15/16-funds-before-*` 为改造前基线，`24-funds-final-top.png` 为改造后首屏。
+- 已知取舍 / 后续项：
+  1. legacy `ORDERS` 与 `VIP ORDERS` 的分区标题文案相同（`accountOrdersTitle` 与
+     `vipRecordsTitle` 都是 `'VIP Orders'`，既有生成文案）：有 legacy 订单时会出现两个连续同标题
+     分区。建议 Phase 5 改 Kotlin 源文案后重新生成，**不要**加临时硬编码。
+  2. `state.isLoading` 仍是全局标志，其它屏刷新时切到 Funds 也会看到同形骨架（与旧版一致）。
+  3. 骨架块尺寸（200/80/56/96×14/180×40）是文档化的命名常量，若 Phase 5 想严格 token 化可提成
+     骨架专用令牌。
+
+
+
 
 
