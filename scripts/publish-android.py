@@ -5,11 +5,16 @@ ReelShort / ShortLink Android release publisher.
 Interactive script that:
   1. Prompts for a version number (X.Y.Z).
   2. Builds an optimized release APK signed by the pinned release certificate.
-  3. Verifies the APK package name / version / signature.
-  4. Computes SHA-256 and file sizes.
-  5. Uploads the APK and its .sha256 checksum to Tencent COS.
+  3. Verifies the APK package name / version.
+  4. Computes SHA-256 and file size, then verifies them.
+  5. Uploads the APK and its .sha256 checksum to Tencent COS and re-checks the size
+     of both uploaded objects.
   6. POSTs the release metadata to the backend (X-Internal-Super-Token protected),
      which stores the record and serves short-lived COS pre-signed URLs to the App.
+
+发布阶段不再校验 APK 签名：正式签名由 Gradle 打包前的钉死证书校验保证
+(见 android-app/SIGNING.md)，自动更新链路的完整性依据是清单里的
+apkSha256/sizeBytes 与下载后的 SHA-256、文件大小比对。
 
 Configuration is read from a local .env file in the repo root (gitignored) or from
 environment variables. No secrets are committed to the repository.
@@ -30,7 +35,6 @@ import shutil
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -48,7 +52,11 @@ VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 RELEASE_SIGNING_DIR = ANDROID_DIR / "release-signing"
 RELEASE_SIGNING_CONFIG = RELEASE_SIGNING_DIR / "signing-config.txt"
 RELEASE_KEYSTORE = RELEASE_SIGNING_DIR / "shortlink-release.jks"
-EXPECTED_RELEASE_CERT_SHA256 = "c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9"
+# App 侧 ReleaseDownloader/OkHttpReleaseDownloader 对 .sha256 旁路文件的解析约束：
+# 最长 1024 字节，且内容必须匹配 `<64 位十六进制摘要>[  <文件名>]`。
+CHECKSUM_PATTERN = re.compile(r"^([a-fA-F0-9]{64})(?:\s+\*?[^\r\n]+)?$")
+MAX_CHECKSUM_BYTES = 1024
+SHA256_HEX_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 # 生产入口在 Cloudflare 后面，其 browser-integrity 校验会按 User-Agent 拦截（Python 默认的
 # "Python-urllib/x.y" 会拿到 403 "error code: 1010"）。所有后端请求都必须显式带上这个 UA，
 # 否则 fetch_latest_release 会静默返回 None，导致 versionCode 预检被跳过、交互式建议值退化成 1。
@@ -68,14 +76,17 @@ def main() -> int:
         apk_path = build_apk(version_name, version_code,
                              config.get("REELSHORT_COS_BUCKET", ""), config.get("REELSHORT_COS_REGION", ""),
                              source=args.source)
-        verify_apk(apk_path, version_name, version_code)
-        sha256_hex, apk_size, sha256_path, sha256_size = compute_artifacts(apk_path)
+        verify_apk_metadata(apk_path, version_name, version_code)
+        sha256_hex, apk_size, sha256_path, sha256_size = compute_artifacts(
+            apk_path, apk_object_key(version_name))
+        verify_artifacts(apk_path, sha256_hex, apk_size, sha256_path, sha256_size)
         ensure_cos_dependency()
         upload_to_cos(config, version_name, apk_path, sha256_path)
         publish_to_backend(config, version_name, version_code, release_notes,
                            sha256_hex, apk_size, sha256_size, args.mandatory, args.minimum_version_code)
         print(f"\nPublished ShortLink v{version_name} ({version_code}) successfully.")
         print(f"  APK SHA-256: {sha256_hex}")
+        print(f"  APK size:    {apk_size} bytes")
         print(f"  The App will detect the new version on next launch.")
         return 0
     except PublishError as exc:
@@ -283,23 +294,22 @@ def find_flutter_bin() -> str:
         "or set FLUTTER_BIN to the full binary path.")
 
 
-def verify_apk(apk_path: Path, version_name: str, version_code: int) -> None:
-    """Verify the APK signature, package name and versionName using the Android build-tools."""
-    print("\n=== Verifying APK metadata and signature ===")
-    build_tools_dir = find_build_tools()
-    apksigner = build_tools_dir / "apksigner"
-    aapt = build_tools_dir / "aapt"
-    if os.name == "nt":
-        apksigner = apksigner.with_suffix(".bat")
-        aapt = aapt.with_suffix(".exe")
+def verify_apk_metadata(apk_path: Path, version_name: str, version_code: int) -> None:
+    """
+    Verify the APK package name, versionName and versionCode with `aapt`.
 
-    signer_output = run_capture([str(apksigner), "verify", "--verbose", "--print-certs", str(apk_path)],
-                                "APK signature verification failed.")
-    verify_expected_certificate(signer_output)
+    APK 签名刻意不在发布阶段校验（原 `apksigner` + 钉死正式证书校验已移除）：正式签名由
+    Gradle 打包前的 `validateOfficialSigning` 门禁保证，发布链路的完整性依据改成核对
+    SHA-256 与文件大小，也就是 App 下载后会比对的那两条元数据。
+    """
+    print("\n=== Verifying APK metadata ===")
+    aapt = find_build_tools() / "aapt"
+    if os.name == "nt":
+        aapt = aapt.with_suffix(".exe")
     badging = subprocess.run([str(aapt), "dump", "badging", str(apk_path)],
                              capture_output=True, text=True, check=True).stdout
     verify_badging(badging, version_name, version_code)
-    print("APK signature and metadata verified.")
+    print("APK metadata verified (APK signature is intentionally not checked at publish time).")
 
 
 def verify_badging(badging: str, version_name: str, version_code: int) -> None:
@@ -309,26 +319,6 @@ def verify_badging(badging: str, version_name: str, version_code: int) -> None:
         raise PublishError(f"APK versionCode is not {version_code}.")
     if f"versionName='{version_name}'" not in badging:
         raise PublishError(f"APK versionName is not '{version_name}'.")
-
-
-def verify_expected_certificate(apksigner_output: str) -> str:
-    match = re.search(r"Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F:]+)", apksigner_output)
-    if not match:
-        raise PublishError("APK signing certificate SHA-256 digest was not reported by apksigner.")
-    digest = normalize_sha256_digest(match.group(1))
-    if digest != EXPECTED_RELEASE_CERT_SHA256:
-        raise PublishError(
-            "APK signing certificate SHA-256 does not match the pinned ShortLink release certificate.\n"
-            f"Expected: {EXPECTED_RELEASE_CERT_SHA256}\n"
-            f"Actual:   {digest}")
-    return digest
-
-
-def normalize_sha256_digest(value: str) -> str:
-    digest = re.sub(r"[^0-9a-fA-F]", "", value).lower()
-    if not re.fullmatch(r"[0-9a-f]{64}", digest):
-        raise PublishError("APK signing certificate SHA-256 digest is malformed.")
-    return digest
 
 
 def find_build_tools() -> Path:
@@ -342,17 +332,88 @@ def find_build_tools() -> Path:
     return candidates[-1]
 
 
-def compute_artifacts(apk_path: Path) -> tuple[str, int, Path, int]:
+def apk_object_key(version_name: str) -> str:
+    """COS object key of the published APK."""
+    return f"{OBJECT_KEY_PREFIX}/ShortLink-v{version_name}.apk"
+
+
+def sha256_object_key(version_name: str) -> str:
+    """COS object key of the published `.sha256` sidecar."""
+    return f"{apk_object_key(version_name)}.sha256"
+
+
+def hash_file(path: Path) -> tuple[str, int]:
+    """
+    Hash [path] in one streaming pass and return `(lowercase SHA-256, byte count)`.
+
+    摘要和长度来自同一遍读取，避免大文件在读取过程中被改动导致两者互相矛盾。
+    """
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
+def compute_artifacts(apk_path: Path, published_name: str) -> tuple[str, int, Path, int]:
+    """
+    Compute the APK SHA-256 and file size and write the `.sha256` sidecar next to the APK.
+
+    [published_name] is the object name the APK is published under, so the sidecar stays
+    self-consistent with the COS object and `sha256sum -c` works on a downloaded copy.
+    """
     print("\n=== Computing checksums and sizes ===")
-    sha256 = hashlib.sha256(apk_path.read_bytes()).hexdigest()
-    apk_size = apk_path.stat().st_size
+    sha256, apk_size = hash_file(apk_path)
     sha256_path = apk_path.with_suffix(apk_path.suffix + ".sha256")
-    sha256_content = f"{sha256}  {apk_path.name}"
-    sha256_path.write_text(sha256_content, encoding="utf-8")
+    sha256_path.write_text(f"{sha256}  {published_name}", encoding="utf-8")
     sha256_size = sha256_path.stat().st_size
     print(f"APK size: {apk_size} bytes, SHA-256: {sha256}")
     print(f"Checksum file size: {sha256_size} bytes")
     return sha256, apk_size, sha256_path, sha256_size
+
+
+def verify_artifacts(apk_path: Path, sha256_hex: str, apk_size: int, sha256_path: Path,
+                     sha256_size: int) -> None:
+    """
+    发布前核对 APK 的 SHA-256 与文件大小（发布阶段不再校验 APK 签名）。
+
+    核对的就是 App 更新链路真正依赖的两组数据：
+      * 发布到后端的 `apkSha256` / `apkSizeBytes` 必须自洽且与磁盘文件一致；
+      * `.sha256` 旁路文件必须能被 App 的下载器解析（≤1024 字节），且摘要与 APK 一致。
+    """
+    print("\n=== Verifying SHA-256 and file size ===")
+    if not SHA256_HEX_PATTERN.fullmatch(sha256_hex):
+        raise PublishError(f"APK SHA-256 '{sha256_hex}' is not 64 lowercase hex characters.")
+    if apk_size <= 0:
+        raise PublishError("APK size must be positive.")
+    current_size = apk_path.stat().st_size
+    if current_size != apk_size:
+        raise PublishError(
+            f"APK changed while it was hashed ({apk_size} bytes hashed, {current_size} bytes on disk). "
+            "Wait for the build to finish writing the file and re-run the publish.")
+    if not sha256_path.is_file():
+        raise PublishError(f"Checksum file was not written: {sha256_path}")
+    payload = sha256_path.read_bytes()
+    if len(payload) != sha256_size:
+        raise PublishError(
+            f"Checksum file changed after it was written ({sha256_size} bytes recorded, "
+            f"{len(payload)} bytes on disk).")
+    if sha256_size > MAX_CHECKSUM_BYTES:
+        raise PublishError(
+            f"Checksum file is {sha256_size} bytes; the App rejects `.sha256` sidecars above "
+            f"{MAX_CHECKSUM_BYTES} bytes.")
+    text = payload.decode("utf-8", errors="replace").strip()
+    match = CHECKSUM_PATTERN.match(text)
+    if not match:
+        raise PublishError(
+            "Checksum file must hold a SHA-256 digest, optionally followed by the file name; "
+            f"got: {text!r}")
+    if match.group(1).lower() != sha256_hex:
+        raise PublishError(
+            f"Checksum file digest {match.group(1)} does not match the APK digest {sha256_hex}.")
+    print(f"SHA-256 and file size verified: {sha256_hex} / {apk_size} bytes")
 
 
 def ensure_cos_dependency() -> None:
@@ -367,23 +428,45 @@ def ensure_cos_dependency() -> None:
     CosConfig, CosS3Client = _CosConfig, _CosS3Client
 
 
-def upload_to_cos(config: dict, version_name: str, apk_path: Path, sha256_path: Path) -> None:
+def upload_to_cos(config: dict, version_name: str, apk_path: Path, sha256_path: Path,
+                  client=None) -> None:
     print("\n=== Uploading artifacts to COS ===")
-    cos_config = CosConfig(
-        Region=config["COS_REGION"],
-        SecretId=config["COS_SECRET_ID"],
-        SecretKey=config["COS_SECRET_KEY"],
-        Scheme="https",
-    )
-    client = CosS3Client(cos_config)
+    if client is None:
+        cos_config = CosConfig(
+            Region=config["COS_REGION"],
+            SecretId=config["COS_SECRET_ID"],
+            SecretKey=config["COS_SECRET_KEY"],
+            Scheme="https",
+        )
+        client = CosS3Client(cos_config)
     bucket = config["COS_BUCKET"]
-    apk_key = f"{OBJECT_KEY_PREFIX}/ShortLink-v{version_name}.apk"
-    sha_key = f"{OBJECT_KEY_PREFIX}/ShortLink-v{version_name}.apk.sha256"
+    apk_key = apk_object_key(version_name)
+    sha_key = sha256_object_key(version_name)
 
     client.upload_file(Bucket=bucket, Key=apk_key, LocalFilePath=str(apk_path), EnableMD5=True)
     print(f"Uploaded {apk_key}")
     client.upload_file(Bucket=bucket, Key=sha_key, LocalFilePath=str(sha256_path), EnableMD5=True)
     print(f"Uploaded {sha_key}")
+    verify_uploaded_size(client, bucket, apk_key, apk_path)
+    verify_uploaded_size(client, bucket, sha_key, sha256_path)
+
+
+def verify_uploaded_size(client, bucket: str, key: str, local_path: Path) -> None:
+    """核对 COS 对象大小与本地文件一致；App 下载后会按清单里的同一大小做校验。"""
+    try:
+        head = client.head_object(Bucket=bucket, Key=key)
+    except Exception as exc:  # noqa: BLE001 - 统一转成用户可读的发布错误
+        raise PublishError(f"Uploaded object {key} could not be verified: {exc}") from exc
+    remote_size = head.get("Content-Length", head.get("content-length"))
+    if remote_size is None:
+        raise PublishError(
+            f"COS did not report Content-Length for {key}; the file size cannot be verified.")
+    local_size = local_path.stat().st_size
+    if int(remote_size) != local_size:
+        raise PublishError(
+            f"COS object {key} is {int(remote_size)} bytes but the local file is {local_size} bytes. "
+            "The upload is incomplete and the App would reject the download.")
+    print(f"Verified COS object size: {key} = {local_size} bytes")
 
 
 def publish_to_backend(config: dict, version_name: str, version_code: int, release_notes: str,
@@ -393,8 +476,8 @@ def publish_to_backend(config: dict, version_name: str, version_code: int, relea
     import urllib.request
     import urllib.error
 
-    apk_key = f"{OBJECT_KEY_PREFIX}/ShortLink-v{version_name}.apk"
-    sha_key = f"{OBJECT_KEY_PREFIX}/ShortLink-v{version_name}.apk.sha256"
+    apk_key = apk_object_key(version_name)
+    sha_key = sha256_object_key(version_name)
     payload = {
         "versionName": version_name,
         "versionCode": version_code,
@@ -433,20 +516,6 @@ def publish_to_backend(config: dict, version_name: str, version_code: int, relea
             f"The APK and checksum are already uploaded to COS ({apk_key}, {sha_key}) but the release is "
             "NOT active. Re-run the publish step, or delete those two COS objects before publishing again.") from exc
     print(f"Backend accepted release v{version_name}.")
-
-
-def run_quiet(cmd: list[str], failure_msg: str) -> None:
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise PublishError(f"{failure_msg}\n{result.stdout}\n{result.stderr}")
-
-
-def run_capture(cmd: list[str], failure_msg: str) -> str:
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    output = (result.stdout or "") + (result.stderr or "")
-    if result.returncode != 0:
-        raise PublishError(f"{failure_msg}\n{output}")
-    return output
 
 
 if __name__ == "__main__":

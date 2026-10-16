@@ -121,7 +121,7 @@ Android 代码变更必须在模拟器完成手动验收，不能只依赖单元
 
 - 版本号必须为 `X.Y.Z`，并与 Android `versionName` 完全一致；`versionCode` 必须单调递增。
 - 发布使用本地脚本 `python scripts/publish-android.py`，详细前置准备和参数见 `docs/deploy/publish-android.md`。
-- 脚本完成签名构建、`apksigner` / 固定正式证书 SHA-256 / 包名 / versionName / versionCode 校验、SHA-256 和大小计算后，上传 APK 和 `.sha256` 到腾讯 COS，再 POST 发布元数据到后端 `POST /api/internal/release/publish`。
+- 脚本完成签名构建、`aapt` 的包名 / versionName / versionCode 校验，以及 SHA-256 与文件大小的计算和核对后，上传 APK 和 `.sha256` 到腾讯 COS（并回核 COS 对象大小），再 POST 发布元数据到后端 `POST /api/internal/release/publish`。发布阶段不再校验 APK 签名，签名约束由 Gradle 打包前的钉死证书门禁承担。
 - 后端在 `app_releases` 表 upsert 发布记录，App 清单只从 `https://shortlink.hjj888.cc/api/app/release/latest` 获取并直接返回 COS 预签名下载 URL；旧版 `/api/app/update/latest` 与 `/downloads/android/` 兼容链路已删除。
 - 线上 Release APK 必须使用 `android-app/release-signing/shortlink-release.jks` 的固定正式证书；换机器时迁移同一 keystore 和本地配置，禁止重新生成。COS 密钥、签名密码和超级 Token 只在 gitignored 本地文件或部署环境变量中，禁止写入仓库或日志。
 

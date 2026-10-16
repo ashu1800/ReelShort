@@ -111,7 +111,7 @@ Set-Location android-flutter\android
 - 关闭 App 自动备份（`android:allowBackup="false"`）。
 - 关闭全局明文流量（`android:usesCleartextTraffic="false"`）。
 - 会话与「记住密码」凭据使用平台加密存储（`flutter_secure_storage`）；加密不可用时按 fail-closed 处理，只保留进程内会话，**绝不**降级写入明文 Token。
-- 自更新只接受精确 COS 桶域名 `update-1259596907.cos.ap-chengdu.myqcloud.com` 的 HTTPS 地址，先做 SHA-256 校验再交给系统安装器；安装通过 `authority=com.reelshort.app.update-files` 的 `FileProvider` 暴露 `cacheDir/updates/` 下的单个文件。
+- 自更新只接受精确 COS 桶域名 `update-1259596907.cos.ap-chengdu.myqcloud.com` 的 HTTPS 地址，先核对文件大小与 SHA-256（不做 APK 签名校验，签名由打包前的钉死证书门禁保证）再交给系统安装器；安装通过 `authority=com.reelshort.app.update-files` 的 `FileProvider` 暴露 `cacheDir/updates/` 下的单个文件。
 
 ## 相关文档
 

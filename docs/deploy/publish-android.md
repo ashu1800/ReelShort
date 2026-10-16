@@ -8,7 +8,8 @@
 ```
 本地 publish-android.py
   → 手动输入版本号 → gradlew assembleRelease 签名打包
-  → 计算 sha256 / size → 上传 APK + sha256 到腾讯 COS
+  → 用 aapt 核对包名 / versionName / versionCode
+  → 计算并核对 sha256 与文件大小 → 上传 APK + sha256 到腾讯 COS（回核对象大小）
   → POST 发布元数据到后端 /api/internal/release/publish（X-Internal-Super-Token 保护）
   → 后端 upsert app_releases 表
 
@@ -16,7 +17,7 @@ App 启动
   → GET /api/app/release/latest（游客可访问）
   → 后端查最新发布 → 用 COS Java SDK 生成短时预签名下载链接（默认 1 小时）
   → 返回 manifest（apkUrl / sha256Url 指向预签名链接）
-  → App 下载 + SHA-256 校验 + 系统安装器安装
+  → App 下载 + 文件大小与 SHA-256 校验 + 系统安装器安装
 ```
 
 密钥只在服务端，COS 下载链接短时过期，不暴露原始密钥。
@@ -69,10 +70,10 @@ python scripts/publish-android.py
 交互式提示输入版本号（`X.Y.Z`）、version code 和可选的 release notes；直接留空时不会写入默认更新说明。脚本会自动：
 
 1. 用 Gradle 构建签名 release APK
-2. 用 `apksigner` / `aapt` 校验签名、固定正式证书 SHA-256、包名（`com.reelshort.app`）、versionName 和 versionCode
-3. 计算 APK 的 SHA-256 和文件大小，生成 `.sha256` 校验文件
+2. 用 `aapt` 校验包名（`com.reelshort.app`）、versionName 和 versionCode；**不再校验 APK 签名**
+3. 计算 APK 的 SHA-256 和文件大小，生成 `.sha256` 校验文件，并核对三者一致（摘要为 64 位小写十六进制、旁路文件 ≤1024 字节且摘要与 APK 相同）；旁路文件内容为 `<sha256>  ShortLink-v<版本>.apk`，与 COS 对象名一致，下载后可直接 `sha256sum -c`
 4. 自动安装 `cos-python-sdk-v5`（如未安装）
-5. 上传 APK 和校验文件到 COS（覆盖同版本号的旧文件）
+5. 上传 APK 和校验文件到 COS（覆盖同版本号的旧文件），并回核两个 COS 对象的 `Content-Length` 与本地文件大小一致
 6. POST 发布元数据到后端，后端写入 `app_releases` 表
 
 也可用参数跳过交互：
@@ -95,6 +96,7 @@ python scripts/publish-android.py \
 脚本任何一步失败都会明确报错并退出，但上传与回调不是同一个事务，因此仍存在**半成功**状态：
 
 - APK 与 `.sha256` 已上传 COS，但 POST 后端失败 → COS 上有文件、`app_releases` 无记录。此时 App 清单不会返回该版本；处理方式是修好后端后重新运行脚本（同名对象会被覆盖），COS 上的孤立文件不自动清理。
+- 上传后对象大小回核失败（COS 对象与本地文件字节数不一致）→ 说明上传不完整；脚本直接失败，同名对象重新上传一遍即可，不会发布半截的包。
 - 后端回调成功但对象被外部改动 → 清单里的 `apkSha256` 与实际文件不一致，App 侧 SHA-256 校验会拦截，需要重新上传同名对象。
 
 ## 发布后验证
@@ -120,9 +122,9 @@ curl -s https://shortlink.hjj888.cc/api/app/release/latest | python -m json.tool
 - 预签名下载链接短时（默认 1h）过期，按需生成，不持久化。
 - 发布接口由 `X-Internal-Super-Token` 保护，复用 `reelshort.internal.super-token`。
 - `gitleaks` 扫描全历史（push 与 PR），确保无密钥泄漏。
-- 发布脚本钉住固定正式签名证书 SHA-256；如果 keystore 缺失、被替换或配置不完整，发布会在上传前失败。
-- Gradle 在 `packageDebug`、`packageRelease` 及 Android Test 打包前再次校验正式证书；手工构建也不能回退到 Debug keystore。
-- App 下载后只做 SHA-256 完整性校验，包名、版本和签名错误由发布脚本上传前拦截，并由 Android 系统安装器在最终安装阶段兜底。
+- 发布脚本**不再校验 APK 签名**：上传前只核对包名、versionName、versionCode 以及 APK 的 SHA-256 与文件大小，上传后再回核 COS 对象大小。
+- Gradle 在 `packageDebug`、`packageRelease` 及 Android Test 打包前校验正式证书；keystore 缺失、被替换或配置不完整时构建直接失败，因此"要求发布包带签名"这一约束由打包阶段而非发布阶段承担，手工构建也不能回退到 Debug keystore。
+- App 下载后只做文件大小与 SHA-256 完整性校验（不校验签名）；包名与版本错误由发布脚本上传前拦截，签名与安装合法性由 Android 系统安装器在最终安装阶段兜底。
 
 ## 签名迁移说明
 

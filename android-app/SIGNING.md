@@ -18,8 +18,8 @@
 - Debug 和 Release 变体都从 `ANDROID_SIGNING_*` 环境变量读取同一份正式签名；`Debug` 仅表示可调试构建属性，不代表 Debug 证书。
 - ReelShort 不读取、不创建也不依赖 `C:\Users\Ashu\.android\debug.keystore`。该文件如被其他 Android 项目使用，保留在用户目录中，不属于本项目签名材料。
 - Debug 与 Release 的 APK/AAB 打包任务会在执行前校验 keystore、alias 和正式证书 SHA-256；配置缺失或证书不匹配时直接失败。
-- 发布脚本在上传前用 `apksigner` 钉死校验正式证书 SHA-256，并校验包名、versionName 和 versionCode。
-- 正式 keystore、配置缺失或证书不匹配时必须停止发布。
+- 发布脚本**不再校验 APK 签名**：上传前用 `aapt` 校验包名、versionName 和 versionCode，并核对 APK 的 SHA-256 与文件大小（上传后再回核 COS 对象大小）。
+- 正式 keystore、配置缺失或证书不匹配时 Gradle 打包任务直接失败，发布流程随之停止，不存在"跳过签名继续发布"的路径。
 
 ## 发布命令
 

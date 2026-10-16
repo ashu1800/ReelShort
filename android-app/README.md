@@ -22,7 +22,7 @@ App 只访问 Spring Boot API，不直接访问 Flask 内容源服务。生产�
 
 ## COS 更新
 
-稳定版清单从后端 `/api/app/release/latest` 获取，APK 和同名 `.sha256` 文件通过腾讯云 COS 预签名链接下载，下载域名必须是本桶精确域名（`BuildConfig.REELSHORT_COS_BUCKET`/`REELSHORT_COS_REGION` 生成），清单 `versionCode` 低于本机已安装版本时直接拒绝。App 冷启动后台检查稳定版，Me 页可手动检查；下载后只验证 SHA-256 完整性，再交给系统包安装器（不可用时回退隐式 `ACTION_VIEW`）。发布脚本在上传前校验包名、versionName、versionCode 和固定正式签名证书；普通 Android 设备仍需要用户确认安装，并可能需要为 ShortLink 开启“允许安装未知应用”。
+稳定版清单从后端 `/api/app/release/latest` 获取，APK 和同名 `.sha256` 文件通过腾讯云 COS 预签名链接下载，下载域名必须是本桶精确域名（`BuildConfig.REELSHORT_COS_BUCKET`/`REELSHORT_COS_REGION` 生成），清单 `versionCode` 低于本机已安装版本时直接拒绝。App 冷启动后台检查稳定版，Me 页可手动检查；下载后只验证文件大小与 SHA-256 完整性（不校验 APK 签名），再交给系统包安装器（不可用时回退隐式 `ACTION_VIEW`）。发布脚本在上传前校验包名、versionName、versionCode 并核对 SHA-256 与文件大小，上传后回核 COS 对象大小，不再校验签名；APK 签名由 Gradle 打包前的钉死证书门禁保证。普通 Android 设备仍需要用户确认安装，并可能需要为 ShortLink 开启“允许安装未知应用”。
 
 发布 APK 使用仓库根目录的 `scripts/publish-android.py` 本地脚本构建、上传并回调后端。Debug 和 Release 变体统一使用恢复后的原正式 keystore；`Debug` 仅表示可调试构建属性。固定证书指纹、材料位置和迁移说明见 `android-app/SIGNING.md`。
 
