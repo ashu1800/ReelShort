@@ -10,7 +10,8 @@
 ///
 /// Three sizes are provided:
 ///  * [EpisodeSpineSize.full] - the episodes sheet and the player episode
-///    drawer, where each tick is a real tap target;
+///    drawer, where each tick is a real tap target of
+///    [episodeSpineMinTargetExtent] square;
 ///  * [EpisodeSpineSize.mini] - a non-interactive spine inset into a poster
 ///    card, scaled down to whatever height the card can spare;
 ///  * [EpisodeSpineSize.inline] - a horizontal dash run for dense rows, where a
@@ -20,6 +21,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../core/formatting/app_strings.dart';
+import '../../core/formatting/app_ui_copy.dart';
 import '../../data/models/app_language.dart';
 import '../../theme/app_colors.dart';
 
@@ -65,7 +67,8 @@ class EpisodeTick {
   final bool isVipLocked;
 
   /// Tap handler. A non-null handler makes this tick interactive in
-  /// [EpisodeSpineSize.full]; the mini and inline sizes ignore it.
+  /// [EpisodeSpineSize.full], where it gets a [episodeSpineMinTargetExtent]
+  /// square target; the mini and inline sizes ignore it.
   final VoidCallback? onTap;
 
   /// [progress] clamped to `0..100`.
@@ -99,6 +102,14 @@ enum EpisodeSpineSize {
 
 /// Height of one full-size tick row.
 const double _fullTickHeight = 16;
+
+/// Minimum interactive target of one full-size tick, in logical pixels.
+///
+/// A tappable tick is drawn inside a square of this extent and its row pitch is
+/// the same value, so the target clears the platform minimum in both directions
+/// and two neighbouring targets share an edge without ever overlapping. The
+/// visual tick keeps its own geometry and is only centred inside the row.
+const double episodeSpineMinTargetExtent = 44;
 
 /// Height of one mini tick row, before [FittedBox] scaling.
 const double _miniTickHeight = 12;
@@ -174,8 +185,9 @@ class EpisodeSpine extends StatelessWidget {
   /// Builds the summary announced to screen readers, for example
   /// `12 eps, 5 Watched, Current ep 03, 2 in progress`.
   ///
-  /// The vocabulary comes entirely from [AppStrings] so the description stays
-  /// localisable; no new user-visible wording is introduced by this component.
+  /// The vocabulary comes entirely from [AppStrings] and [AppUiCopy] so the
+  /// description stays localisable; no new user-visible wording is introduced
+  /// by this component.
   static String describe(
     List<EpisodeTick> ticks, [
     AppLanguage language = AppLanguage.defaultLanguage,
@@ -203,7 +215,8 @@ class EpisodeSpine extends StatelessWidget {
         '${copy.playerEpisodeStatusCurrent} '
             '${copy.playerEpisodePrefix}'
             '${current.number.toString().padLeft(2, '0')}',
-      if (inProgress > 0) '$inProgress in progress',
+      if (inProgress > 0)
+        '$inProgress ${AppUiCopy.episodeInProgress}',
     ];
     return parts.join(', ');
   }
@@ -240,6 +253,10 @@ class EpisodeSpine extends StatelessWidget {
 }
 
 /// The vertical rail with full-size ticks.
+///
+/// A tick that carries an [EpisodeTick.onTap] is drawn as a tappable row with a
+/// [episodeSpineMinTargetExtent] square target; a tick without one keeps the
+/// original compact 16 px row, so a purely informational spine did not grow.
 class _FullSpine extends StatelessWidget {
   const _FullSpine({required this.ticks, required this.language});
 
@@ -260,15 +277,13 @@ class _FullSpine extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           for (final EpisodeTick tick in ticks)
-            SizedBox(
-              height: _fullTickHeight + _rowGateOverhang(tick),
-              child: _TickRow(
-                tick: tick,
-                language: language,
-                interactive: true,
-                tickWidth: _emphasisTickWidth,
+            if (tick.onTap != null)
+              _InteractiveTickRow(tick: tick, language: language)
+            else
+              SizedBox(
+                height: _fullTickHeight + _rowGateOverhang(tick),
+                child: _TickRow(tick: tick, tickWidth: _emphasisTickWidth),
               ),
-            ),
         ],
       ),
     ],
@@ -311,8 +326,6 @@ class _MiniSpine extends StatelessWidget {
                 height: _miniTickHeight + _rowGateOverhang(tick),
                 child: _TickRow(
                   tick: tick,
-                  language: AppLanguage.defaultLanguage,
-                  interactive: false,
                   tickWidth: _emphasisTickWidth,
                   mini: true,
                 ),
@@ -417,19 +430,15 @@ class _InlineDash extends StatelessWidget {
   }
 }
 
-/// One vertical tick row: rail segment, tick, fill and optional gate marker.
+/// One vertical tick row: the tick bar, its fill and the optional gate marker.
+///
+/// This is the **visual** geometry only, and it is identical in every size: the
+/// tick keeps its width and height, the bar stays flush with the rail's gutter,
+/// and only [_InteractiveTickRow] adds a larger target around it.
 class _TickRow extends StatelessWidget {
-  const _TickRow({
-    required this.tick,
-    required this.language,
-    required this.interactive,
-    required this.tickWidth,
-    this.mini = false,
-  });
+  const _TickRow({required this.tick, required this.tickWidth, this.mini = false});
 
   final EpisodeTick tick;
-  final AppLanguage language;
-  final bool interactive;
   final double tickWidth;
   final bool mini;
 
@@ -487,10 +496,10 @@ class _TickRow extends StatelessWidget {
       ),
     );
 
-    final Widget row = Padding(
+    return Padding(
       padding: const EdgeInsets.only(left: _leftGutter),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           bar,
@@ -508,10 +517,23 @@ class _TickRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
 
-    if (!interactive || tick.onTap == null) {
-      return row;
-    }
+/// One tappable full-size tick.
+///
+/// The target is a [episodeSpineMinTargetExtent] square and the row pitch is
+/// the same extent, so the hit areas of two neighbouring ticks share an edge but
+/// never overlap. The visual tick is unchanged in size and stays flush with the
+/// rail; only its row grew, and the tick is centred inside it.
+class _InteractiveTickRow extends StatelessWidget {
+  const _InteractiveTickRow({required this.tick, required this.language});
+
+  final EpisodeTick tick;
+  final AppLanguage language;
+
+  @override
+  Widget build(BuildContext context) {
     final AppStrings copy = strings(language);
     final String stateWord = switch (tick.state) {
       EpisodeTickState.watched => copy.playerEpisodeStatusWatched,
@@ -532,11 +554,18 @@ class _TickRow extends StatelessWidget {
       // the tap action away from screen readers.
       onTap: tick.onTap,
       excludeSemantics: true,
-      child: InkWell(
-        onTap: tick.onTap,
-        canRequestFocus: false,
-        customBorder: const StadiumBorder(),
-        child: row,
+      child: SizedBox(
+        width: episodeSpineMinTargetExtent,
+        height: episodeSpineMinTargetExtent,
+        child: InkWell(
+          onTap: tick.onTap,
+          canRequestFocus: false,
+          customBorder: const StadiumBorder(),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _TickRow(tick: tick, tickWidth: _emphasisTickWidth),
+          ),
+        ),
       ),
     );
   }

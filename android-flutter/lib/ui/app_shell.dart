@@ -1,12 +1,26 @@
-/// App shell: the four primary tabs, the global overlays and the full-screen player.
+/// App shell: the four primary tabs, the declarative page stack and the global overlays.
 ///
 /// Parity with the Kotlin `MainShell` is behavioural, not visual: the tab set, the highlight
 /// predicate (`state.screen == tab`), the `LOGIN` behaviour (nothing rendered while the bar stays),
-/// the player living outside the shell and the global message/ auth/ VIP-payment hosts are all
-/// contract. The layout itself is new.
+/// the player living outside the shell and the auth / VIP-payment hosts are all contract. The
+/// global message bar is the one host this route does *not* own: it lives above the Navigator in
+/// `main.dart` so an open sheet can never cover it. The layout itself is new.
 ///
-/// The Kotlin activity also registers four `BackHandler`s so the immersive screens return one
-/// level instead of leaving the app; the [PopScope] here is that contract.
+/// Phase 3 replaced the imperative `AnimatedSwitcher` with a declarative [Navigator] whose `pages`
+/// come from `buildRouteStack(state)` — the pure contract in `routing/app_route_stack.dart`:
+///
+///  * the current tab is the single root page, so switching tabs *updates* the root instead of
+///    stacking another page, and the sub-pages are real pushed pages that inherit the theme's
+///    reel-change transition;
+///  * the system back gesture has one priority order, resolved by `resolveBackOutcome(state)`
+///    (open sheet, then pushed page, then `FUNDS`' Kotlin `BackHandler`, then exit) with
+///    `NavigatorPopHandler`-style delegation to the page navigator for routes a screen pushed for
+///    itself;
+///  * `onDidRemovePage` is only reported for an *imperative* removal (a pop, a `removeRoute`, or a
+///    page replacement); a `pages` shrink driven by the state is not reported at all. The handler
+///    therefore re-derives the expected stack from the *current* state, so a return is only
+///    dispatched while the state still asks for the removed page — a back press that lands in the
+///    same turn as a tab switch must not undo the newer intent.
 library;
 
 import 'dart:async';
@@ -14,6 +28,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/formatting/app_strings.dart';
 import '../core/formatting/navigation_contract.dart';
 import '../state/app_state_controller.dart';
 import '../state/app_ui_state.dart';
@@ -22,17 +37,17 @@ import '../theme/app_motion.dart';
 import '../theme/app_shapes.dart';
 import '../theme/app_typography.dart';
 import 'components/app_loading.dart';
-import 'components/app_message_bar.dart';
-import 'screens/account_screen.dart';
-import 'screens/favorites_screen.dart';
-import 'screens/funds_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/player_screen.dart';
-import 'screens/search_screen.dart';
-import 'screens/withdrawal_screen.dart';
-import 'screens/vip_recharge_screen.dart';
+import 'components/app_sheet.dart';
+import 'routing/app_route_stack.dart';
+import 'routing/app_router_pages.dart';
 import 'sheets/auth_sheet.dart';
 import 'sheets/vip_paywall_sheet.dart';
+
+/// Key of the shell's [PopScope]: the widget that owns the system back priority.
+///
+/// Public so a widget test can assert the exit contract (`canPop` is true only
+/// on a tab root with nothing above it) without depending on tree order.
+const ValueKey<String> shellPopScopeKey = ValueKey<String>('shell-pop-scope');
 
 /// Hosts every screen and the global overlays.
 class AppShell extends StatefulWidget {
@@ -46,9 +61,44 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
+  /// The nested navigator that renders the declarative page stack.
+  ///
+  /// It is the navigator every screen resolves with `Navigator.of(context)`,
+  /// so a screen-owned modal (the wallet sheet, the episode picker) lands above
+  /// the page that opened it and the back gesture returns to that page first.
+  final GlobalKey<NavigatorState> _pages = GlobalKey<NavigatorState>();
+
+  /// Content keys of the two global sheets, used to close *their own* modal
+  /// route (never whatever happens to be on top of the root navigator).
+  final GlobalKey _authSheetKey = GlobalKey();
+  final GlobalKey _vipSheetKey = GlobalKey();
+
+  /// Whether the page navigator holds routes above the tab root: a pushed
+  /// sub-page, or a sheet a screen opened for itself. The system back gesture
+  /// belongs to the navigator whenever this is true, which is how a sheet the
+  /// shell does not own (the wallet form) keeps closing on back instead of the
+  /// app leaving.
+  final ValueNotifier<bool> _pageNavigatorOpen = ValueNotifier<bool>(false);
+
+  /// Whether a global sheet route is currently pushed.
+  bool _authRouteOpen = false;
+  bool _vipRouteOpen = false;
+
+  bool _sheetSyncScheduled = false;
+  bool _returnDispatchedThisFrame = false;
+
+  late final NavigatorObserver _pageObserver = _PageNavigatorObserver(
+    _handlePageRoutesChanged,
+  );
+
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(_handleControllerChanged);
+    // The first frame may already carry an open overlay (a restored guest
+    // session that prompts for login), and a sheet cannot be pushed during a
+    // build, so the first reconciliation runs once the frame is done.
+    _scheduleSheetSync();
     // Cold start: restore the persisted session and render the cached shelf while the network
     // refresh runs. Kicked off once the first frame is scheduled so the shell can paint first.
     scheduleMicrotask(() {
@@ -56,59 +106,265 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  /// Screens whose system back gesture must return one level instead of leaving
-  /// the app — the Kotlin `BackHandler` set.
-  bool _interceptsSystemBack(AppScreen screen) => switch (screen) {
-    AppScreen.player ||
-    AppScreen.favorites ||
-    AppScreen.funds ||
-    AppScreen.withdrawal ||
-    AppScreen.vipRecharge => true,
-    _ => false,
-  };
+  @override
+  void didUpdateWidget(AppShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_handleControllerChanged);
+      widget.controller.addListener(_handleControllerChanged);
+    }
+  }
 
-  /// The Kotlin `BackHandler` targets: player → its return screen, favourites and
-  /// funds → account, the funds children → funds.
-  void _handleSystemBack(AppStateController controller, AppScreen screen) {
-    switch (screen) {
-      case AppScreen.player:
-        controller.backToPlaybackSource();
-      case AppScreen.favorites:
-      case AppScreen.funds:
-        controller.backToAccount();
-      case AppScreen.withdrawal:
-      case AppScreen.vipRecharge:
-        controller.backToFunds();
-      default:
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleControllerChanged);
+    _pageNavigatorOpen.dispose();
+    super.dispose();
+  }
+
+  void _handleControllerChanged() => _scheduleSheetSync();
+
+  /// Schedules one overlay reconciliation per frame.
+  ///
+  /// Pushing or popping a route during a build is illegal, and a controller
+  /// notification can arrive from a post-frame fetch, so the reconciliation
+  /// always runs once the frame is done.
+  void _scheduleSheetSync() {
+    if (_sheetSyncScheduled) {
+      return;
+    }
+    _sheetSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sheetSyncScheduled = false;
+      if (mounted) {
+        _syncSheetRoutes();
+      }
+    });
+  }
+
+  /// Keeps the two global sheets in step with the state machine.
+  ///
+  /// `authPromptVisible` / `vipPaywallVisible` remain the single source of
+  /// truth: this only mirrors their transitions onto modal routes, and it never
+  /// pushes or pops twice for one transition.
+  void _syncSheetRoutes() {
+    final AppUiState state = widget.controller.state;
+    if (!state.authPromptVisible && _authRouteOpen) {
+      _closeSheetRoute(_authSheetKey);
+    }
+    if (!state.vipPaywallVisible && _vipRouteOpen) {
+      _closeSheetRoute(_vipSheetKey);
+    }
+    // Push order mirrors the back priority: when both flags are set the auth
+    // panel is the outermost sheet, so it is the one the back gesture closes.
+    if (state.vipPaywallVisible && !_vipRouteOpen) {
+      _vipRouteOpen = true;
+      unawaited(
+        AppSheet.show<void>(
+          // The shell's context sits above the page navigator, so the shared
+          // sheet host pushes onto the *root* navigator: the sheet covers the
+          // bottom bar and the player, and the route owns the back gesture.
+          context,
+          child: VipPaywallSheet(key: _vipSheetKey),
+        ).whenComplete(_handleVipSheetClosed),
+      );
+    }
+    if (state.authPromptVisible && !_authRouteOpen) {
+      _authRouteOpen = true;
+      unawaited(
+        AppSheet.show<void>(
+          context,
+          child: AuthSheet(key: _authSheetKey),
+        ).whenComplete(_handleAuthSheetClosed),
+      );
+    }
+  }
+
+  /// Closes the sheet route whose content carries [contentKey].
+  ///
+  /// The route is resolved from the content's own context, so closing a sheet
+  /// never pops whatever else may be on top of the root navigator (the
+  /// self-update dialog, for example).
+  void _closeSheetRoute(GlobalKey contentKey) {
+    final BuildContext? sheetContext = contentKey.currentContext;
+    if (sheetContext == null) {
+      return;
+    }
+    final ModalRoute<Object?>? route = ModalRoute.of(sheetContext);
+    if (route == null) {
+      return;
+    }
+    final NavigatorState navigator = Navigator.of(sheetContext);
+    if (route.isCurrent) {
+      navigator.pop();
+    } else {
+      navigator.removeRoute(route);
+    }
+  }
+
+  /// The auth route left the tree: the state machine has to follow.
+  ///
+  /// When the controller closed the flag itself this is a no-op; when the user
+  /// dismissed the route (drag, scrim, system back) the sheet must not stay
+  /// "visible" in the state, or the next reconciliation would push it again.
+  void _handleAuthSheetClosed() {
+    _authRouteOpen = false;
+    if (!mounted) {
+      return;
+    }
+    if (widget.controller.state.authPromptVisible) {
+      widget.controller.dismissAuthPrompt();
+    } else {
+      _scheduleSheetSync();
+    }
+  }
+
+  /// The VIP paywall route left the tree; see [_handleAuthSheetClosed].
+  void _handleVipSheetClosed() {
+    _vipRouteOpen = false;
+    if (!mounted) {
+      return;
+    }
+    if (widget.controller.state.vipPaywallVisible) {
+      widget.controller.dismissVipPaywall();
+    } else {
+      _scheduleSheetSync();
+    }
+  }
+
+  /// The page navigator gained or lost a route above the tab root.
+  void _handlePageRoutesChanged() {
+    // The notification can land inside a build (the navigator adds its first
+    // page while it is laid out), so the depth is re-read after the frame; the
+    // back handler is its only consumer.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final bool open = _pages.currentState?.canPop() ?? false;
+      if (_pageNavigatorOpen.value != open) {
+        _pageNavigatorOpen.value = open;
+      }
+    });
+  }
+
+  /// Runs the back priority for the current state.
+  ///
+  /// A route the page navigator can pop owns the gesture first — that covers
+  /// both the pushed sub-pages and the sheets the screens open for themselves —
+  /// and the pure contract resolves everything else.
+  void _handleSystemBack() {
+    final NavigatorState? pages = _pages.currentState;
+    if (pages != null && pages.canPop()) {
+      unawaited(pages.maybePop());
+      return;
+    }
+    switch (resolveBackOutcome(widget.controller.state)) {
+      case BackOutcome.closeAuthPrompt:
+        widget.controller.dismissAuthPrompt();
+      case BackOutcome.closeVipPaywall:
+        widget.controller.dismissVipPaywall();
+      case BackOutcome.popPage:
+        // The state expects a pushed page the navigator has not built yet.
+        if (pages != null) {
+          unawaited(pages.maybePop());
+        }
+      case BackOutcome.navigateToAccount:
+        widget.controller.backToAccount();
+      case BackOutcome.exitApp:
+        // Unreachable: `canPop` is true in that case, so the platform handles
+        // the gesture instead of calling this handler.
         break;
     }
+  }
+
+  /// Maps a page the framework *imperatively* removed back to its controller
+  /// transition.
+  ///
+  /// The framework calls back for an imperative removal (`Navigator.pop`,
+  /// `maybePop`, `removeRoute`) and for a page replacement; a `pages` shrink
+  /// driven purely by the state is not reported at all. So the one question
+  /// left here is whether the state *still* asks for the removed page, judged
+  /// against the current state rather than the last built frame: `maybePop`
+  /// completes a microtask later, and a transition issued in that window (a tab
+  /// switch) must win over the return the pop implies.
+  void _handleDidRemovePage(Page<Object?> page) {
+    final Object? key = page.key;
+    if (key is! ValueKey<String>) {
+      return;
+    }
+    final AppRouteDestination? destination = _expectedDestination(key.value);
+    if (destination == null) {
+      // The state moved on: this removal is not a user return, so nothing is
+      // dispatched and the newer intent stands.
+      return;
+    }
+    final ShellExit? exit = shellExitForPoppedDestination(destination);
+    if (exit == null) {
+      return;
+    }
+    // One return gesture dispatches at most one controller transition.
+    if (_returnDispatchedThisFrame) {
+      return;
+    }
+    _returnDispatchedThisFrame = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _returnDispatchedThisFrame = false;
+    });
+    switch (exit) {
+      case ShellExit.playbackSource:
+        widget.controller.backToPlaybackSource();
+      case ShellExit.account:
+        widget.controller.backToAccount();
+      case ShellExit.funds:
+        widget.controller.backToFunds();
+      case ShellExit.home:
+        unawaited(widget.controller.openHome());
+    }
+  }
+
+  /// The destination [pageKey] has in the *current* state's page stack, or null
+  /// when the state no longer asks for that page.
+  AppRouteDestination? _expectedDestination(String pageKey) {
+    for (final AppRouteNode node in buildRouteStack(widget.controller.state)) {
+      if (node.pageKey == pageKey) {
+        return node.destination;
+      }
+    }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     final AppStateController controller = context.watch<AppStateController>();
     final AppUiState state = controller.state;
+    final AppStrings copy = strings(state.language);
+    final List<AppRouteNode> stack = buildRouteStack(state);
 
-    // The player renders inside the same switcher so entering it rides the
-    // slide-up transition instead of popping in flat.
     final Widget content = Scaffold(
       backgroundColor: Theme.of(context).extension<AppColors>()!.canvas,
-      body: _ShellBody(state: state),
-      bottomNavigationBar: state.screen == AppScreen.player
-          ? null
-          : _AppNavigationBar(
+      body: Navigator(
+        key: _pages,
+        observers: <NavigatorObserver>[_pageObserver],
+        onDidRemovePage: _handleDidRemovePage,
+        pages: <Page<Object?>>[
+          for (final AppRouteNode node in stack)
+            appRoutePage(node, copy: copy, controller: controller),
+        ],
+      ),
+      // Parity: only the player is full-screen; every other screen keeps the bar.
+      bottomNavigationBar: shellShowsNavigationBar(state)
+          ? _AppNavigationBar(
               screen: state.screen,
               onSelect: (AppScreen target) => _navigate(controller, target),
-            ),
+            )
+          : null,
     );
 
-    return PopScope(
-      canPop: !_interceptsSystemBack(state.screen),
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (!didPop) {
-          _handleSystemBack(controller, state.screen);
-        }
-      },
+    return ValueListenableBuilder<bool>(
+      valueListenable: _pageNavigatorOpen,
+      // The Stack is built once per shell build and reused while only the
+      // navigator depth changes.
       child: Stack(
         children: <Widget>[
           Positioned.fill(child: content),
@@ -121,30 +377,32 @@ class _AppShellState extends State<AppShell> {
             top: 0,
             child: AppTopProgressBar(visible: state.isLoading),
           ),
-          // The message host, auth sheet and VIP paywall cover every screen — the Kotlin
-          // activity composes them above `MainShell` at z-index 2, player included.
-          if (state.errorMessage != null)
-            Positioned(
-              left: 16,
-              right: 16,
-              top: 0,
-              child: SafeArea(
-                top: true,
-                bottom: false,
-                child: AppMessageBar(
-                  key: ValueKey<int>(state.messageTrigger),
-                  message: state.errorMessage!,
-                  type: state.messageType ?? UiMessageType.error,
-                  // The bar disappears visually on its own; clearing the state keeps a
-                  // repeated identical message re-showable, like the Kotlin 4 s effect.
-                  onDismissed: controller.clearError,
-                ),
-              ),
-            ),
-          if (state.authPromptVisible) const AuthSheet(),
-          if (state.vipPaywallVisible) const VipPaywallSheet(),
+          // The global message bar is *not* here: the auth panel and the VIP
+          // paywall are modal routes on the root navigator now, so a bar hosted
+          // inside this route would sit under their barrier (dimmed, and
+          // excluded from the accessibility tree). It is hosted above the
+          // Navigator in `main.dart`, like the Kotlin activity's z-index 2
+          // message host.
         ],
       ),
+      builder: (BuildContext context, bool pageOverlayOpen, Widget? child) {
+        return PopScope(
+          key: shellPopScopeKey,
+          // Only a tab root with nothing above it leaves the app: an open
+          // sheet or a pushed page always has a landing target, and `FUNDS`
+          // keeps its Kotlin `BackHandler` target (`ACCOUNT`).
+          canPop:
+              resolveBackOutcome(state) == BackOutcome.exitApp &&
+              !pageOverlayOpen,
+          onPopInvokedWithResult: (bool didPop, Object? result) {
+            if (didPop) {
+              return;
+            }
+            _handleSystemBack();
+          },
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 
@@ -159,83 +417,37 @@ class _AppShellState extends State<AppShell> {
       case AppScreen.account:
         unawaited(controller.openAccount());
       // The shell only ever offers the four primary tabs; the remaining screens are reached
-      // from inside them and are rendered by [_ShellBody] as detail routes.
+      // from inside them and are pages of the declarative stack.
       default:
         break;
     }
   }
 }
 
-class _ShellBody extends StatelessWidget {
-  const _ShellBody({required this.state});
+/// Notices when the page navigator gains or loses a route above the tab root.
+class _PageNavigatorObserver extends NavigatorObserver {
+  _PageNavigatorObserver(this.onRoutesChanged);
 
-  final AppUiState state;
+  final VoidCallback onRoutesChanged;
 
   @override
-  Widget build(BuildContext context) {
-    final AppMotion motion = Theme.of(context).extension<AppMotion>()!;
-
-    return AnimatedSwitcher(
-      duration: motion.reelChange,
-      // The "reel change" is a short crossfade: screens are not related enough in this design
-      // for a directional wipe to read as navigation rather than as noise. The player is the
-      // one exception — a full-screen takeover deserves a slide-up entrance.
-      switchInCurve: motion.reelChangeCurve,
-      switchOutCurve: motion.reelChangeCurve.flipped,
-      transitionBuilder: (Widget child, Animation<double> animation) {
-        final bool isPlayer =
-            child is KeyedSubtree && child.child is PlayerScreen;
-        if (isPlayer) {
-          return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
-            child: FadeTransition(opacity: animation, child: child),
-          );
-        }
-        return FadeTransition(opacity: animation, child: child);
-      },
-      child: KeyedSubtree(
-        key: ValueKey<AppScreen>(state.screen),
-        child: _ScreenFor(screen: state.screen),
-      ),
-    );
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onRoutesChanged();
   }
-}
-
-class _ScreenFor extends StatelessWidget {
-  const _ScreenFor({required this.screen});
-
-  final AppScreen screen;
 
   @override
-  Widget build(BuildContext context) {
-    switch (screen) {
-      case AppScreen.login:
-        // Contract: `LOGIN` renders nothing but keeps the navigation bar and no highlighted tab.
-        return const SizedBox.shrink();
-      case AppScreen.home:
-        return const HomeScreen();
-      case AppScreen.search:
-        return const SearchScreen();
-      case AppScreen.detail:
-        // `AppScreen.detail` is never assigned by the state machine (parity gap G1), so this
-        // branch is unreachable in practice but must still exist for exhaustiveness.
-        return const HomeScreen();
-      case AppScreen.player:
-        return const PlayerScreen();
-      case AppScreen.account:
-        return const AccountScreen();
-      case AppScreen.funds:
-        return const FundsScreen();
-      case AppScreen.withdrawal:
-        return const WithdrawalScreen();
-      case AppScreen.vipRecharge:
-        return const VipRechargeScreen();
-      case AppScreen.favorites:
-        return const FavoritesScreen();
-    }
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onRoutesChanged();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    onRoutesChanged();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    onRoutesChanged();
   }
 }
 

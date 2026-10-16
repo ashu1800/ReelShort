@@ -8,19 +8,23 @@
 /// collapse.
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 import 'package:shortlink/core/formatting/app_strings.dart';
 import 'package:shortlink/core/formatting/app_ui_copy.dart';
 import 'package:shortlink/core/formatting/ui_formats.dart';
 import 'package:shortlink/data/models/app_language.dart';
 import 'package:shortlink/data/models/app_models.dart';
+import 'package:shortlink/state/app_state_controller.dart';
 import 'package:shortlink/state/app_ui_state.dart';
 import 'package:shortlink/theme/app_colors.dart';
 import 'package:shortlink/theme/app_icons.dart';
@@ -46,6 +50,9 @@ import 'package:shortlink/ui/components/app_text_field.dart';
 import 'package:shortlink/ui/components/episode_spine.dart';
 import 'package:shortlink/ui/components/ledger_row.dart';
 import 'package:shortlink/ui/components/poster_card.dart';
+import 'package:shortlink/ui/screens/funds_screen.dart';
+
+import 'support/fake_app_data_source.dart';
 
 Widget host(
   Widget child, {
@@ -248,12 +255,30 @@ void main() {
           ),
         ],
       ),
-      'text field': AppTextField(
-        label: 'Username',
-        helperText: 'At least 8 characters',
-        errorText: 'Password too short',
-        textInputAction: TextInputAction.done,
-        onSubmitted: (String _) {},
+      'text field': Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          AppTextField(
+            label: 'Username',
+            helperText: 'At least 8 characters',
+            errorText: 'Password too short',
+            textInputAction: TextInputAction.done,
+            onSubmitted: (String _) {},
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            label: 'Password',
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (String _) {},
+          ),
+          const SizedBox(height: 16),
+          const AppTextField(
+            label: 'Without the reveal toggle',
+            obscureText: true,
+            showObscureToggle: false,
+          ),
+        ],
       ),
       'message bars': Column(
         mainAxisSize: MainAxisSize.min,
@@ -275,6 +300,24 @@ void main() {
           AppInlineLoading(label: 'Loading episodes'),
         ],
       ),
+      'loading variants': const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          AppSkeletonText(lines: 3),
+          SizedBox(height: 16),
+          AppSkeletonCircle(),
+          SizedBox(height: 16),
+          AppSkeletonPosterGrid(itemCount: 5),
+          SizedBox(height: 16),
+          AppSkeletonText(
+            lines: 6,
+            lineHeight: 12,
+            lastLineFactor: 0.35,
+            radius: 4,
+          ),
+        ],
+      ),
       'empty with action': AppEmptyState(
         icon: Icons.search_off,
         title: 'No results',
@@ -287,6 +330,17 @@ void main() {
         title: 'VIP required',
         body: 'Episode 8 and later need VIP.',
         pillLabel: 'VIP only',
+      ),
+      'empty with long pill': const AppEmptyState(
+        icon: Icons.lock_outline,
+        title: 'VIP required',
+        body: 'Episode 8 and later need VIP.',
+        pillLabel: 'VIP membership is required for this episode',
+      ),
+      'empty with a label but no callback': const AppEmptyState(
+        icon: Icons.search_off,
+        title: 'Nothing here yet',
+        actionLabel: 'Clear filters',
       ),
       'poster': const SizedBox(
         width: 136,
@@ -1335,4 +1389,898 @@ void main() {
     await tester.tap(find.text('Sign out'));
     expect(confirmed, isTrue);
   });
+
+  testWidgets('AppSkeleton variants shimmer as one system and flatten under '
+      'reduced motion', (WidgetTester tester) async {
+    // The poster columns follow the same adaptive rule as the real shelf.
+    expect(posterSkeletonColumns(100), 1);
+    expect(posterSkeletonColumns(320), 2);
+    expect(posterSkeletonColumns(1440), posterSkeletonMaxColumns);
+    expect(posterSkeletonColumns(0), 1);
+    expect(posterSkeletonColumns(-10), 1);
+    expect(posterSkeletonColumns(double.infinity), 1);
+
+    const Widget variants = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        AppSkeletonText(lines: 3),
+        SizedBox(height: 12),
+        AppSkeletonCircle(),
+        SizedBox(height: 12),
+        AppSkeletonPosterGrid(itemCount: 5),
+      ],
+    );
+
+    // Every variant shimmers through the same ShaderMask as AppSkeleton: 3 text
+    // lines + 1 circle + 5 poster tiles.
+    await tester.pumpWidget(host(variants, width: 320));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(ShaderMask), findsNWidgets(9));
+    expect(tester.takeException(), isNull);
+
+    // The last text line is short, and the circle is a real circle: both are
+    // part of "the placeholder has the shape of the arriving content".
+    final Finder lines = find.byType(AppSkeleton);
+    final double fullLine = tester.getSize(lines.at(0)).width;
+    final double lastLine = tester.getSize(lines.at(2)).width;
+    expect(lastLine, lessThan(fullLine));
+    expect(
+      lastLine,
+      closeTo(fullLine * skeletonTextLastLineFactor, 0.5),
+      reason: 'the last line keeps a fraction of the paragraph width',
+    );
+    expect(
+      tester.getSize(lines.at(3)),
+      const Size(skeletonCircleDiameter, skeletonCircleDiameter),
+    );
+    final DecoratedBox circle = tester.widget<DecoratedBox>(
+      find
+          .descendant(of: lines.at(3), matching: find.byType(DecoratedBox))
+          .first,
+    );
+    expect(
+      (circle.decoration as BoxDecoration).borderRadius,
+      BorderRadius.circular(skeletonCircleDiameter / 2),
+    );
+
+    // Reduced motion: the shimmer is gone entirely, so nothing can rotate or
+    // blink, and every variant is a static surfaceAlt plate.
+    await tester.pumpWidget(
+      host(variants, width: 320, disableAnimations: true),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(ShaderMask), findsNothing);
+    expect(tester.takeException(), isNull);
+    final DecoratedBox plate = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: find.byType(AppSkeleton),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    expect(
+      (plate.decoration as BoxDecoration).color,
+      AppColors.light.surfaceAlt,
+    );
+  });
+
+  testWidgets('AppSkeleton fills a bounded width instead of collapsing to zero', (
+    WidgetTester tester,
+  ) async {
+    // Device defect: `width: null` laid out as a zero-width plate, so every
+    // AppSkeletonList row (Home / Favorites / Funds) was invisible while the
+    // data loaded. Shimmer and reduced motion share the same plate, so both
+    // branches are asserted - the review device had animations turned off.
+    for (final bool still in <bool>[false, true]) {
+      final String mode = 'disableAnimations=$still';
+
+      await tester.pumpWidget(
+        host(
+          const AppSkeleton(height: 24),
+          width: 320,
+          disableAnimations: still,
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull, reason: mode);
+      expect(
+        tester.getSize(find.byType(AppSkeleton)),
+        const Size(320, 24),
+        reason: '$mode: a null width must fill the available width',
+      );
+
+      await tester.pumpWidget(
+        host(
+          const AppSkeletonList(itemHeight: 64, itemCount: 3),
+          width: 360,
+          disableAnimations: still,
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull, reason: mode);
+      for (int index = 0; index < 3; index++) {
+        final Size row = tester.getSize(find.byType(AppSkeleton).at(index));
+        expect(
+          row.width,
+          360 - 32,
+          reason: '$mode: row $index must span the parent minus its padding',
+        );
+        expect(row.width, greaterThan(0), reason: '$mode: row $index is visible');
+        expect(row.height, 64, reason: mode);
+      }
+
+      // The paragraph variant keeps its full-width lines and its 0.6 last line.
+      await tester.pumpWidget(
+        host(
+          const AppSkeletonText(lines: 3),
+          width: 320,
+          disableAnimations: still,
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull, reason: mode);
+      expect(tester.getSize(find.byType(AppSkeleton).at(0)).width, 320);
+      expect(
+        tester.getSize(find.byType(AppSkeleton).at(2)).width,
+        closeTo(320 * skeletonTextLastLineFactor, 0.5),
+        reason: '$mode: the last line keeps its ratio',
+      );
+
+      // An explicit width is still honoured verbatim: `Center` is what gives the
+      // block loose constraints, since the test host hands its child a tight
+      // width the way a scrolling page does.
+      await tester.pumpWidget(
+        host(
+          const Center(child: AppSkeleton(width: 120, height: 20)),
+          width: 320,
+          disableAnimations: still,
+        ),
+      );
+      await tester.pump();
+      expect(
+        tester.getSize(find.byType(AppSkeleton)),
+        const Size(120, 20),
+        reason: '$mode: an explicit width must not be stretched',
+      );
+    }
+  });
+
+  testWidgets('the funds loading state paints skeleton rows that fill the page', (
+    WidgetTester tester,
+  ) async {
+    // The screen-level shape of the device defect: the funds page swaps its
+    // whole body for AppSkeletonList while the account snapshot loads, and on
+    // device that body was blank because each row measured zero wide.
+    final _StalledAppDataSource dataSource = _StalledAppDataSource();
+    final AppStateController controller = AppStateController(
+      dataSource: dataSource,
+    );
+    addTearDown(controller.dispose);
+    // `checkApiHealth` flips `isLoading` synchronously and then waits on a probe
+    // that never answers, so the loading frame is stable for the whole test and
+    // leaves no timer behind.
+    unawaited(controller.checkApiHealth());
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppStateController>.value(
+        value: controller,
+        child: MaterialApp(
+          theme: appTheme(Brightness.dark),
+          home: Scaffold(
+            body: SizedBox(
+              width: 360,
+              height: 640,
+              // The review device had developer-options animations off, which is
+              // the reduced-motion branch.
+              child: const MediaQuery(
+                data: MediaQueryData(
+                  size: Size(360, 640),
+                  disableAnimations: true,
+                ),
+                child: FundsScreen(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(controller.state.isLoading, isTrue);
+    expect(find.byType(AppSkeletonList), findsOneWidget);
+    final Finder rows = find.byType(AppSkeleton);
+    expect(rows, findsNWidgets(5));
+    for (int index = 0; index < 5; index++) {
+      final Size row = tester.getSize(rows.at(index));
+      expect(
+        row.width,
+        360 - 36,
+        reason: 'row $index must span the page minus its 18px side padding',
+      );
+      expect(row.width, greaterThan(0), reason: 'row $index is visible');
+      expect(row.height, 64);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('AppSkeletonPosterGrid derives its columns from the width', (
+    WidgetTester tester,
+  ) async {
+    // `host` can only place what the test view actually offers, so the wide
+    // case needs a real viewport instead of a MediaQuery override.
+    addTearDown(tester.view.reset);
+    tester.view.devicePixelRatio = 1;
+    for (final (double width, int columns) in <(double, int)>[
+      (320, 2),
+      (600, 4),
+      (1440, posterSkeletonMaxColumns),
+    ]) {
+      tester.view.physicalSize = Size(width, 900);
+      await tester.pumpWidget(
+        host(const AppSkeletonPosterGrid(itemCount: 3), width: width),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull, reason: 'width $width');
+      final double expectedTile =
+          (width - AppSpacing.standard.gutter * (columns - 1)) / columns;
+      expect(
+        tester.getSize(find.byType(AppSkeleton).first).width,
+        closeTo(expectedTile, 0.01),
+        reason: 'width $width must use $columns columns',
+      );
+    }
+  });
+
+  test('AppEmptyState resolves its action and its pill by the stated priority', () {
+    // Priority 1: a callback plus words is a real action, and never a pill.
+    expect(
+      appEmptyStateShowsAction(onAction: () {}, actionLabel: 'Clear'),
+      isTrue,
+    );
+    expect(
+      appEmptyStatePillLabel(
+        onAction: () {},
+        actionLabel: 'Clear',
+        pillLabel: 'VIP only',
+      ),
+      isNull,
+    );
+    // Priority 2: pillLabel; priority 3: the action label that lost its action.
+    expect(
+      appEmptyStatePillLabel(
+        onAction: null,
+        actionLabel: 'Clear',
+        pillLabel: 'VIP only',
+      ),
+      'VIP only',
+    );
+    expect(
+      appEmptyStatePillLabel(onAction: null, actionLabel: 'Clear'),
+      'Clear',
+    );
+    // A callback with a blank or missing label is not an action...
+    expect(appEmptyStateShowsAction(onAction: () {}, actionLabel: '   '), isFalse);
+    expect(appEmptyStateShowsAction(onAction: () {}, actionLabel: null), isFalse);
+    // ...and the words that are available still reach the user as a status.
+    expect(
+      appEmptyStatePillLabel(
+        onAction: () {},
+        actionLabel: '   ',
+        pillLabel: 'VIP only',
+      ),
+      'VIP only',
+    );
+    expect(
+      appEmptyStatePillLabel(onAction: () {}, actionLabel: null, pillLabel: ' '),
+      isNull,
+    );
+  });
+
+  testWidgets('AppEmptyState never renders a dead button and its pill is a '
+      'status, not a control', (WidgetTester tester) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    int taps = 0;
+    // A callback whose label is blank must not become a disabled button: there
+    // is no focusable or tappable descendant, only the status pill.
+    await tester.pumpWidget(
+      host(
+        AppEmptyState(
+          icon: Icons.lock_outline,
+          title: 'VIP required',
+          actionLabel: '   ',
+          pillLabel: 'VIP only',
+          onAction: () => taps++,
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(AppButton), findsNothing);
+    expect(find.text('VIP only'), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(AppEmptyState), matching: find.byType(InkWell)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: find.byType(AppEmptyState), matching: find.byType(Focus)),
+      findsNothing,
+    );
+    expect(find.bySemanticsLabel('VIP only'), findsOneWidget);
+    final SemanticsData pill = tester.semantics
+        .find(find.bySemanticsLabel('VIP only'))
+        .getSemanticsData();
+    expect(pill.hasAction(SemanticsAction.tap), isFalse);
+    expect(pill.hasAction(SemanticsAction.focus), isFalse);
+    expect(pill.flagsCollection.isButton, isFalse);
+    // `isFocused` is a Tristate: `none` means focus is not applicable at all,
+    // i.e. the node is not focusable.
+    expect(
+      pill.flagsCollection.isFocused.name,
+      'none',
+      reason: 'the pill must not be focusable',
+    );
+    await tester.tap(find.text('VIP only'));
+    await tester.pump();
+    expect(taps, 0, reason: 'the pill must not be activatable');
+
+    // With no words anywhere there is nothing to render at all: still no
+    // button, and no orphan pill either.
+    await tester.pumpWidget(
+      host(
+        AppEmptyState(
+          icon: Icons.search_off,
+          title: 'Nothing here',
+          actionLabel: '  ',
+          onAction: () => taps++,
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    expect(taps, 0);
+    expect(
+      appEmptyStatePillLabel(onAction: () {}, actionLabel: '  '),
+      isNull,
+    );
+    expect(find.byType(AppButton), findsNothing);
+    handle.dispose();
+  });
+
+  testWidgets('AppEmptyState pill wraps and grows at 3.2x on a 320px screen', (
+    WidgetTester tester,
+  ) async {
+    const String pill = 'VIP membership is required for this episode';
+    Future<double> pillHeight(double scale) async {
+      await tester.pumpWidget(
+        host(
+          const AppEmptyState(
+            icon: Icons.lock_outline,
+            title: 'VIP required',
+            body: 'Episode 8 and later need VIP.',
+            pillLabel: pill,
+          ),
+          width: 320,
+          textScale: scale,
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull, reason: 'scale $scale');
+      return tester.getSize(find.bySemanticsLabel(pill)).height;
+    }
+
+    // getSize needs a semantics tree; bySemanticsLabel is the only stable
+    // handle on the private pill widget.
+    final SemanticsHandle handle = tester.ensureSemantics();
+    final double normal = await pillHeight(1);
+    final double huge = await pillHeight(3.2);
+    expect(
+      huge,
+      greaterThan(normal),
+      reason: 'the pill must grow with wrapped lines instead of clipping',
+    );
+    final Text label = tester.widget<Text>(find.text(pill));
+    expect(label.maxLines, isNull, reason: 'the pill text is free to wrap');
+    expect(tester.getSize(find.text(pill)).width, lessThanOrEqualTo(320));
+    handle.dispose();
+  });
+
+  testWidgets('AppTextField reveals and masks again without touching text, '
+      'caret or focus', (WidgetTester tester) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    final TextEditingController controller = TextEditingController(
+      text: 'secret123',
+    );
+    final FocusNode focusNode = FocusNode();
+
+    await tester.pumpWidget(
+      host(
+        AppTextField(
+          label: 'Password',
+          controller: controller,
+          focusNode: focusNode,
+          obscureText: true,
+          textInputAction: TextInputAction.done,
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+
+    TextField field() => tester.widget<TextField>(find.byType(TextField));
+    expect(field().obscureText, isTrue);
+
+    focusNode.requestFocus();
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+    controller.selection = const TextSelection.collapsed(offset: 3);
+    await tester.pump();
+
+    final Finder reveal = find.bySemanticsLabel(AppUiCopy.showPassword);
+    expect(reveal, findsOneWidget, reason: 'masked field shows the toggle');
+    final Size target = tester.getSize(reveal);
+    expect(target.width, greaterThanOrEqualTo(44));
+    expect(target.height, greaterThanOrEqualTo(44));
+    // The toggle is a real node in the semantics tree with its own activation
+    // action, so a screen reader can reach the value it unmasks.
+    final SemanticsData toggle = tester.semantics
+        .find(reveal)
+        .getSemanticsData();
+    expect(toggle.hasAction(SemanticsAction.tap), isTrue);
+    expect(toggle.flagsCollection.isButton, isTrue);
+
+    await tester.tap(reveal);
+    await tester.pump();
+    expect(field().obscureText, isFalse, reason: 'the mask must be lifted');
+    expect(controller.text, 'secret123');
+    expect(
+      controller.selection,
+      const TextSelection.collapsed(offset: 3),
+      reason: 'the caret must survive the toggle',
+    );
+    expect(focusNode.hasFocus, isTrue, reason: 'the toggle must not steal focus');
+
+    final Finder conceal = find.bySemanticsLabel(AppUiCopy.hidePassword);
+    expect(conceal, findsOneWidget);
+    await tester.tap(conceal);
+    await tester.pump();
+    expect(field().obscureText, isTrue);
+    expect(controller.text, 'secret123');
+    expect(focusNode.hasFocus, isTrue);
+
+    // The toggle is opt-out, and a plain field never grows one.
+    await tester.pumpWidget(
+      host(
+        const AppTextField(
+          label: 'Password',
+          obscureText: true,
+          showObscureToggle: false,
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    expect(find.bySemanticsLabel(AppUiCopy.showPassword), findsNothing);
+    expect(find.bySemanticsLabel(AppUiCopy.hidePassword), findsNothing);
+    handle.dispose();
+    // Unmount before disposing the caller-owned objects, so the field's own
+    // teardown cannot touch a disposed node.
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    focusNode.dispose();
+  });
+
+  testWidgets('AppTextField close the keyboard on an outside tap for every '
+      'pointer kind, and only when asked to', (WidgetTester tester) async {
+    final FocusNode focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+    // A real target beside the field: the tap must land on something, exactly
+    // like a label or a list row in the app.
+    Widget outsideArea() => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: const SizedBox(height: 240, width: double.infinity),
+    );
+    await tester.pumpWidget(
+      host(
+        Column(
+          children: <Widget>[
+            AppTextField(
+              label: 'Password',
+              focusNode: focusNode,
+              obscureText: true,
+              textInputAction: TextInputAction.done,
+            ),
+            outsideArea(),
+          ],
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+
+    // EditableText installs its `onTapOutside` callback from a focus listener,
+    // so the focus change needs its frame *and* the rebuild frame that follows
+    // it. In the app those frames are separated by real time; here they must be
+    // pumped explicitly or the tap can land before the callback exists.
+    Future<void> focusField(FocusNode node) async {
+      node.requestFocus();
+      await tester.pump();
+      await tester.pump();
+      expect(node.hasFocus, isTrue);
+    }
+
+    // Touch: the framework's own default leaves a mobile field focused, which is
+    // exactly the stuck-IME defect this contract removes.
+    await focusField(focusNode);
+    await tester.tapAt(const Offset(160, 200));
+    await tester.pump();
+    expect(focusNode.hasFocus, isFalse, reason: 'touch outside must unfocus');
+
+    // Mouse: same outcome, so phone and desktop agree.
+    await focusField(focusNode);
+    final TestGesture mouse = await tester.startGesture(
+      const Offset(160, 200),
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.up();
+    await tester.pump();
+    expect(focusNode.hasFocus, isFalse, reason: 'mouse outside must unfocus');
+
+    // The toggle lives inside the field's own tap region: using it must not be
+    // mistaken for a tap outside.
+    final SemanticsHandle handle = tester.ensureSemantics();
+    await focusField(focusNode);
+    await tester.tap(find.bySemanticsLabel(AppUiCopy.showPassword));
+    await tester.pump();
+    expect(focusNode.hasFocus, isTrue);
+    handle.dispose();
+
+    // Opting out means "never dismiss on my behalf", even on desktop rules.
+    // The first field is unmounted first: a field captures its focus node when
+    // its state is created, exactly like the forms in the app that never swap it.
+    await tester.pumpWidget(const SizedBox.shrink());
+    final FocusNode optOut = FocusNode();
+    addTearDown(optOut.dispose);
+    await tester.pumpWidget(
+      host(
+        Column(
+          children: <Widget>[
+            AppTextField(
+              label: 'Amount',
+              focusNode: optOut,
+              dismissKeyboardOnTapOutside: false,
+            ),
+            outsideArea(),
+          ],
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    await focusField(optOut);
+    await tester.tapAt(const Offset(160, 200));
+    await tester.pump();
+    expect(optOut.hasFocus, isTrue, reason: 'the opt-out must keep the focus');
+  });
+
+  testWidgets('AppTextField still submits, dismisses and advances focus', (
+    WidgetTester tester,
+  ) async {
+    final TextEditingController controller = TextEditingController();
+    addTearDown(controller.dispose);
+    final FocusNode first = FocusNode();
+    addTearDown(first.dispose);
+    final FocusNode second = FocusNode();
+    addTearDown(second.dispose);
+    int submitted = 0;
+
+    await tester.pumpWidget(
+      host(
+        Column(
+          children: <Widget>[
+            AppTextField(
+              label: 'First',
+              controller: controller,
+              focusNode: first,
+              obscureText: true,
+              textInputAction: TextInputAction.next,
+            ),
+            AppTextField(
+              label: 'Second',
+              focusNode: second,
+              obscureText: true,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (String _) => submitted++,
+            ),
+          ],
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+
+    // `next` still moves to the following field: the reveal toggle of the first
+    // field must not sit between the two in the traversal order.
+    first.requestFocus();
+    await tester.pump();
+    await tester.pump();
+    expect(first.hasFocus, isTrue);
+    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pump();
+    expect(second.hasFocus, isTrue, reason: 'next must advance to field two');
+    expect(first.hasFocus, isFalse);
+
+    // `done` submits and closes the keyboard.
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(submitted, 1);
+    expect(second.hasFocus, isFalse, reason: 'done must close the keyboard');
+  });
+
+  testWidgets('AppTextField removes the listener it registered for '
+      'selectAllOnFocus', (WidgetTester tester) async {
+    // A caller's focus node outlives the field. `selectAllOnFocus` registers a
+    // listener on it, so a rebuild that turns the flag off must not make the
+    // field forget to remove it. Two judgements are used: direct (the node
+    // reports no listener once the field is unmounted) and behavioural
+    // (re-focusing the reused node must not write through the field's already
+    // disposed controller, which is what a leaked listener does).
+    final _ListenerProbeFocusNode node = _ListenerProbeFocusNode();
+
+    await tester.pumpWidget(
+      host(
+        AppTextField(label: 'Wallet', focusNode: node, selectAllOnFocus: true),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), '0xabcdef');
+    await tester.pump();
+    expect(node.hasAnyListeners, isTrue, reason: 'the field listens while mounted');
+
+    // Rebuild with the flag off, then unmount: ownership is decided at
+    // registration, not by the current widget.
+    await tester.pumpWidget(
+      host(AppTextField(label: 'Wallet', focusNode: node), width: 320),
+    );
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(
+      node.hasAnyListeners,
+      isFalse,
+      reason: 'the field must remove the listener it registered',
+    );
+
+    // The node stays usable for whatever the caller mounts next.
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: Scaffold(body: TextField(focusNode: node)),
+      ),
+    );
+    await tester.pump();
+    node.requestFocus();
+    await tester.pump();
+    await tester.pump();
+    expect(node.hasFocus, isTrue);
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'a stale listener would touch the disposed controller here',
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    node.dispose();
+  });
+
+  testWidgets('EpisodeSpine full ticks keep a 44px target that never overlaps', (
+    WidgetTester tester,
+  ) async {
+    final List<int> tapped = <int>[];
+    await tester.pumpWidget(
+      host(
+        EpisodeSpine(
+          ticks: <EpisodeTick>[
+            for (int episode = 1; episode <= 4; episode++)
+              EpisodeTick(
+                number: episode,
+                state: episode == 2
+                    ? EpisodeTickState.current
+                    : EpisodeTickState.none,
+                onTap: () => tapped.add(episode),
+              ),
+          ],
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+
+    expect(episodeSpineMinTargetExtent, 44);
+    final Finder targets = find.descendant(
+      of: find.byType(EpisodeSpine),
+      matching: find.byType(InkWell),
+    );
+    expect(targets, findsNWidgets(4));
+    final List<Rect> rects = <Rect>[
+      for (int index = 0; index < 4; index++) tester.getRect(targets.at(index)),
+    ];
+    for (int index = 0; index < rects.length; index++) {
+      expect(
+        rects[index].width,
+        greaterThanOrEqualTo(episodeSpineMinTargetExtent),
+        reason: 'tick $index target width',
+      );
+      expect(
+        rects[index].height,
+        greaterThanOrEqualTo(episodeSpineMinTargetExtent),
+        reason: 'tick $index target height',
+      );
+    }
+    for (int a = 0; a < rects.length; a++) {
+      for (int b = a + 1; b < rects.length; b++) {
+        expect(
+          rects[a].overlaps(rects[b]),
+          isFalse,
+          reason: 'targets $a and $b must not overlap',
+        );
+      }
+    }
+    expect(
+      rects[1].top - rects[0].top,
+      episodeSpineMinTargetExtent,
+      reason: 'the row pitch is the target extent',
+    );
+
+    // The whole square is live: a corner the visual tick never covers still
+    // fires that tick and only that tick.
+    await tester.tapAt(rects[0].topLeft + const Offset(2, 2));
+    await tester.pump();
+    expect(tapped, <int>[1]);
+
+    // The visual geometry is untouched: the same tick sizes as before, still
+    // flush with the rail's gutter, now centred inside the taller row.
+    final Finder bars = find.descendant(
+      of: find.byType(EpisodeSpine),
+      matching: find.byType(Opacity),
+    );
+    expect(tester.getSize(bars.at(0)).width, closeTo(9.6, 0.01));
+    expect(tester.getSize(bars.at(0)).height, closeTo(4, 0.01));
+    expect(tester.getSize(bars.at(1)).width, closeTo(16, 0.01));
+    expect(tester.getSize(bars.at(1)).height, closeTo(5, 0.01));
+    expect(tester.getTopLeft(bars.at(1)).dx - rects[1].left, 7);
+    expect(
+      tester.getTopLeft(bars.at(1)).dy - rects[1].top,
+      closeTo((episodeSpineMinTargetExtent - 5) / 2, 0.01),
+      reason: 'the visual tick is centred in the 44px row',
+    );
+  });
+
+  testWidgets('EpisodeSpine keeps its 16px rows when nothing is tappable', (
+    WidgetTester tester,
+  ) async {
+    // A full spine without handlers is informational: it must not grow.
+    await tester.pumpWidget(
+      host(EpisodeSpine(ticks: EpisodeTick.unwatched(3)), width: 320),
+    );
+    await tester.pump();
+    expect(tester.getSize(find.byType(EpisodeSpine)).height, 48);
+    expect(
+      find.descendant(
+        of: find.byType(EpisodeSpine),
+        matching: find.byType(InkWell),
+      ),
+      findsNothing,
+    );
+
+    // The mini spine is unchanged too, at its own 12px pitch.
+    await tester.pumpWidget(
+      host(
+        EpisodeSpine(
+          ticks: EpisodeTick.unwatched(3),
+          size: EpisodeSpineSize.mini,
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    expect(tester.getSize(find.byType(EpisodeSpine)).height, 36);
+  });
+
+  test('EpisodeSpine describes the in-progress state through AppUiCopy', () {
+    final AppStrings copy = strings(AppLanguage.defaultLanguage);
+    final String described = EpisodeSpine.describe(<EpisodeTick>[
+      const EpisodeTick(
+        number: 1,
+        state: EpisodeTickState.inProgress,
+        progress: 40,
+      ),
+      const EpisodeTick(number: 2, state: EpisodeTickState.none),
+    ]);
+    expect(AppUiCopy.episodeInProgress, 'in progress');
+    expect(
+      described,
+      '2${copy.playerEpisodeUnit}, 1 ${AppUiCopy.episodeInProgress}',
+    );
+  });
+
+  testWidgets('AppMessageBar sources tone words and close tooltip from '
+      'AppUiCopy, with a 44px dismiss target', (WidgetTester tester) async {
+    int dismissed = 0;
+    await tester.pumpWidget(
+      host(
+        AppMessageBar(
+          message: 'Saved',
+          type: UiMessageType.success,
+          autoDismiss: const Duration(seconds: 30),
+          onDismissed: () => dismissed++,
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text(AppUiCopy.toneSuccess), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+    final Finder close = find.byTooltip(AppUiCopy.dismissMessage);
+    expect(close, findsOneWidget);
+    final Rect target = tester.getRect(close);
+    expect(target.width, greaterThanOrEqualTo(44));
+    expect(target.height, greaterThanOrEqualTo(44));
+
+    // The target is real, not just a box: tapping the corner beside the 18px
+    // glyph dismisses the bar.
+    await tester.tapAt(target.centerLeft + const Offset(3, 0));
+    await tester.pump();
+    expect(dismissed, 1);
+    await tester.tapAt(target.centerLeft + const Offset(3, 0));
+    await tester.pump();
+    expect(dismissed, 1, reason: 'a dismissed message must not fire twice');
+    expect(messageAutoDismissFallback, const Duration(seconds: 4));
+
+    // Every tone still gets its own word and glyph.
+    for (final (UiMessageType type, String word) in <(UiMessageType, String)>[
+      (UiMessageType.error, AppUiCopy.toneError),
+      (UiMessageType.info, AppUiCopy.toneInfo),
+    ]) {
+      await tester.pumpWidget(
+        host(
+          AppMessageBar(
+            message: 'Changed',
+            type: type,
+            autoDismiss: const Duration(seconds: 30),
+          ),
+          width: 320,
+        ),
+      );
+      await tester.pump();
+      expect(find.text(word), findsOneWidget);
+    }
+  });
+}
+
+/// A [FocusNode] that reports whether anything still listens to it.
+///
+/// `ChangeNotifier.hasListeners` is `@protected`, so the suite reaches it
+/// through a subclass rather than tripping `invalid_use_of_protected_member`.
+/// Once a field is unmounted every legitimate listener is gone too, so `false`
+/// here means the field did not leak one.
+class _ListenerProbeFocusNode extends FocusNode {
+  /// Whether at least one listener is still registered on this node.
+  bool get hasAnyListeners => hasListeners;
+}
+
+/// A data source whose health probe never answers.
+///
+/// It keeps [AppStateController] in its loading state for as long as the test
+/// needs it, without the pending timer a delayed fake would leave behind.
+class _StalledAppDataSource extends FakeAppDataSource {
+  final Completer<ApiHealthStatus> _stalled = Completer<ApiHealthStatus>();
+
+  @override
+  Future<ApiHealthStatus> checkSystemHealth() => _stalled.future;
 }

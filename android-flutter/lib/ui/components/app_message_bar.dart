@@ -8,6 +8,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/formatting/app_ui_copy.dart';
 import '../../core/formatting/ui_formats.dart';
 import '../../state/app_ui_state.dart';
 import '../../theme/app_colors.dart';
@@ -25,10 +26,19 @@ const Map<MessageVisualTone, IconData> _toneIcons =
 
 /// Short text badge per tone, so the state survives greyscale.
 const Map<MessageVisualTone, String> _toneLabels = <MessageVisualTone, String>{
-  MessageVisualTone.success: 'Success',
-  MessageVisualTone.error: 'Error',
-  MessageVisualTone.info: 'Info',
+  MessageVisualTone.success: AppUiCopy.toneSuccess,
+  MessageVisualTone.error: AppUiCopy.toneError,
+  MessageVisualTone.info: AppUiCopy.toneInfo,
 };
+
+/// Minimum hit target of the dismiss button, in logical pixels.
+///
+/// The glyph stays compact so the bar does not look heavier; only the invisible
+/// target around it grows to the platform minimum.
+const double appMessageBarDismissTargetExtent = 44;
+
+/// Size of the dismiss glyph inside its target.
+const double _dismissIconSize = 18;
 
 /// How long the bar stays on screen when no theme token and no override is
 /// available. Mirrors [AppMotion.standard]`.messageAutoDismiss`, which is the
@@ -56,7 +66,10 @@ const EdgeInsets _barPadding = EdgeInsets.fromLTRB(12, 10, 8, 10);
 ///  * it is announced through `Semantics(liveRegion: true, ...)`, gated by
 ///    [topMessageUsesLiveRegion];
 ///  * it never relies on colour alone - every tone has its own glyph and its own
-///    tone word next to the message;
+///    tone word next to the message, and the tone words plus the close tooltip
+///    all come from [AppUiCopy] rather than from literals in this file;
+///  * the close button is a [appMessageBarDismissTargetExtent] square target
+///    around a compact glyph;
 ///  * [onDismissed] fires exactly once, whether the timeout or a tap ended it.
 class AppMessageBar extends StatefulWidget {
   /// Creates a message bar.
@@ -192,13 +205,9 @@ class _AppMessageBarState extends State<AppMessageBar> {
                     ],
                   ),
                 ),
-                IconButton(
+                _DismissButton(
                   onPressed: _dismiss,
-                  icon: const Icon(Icons.close),
-                  iconSize: 18,
                   color: colors.textSecondary,
-                  tooltip: 'Dismiss message',
-                  visualDensity: VisualDensity.compact,
                 ),
               ],
             ),
@@ -259,6 +268,47 @@ class _AppMessageBarState extends State<AppMessageBar> {
     MessageVisualTone.error => colors.accentDanger,
     MessageVisualTone.info => colors.accentPrimary,
   };
+}
+
+/// The bar's close affordance.
+///
+/// A compact 18 px glyph inside a [appMessageBarDismissTargetExtent] square
+/// target, so the control clears the platform minimum while the bar keeps its
+/// weight. It dismisses through the same idempotent callback as the rest of the
+/// bar, so a message can only ever be dismissed once.
+class _DismissButton extends StatelessWidget {
+  const _DismissButton({required this.onPressed, required this.color});
+
+  final VoidCallback onPressed;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    button: true,
+    label: AppUiCopy.dismissMessage,
+    onTap: onPressed,
+    excludeSemantics: true,
+    child: SizedBox(
+      width: appMessageBarDismissTargetExtent,
+      height: appMessageBarDismissTargetExtent,
+      child: Tooltip(
+        message: AppUiCopy.dismissMessage,
+        child: InkWell(
+          onTap: onPressed,
+          canRequestFocus: false,
+          customBorder: const StadiumBorder(),
+          child: Center(
+            child: Icon(
+              Icons.close,
+              size: _dismissIconSize,
+              color: color,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// The circular tinted glyph that distinguishes a tone without colour.

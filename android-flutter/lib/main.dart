@@ -127,8 +127,9 @@ class ShortLinkApp extends StatelessWidget {
           GlobalCupertinoLocalizations.delegate,
         ],
         // The scope sits above the Navigator so both the modal dialog and the
-        // account screen can resolve the coordinator; the host layers the
-        // self-update UI over every route, like the Kotlin activity box.
+        // account screen can resolve the coordinator; the hosts layer the
+        // global message bar and the self-update UI over every route, like the
+        // Kotlin activity boxes.
         builder: (BuildContext context, Widget? child) => AnnotatedRegion<SystemUiOverlayStyle>(
           // The Kotlin activity pins a dark edge-to-edge scrim; the redesign
           // follows the active palette instead, keeping the icons readable.
@@ -141,15 +142,99 @@ class ShortLinkApp extends StatelessWidget {
                 ),
           child: UpdateDialogScope(
             coordinator: updateCoordinator,
-            child: _UpdateHost(
-              coordinator: updateCoordinator,
-              navigatorKey: navigatorKey,
-              child: child ?? const SizedBox.shrink(),
+            // Outermost first: the message bar sits above the self-update toast
+            // (a failure message must not be covered by a transient "up to
+            // date" toast), and both sit above every route because the
+            // Navigator is the innermost child.
+            child: _GlobalMessageHost(
+              child: _UpdateHost(
+                coordinator: updateCoordinator,
+                navigatorKey: navigatorKey,
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
         home: AppShell(controller: controller),
       ),
+    );
+  }
+}
+
+/// Hosts the global top message bar above every route.
+///
+/// The bar used to live inside `AppShell`, which was correct while every
+/// overlay was a `Stack` child of the shell. Now that the auth panel and the
+/// VIP paywall are modal routes on the root navigator, a bar hosted inside the
+/// shell route would be painted *under* their barrier: dimmed, untappable (the
+/// barrier swallowed the tap and closed the sheet instead) and excluded from
+/// the accessibility tree by the barrier's `BlockSemantics`. The Kotlin
+/// activity composes its message host above `MainShell` at z-index 2, so the
+/// Flutter client hosts it the same way — directly above the Navigator that
+/// `MaterialApp.builder` hands in.
+class _GlobalMessageHost extends StatelessWidget {
+  const _GlobalMessageHost({required this.child});
+
+  /// The Navigator (and everything pushed onto it).
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(child: child),
+        // The bar needs an [Overlay] to live in: sitting above the Navigator
+        // puts it outside the Navigator's own overlay, and the design-system
+        // bar owns a tooltip on its dismiss affordance, which floats in one.
+        // The layer is fully transparent to input: an [Overlay] only hit-tests
+        // its entries, so a tap that misses the bar still reaches the app.
+        Positioned.fill(
+          child: Overlay(
+            initialEntries: <OverlayEntry>[
+              OverlayEntry(
+                builder: (BuildContext context) => const _GlobalMessageBar(),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The bar itself, reading the controller so the overlay entry around it never
+/// has to be rebuilt from the outside (an [OverlayEntry]'s builder runs once).
+class _GlobalMessageBar extends StatelessWidget {
+  const _GlobalMessageBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStateController controller = context.watch<AppStateController>();
+    final AppUiState state = controller.state;
+    // No message, no bar: the host renders nothing rather than an empty bar.
+    if (state.errorMessage == null) {
+      return const SizedBox.shrink();
+    }
+    return Stack(
+      children: <Widget>[
+        Positioned(
+          left: 16,
+          right: 16,
+          top: 0,
+          child: SafeArea(
+            top: true,
+            bottom: false,
+            child: AppMessageBar(
+              key: ValueKey<int>(state.messageTrigger),
+              message: state.errorMessage!,
+              type: state.messageType ?? UiMessageType.error,
+              // The bar disappears visually on its own; clearing the state keeps a
+              // repeated identical message re-showable, like the Kotlin 4 s effect.
+              onDismissed: controller.clearError,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -9,6 +9,14 @@
 /// change, like Kotlin `remember(state.savedCredentials)`), no inline form
 /// errors (they surface through the global message bar), and
 /// `dismissAuthPrompt()` on every close path without extra clearing.
+///
+/// Phase 3: the sheet is a modal route (`AppSheet.show` from the shell) instead
+/// of a `Stack` child, so it owns the barrier, the drag handle and the system
+/// back gesture. It is therefore only the sheet *body*: the route's bottom
+/// sheet provides the surface, the shape and the drag handle, and `AppSheet`
+/// provides the page padding, the keyboard inset and the route semantics. The
+/// [PopScope] keeps the busy gate the old close button had — while a login or
+/// register call is in flight the panel cannot be dismissed.
 library;
 
 import 'dart:convert';
@@ -121,128 +129,122 @@ class _AuthSheetState extends State<AuthSheet> {
             _username.text.trim().isNotEmpty &&
             _password.text.trim().isNotEmpty;
 
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Material(
-        color: colors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(_sheetRadius)),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(sheetCopy.title, style: roles.displayLarge),
-                        const SizedBox(height: 4),
-                        Text(
-                          sheetCopy.subtitle,
-                          style: roles.body.copyWith(
-                            color: colors.textSecondary,
-                          ),
+    return PopScope(
+      // Busy gate: the route's own dismiss gestures (scrim tap, system back)
+      // must respect the same lock as the close button below.
+      canPop: !busy,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(sheetCopy.title, style: roles.displayLarge),
+                      const SizedBox(height: 4),
+                      Text(
+                        sheetCopy.subtitle,
+                        style: roles.body.copyWith(
+                          color: colors.textSecondary,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  TextButton(
-                    onPressed: busy ? null : controller.dismissAuthPrompt,
-                    child: Text(
-                      copy.authClose,
-                      style: roles.body.copyWith(color: colors.textSecondary),
-                    ),
+                ),
+                TextButton(
+                  onPressed: busy ? null : controller.dismissAuthPrompt,
+                  child: Text(
+                    copy.authClose,
+                    style: roles.body.copyWith(color: colors.textSecondary),
                   ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            AppTextField(
+              controller: _username,
+              label: copy.authUsernameLabel,
+              enabled: fieldsEnabled,
+              textInputAction: TextInputAction.next,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 14),
+            AppTextField(
+              controller: _password,
+              label: copy.authPasswordLabel,
+              obscureText: true,
+              enabled: fieldsEnabled,
+              textInputAction: registerMode
+                  ? TextInputAction.next
+                  : TextInputAction.done,
+              onChanged: (_) => setState(() {}),
+              onSubmitted: registerMode
+                  ? null
+                  : (_) => _submitLogin(controller, canSubmit),
+            ),
+            if (!registerMode) ...<Widget>[
+              _RememberPasswordRow(
+                checked: _rememberPassword,
+                enabled: fieldsEnabled,
+                label: rememberPasswordLabel(state.language),
+                onChanged: (bool value) =>
+                    setState(() => _rememberPassword = value),
               ),
+              AppButton(
+                label: busy ? copy.authLoginLoading : sheetCopy.primaryAction,
+                isExpanded: true,
+                isLoading: busy,
+                loadingLabel: copy.authLoginLoading,
+                onPressed:
+                    canSubmit ? () => _submitLogin(controller, canSubmit) : null,
+              ),
+              _ModeSwitchButton(
+                label: sheetCopy.secondaryAction,
+                enabled: fieldsEnabled,
+                onTap: controller.showRegisterAuthMode,
+              ),
+            ] else ...<Widget>[
               const SizedBox(height: 14),
               AppTextField(
-                controller: _username,
-                label: copy.authUsernameLabel,
+                controller: _confirmPassword,
+                label: copy.authConfirmPasswordLabel,
+                obscureText: true,
                 enabled: fieldsEnabled,
                 textInputAction: TextInputAction.next,
                 onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 14),
-              AppTextField(
-                controller: _password,
-                label: copy.authPasswordLabel,
-                obscureText: true,
+              _CaptchaRow(
+                imageBase64: state.captchaImageBase64,
+                answerController: _captchaAnswer,
+                answerLabel: authCaptchaAnswerLabel(state.language),
+                refreshLabel: copy.authCaptchaRefresh,
+                loadingLabel: copy.authCaptchaLoading,
                 enabled: fieldsEnabled,
-                textInputAction: registerMode
-                    ? TextInputAction.next
-                    : TextInputAction.done,
-                onChanged: (_) => setState(() {}),
-                onSubmitted: registerMode
-                    ? null
-                    : (_) => _submitLogin(controller, canSubmit),
+                onRefresh: controller.fetchCaptcha,
+                onAnswerChanged: (_) => setState(() {}),
               ),
-              if (!registerMode) ...<Widget>[
-                _RememberPasswordRow(
-                  checked: _rememberPassword,
-                  enabled: fieldsEnabled,
-                  label: rememberPasswordLabel(state.language),
-                  onChanged: (bool value) =>
-                      setState(() => _rememberPassword = value),
-                ),
-                AppButton(
-                  label: busy ? copy.authLoginLoading : sheetCopy.primaryAction,
-                  isExpanded: true,
-                  isLoading: busy,
-                  loadingLabel: copy.authLoginLoading,
-                  onPressed:
-                      canSubmit ? () => _submitLogin(controller, canSubmit) : null,
-                ),
-                _ModeSwitchButton(
-                  label: sheetCopy.secondaryAction,
-                  enabled: fieldsEnabled,
-                  onTap: controller.showRegisterAuthMode,
-                ),
-              ] else ...<Widget>[
-                const SizedBox(height: 14),
-                AppTextField(
-                  controller: _confirmPassword,
-                  label: copy.authConfirmPasswordLabel,
-                  obscureText: true,
-                  enabled: fieldsEnabled,
-                  textInputAction: TextInputAction.next,
-                  onChanged: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 14),
-                _CaptchaRow(
-                  imageBase64: state.captchaImageBase64,
-                  answerController: _captchaAnswer,
-                  answerLabel: authCaptchaAnswerLabel(state.language),
-                  refreshLabel: copy.authCaptchaRefresh,
-                  loadingLabel: copy.authCaptchaLoading,
-                  enabled: fieldsEnabled,
-                  onRefresh: controller.fetchCaptcha,
-                  onAnswerChanged: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 14),
-                AppButton(
-                  label: sheetCopy.primaryAction,
-                  isExpanded: true,
-                  isLoading: busy,
-                  onPressed: canSubmit
-                      ? () => _submitRegister(controller, canSubmit)
-                      : null,
-                ),
-                _ModeSwitchButton(
-                  label: sheetCopy.secondaryAction,
-                  enabled: fieldsEnabled,
-                  onTap: controller.showLoginAuthMode,
-                ),
-              ],
+              const SizedBox(height: 14),
+              AppButton(
+                label: sheetCopy.primaryAction,
+                isExpanded: true,
+                isLoading: busy,
+                onPressed: canSubmit
+                    ? () => _submitRegister(controller, canSubmit)
+                    : null,
+              ),
+              _ModeSwitchButton(
+                label: sheetCopy.secondaryAction,
+                enabled: fieldsEnabled,
+                onTap: controller.showLoginAuthMode,
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -271,9 +273,6 @@ class _AuthSheetState extends State<AuthSheet> {
     );
   }
 }
-
-/// Corner radius of the sheet's top edge, in logical pixels.
-const double _sheetRadius = 20;
 
 /// The remember-password checkbox row, login mode only.
 class _RememberPasswordRow extends StatelessWidget {

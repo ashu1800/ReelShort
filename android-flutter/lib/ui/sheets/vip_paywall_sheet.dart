@@ -10,6 +10,13 @@
 /// copy to clipboard, and the exact `canCreateOrder` gate. Order confirmation
 /// closes the sheet and resumes the pending episode — that transition lives in
 /// the state layer; the sheet only reflects it.
+///
+/// Phase 3: the paywall is a modal route (`AppSheet.show` from the shell)
+/// instead of a `Stack` child, so the route owns the barrier, the drag handle
+/// and the system back gesture while this widget is only the sheet *body*: the
+/// route's bottom sheet provides the surface, the shape and the drag handle,
+/// and `AppSheet` provides the page padding, the keyboard inset and the route
+/// semantics. The [PopScope] keeps the busy gate the close button also has.
 library;
 
 import 'dart:async';
@@ -30,9 +37,6 @@ import '../components/app_button.dart';
 
 /// How often the sheet re-checks the latest VIP order, matching Kotlin.
 const Duration _pollInterval = Duration(seconds: 10);
-
-/// Corner radius of the sheet's top edge, in logical pixels.
-const double _sheetRadius = 20;
 
 /// Square side of the payment QR code, in logical pixels.
 const double _qrSide = 184;
@@ -135,71 +139,63 @@ class _VipPaywallSheetState extends State<VipPaywallSheet> {
     final String paymentAddress =
         pendingOrder?.receivingWalletAddress ?? state.vipCollectionAddress;
 
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Material(
-        color: colors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(_sheetRadius),
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _Header(
-                state: state,
+    return PopScope(
+      // Busy gate, mirroring the auth sheet: while an account operation or a
+      // payment refresh runs, the route's dismiss gestures are locked.
+      canPop: !paywallLoading,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _Header(
+              state: state,
+              copy: copy,
+              colors: colors,
+              roles: roles,
+              onDismiss: controller.dismissVipPaywall,
+            ),
+            const SizedBox(height: 14),
+            if (state.vipActive)
+              _ActiveSection(
+                vipUntil: state.vipUntil,
                 copy: copy,
                 colors: colors,
                 roles: roles,
-                onDismiss: controller.dismissVipPaywall,
+              )
+            else if (confirmedOrder != null)
+              _ConfirmedSection(
+                order: confirmedOrder,
+                busy: paywallLoading,
+                copy: copy,
+                colors: colors,
+                roles: roles,
+                onRefresh: controller.refreshLatestVipOrder,
+              )
+            else if (activePendingOrder != null)
+              _PendingSection(
+                order: activePendingOrder,
+                address: paymentAddress,
+                remainingSeconds: remainingSeconds,
+                busy: paywallLoading,
+                copy: copy,
+                colors: colors,
+                roles: roles,
+                onRefresh: controller.refreshLatestVipOrder,
+              )
+            else
+              _CreateSection(
+                latest: latest,
+                remainingSeconds: remainingSeconds,
+                canCreateOrder: canCreateOrder,
+                busy: paywallLoading,
+                priceUsdt: state.vipPriceUsdt,
+                copy: copy,
+                colors: colors,
+                roles: roles,
+                onCreate: controller.createVipOrder,
               ),
-              const SizedBox(height: 14),
-              if (state.vipActive)
-                _ActiveSection(
-                  vipUntil: state.vipUntil,
-                  copy: copy,
-                  colors: colors,
-                  roles: roles,
-                )
-              else if (confirmedOrder != null)
-                _ConfirmedSection(
-                  order: confirmedOrder,
-                  busy: paywallLoading,
-                  copy: copy,
-                  colors: colors,
-                  roles: roles,
-                  onRefresh: controller.refreshLatestVipOrder,
-                )
-              else if (activePendingOrder != null)
-                _PendingSection(
-                  order: activePendingOrder,
-                  address: paymentAddress,
-                  remainingSeconds: remainingSeconds,
-                  busy: paywallLoading,
-                  copy: copy,
-                  colors: colors,
-                  roles: roles,
-                  onRefresh: controller.refreshLatestVipOrder,
-                )
-              else
-                _CreateSection(
-                  latest: latest,
-                  remainingSeconds: remainingSeconds,
-                  canCreateOrder: canCreateOrder,
-                  busy: paywallLoading,
-                  priceUsdt: state.vipPriceUsdt,
-                  copy: copy,
-                  colors: colors,
-                  roles: roles,
-                  onCreate: controller.createVipOrder,
-                ),
-            ],
-          ),
+          ],
         ),
       ),
     );

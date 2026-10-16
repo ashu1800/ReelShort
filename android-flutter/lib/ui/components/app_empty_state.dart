@@ -60,12 +60,14 @@ class AppEmptyState extends StatelessWidget {
   /// Label of the action button. Required to use [onAction].
   final String? actionLabel;
 
-  /// Action callback. When non-null and [actionLabel] is set, a button is
-  /// rendered; when null, [pillLabel] (or [actionLabel]) renders as a
-  /// non-interactive status pill.
+  /// Action callback. A button is rendered only when this is non-null **and**
+  /// [actionLabel] carries non-whitespace text; a callback without a usable
+  /// label renders no control at all (see [appEmptyStateShowsAction]), and a
+  /// label without a callback renders as the non-interactive status pill.
   final VoidCallback? onAction;
 
-  /// Overrides the pill text when there is no action.
+  /// Overrides the pill text when no action is rendered. Falls back to
+  /// [actionLabel], so the words the user was offered still reach them.
   final String? pillLabel;
 
   @override
@@ -74,12 +76,18 @@ class AppEmptyState extends StatelessWidget {
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
     final TextTheme textTheme = Theme.of(context).textTheme;
     // A button only exists when there is both a callback and words for it; a
-    // label with no callback becomes the non-interactive pill instead.
-    final bool interactive = onAction != null && _nonEmpty(actionLabel) != null;
+    // label with no callback becomes the non-interactive pill instead, and a
+    // callback with no usable label renders no control at all.
+    final bool interactive = appEmptyStateShowsAction(
+      onAction: onAction,
+      actionLabel: actionLabel,
+    );
     final String? buttonText = interactive ? _nonEmpty(actionLabel) : null;
-    final String? resolvedPill = interactive
-        ? null
-        : (_nonEmpty(pillLabel) ?? _nonEmpty(actionLabel));
+    final String? resolvedPill = appEmptyStatePillLabel(
+      onAction: onAction,
+      actionLabel: actionLabel,
+      pillLabel: pillLabel,
+    );
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -161,6 +169,30 @@ String? _nonEmpty(String? value) {
   final String? trimmed = value?.trim();
   return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
 }
+
+/// Whether [AppEmptyState] renders a real action button.
+///
+/// The button needs **both** a callback and words for it. A callback with a
+/// blank or missing label renders no button at all - not a disabled one, which
+/// would still be announced as a control the user cannot use.
+bool appEmptyStateShowsAction({
+  required VoidCallback? onAction,
+  String? actionLabel,
+}) => onAction != null && _nonEmpty(actionLabel) != null;
+
+/// Text of [AppEmptyState]'s non-interactive status pill, or null when the
+/// state has nothing to say.
+///
+/// Priority: an interactive action wins and the pill is not drawn; otherwise
+/// [pillLabel]; otherwise [actionLabel], so a label that lost its callback
+/// still reaches the user as a status word instead of a dead control.
+String? appEmptyStatePillLabel({
+  required VoidCallback? onAction,
+  String? actionLabel,
+  String? pillLabel,
+}) => appEmptyStateShowsAction(onAction: onAction, actionLabel: actionLabel)
+    ? null
+    : (_nonEmpty(pillLabel) ?? _nonEmpty(actionLabel));
 
 /// A non-interactive status pill.
 ///

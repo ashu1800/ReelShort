@@ -7,6 +7,10 @@
 /// action dispatches on that controller; the countdown keeps only the local
 /// ticking state that a timer must own. No payment polling runs on this
 /// screen - the user refreshes manually with the refresh action.
+///
+/// Phase 3: the page chrome (title, back affordance, page padding, safe area,
+/// scrolling, bottom inset) comes from the shell's `AppSubPage`, so this screen
+/// only renders its order panel.
 library;
 
 import 'dart:async';
@@ -25,9 +29,6 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_shapes.dart';
 import '../../theme/app_typography.dart';
 import '../../ui/components/app_button.dart';
-
-/// Horizontal padding and bottom scroll inset of the VIP page.
-const EdgeInsets _pagePadding = EdgeInsets.fromLTRB(18, 4, 18, 28);
 
 /// Gap between rows inside the panel.
 const double _panelGap = 10;
@@ -59,49 +60,7 @@ class VipRechargeScreen extends StatelessWidget {
     final AppUiState state = controller.state;
     final AppStrings copy = strings(state.language);
 
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        children: <Widget>[
-          _VipHeader(title: copy.vipPayTitle, onBack: controller.backToFunds),
-          Expanded(
-            child: ListView(
-              padding: _pagePadding,
-              children: <Widget>[_VipOrderPanel(copy: copy)],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The page header: back action and the screen title.
-class _VipHeader extends StatelessWidget {
-  const _VipHeader({required this.title, required this.onBack});
-
-  final String title;
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 18, 0),
-      child: Row(
-        children: <Widget>[
-          IconButton(
-            onPressed: onBack,
-            icon: const Icon(Icons.arrow_back),
-            color: colors.textPrimary,
-            tooltip: title,
-          ),
-          Expanded(
-            child: Text(title, style: Theme.of(context).textTheme.titleLarge),
-          ),
-        ],
-      ),
-    );
+    return _VipOrderPanel(copy: copy);
   }
 }
 

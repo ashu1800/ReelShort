@@ -241,4 +241,16 @@ abstract final class AppUiCopy {
 
   /// Detail: primary action when the series is finished.
   static const String detailWatchAgain = 'Watch again';
+
+  /// Password field: semantic label and tooltip of the toggle that reveals a
+  /// masked value.
+  static const String showPassword = 'Show password';
+
+  /// Password field: semantic label and tooltip of the toggle that masks the
+  /// value again.
+  static const String hidePassword = 'Hide password';
+
+  /// Episode spine: state word for a partially watched episode, appended after
+  /// the count in the generated description (for example `2 in progress`).
+  static const String episodeInProgress = 'in progress';
 }
