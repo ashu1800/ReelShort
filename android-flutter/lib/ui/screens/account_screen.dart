@@ -6,7 +6,12 @@
 /// success through `walletMutationVersion` (bind, replace **and** unbind), the password sheet that
 /// never auto-closes, the read-only bank-card explanation, the selectable support email, the
 /// version row with the manual update check, a sign-out without a confirmation step, and the
-/// guest panel with direct sign-in / register entries.
+/// guest entry that signs in or registers directly.
+///
+/// Presentation follows `docs/ui-redesign-notes.md` §7.1: one `screenTitle` page title, an
+/// identity hero that carries the membership treatment, `AppSectionHeader` + `AppSectionCard`
+/// sections instead of the hand-written cards of the first build, and the page inset from
+/// [AppSpacing.pagePadding]. Every colour, radius, gap and type role is a token.
 library;
 
 import 'package:flutter/material.dart';
@@ -22,11 +27,16 @@ import '../../data/models/app_models.dart';
 import '../../state/app_state_controller.dart';
 import '../../state/app_ui_state.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_icons.dart';
 import '../../theme/app_shapes.dart';
+import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../../update/update_coordinator.dart';
 import '../../update/update_state.dart';
 import '../components/app_button.dart';
+import '../components/app_list_row.dart';
+import '../components/app_loading.dart';
+import '../components/app_section.dart';
 import '../components/app_text_field.dart';
 import '../components/poster_card.dart';
 import '../update/update_dialog.dart';
@@ -42,6 +52,32 @@ final Future<String> _appVersionLabel = () async {
   }
 }();
 
+/// Key of the identity hero, so a test can assert the membership treatment
+/// (premium fill plus accent border for VIP, plain surface otherwise) without
+/// reaching into a private widget type.
+const Key accountIdentityHeroKey = ValueKey<String>('account-identity-hero');
+
+/// Diameter of the hero monogram.
+const double _heroAvatarSize = 56;
+
+/// Width of one poster in the continue-watching track, matching the Home grid's
+/// minimum column width.
+const double _posterLaneWidth = 136;
+
+/// Height of the continue-watching track: the poster's 2:3 art plus its overlay.
+const double _posterTrackHeight = 204;
+
+/// Shown in the version row until the platform reports the build.
+const String _versionPlaceholder = '--';
+
+/// Size of the neutral plate that stands in for the membership chip until the
+/// account snapshot arrives, at 1x text scale. The plate is scaled by the
+/// ambient text scale and the real chip's label is capped at one line, so the
+/// hero does not resize when the state lands (the delta stays under 20 px even
+/// at 3.2x, where an uncapped label used to add 166 px). Exposed so a test can
+/// measure the resize.
+const Size accountMembershipChipPlaceholderSize = Size(112, 22);
+
 /// The Me screen.
 class AccountScreen extends StatelessWidget {
   /// Creates the account screen. The shell instantiates it without arguments.
@@ -52,47 +88,46 @@ class AccountScreen extends StatelessWidget {
     final AppUiState state = context.watch<AppStateController>().state;
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    final AppSpacing spacing = appSpacingOf(context);
     final AppStrings copy = strings(state.language);
     final bool guest = state.session == null;
+    final double sectionGap = spacing.sectionGap;
 
     return Scaffold(
       backgroundColor: colors.canvas,
       body: SafeArea(
         bottom: false,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+          // The single page inset of the system (18/12/18/28).
+          padding: spacing.pagePadding,
           children: <Widget>[
-            Text(copy.accountTab, style: roles.displayLarge),
-            const SizedBox(height: 16),
-            _IdentityCard(state: state),
-            const SizedBox(height: 16),
-            _QuickEntries(state: state),
-            if (guest) ...<Widget>[
-              const SizedBox(height: 16),
-              _GuestEntries(state: state),
+            // One page-title role for the whole app, so Me matches its
+            // sub-pages instead of shouting in `displayLarge`.
+            Text(copy.accountTab, style: roles.screenTitle),
+            SizedBox(height: sectionGap),
+            _IdentityHero(state: state),
+            // The quick entries and the wallet send a guest to the auth prompt
+            // anyway, so a guest only sees the hero's two calls to action.
+            if (!guest) ...<Widget>[
+              SizedBox(height: sectionGap),
+              _ShortcutsSection(state: state),
             ],
             if (!guest && state.watchHistory.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 16),
-              _ContinueWatching(state: state),
+              SizedBox(height: sectionGap),
+              _ContinueWatchingSection(state: state),
             ],
+            SizedBox(height: sectionGap),
+            _SettingsSection(state: state),
             if (!guest) ...<Widget>[
-              const SizedBox(height: 16),
-              _WalletRow(state: state),
-            ],
-            const SizedBox(height: 16),
-            _StaticRows(state: state),
-            const SizedBox(height: 16),
-            _VersionRow(state: state),
-            const SizedBox(height: 24),
-            // Sign-out has no confirmation step, and guests have no entry here
-            // (their sign-in / register rows live in [_GuestEntries]).
-            if (!guest)
+              SizedBox(height: spacing.space6),
+              // Parity: signing out still has no confirmation step.
               AppButton(
                 label: copy.accountSignOutTitle,
-                variant: AppButtonVariant.tertiary,
+                variant: AppButtonVariant.destructive,
                 isExpanded: true,
                 onPressed: () => context.read<AppStateController>().logout(),
               ),
+            ],
           ],
         ),
       ),
@@ -100,8 +135,14 @@ class AccountScreen extends StatelessWidget {
   }
 }
 
-class _IdentityCard extends StatelessWidget {
-  const _IdentityCard({required this.state});
+/// The identity hero: who the user is and what their membership is worth.
+///
+/// VIP wears the premium tint with an accent border, so membership is visible
+/// before a word is read; everyone else gets the plain surface and the hairline
+/// every other card uses. A guest gets the two calls to action in the same
+/// block, which is their only way into the app from this page.
+class _IdentityHero extends StatelessWidget {
+  const _IdentityHero({required this.state});
 
   final AppUiState state;
 
@@ -110,246 +151,111 @@ class _IdentityCard extends StatelessWidget {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
-    final AppStrings copy = strings(state.language);
-    final AuthSession? session = state.session;
-    final String name = session?.username.trim() ?? '';
-    final String initial = name.isEmpty
-        ? '?'
-        : name.characters.first.toUpperCase();
-    final Color avatarFill = state.vipActive
-        ? colors.accentPrimary
-        : colors.surfaceAlt;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(shapes.radiusContainer),
-        border: Border.all(
-          color: colors.hairline,
-          width: shapes.strokeHairline,
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: avatarFill,
-            foregroundColor: colors.onAccent,
-            child: Text(initial, style: roles.displayLarge),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  name.isEmpty ? copy.accountGuestUser : name,
-                  style: roles.display,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  state.vipActive
-                      ? <String>[
-                          copy.accountVipStatusActive,
-                          if (dateOnlyLabel(state.vipUntil).isNotEmpty)
-                            dateOnlyLabel(state.vipUntil),
-                        ].join(' · ')
-                      : copy.accountVipStatusInactive,
-                  style: roles.body.copyWith(color: colors.textSecondary),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _QuickEntries extends StatelessWidget {
-  const _QuickEntries({required this.state});
-
-  final AppUiState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
-    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    final AppSpacing spacing = appSpacingOf(context);
     final AppStrings copy = strings(state.language);
     final AppStateController controller = context.read<AppStateController>();
     final bool guest = state.session == null;
-
-    // Parity gap G11: the declared quick-entry list carries four labels but only three render,
-    // because the funds entry became a bottom tab when the money screens moved down a level.
-    final List<(_QuickEntrySpec, VoidCallback)>
-    entries = <(_QuickEntrySpec, VoidCallback)>[
-      (
-        _QuickEntrySpec(
-          Icons.bookmark_border_outlined,
-          copy.accountFavoritesTitle,
-          copy.accountFavoritesSubtitle,
-        ),
-        // Guests stop at the auth prompt instead of the (always empty) tab.
-        guest ? controller.showAuthPrompt : controller.openFavorites,
-      ),
-      (
-        _QuickEntrySpec(
-          Icons.history_outlined,
-          copy.accountWatchHistoryTitle,
-          copy.accountRecentWatchSubtitle,
-        ),
-        guest
-            ? controller.showAuthPrompt
-            : () => _showWatchHistorySheet(context),
-      ),
-      // The password sheet is a logged-in business form; guests never see it.
-      if (!guest)
-        (
-          _QuickEntrySpec(
-            Icons.vpn_key_outlined,
-            copy.accountChangePasswordTitle,
-            copy.accountSignOutSubtitle,
-          ),
-          () => _showPasswordSheet(context),
-        ),
-    ];
-
-    return Column(
-      children: <Widget>[
-        for (final (_QuickEntrySpec spec, VoidCallback onTap) in entries)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(shapes.radiusControl),
-              onTap: onTap,
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: colors.surface,
-                  borderRadius: BorderRadius.circular(shapes.radiusControl),
-                  border: Border.all(
-                    color: colors.hairline,
-                    width: shapes.strokeHairline,
-                  ),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Icon(spec.icon, color: colors.accentPrimary, size: 22),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(spec.title, style: roles.body),
-                          const SizedBox(height: 2),
-                          Text(
-                            spec.subtitle,
-                            style: roles.body.copyWith(
-                              color: colors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.chevron_right, color: colors.textSecondary),
-                  ],
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _QuickEntrySpec {
-  const _QuickEntrySpec(this.icon, this.title, this.subtitle);
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-}
-
-/// The guest panel: direct sign-in **and** register entries, matching the
-/// Kotlin `GuestActionPanel` (`guestAccountEntryLabels` × modes).
-class _GuestEntries extends StatelessWidget {
-  const _GuestEntries({required this.state});
-
-  final AppUiState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
-    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
-    final AppStrings copy = strings(state.language);
-    final AppStateController controller = context.read<AppStateController>();
+    final bool vip = state.vipActive;
+    final String name = state.session?.username.trim() ?? '';
+    final String expiry = dateOnlyLabel(state.vipUntil);
+    // A guest is announced as `accountGuestUser`, so the monogram uses its
+    // initial instead of a bare question mark.
+    final String displayName = guest ? copy.accountGuestUser : name;
+    final String initial = displayName.isEmpty
+        ? '?'
+        : displayName.characters.first.toUpperCase();
+    // The session lands seconds before the account snapshot does. Until then the
+    // membership state is unknown: claiming "VIP not active" for that window was
+    // a wrong first impression on device, so the chip becomes a neutral plate.
+    final bool vipKnown =
+        vip || expiry.isNotEmpty || state.pointAccount != null;
+    // The placeholder follows the text scale, because the real chip's height is
+    // one line of its label plus padding.
+    final double textScale = MediaQuery.textScalerOf(context).scale(1);
 
     void openRegister() {
       controller.showRegisterAuthMode();
       controller.showAuthPrompt();
     }
 
-    final List<(IconData, String, String, VoidCallback)> rows =
-        <(IconData, String, String, VoidCallback)>[
-          (
-            Icons.person_outline,
-            copy.accountGuestSignIn,
-            copy.accountGuestSignInSubtitle,
-            controller.showAuthPrompt,
-          ),
-          (
-            Icons.play_arrow_outlined,
-            copy.accountGuestRegister,
-            copy.accountGuestRegisterSubtitle,
-            openRegister,
-          ),
-        ];
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      key: accountIdentityHeroKey,
+      padding: EdgeInsets.all(spacing.panelPadding),
       decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(shapes.radiusControl),
+        color: vip ? colors.premiumSurface : colors.surface,
+        borderRadius: shapes.containerRadius,
         border: Border.all(
-          color: colors.hairline,
-          width: shapes.strokeHairline,
+          color: vip ? colors.accentPrimary : colors.hairline,
+          width: vip ? shapes.strokeEmphasis : shapes.strokeHairline,
         ),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          for (int i = 0; i < rows.length; i++) ...<Widget>[
-            if (i > 0) Divider(height: 1, color: colors.hairline),
-            InkWell(
-              borderRadius: BorderRadius.circular(shapes.radiusControl),
-              onTap: rows[i].$4,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Row(
+          Row(
+            children: <Widget>[
+              // The initial is derived from the name next to it, so it is a
+              // decoration: the hero node announces the name once.
+              ExcludeSemantics(child: _HeroMonogram(initial: initial, vip: vip)),
+              SizedBox(width: spacing.space4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Icon(rows[i].$1, color: colors.accentPrimary, size: 22),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(rows[i].$2, style: roles.body),
-                          const SizedBox(height: 2),
-                          Text(
-                            rows[i].$3,
-                            style: roles.body.copyWith(
-                              color: colors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
+                    Text(
+                      guest ? copy.accountGuestUser : name,
+                      style: roles.displayLarge,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    Icon(Icons.chevron_right, color: colors.textSecondary),
+                    SizedBox(height: spacing.space2),
+                    if (guest)
+                      Text(
+                        copy.accountGuestStatus,
+                        style: roles.body.copyWith(color: colors.textSecondary),
+                      )
+                    else if (vipKnown)
+                      _MembershipChip(
+                        active: vip,
+                        label: vip
+                            ? copy.accountVipStatusActive
+                            : copy.accountVipStatusInactive,
+                      )
+                    else
+                      AppSkeleton(
+                        width:
+                            accountMembershipChipPlaceholderSize.width *
+                            textScale,
+                        height:
+                            accountMembershipChipPlaceholderSize.height *
+                            textScale,
+                        radius: shapes.radiusInline,
+                      ),
+                    if (!guest && vip && expiry.isNotEmpty) ...<Widget>[
+                      SizedBox(height: spacing.space2),
+                      Text(
+                        '${copy.accountVipExpiryPrefix}$expiry',
+                        style: roles.caption,
+                      ),
+                    ],
                   ],
                 ),
               ),
+            ],
+          ),
+          if (guest) ...<Widget>[
+            SizedBox(height: spacing.space5),
+            AppButton(
+              label: copy.accountGuestSignIn,
+              isExpanded: true,
+              onPressed: controller.showAuthPrompt,
+            ),
+            SizedBox(height: spacing.space3),
+            AppButton(
+              label: copy.accountGuestRegister,
+              variant: AppButtonVariant.secondary,
+              isExpanded: true,
+              onPressed: openRegister,
             ),
           ],
         ],
@@ -358,58 +264,193 @@ class _GuestEntries extends StatelessWidget {
   }
 }
 
-class _ContinueWatching extends StatelessWidget {
-  const _ContinueWatching({required this.state});
+/// The hero monogram: one initial, scaled down rather than clipped when the
+/// user's text scale outgrows the plate.
+class _HeroMonogram extends StatelessWidget {
+  const _HeroMonogram({required this.initial, required this.vip});
 
-  final AppUiState state;
+  final String initial;
+  final bool vip;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+
+    return Container(
+      width: _heroAvatarSize,
+      height: _heroAvatarSize,
+      decoration: BoxDecoration(
+        color: vip ? colors.accentPrimary : colors.surfaceAlt,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: EdgeInsets.all(spacing.space2),
+            child: Text(
+              initial,
+              style: roles.displayLarge.copyWith(
+                color: vip ? colors.onAccent : colors.textPrimary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The membership chip: a tinted pill with a glyph and a word, so the state is
+/// never carried by the tint alone.
+class _MembershipChip extends StatelessWidget {
+  const _MembershipChip({required this.active, required this.label});
+
+  final bool active;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
-    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    final AppIconSize icons = appIconSizeOf(context);
+    final AppSpacing spacing = appSpacingOf(context);
+    final Color accent = active ? colors.accentSuccess : colors.accentWarning;
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: spacing.space3,
+        vertical: spacing.space1,
+      ),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.14),
+        borderRadius: shapes.inlineRadius,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            active ? Icons.verified_outlined : Icons.lock_outline,
+            size: icons.sm,
+            color: accent,
+          ),
+          SizedBox(width: spacing.space1),
+          Flexible(
+            child: Text(
+              label,
+              // One line at every text scale: the chip is a status badge, and
+              // an uncapped label used to add 166 px to the hero at 3.2x. The
+              // full wording stays in the semantics label.
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: accent,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The quick entries: Favorites, the full watch history and the password sheet.
+///
+/// Parity gap G11 is preserved: the declared entry list carries four labels but
+/// only these three render, because the funds entry became a bottom tab when the
+/// money screens moved down a level.
+class _ShortcutsSection extends StatelessWidget {
+  const _ShortcutsSection({required this.state});
+
+  final AppUiState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppStrings copy = strings(state.language);
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppStateController controller = context.read<AppStateController>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const AppSectionHeader(title: AppUiCopy.accountShortcutsSection),
+        SizedBox(height: spacing.space2),
+        AppSectionCard(
+          children: <Widget>[
+            AppListRow(
+              title: copy.accountFavoritesTitle,
+              subtitle: copy.accountFavoritesSubtitle,
+              leadingIcon: Icons.bookmark_border_outlined,
+              showChevron: true,
+              divider: false,
+              onTap: controller.openFavorites,
+            ),
+            AppListRow(
+              title: copy.accountWatchHistoryTitle,
+              subtitle: copy.accountRecentWatchSubtitle,
+              leadingIcon: Icons.history_outlined,
+              showChevron: true,
+              divider: false,
+              onTap: () => _showWatchHistorySheet(context),
+            ),
+            AppListRow(
+              title: copy.accountChangePasswordTitle,
+              subtitle: copy.accountSignOutSubtitle,
+              leadingIcon: Icons.vpn_key_outlined,
+              showChevron: true,
+              divider: false,
+              onTap: () => _showPasswordSheet(context),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The continue-watching section: the section header carries the `size/limit`
+/// pill, and the track keeps the poster cards that resume a record.
+class _ContinueWatchingSection extends StatelessWidget {
+  const _ContinueWatchingSection({required this.state});
+
+  final AppUiState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppSpacing spacing = appSpacingOf(context);
     final AppStrings copy = strings(state.language);
     final AppStateController controller = context.read<AppStateController>();
+    final int limit = accountContinueWatchingLimit();
     // The preview shows at most `accountContinueWatchingLimit()` records and the
     // pill counts that trimmed list: `size/limit`.
     final List<WatchRecord> records = state.watchHistory
-        .take(accountContinueWatchingLimit())
+        .take(limit)
         .toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(copy.accountRecentWatchTitle, style: roles.display),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: colors.surfaceAlt,
-                borderRadius: BorderRadius.circular(shapes.radiusInline),
-              ),
-              child: Text(
-                '${records.length}/${accountContinueWatchingLimit()}',
-                style: roles.body.copyWith(color: colors.textSecondary),
-              ),
-            ),
-          ],
+        AppSectionHeader(
+          title: copy.accountRecentWatchTitle,
+          trailing: _CountPill(text: '${records.length}/$limit'),
         ),
-        const SizedBox(height: 10),
+        SizedBox(height: spacing.space3),
         SizedBox(
-          height: 204,
+          height: _posterTrackHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: records.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            separatorBuilder: (_, _) => SizedBox(width: spacing.gutter),
             itemBuilder: (BuildContext context, int index) {
               final WatchRecord record = records[index];
               final BookSummary? book =
                   state.continueWatchingBooks[record.bookId];
               return SizedBox(
-                width: 136,
+                width: _posterLaneWidth,
                 child: PosterCard(
                   title:
                       (book?.title ?? '').isNotEmpty
@@ -432,154 +473,198 @@ class _ContinueWatching extends StatelessWidget {
   }
 }
 
-class _WalletRow extends StatelessWidget {
-  const _WalletRow({required this.state});
+/// The `size/limit` pill of the continue-watching header: a count, never a
+/// control, so it carries no action.
+class _CountPill extends StatelessWidget {
+  const _CountPill({required this.text});
 
-  final AppUiState state;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
-    final AppStrings copy = strings(state.language);
-    final WalletInfo? wallet = state.wallet;
-    final String? address = wallet?.walletAddress;
-    final bool bound = address != null && address.isNotEmpty;
-    final String subtitle = bound ? address : copy.accountWalletNetworkHint;
+    final AppSpacing spacing = appSpacingOf(context);
 
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(shapes.radiusControl),
-        border: Border.all(
-          color: colors.hairline,
-          width: shapes.strokeHairline,
-        ),
+      padding: EdgeInsets.symmetric(
+        horizontal: spacing.space2,
+        vertical: spacing.space1,
       ),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            Icons.account_balance_wallet_outlined,
-            color: colors.accentPrimary,
-            size: 22,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(copy.accountWalletTitle, style: roles.body),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: roles.body.copyWith(color: colors.textSecondary),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () => _showWalletSheet(context),
-            child: Text(
-              bound
-                  ? copy.accountWalletReplaceAction
-                  : copy.accountWalletBindAction,
-            ),
-          ),
-        ],
+      decoration: BoxDecoration(
+        color: colors.surfaceAlt,
+        borderRadius: shapes.inlineRadius,
+      ),
+      child: Text(
+        text,
+        style: roles.numeric.copyWith(color: colors.textSecondary),
       ),
     );
   }
 }
 
-class _StaticRows extends StatelessWidget {
-  const _StaticRows({required this.state});
+/// The settings section: the cold wallet, the read-only bank-card notice, the
+/// support mailbox and the build/update row, in one card.
+///
+/// A guest only has the two rows that do not belong to an account: support and
+/// the app version.
+class _SettingsSection extends StatelessWidget {
+  const _SettingsSection({required this.state});
 
   final AppUiState state;
 
   @override
   Widget build(BuildContext context) {
     final AppStrings copy = strings(state.language);
+    final AppSpacing spacing = appSpacingOf(context);
     final bool guest = state.session == null;
+    final String? address = state.wallet?.walletAddress;
+    final bool bound = (address ?? '').isNotEmpty;
+
+    void openWallet() => _showWalletSheet(context);
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        // The bank-card entry stays read-only: no card data is ever collected.
-        if (!guest) ...<Widget>[
-          _StaticRow(
-            icon: Icons.credit_card_outlined,
-            title: copy.accountBankCardTitle,
-            subtitle: copy.accountBankCardUnsupported,
-          ),
-          const SizedBox(height: 10),
-        ],
-        _StaticRow(
-          icon: Icons.mail_outline,
-          title: copy.accountContactSupportTitle,
-          subtitle: copy.accountContactSupportEmail,
-          selectable: true,
+        const AppSectionHeader(title: AppUiCopy.accountSettingsSection),
+        SizedBox(height: spacing.space2),
+        AppSectionCard(
+          children: <Widget>[
+            if (!guest)
+              // The whole row opens the wallet sheet, like every other entry on
+              // this page; the trailing button keeps the "Bind/Replace" wording
+              // (and the touch target) it always had.
+              AppListRow(
+                title: copy.accountWalletTitle,
+                subtitle: bound ? address : copy.accountWalletNetworkHint,
+                // The address is a 42-character machine value: one line with an
+                // ellipsis keeps the row at its regular height, and the sheet
+                // (which pre-fills the full address) is where it is read.
+                subtitleMaxLines: 1,
+                // The action keeps its own width: "Replace wallet" needs
+                // ~110-120 px on a 360 dp device, which the shared split used to
+                // clip to "Replace wa…".
+                trailingTakesIntrinsicWidth: true,
+                leadingIcon: Icons.account_balance_wallet_outlined,
+                divider: false,
+                onTap: openWallet,
+                trailing: TextButton(
+                  onPressed: openWallet,
+                  child: Text(
+                    bound
+                        ? copy.accountWalletReplaceAction
+                        : copy.accountWalletBindAction,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            if (!guest)
+              // Read-only by contract: no card data is ever collected.
+              AppListRow(
+                title: copy.accountBankCardTitle,
+                subtitle: copy.accountBankCardUnsupported,
+                leadingIcon: Icons.credit_card_outlined,
+                divider: false,
+              ),
+            // A support mailbox is a *value*, not an action: it sits in the
+            // subtitle over the whole row width (a trailing slot squeezed it
+            // into two lines and broke the address mid-word on a 360 dp device)
+            // and stays selectable for long-press copy.
+            _SupportRow(
+              title: copy.accountContactSupportTitle,
+              email: copy.accountContactSupportEmail,
+            ),
+            _VersionRow(state: state),
+          ],
         ),
       ],
     );
   }
 }
 
-class _StaticRow extends StatelessWidget {
-  const _StaticRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    this.selectable = false,
-  });
+/// The support row: the title with the mailbox in the subtitle slot.
+///
+/// A deliberate variant of [AppListRow]: the mailbox has to sit in the subtitle
+/// position - left-aligned over the whole row width, so it never breaks in the
+/// middle - while staying a [SelectableText] so it keeps long-press copy and its
+/// own semantics value, which the shared row's string subtitle cannot express.
+/// The geometry ([AppSpacing.rowMinHeight] minimum, the same padding and the
+/// same leading plate) and the §7.2 semantics contract are the component's: the
+/// row is its own node, its description is announced once, the mailbox keeps its
+/// node, and a plain row exposes no tap.
+class _SupportRow extends StatelessWidget {
+  const _SupportRow({required this.title, required this.email});
 
-  final IconData icon;
   final String title;
-  final String subtitle;
-  final bool selectable;
+  final String email;
 
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
-    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    final AppIconSize icons = appIconSizeOf(context);
+    final AppSpacing spacing = appSpacingOf(context);
+    final TextTheme textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(shapes.radiusControl),
-        border: Border.all(
-          color: colors.hairline,
-          width: shapes.strokeHairline,
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, color: colors.textSecondary, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title, style: roles.body),
-                const SizedBox(height: 2),
-                if (selectable)
-                  SelectableText(
-                    subtitle,
-                    style: roles.body.copyWith(color: colors.textSecondary),
-                  )
-                else
-                  Text(
-                    subtitle,
-                    style: roles.body.copyWith(color: colors.textSecondary),
-                  ),
-              ],
-            ),
+    return Semantics(
+      container: true,
+      label: title,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: spacing.rowMinHeight),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: spacing.space4,
+            vertical: spacing.space3,
           ),
-        ],
+          child: Row(
+            children: <Widget>[
+              ExcludeSemantics(
+                child: Container(
+                  width: spacing.space10,
+                  height: spacing.space10,
+                  decoration: BoxDecoration(
+                    color: colors.surfaceDisabled,
+                    borderRadius: shapes.controlRadius,
+                  ),
+                  child: Icon(
+                    Icons.mail_outline,
+                    size: icons.md,
+                    color: colors.onDisabled,
+                  ),
+                ),
+              ),
+              SizedBox(width: spacing.space4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    // The row node announces the title; the mailbox below keeps
+                    // its own readable, selectable node.
+                    ExcludeSemantics(
+                      child: Text(
+                        title,
+                        style: textTheme.titleMedium?.copyWith(
+                          color: colors.onDisabled,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: spacing.space1),
+                    SelectableText(
+                      email,
+                      maxLines: 1,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -587,60 +672,44 @@ class _StaticRow extends StatelessWidget {
 
 /// The version row: `versionTitle` + `versionName (versionCode)`, trailing a
 /// manual check that is disabled while a manual check is in flight.
-class _VersionRow extends StatelessWidget {
+class _VersionRow extends StatefulWidget {
   const _VersionRow({required this.state});
 
   final AppUiState state;
 
   @override
+  State<_VersionRow> createState() => _VersionRowState();
+}
+
+class _VersionRowState extends State<_VersionRow> {
+  /// `--` until the platform reports the build, exactly as the previous
+  /// `FutureBuilder` rendered its empty snapshot.
+  String _label = _versionPlaceholder;
+
+  @override
+  void initState() {
+    super.initState();
+    _appVersionLabel.then((String label) {
+      if (mounted) {
+        setState(() => _label = label);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
-    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
-    final UpdateStrings updateCopy = updateStrings(state.language);
+    final UpdateStrings updateCopy = updateStrings(widget.state.language);
     final UpdateCoordinator? coordinator = UpdateDialogScope.maybeOf(context)
         ?.coordinator;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(shapes.radiusControl),
-        border: Border.all(
-          color: colors.hairline,
-          width: shapes.strokeHairline,
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            Icons.system_update_outlined,
-            color: colors.textSecondary,
-            size: 22,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(updateCopy.versionTitle, style: roles.body),
-                const SizedBox(height: 2),
-                FutureBuilder<String>(
-                  future: _appVersionLabel,
-                  builder:
-                      (BuildContext context, AsyncSnapshot<String> snapshot) =>
-                          Text(
-                            snapshot.data ?? '--',
-                            style: roles.body.copyWith(
-                              color: colors.textSecondary,
-                            ),
-                          ),
-                ),
-              ],
-            ),
-          ),
-          if (coordinator != null)
-            ValueListenableBuilder<UpdateState>(
+    return AppListRow(
+      title: updateCopy.versionTitle,
+      subtitle: _label,
+      leadingIcon: Icons.system_update_outlined,
+      divider: false,
+      trailing: coordinator == null
+          ? null
+          : ValueListenableBuilder<UpdateState>(
               valueListenable: coordinator.state,
               builder:
                   (BuildContext context, UpdateState updateState, Widget? _) {
@@ -658,8 +727,6 @@ class _VersionRow extends StatelessWidget {
                     );
                   },
             ),
-        ],
-      ),
     );
   }
 }

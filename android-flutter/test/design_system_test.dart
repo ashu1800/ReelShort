@@ -14,7 +14,7 @@ import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -53,6 +53,40 @@ import 'package:shortlink/ui/components/poster_card.dart';
 import 'package:shortlink/ui/screens/funds_screen.dart';
 
 import 'support/fake_app_data_source.dart';
+
+/// Every piece of text the current semantics tree exposes, in traversal order.
+///
+/// The tree is read through the semantics owner rather than through a finder, so
+/// a label that was merged into an ancestor simply does not appear: that is what
+/// makes this a proof that a card did not collapse into one node. Both channels
+/// are collected, because a read-only text field (the selectable support email)
+/// reports its text as a value rather than as a label.
+List<String> semanticsTexts(WidgetTester tester) {
+  final Iterable<RenderView> views = tester.binding.renderViews;
+  final SemanticsNode? root = views.isEmpty
+      ? null
+      : views.first.owner?.semanticsOwner?.rootSemanticsNode;
+  if (root == null) {
+    return const <String>[];
+  }
+  final List<String> texts = <String>[];
+  void walk(SemanticsNode node) {
+    final SemanticsData data = node.getSemanticsData();
+    if (data.label.isNotEmpty) {
+      texts.add(data.label);
+    }
+    if (data.value.isNotEmpty) {
+      texts.add(data.value);
+    }
+    node.visitChildren((SemanticsNode child) {
+      walk(child);
+      return true;
+    });
+  }
+
+  walk(root);
+  return texts;
+}
 
 Widget host(
   Widget child, {
@@ -410,6 +444,39 @@ void main() {
             divider: false,
             trailing: const Text('v0.9.2'),
             onTap: () {},
+          ),
+          AppListRow(
+            title: 'Single-line value',
+            subtitle: '0x1111111111111111111111111111111111111111',
+            subtitleMaxLines: 1,
+            leadingIcon: Icons.account_balance_wallet_outlined,
+            divider: false,
+            trailingTakesIntrinsicWidth: true,
+            trailing: TextButton(
+              onPressed: () {},
+              child: const Text('Replace wallet'),
+            ),
+          ),
+        ],
+      ),
+      'section card mixing rows': AppSectionCard(
+        children: <Widget>[
+          AppListRow(
+            title: 'Tappable row',
+            subtitle: 'Opens something',
+            leadingIcon: Icons.history,
+            divider: false,
+            onTap: () {},
+          ),
+          AppListRow(
+            title: 'Plain row',
+            subtitle: 'No action is exposed',
+            leadingIcon: Icons.lock_outline,
+            divider: false,
+            trailing: TextButton(
+              onPressed: () {},
+              child: const Text('Row action'),
+            ),
           ),
         ],
       ),
@@ -1269,6 +1336,154 @@ void main() {
         .properties;
     expect(disabled.onTap, isNull);
     expect(disabled.button, isNot(true));
+    handle.dispose();
+  });
+
+  testWidgets('a labelled trailing action keeps its wording when the row opts '
+      'in', (WidgetTester tester) async {
+    // 480 dp with the widget-test font stands in for a 360 dp device with
+    // Roboto (~1.4x narrower): sharing the row 1:1 clips "Replace wallet"
+    // mid-word, while `trailingTakesIntrinsicWidth` renders it in full.
+    addTearDown(tester.view.reset);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(480, 900);
+
+    Future<double> renderedActionWidth({required bool intrinsic}) async {
+      await tester.pumpWidget(
+        host(
+          AppSectionCard(
+            children: <Widget>[
+              AppListRow(
+                title: 'Cold wallet',
+                subtitle: '0x1111111111111111111111111111111111111111',
+                subtitleMaxLines: 1,
+                leadingIcon: Icons.account_balance_wallet_outlined,
+                divider: false,
+                trailingTakesIntrinsicWidth: intrinsic,
+                trailing: TextButton(
+                  onPressed: () {},
+                  child: const Text('Replace wallet'),
+                ),
+              ),
+            ],
+          ),
+          width: 480,
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      return tester.getSize(find.text('Replace wallet')).width;
+    }
+
+    double intrinsicWidth() {
+      final Text text = tester.widget<Text>(find.text('Replace wallet'));
+      return (TextPainter(
+        text: TextSpan(text: text.data, style: text.style),
+        textDirection: TextDirection.ltr,
+        textScaler: MediaQuery.textScalerOf(
+          tester.element(find.text('Replace wallet')),
+        ),
+        maxLines: 1,
+      )..layout()).width;
+    }
+
+    final double shared = await renderedActionWidth(intrinsic: false);
+    final double ownWidth = await renderedActionWidth(intrinsic: true);
+    final double needed = intrinsicWidth();
+    expect(
+      shared,
+      lessThan(needed),
+      reason: 'the default split still shares the row and clips the action',
+    );
+    expect(
+      ownWidth,
+      greaterThanOrEqualTo(needed - 0.5),
+      reason: 'the opt-in row renders the action in full',
+    );
+    expect(
+      tester.getSize(find.byType(TextButton)).height,
+      greaterThanOrEqualTo(44),
+      reason: 'the wider label still meets the touch-target minimum',
+    );
+  });
+
+  testWidgets('a card of rows keeps every row and its trailing control as its '
+      'own semantic node', (WidgetTester tester) async {
+    // Regression for the Me-page defect: a plain row used to replace its
+    // descendants with one label (excludeSemantics, container: false), so a card
+    // that mixed tappable and plain rows collapsed into a single announcement
+    // and the trailing controls disappeared from the tree. See
+    // `docs/ui-redesign-notes.md` §7.2.
+    final SemanticsHandle handle = tester.ensureSemantics();
+    int rowTaps = 0;
+    int trailingTaps = 0;
+    await tester.pumpWidget(
+      host(
+        AppSectionCard(
+          children: <Widget>[
+            AppListRow(
+              title: 'Tappable row',
+              subtitle: 'Opens something',
+              leadingIcon: Icons.history,
+              divider: false,
+              onTap: () => rowTaps++,
+            ),
+            AppListRow(
+              title: 'Plain row',
+              subtitle: 'No action is exposed',
+              leadingIcon: Icons.lock_outline,
+              divider: false,
+              trailing: TextButton(
+                onPressed: () => trailingTaps++,
+                child: const Text('Row action'),
+              ),
+            ),
+          ],
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+
+    final List<String> texts = semanticsTexts(tester);
+    expect(texts, contains('Tappable row, Opens something'));
+    expect(texts, contains('Plain row, No action is exposed'));
+    expect(texts, contains('Row action'));
+    // The description is announced by the row node, not once more by the texts
+    // inside it.
+    expect(
+      texts.where((String text) => text.contains('Tappable row')).length,
+      1,
+    );
+
+    final SemanticsData tappable = tester.semantics
+        .find(find.bySemanticsLabel('Tappable row, Opens something'))
+        .getSemanticsData();
+    expect(tappable.hasAction(SemanticsAction.tap), isTrue);
+    expect(tappable.flagsCollection.isButton, isTrue);
+
+    final SemanticsData plain = tester.semantics
+        .find(find.bySemanticsLabel('Plain row, No action is exposed'))
+        .getSemanticsData();
+    expect(plain.hasAction(SemanticsAction.tap), isFalse);
+    expect(plain.flagsCollection.isButton, isFalse);
+
+    final SemanticsData action = tester.semantics
+        .find(find.bySemanticsLabel('Row action'))
+        .getSemanticsData();
+    expect(action.hasAction(SemanticsAction.tap), isTrue);
+
+    // Both actions still reach their own widget, and the plain row's tap (the
+    // row node has none) is never the one that fires.
+    tester.semantics.tap(
+      find.semantics.byLabel('Tappable row, Opens something'),
+    );
+    await tester.pump();
+    expect(rowTaps, 1);
+    tester.semantics.tap(find.semantics.byLabel('Row action'));
+    await tester.pump();
+    expect(trailingTaps, 1);
+    expect(rowTaps, 1, reason: 'activating the trailing control is not the row');
     handle.dispose();
   });
 

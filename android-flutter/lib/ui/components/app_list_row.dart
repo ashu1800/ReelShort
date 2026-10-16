@@ -7,9 +7,16 @@
 ///
 ///  * the row is at least [AppSpacing.rowMinHeight] tall, so every row clears
 ///    the 44 px touch target;
-///  * the activation action is exposed on the merged semantics node, not on a
-///    descendant (see `docs/design-system.md` §7.4);
+///  * the activation action is exposed on the row's own merged semantics node,
+///    not on a descendant (see `docs/design-system.md` §7.4);
 ///  * a disabled row passes `onTap: null` and therefore exposes no action.
+///
+/// Semantics inside a card (`docs/ui-redesign-notes.md` §7.2): every row is its
+/// own node (`container: true`), so a card that mixes tappable and plain rows
+/// does not collapse into one announcement. The descriptive half (leading,
+/// title, subtitle) is excluded from the tree and announced by that node, while
+/// a [trailing] control keeps its own readable, tappable node - which is what a
+/// row-level "Check" button or a selectable value needs.
 library;
 
 import 'package:flutter/material.dart';
@@ -19,15 +26,24 @@ import '../../theme/app_icons.dart';
 import '../../theme/app_shapes.dart';
 import '../../theme/app_spacing.dart';
 
+/// Text scale above which a labelled [AppListRow.trailing] action gives up its
+/// intrinsic width and shares the row with the title column.
+///
+/// The same threshold `AppSectionHeader` and `AppLedgerRow` use to switch to
+/// their stacked layout.
+const double trailingIntrinsicMaxTextScale = 1.6;
+
 /// One row of a settings/entry list.
 class AppListRow extends StatelessWidget {
   /// Creates a list row.
   const AppListRow({
     required this.title,
     this.subtitle,
+    this.subtitleMaxLines,
     this.leading,
     this.leadingIcon,
     this.trailing,
+    this.trailingTakesIntrinsicWidth = false,
     this.showChevron = false,
     this.onTap,
     this.divider = true,
@@ -43,6 +59,13 @@ class AppListRow extends StatelessWidget {
   /// Optional supporting label under [title].
   final String? subtitle;
 
+  /// Maximum lines of [subtitle]; null lets it wrap freely.
+  ///
+  /// A row whose subtitle is a long machine value (a wallet address) sets this
+  /// to 1 so the row keeps its regular height and the value ellipsises instead
+  /// of pushing the row into a paragraph.
+  final int? subtitleMaxLines;
+
   /// Custom leading widget; takes precedence over [leadingIcon].
   final Widget? leading;
 
@@ -51,6 +74,19 @@ class AppListRow extends StatelessWidget {
 
   /// Widget after the title column (a value, a switch, a badge).
   final Widget? trailing;
+
+  /// Whether [trailing] is laid out at its own width instead of sharing the
+  /// row's free space with the title column.
+  ///
+  /// The default splits the free space evenly, which is right for a value that
+  /// should shrink (a version, a date). A row whose trailing is a labelled
+  /// action sets this to true, so the action is not clipped in the middle at
+  /// reading sizes; the control is still capped at half the row (the title
+  /// column keeps the rest, so the row can never overflow), and above the 1.6x
+  /// text scale the row returns to the shared split - the same threshold the
+  /// section header uses - because there the title column needs its share more
+  /// than the action needs its full wording.
+  final bool trailingTakesIntrinsicWidth;
 
   /// Whether to draw the disclosure chevron.
   final bool showChevron;
@@ -88,62 +124,98 @@ class AppListRow extends StatelessWidget {
         ? colors.textSecondary
         : colors.onDisabled;
 
-    final Widget body = ConstrainedBox(
-      constraints: BoxConstraints(minHeight: spacing.rowMinHeight),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: spacing.space4,
-          vertical: spacing.space3,
-        ),
-        child: Row(
-          children: <Widget>[
-            if (leading != null) ...<Widget>[
-              leading!,
-              SizedBox(width: spacing.space4),
-            ] else if (leadingIcon != null) ...<Widget>[
-              _LeadingPlate(icon: leadingIcon!, enabled: enabled),
-              SizedBox(width: spacing.space4),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Text(
-                    title,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleMedium?.copyWith(color: titleColor),
-                  ),
-                  if (subtitle != null) ...<Widget>[
-                    SizedBox(height: spacing.space1),
-                    Text(
-                      subtitle!,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: subtitleColor),
-                    ),
-                  ],
-                ],
-              ),
+    // An action label keeps its own width while the ambient scale is close to
+    // reading size; past [trailingIntrinsicMaxTextScale] the shared split is the
+    // safer shape (see [trailingTakesIntrinsicWidth]).
+    final bool intrinsicTrailing =
+        trailingTakesIntrinsicWidth &&
+        trailing != null &&
+        MediaQuery.textScalerOf(context).scale(1) <=
+            trailingIntrinsicMaxTextScale;
+
+    final Widget body = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        // Half the row is the most an intrinsically sized action may take: the
+        // title column keeps the rest, so the row can never overflow.
+        final double trailingCap = constraints.maxWidth.isFinite
+            ? constraints.maxWidth / 2
+            : double.infinity;
+        return ConstrainedBox(
+          constraints: BoxConstraints(minHeight: spacing.rowMinHeight),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: spacing.space4,
+              vertical: spacing.space3,
             ),
-            if (trailing != null) ...<Widget>[
-              SizedBox(width: spacing.space3),
-              // Flexible so a long value (a version, a date) shrinks or wraps
-              // instead of overflowing the row at large text scales.
-              Flexible(child: trailing!),
-            ],
-            if (showChevron) ...<Widget>[
-              SizedBox(width: spacing.space2),
-              Icon(
-                Icons.chevron_right,
-                size: icons.lg,
-                color: enabled ? colors.textSecondary : colors.onDisabled,
-              ),
-            ],
-          ],
-        ),
-      ),
+            child: Row(
+              children: <Widget>[
+                // Everything the row node announces is excluded from the tree,
+                // so the label is read once; the trailing control below stays
+                // out of that exclusion and keeps its own node.
+                if (leading != null) ...<Widget>[
+                  ExcludeSemantics(child: leading!),
+                  SizedBox(width: spacing.space4),
+                ] else if (leadingIcon != null) ...<Widget>[
+                  ExcludeSemantics(
+                    child: _LeadingPlate(icon: leadingIcon!, enabled: enabled),
+                  ),
+                  SizedBox(width: spacing.space4),
+                ],
+                Expanded(
+                  child: ExcludeSemantics(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        Text(
+                          title,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.titleMedium?.copyWith(color: titleColor),
+                        ),
+                        if (subtitle != null) ...<Widget>[
+                          SizedBox(height: spacing.space1),
+                          Text(
+                            subtitle!,
+                            maxLines: subtitleMaxLines,
+                            overflow: subtitleMaxLines == null
+                                ? null
+                                : TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: subtitleColor),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (trailing != null) ...<Widget>[
+                  SizedBox(width: spacing.space3),
+                  if (intrinsicTrailing)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: trailingCap),
+                      child: trailing!,
+                    )
+                  else
+                    // Flexible so a long value (a version, a date) shrinks or
+                    // wraps instead of overflowing the row at large text scales.
+                    Flexible(child: trailing!),
+                ],
+                if (showChevron) ...<Widget>[
+                  SizedBox(width: spacing.space2),
+                  ExcludeSemantics(
+                    child: Icon(
+                      Icons.chevron_right,
+                      size: icons.lg,
+                      color: enabled ? colors.textSecondary : colors.onDisabled,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
 
     final Widget row = selected
@@ -156,7 +228,13 @@ class AppListRow extends StatelessWidget {
         if (enabled)
           Material(
             color: Colors.transparent,
-            child: InkWell(onTap: onTap, child: row),
+            child: InkWell(
+              onTap: onTap,
+              // The activation action belongs to the row node below; without
+              // this the ink would add a second, duplicate node.
+              excludeFromSemantics: true,
+              child: row,
+            ),
           )
         else
           row,
@@ -172,21 +250,14 @@ class AppListRow extends StatelessWidget {
       ],
     );
 
-    if (!enabled) {
-      return Semantics(
-        label: effectiveLabel,
-        hint: semanticsHint,
-        excludeSemantics: true,
-        child: content,
-      );
-    }
-
+    // `container: true` is what keeps every row its own node inside a card; a
+    // plain row exposes no tap action at all.
     return Semantics(
-      button: true,
+      container: true,
+      button: enabled,
       label: effectiveLabel,
       hint: semanticsHint,
-      onTap: onTap,
-      excludeSemantics: true,
+      onTap: enabled ? onTap : null,
       child: content,
     );
   }
