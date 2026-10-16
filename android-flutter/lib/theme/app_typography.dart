@@ -4,14 +4,21 @@
 /// every role is expressed through the platform's default family and made
 /// distinct through weight, size, tracking, case and figure style instead.
 ///
-/// Three roles carry the hierarchy:
+/// The roles carry the hierarchy:
+///  * [AppTypography.screenTitle] - the single page-title role: tab page
+///    headers and sub-page app-bar titles;
+///  * [AppTypography.displayLarge] - hero figures and hero titles;
 ///  * [AppTypography.display] - heavy weight, tight tracking, used for all-caps
-///    section headers and screen titles;
+///    section headers;
 ///  * [AppTypography.body] - regular weight, comfortable line height, used for
 ///    every reading paragraph;
-///  * [AppTypography.numeric] - regular weight plus
-///    [FontFeature.tabularFigures], used for **all** money, point and count
-///    figures so columns of numbers line up digit for digit.
+///  * [AppTypography.caption] - dense metadata (timestamps, meta rows);
+///  * [AppTypography.numeric] / [AppTypography.numericLarge] /
+///    [AppTypography.numericHero] - regular weight plus
+///    [FontFeature.tabularFigures], used for **all** money, point, count and
+///    timer figures so columns of numbers line up digit for digit;
+///  * [AppTypography.onMediaBody] - body copy painted on artwork or video,
+///    using the media foreground colour rather than the theme's text colour.
 library;
 
 import 'package:flutter/material.dart';
@@ -28,6 +35,16 @@ const Color _lightText = Color(0xFF14161B);
 /// Text colour used by the dark-mode roles. Mirrors the `textPrimary` token of
 /// the dark palette in `app_colors.dart`.
 const Color _darkText = Color(0xFFF4F5F7);
+
+/// Secondary text colour in light mode. Mirrors `AppColors.textSecondary`.
+const Color _lightTextSecondary = Color(0xFF5A6070);
+
+/// Secondary text colour in dark mode. Mirrors `AppColors.textSecondary`.
+const Color _darkTextSecondary = Color(0xFF9AA1AE);
+
+/// Foreground colour of copy painted over artwork. Mirrors `AppMedia.onMedia`;
+/// media chrome is brightness-independent, so this is one constant.
+const Color _onMediaText = Color(0xFFFFFFFF);
 
 /// Weight used by every display-role style.
 const FontWeight _displayWeight = FontWeight.w700;
@@ -56,16 +73,29 @@ const List<FontFeature> _tabularFigures = <FontFeature>[
 /// [TextTheme] is derived from these roles in `app_typography.dart`.
 @immutable
 class AppTypography extends ThemeExtension<AppTypography> {
-  /// Creates the role set. All three roles are required.
+  /// Creates the role set. Every role is required so a half-specified set
+  /// cannot compile.
   const AppTypography({
+    required this.screenTitle,
     required this.display,
     required this.displayLarge,
     required this.body,
+    required this.caption,
     required this.numeric,
+    required this.numericLarge,
+    required this.numericHero,
+    required this.onMediaBody,
   });
 
   /// Light-mode roles.
   static const AppTypography light = AppTypography(
+    screenTitle: TextStyle(
+      color: _lightText,
+      fontSize: 22,
+      fontWeight: _displayHeavyWeight,
+      letterSpacing: -0.4,
+      height: _displayHeight,
+    ),
     display: TextStyle(
       color: _lightText,
       fontSize: 13,
@@ -87,6 +117,13 @@ class AppTypography extends ThemeExtension<AppTypography> {
       letterSpacing: 0.1,
       height: _bodyHeight,
     ),
+    caption: TextStyle(
+      color: _lightTextSecondary,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      letterSpacing: 0.2,
+      height: 1.35,
+    ),
     numeric: TextStyle(
       color: _lightText,
       fontSize: 15,
@@ -94,11 +131,41 @@ class AppTypography extends ThemeExtension<AppTypography> {
       letterSpacing: 0.0,
       height: 1.3,
       fontFeatures: _tabularFigures,
+    ),
+    numericLarge: TextStyle(
+      color: _lightText,
+      fontSize: 20,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.2,
+      height: 1.2,
+      fontFeatures: _tabularFigures,
+    ),
+    numericHero: TextStyle(
+      color: _lightText,
+      fontSize: 28,
+      fontWeight: _displayHeavyWeight,
+      letterSpacing: -0.4,
+      height: 1.15,
+      fontFeatures: _tabularFigures,
+    ),
+    onMediaBody: TextStyle(
+      color: _onMediaText,
+      fontSize: 15,
+      fontWeight: _bodyWeight,
+      letterSpacing: 0.1,
+      height: 1.4,
     ),
   );
 
   /// Dark-mode roles.
   static const AppTypography dark = AppTypography(
+    screenTitle: TextStyle(
+      color: _darkText,
+      fontSize: 22,
+      fontWeight: _displayHeavyWeight,
+      letterSpacing: -0.4,
+      height: _displayHeight,
+    ),
     display: TextStyle(
       color: _darkText,
       fontSize: 13,
@@ -120,6 +187,13 @@ class AppTypography extends ThemeExtension<AppTypography> {
       letterSpacing: 0.1,
       height: _bodyHeight,
     ),
+    caption: TextStyle(
+      color: _darkTextSecondary,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      letterSpacing: 0.2,
+      height: 1.35,
+    ),
     numeric: TextStyle(
       color: _darkText,
       fontSize: 15,
@@ -128,7 +202,33 @@ class AppTypography extends ThemeExtension<AppTypography> {
       height: 1.3,
       fontFeatures: _tabularFigures,
     ),
+    numericLarge: TextStyle(
+      color: _darkText,
+      fontSize: 20,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.2,
+      height: 1.2,
+      fontFeatures: _tabularFigures,
+    ),
+    numericHero: TextStyle(
+      color: _darkText,
+      fontSize: 28,
+      fontWeight: _displayHeavyWeight,
+      letterSpacing: -0.4,
+      height: 1.15,
+      fontFeatures: _tabularFigures,
+    ),
+    onMediaBody: TextStyle(
+      color: _onMediaText,
+      fontSize: 15,
+      fontWeight: _bodyWeight,
+      letterSpacing: 0.1,
+      height: 1.4,
+    ),
   );
+
+  /// The single page-title role: tab page headers and sub-page app-bar titles.
+  final TextStyle screenTitle;
 
   /// Small display style for all-caps section headers ("CONTINUE WATCHING").
   ///
@@ -136,26 +236,49 @@ class AppTypography extends ThemeExtension<AppTypography> {
   /// [sectionHeaderTransform] for the shared transform.
   final TextStyle display;
 
-  /// Display style for screen titles and hero numbers.
+  /// Display style for hero titles and hero figures.
   final TextStyle displayLarge;
 
   /// Body style for paragraphs, list subtitles and hints.
   final TextStyle body;
 
-  /// Numeric style. Always used for points, USDT amounts, counts and dates.
+  /// Dense metadata style: timestamps, meta rows, helper copy under a value.
+  final TextStyle caption;
+
+  /// Numeric style. Used for inline points, USDT amounts, counts and dates.
   final TextStyle numeric;
+
+  /// Larger numeric style for panel-level figures.
+  final TextStyle numericLarge;
+
+  /// Largest numeric style for the one hero figure on a page (balance, price).
+  final TextStyle numericHero;
+
+  /// Body copy painted over artwork or video; the colour comes from the media
+  /// tokens, never from [AppColors.textPrimary].
+  final TextStyle onMediaBody;
 
   @override
   AppTypography copyWith({
+    TextStyle? screenTitle,
     TextStyle? display,
     TextStyle? displayLarge,
     TextStyle? body,
+    TextStyle? caption,
     TextStyle? numeric,
+    TextStyle? numericLarge,
+    TextStyle? numericHero,
+    TextStyle? onMediaBody,
   }) => AppTypography(
+    screenTitle: screenTitle ?? this.screenTitle,
     display: display ?? this.display,
     displayLarge: displayLarge ?? this.displayLarge,
     body: body ?? this.body,
+    caption: caption ?? this.caption,
     numeric: numeric ?? this.numeric,
+    numericLarge: numericLarge ?? this.numericLarge,
+    numericHero: numericHero ?? this.numericHero,
+    onMediaBody: onMediaBody ?? this.onMediaBody,
   );
 
   @override
@@ -164,10 +287,15 @@ class AppTypography extends ThemeExtension<AppTypography> {
       return this;
     }
     return AppTypography(
+      screenTitle: TextStyle.lerp(screenTitle, other.screenTitle, t)!,
       display: TextStyle.lerp(display, other.display, t)!,
       displayLarge: TextStyle.lerp(displayLarge, other.displayLarge, t)!,
       body: TextStyle.lerp(body, other.body, t)!,
+      caption: TextStyle.lerp(caption, other.caption, t)!,
       numeric: TextStyle.lerp(numeric, other.numeric, t)!,
+      numericLarge: TextStyle.lerp(numericLarge, other.numericLarge, t)!,
+      numericHero: TextStyle.lerp(numericHero, other.numericHero, t)!,
+      onMediaBody: TextStyle.lerp(onMediaBody, other.onMediaBody, t)!,
     );
   }
 }

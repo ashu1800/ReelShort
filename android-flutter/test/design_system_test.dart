@@ -22,8 +22,11 @@ import 'package:shortlink/data/models/app_language.dart';
 import 'package:shortlink/data/models/app_models.dart';
 import 'package:shortlink/state/app_ui_state.dart';
 import 'package:shortlink/theme/app_colors.dart';
+import 'package:shortlink/theme/app_icons.dart';
+import 'package:shortlink/theme/app_media.dart';
 import 'package:shortlink/theme/app_motion.dart';
 import 'package:shortlink/theme/app_shapes.dart';
+import 'package:shortlink/theme/app_spacing.dart';
 import 'package:shortlink/theme/app_theme.dart';
 import 'package:shortlink/theme/app_typography.dart';
 import 'package:shortlink/ui/components/app_button.dart';
@@ -74,8 +77,17 @@ void main() {
       expect(t.extension<AppTypography>(), isNotNull);
       expect(t.extension<AppShapes>(), isNotNull);
       expect(t.extension<AppMotion>(), isNotNull);
+      expect(t.extension<AppSpacing>(), isNotNull);
+      expect(t.extension<AppIconSize>(), isNotNull);
+      expect(t.extension<AppMedia>(), isNotNull);
       expect(t.colorScheme.brightness, b);
       expect(t.scaffoldBackgroundColor, t.extension<AppColors>()!.canvas);
+      // Sub-page app bars must use the single page-title role, not the Material
+      // default (which the screens disagreed about before the redesign).
+      expect(
+        t.appBarTheme.titleTextStyle?.fontSize,
+        AppTypography.light.screenTitle.fontSize,
+      );
       // Every text style must carry an explicit colour (ThemeData merges over
       // the platform theme, whose defaults are black54/white).
       for (final TextStyle? s in <TextStyle?>[
@@ -88,7 +100,75 @@ void main() {
       ]) {
         expect(s?.color, isNotNull, reason: 'text style colour must be set');
       }
+      // Extension-only roles must not inherit a colour either.
+      for (final TextStyle s in <TextStyle>[
+        t.extension<AppTypography>()!.screenTitle,
+        t.extension<AppTypography>()!.caption,
+        t.extension<AppTypography>()!.numericLarge,
+        t.extension<AppTypography>()!.numericHero,
+        t.extension<AppTypography>()!.onMediaBody,
+      ]) {
+        expect(s.color, isNotNull);
+      }
     }
+  });
+
+  test('spacing, icon and media tokens are complete and stable', () {
+    final AppSpacing spacing = AppSpacing.standard;
+    expect(
+      <double>[
+        spacing.space1,
+        spacing.space2,
+        spacing.space3,
+        spacing.space4,
+        spacing.space5,
+        spacing.space6,
+        spacing.space8,
+        spacing.space10,
+      ],
+      orderedEquals(<double>[4, 8, 12, 16, 20, 24, 32, 40]),
+    );
+    expect(spacing.pageHorizontal, 18);
+    expect(spacing.gutter, 12);
+    expect(spacing.rowMinHeight, greaterThanOrEqualTo(44));
+    expect(
+      spacing.pagePadding,
+      EdgeInsets.fromLTRB(
+        spacing.pageHorizontal,
+        spacing.pageTopInset,
+        spacing.pageHorizontal,
+        spacing.pageBottomInset,
+      ),
+    );
+
+    // Layout must not shift when the theme changes.
+    expect(AppSpacing.light, AppSpacing.dark);
+    expect(AppIconSize.light, AppIconSize.dark);
+    expect(AppMedia.light, AppMedia.dark);
+
+    final AppIconSize icons = AppIconSize.standard;
+    expect(
+      <double>[icons.sm, icons.md, icons.lg],
+      orderedEquals(<double>[16, 20, 24]),
+    );
+    expect(icons.hero, 48);
+
+    // copyWith/lerp are total for the three new extensions.
+    expect(AppSpacing.standard.copyWith().space4, AppSpacing.standard.space4);
+    expect(AppIconSize.standard.copyWith().lg, AppIconSize.standard.lg);
+    expect(AppMedia.standard.copyWith().onMedia, AppMedia.standard.onMedia);
+    expect(AppSpacing.standard.lerp(AppSpacing.standard, 0.5).space4, 16);
+    expect(AppIconSize.standard.lerp(AppIconSize.standard, 0.5).lg, 24);
+    expect(
+      AppMedia.standard.lerp(AppMedia.standard, 0.5).onMedia,
+      const Color(0xFFFFFFFF),
+    );
+    expect(AppSpacing.standard.copyWith(space4: 20).space4, 20);
+    expect(AppIconSize.standard.copyWith(md: 18).md, 18);
+    expect(
+      AppMedia.standard.copyWith(cellIdle: const Color(0xFF000000)).cellIdle,
+      const Color(0xFF000000),
+    );
   });
 
   test('colour tokens lerp and copyWith are total', () {
@@ -806,7 +886,61 @@ void main() {
         lessThan(3.0),
         reason: '$which hairline must stay decorative',
       );
+      // A disabled control is exempt from the WCAG text minimum, but its label
+      // must still be perceivable: assert it stays at or above 2.8:1 and below
+      // the active-text target, so the two tones cannot silently merge.
+      expect(
+        ratio(c.onDisabled, c.surfaceDisabled),
+        greaterThanOrEqualTo(2.8),
+        reason: '$which disabled label must stay perceivable',
+      );
+      expect(
+        ratio(c.onDisabled, c.surfaceDisabled),
+        lessThan(4.5),
+        reason: '$which disabled label must stay below the active text target',
+      );
+      expect(c.surfaceDisabled, isNot(c.surfaceAlt));
     }
+
+    // Media chrome is brightness-independent: it must clear the text targets on
+    // its own glass/cell surfaces in both themes.
+    final AppMedia media = AppMedia.standard;
+    expect(ratio(media.onMedia, media.glass), greaterThanOrEqualTo(4.5));
+    expect(ratio(media.onMedia, media.glassStrong), greaterThanOrEqualTo(4.5));
+    // Translucent roles must be composited over their plane before any ratio is
+    // claimed, exactly like premiumSurface above.
+    expect(
+      ratio(
+        Color.alphaBlend(media.onMediaSecondary, media.glass),
+        media.glass,
+      ),
+      greaterThanOrEqualTo(4.5),
+    );
+    expect(
+      ratio(
+        Color.alphaBlend(media.onMediaSecondary, media.glassStrong),
+        media.glassStrong,
+      ),
+      greaterThanOrEqualTo(4.5),
+    );
+    expect(ratio(media.onMedia, media.glassDanger), greaterThanOrEqualTo(4.5));
+    expect(ratio(media.onMedia, media.cellIdle), greaterThanOrEqualTo(4.5));
+    expect(ratio(media.onMedia, media.cellSelected), greaterThanOrEqualTo(4.5));
+    // The media divider is decorative, exactly like the page hairline.
+    expect(
+      ratio(
+        Color.alphaBlend(media.divider, media.glassStrong),
+        media.glassStrong,
+      ),
+      lessThan(3.0),
+    );
+    expect(media.scrim.a, lessThan(1.0));
+    // Locked artwork dims the accent rather than hiding it.
+    expect(AppColors.light.lockedOverlay.a, closeTo(0.58, 0.01));
+    expect(AppColors.light.avatarTint.a, closeTo(0.14, 0.01));
+    // The bottom copy gradient must end opaque enough to carry white copy.
+    expect(media.bottomCopyGradient.colors.last.a, greaterThanOrEqualTo(0.9));
+    expect(media.bottomCopyGradient.colors.first.a, 0);
   });
 
   testWidgets('reduced motion removes the page transition entirely', (

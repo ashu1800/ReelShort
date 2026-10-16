@@ -21,6 +21,12 @@ const double _radiusContainer = 16;
 /// Corner radius for the full-bleed player surface and immersive media.
 const double _radiusMedia = 20;
 
+/// Corner radius that renders as a fully rounded pill.
+const double _radiusPill = 999;
+
+/// Corner radius for a dense cell inside a grid or drawer.
+const double _radiusCell = 12;
+
 /// Stroke width of the hairline borders that replace Material dividers.
 const double _strokeHairline = 1;
 
@@ -50,6 +56,8 @@ class AppShapes extends ThemeExtension<AppShapes> {
     required this.radiusControl,
     required this.radiusContainer,
     required this.radiusMedia,
+    required this.radiusPill,
+    required this.radiusCell,
     required this.strokeHairline,
     required this.strokeEmphasis,
     required this.elevationFlat,
@@ -63,6 +71,8 @@ class AppShapes extends ThemeExtension<AppShapes> {
     radiusControl: _radiusControl,
     radiusContainer: _radiusContainer,
     radiusMedia: _radiusMedia,
+    radiusPill: _radiusPill,
+    radiusCell: _radiusCell,
     strokeHairline: _strokeHairline,
     strokeEmphasis: _strokeEmphasis,
     elevationFlat: _elevationFlat,
@@ -84,6 +94,12 @@ class AppShapes extends ThemeExtension<AppShapes> {
 
   /// Corner radius for immersive media.
   final double radiusMedia;
+
+  /// Corner radius that renders as a fully rounded pill.
+  final double radiusPill;
+
+  /// Corner radius for a dense cell inside a grid or drawer.
+  final double radiusCell;
 
   /// Hairline stroke width.
   final double strokeHairline;
@@ -112,6 +128,12 @@ class AppShapes extends ThemeExtension<AppShapes> {
   /// [BorderRadius] for immersive media.
   BorderRadius get mediaRadius => BorderRadius.circular(radiusMedia);
 
+  /// [BorderRadius] for a fully rounded pill.
+  BorderRadius get pillRadius => BorderRadius.circular(radiusPill);
+
+  /// [BorderRadius] for a dense grid/drawer cell.
+  BorderRadius get cellRadius => BorderRadius.circular(radiusCell);
+
   /// The shape used by cards, sheets and dialogs.
   RoundedRectangleBorder containerBorder({Color? sideColor}) =>
       RoundedRectangleBorder(
@@ -127,6 +149,8 @@ class AppShapes extends ThemeExtension<AppShapes> {
     double? radiusControl,
     double? radiusContainer,
     double? radiusMedia,
+    double? radiusPill,
+    double? radiusCell,
     double? strokeHairline,
     double? strokeEmphasis,
     double? elevationFlat,
@@ -137,6 +161,8 @@ class AppShapes extends ThemeExtension<AppShapes> {
     radiusControl: radiusControl ?? this.radiusControl,
     radiusContainer: radiusContainer ?? this.radiusContainer,
     radiusMedia: radiusMedia ?? this.radiusMedia,
+    radiusPill: radiusPill ?? this.radiusPill,
+    radiusCell: radiusCell ?? this.radiusCell,
     strokeHairline: strokeHairline ?? this.strokeHairline,
     strokeEmphasis: strokeEmphasis ?? this.strokeEmphasis,
     elevationFlat: elevationFlat ?? this.elevationFlat,
@@ -154,6 +180,8 @@ class AppShapes extends ThemeExtension<AppShapes> {
       radiusControl: _lerpDouble(radiusControl, other.radiusControl, t),
       radiusContainer: _lerpDouble(radiusContainer, other.radiusContainer, t),
       radiusMedia: _lerpDouble(radiusMedia, other.radiusMedia, t),
+      radiusPill: _lerpDouble(radiusPill, other.radiusPill, t),
+      radiusCell: _lerpDouble(radiusCell, other.radiusCell, t),
       strokeHairline: _lerpDouble(strokeHairline, other.strokeHairline, t),
       strokeEmphasis: _lerpDouble(strokeEmphasis, other.strokeEmphasis, t),
       elevationFlat: _lerpDouble(elevationFlat, other.elevationFlat, t),

@@ -47,6 +47,8 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.scrim,
     required this.shadow,
     required this.focusRing,
+    required this.surfaceDisabled,
+    required this.onDisabled,
   });
 
   /// Light-mode palette: cool paper greys with a violet primary.
@@ -80,6 +82,8 @@ class AppColors extends ThemeExtension<AppColors> {
     scrim: Color(0xFF0B0D11),
     shadow: Color(0xFF5A6070),
     focusRing: Color(0xFF6C4DFF),
+    surfaceDisabled: Color(0xFFE9EBF0),
+    onDisabled: Color(0xFF858B98),
   );
 
   /// Dark-mode palette: blue-black greys with a lifted violet primary.
@@ -105,6 +109,8 @@ class AppColors extends ThemeExtension<AppColors> {
     scrim: Color(0xFF000000),
     shadow: Color(0xFF000000),
     focusRing: Color(0xFF9C8BFF),
+    surfaceDisabled: Color(0xFF20242B),
+    onDisabled: Color(0xFF767C88),
   );
 
   /// Palette this token set was resolved for.
@@ -176,6 +182,22 @@ class AppColors extends ThemeExtension<AppColors> {
   /// Keyboard-focus ring colour.
   final Color focusRing;
 
+  /// Fill of a disabled control.
+  ///
+  /// Deliberately distinct from [surfaceAlt]: a disabled button painted in the
+  /// same tone as the panel it sits on disappears (see `AppButton`).
+  final Color surfaceDisabled;
+
+  /// Foreground of a disabled control and its disabled label.
+  ///
+  /// Inactive components are exempt from the WCAG contrast minimum, so this
+  /// role is intentionally below the 4.5:1 text target while staying at or
+  /// above 3:1 against [surfaceDisabled] so it is still perceivable.
+  final Color onDisabled;
+
+  /// Alpha applied to [scrim] for a modal barrier over a page.
+  static const double modalScrimAlpha = 0.55;
+
   /// A tinted plane for membership/premium blocks: [accentPrimary] at 8 % alpha
   /// in light mode and 14 % in dark mode, so the tint carries the same visual
   /// weight against either canvas.
@@ -184,6 +206,21 @@ class AppColors extends ThemeExtension<AppColors> {
         ? _premiumAlphaLight
         : _premiumAlphaDark,
   );
+
+  /// Alpha applied to artwork that is not available to the current user (a VIP
+  /// locked episode or poster).
+  static const double lockedOverlayAlpha = 0.58;
+
+  /// Dimming overlay for locked artwork, in the accent colour so the lock reads
+  /// as an interactive gate rather than as damage.
+  Color get lockedOverlay =>
+      accentPrimary.withValues(alpha: lockedOverlayAlpha);
+
+  /// Alpha of the avatar plate tint.
+  static const double avatarTintAlpha = 0.14;
+
+  /// Tinted plate behind an initial-based avatar.
+  Color get avatarTint => accentPrimary.withValues(alpha: avatarTintAlpha);
 
   /// The Material [ColorScheme] this token set maps onto.
   ///
@@ -251,6 +288,8 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? scrim,
     Color? shadow,
     Color? focusRing,
+    Color? surfaceDisabled,
+    Color? onDisabled,
   }) => AppColors(
     brightness: brightness ?? this.brightness,
     canvas: canvas ?? this.canvas,
@@ -273,6 +312,8 @@ class AppColors extends ThemeExtension<AppColors> {
     scrim: scrim ?? this.scrim,
     shadow: shadow ?? this.shadow,
     focusRing: focusRing ?? this.focusRing,
+    surfaceDisabled: surfaceDisabled ?? this.surfaceDisabled,
+    onDisabled: onDisabled ?? this.onDisabled,
   );
 
   @override
@@ -302,6 +343,12 @@ class AppColors extends ThemeExtension<AppColors> {
       scrim: Color.lerp(scrim, other.scrim, t)!,
       shadow: Color.lerp(shadow, other.shadow, t)!,
       focusRing: Color.lerp(focusRing, other.focusRing, t)!,
+      surfaceDisabled: Color.lerp(
+        surfaceDisabled,
+        other.surfaceDisabled,
+        t,
+      )!,
+      onDisabled: Color.lerp(onDisabled, other.onDisabled, t)!,
     );
   }
 }

@@ -9,8 +9,11 @@ library;
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
+import 'app_icons.dart';
+import 'app_media.dart';
 import 'app_motion.dart';
 import 'app_shapes.dart';
+import 'app_spacing.dart';
 import 'app_typography.dart';
 
 /// The light theme.
@@ -32,6 +35,9 @@ ThemeData appTheme(Brightness brightness) {
       : AppTypography.dark;
   final AppShapes shapes = isLight ? AppShapes.light : AppShapes.dark;
   final AppMotion motion = isLight ? AppMotion.standard : AppMotion.dark;
+  final AppSpacing spacing = AppSpacing.standard;
+  final AppIconSize icons = AppIconSize.standard;
+  final AppMedia media = AppMedia.standard;
   final ColorScheme scheme = colors.colorScheme;
   final TextTheme textTheme = buildAppTextTheme(brightness);
 
@@ -63,10 +69,17 @@ ThemeData appTheme(Brightness brightness) {
         TargetPlatform.windows: ReelChangePageTransitionsBuilder(),
       },
     ),
-    extensions: <ThemeExtension<dynamic>>[colors, typography, shapes, motion],
-    appBarTheme: _appBarTheme(colors, shapes, textTheme),
-    navigationBarTheme: _navigationBarTheme(colors, shapes, textTheme),
-    bottomSheetTheme: _bottomSheetTheme(colors, shapes, textTheme),
+    extensions: <ThemeExtension<dynamic>>[
+      colors,
+      typography,
+      shapes,
+      motion,
+      spacing,
+      icons,
+      media,
+    ],
+    appBarTheme: _appBarTheme(colors, shapes, typography, icons),
+    bottomSheetTheme: _bottomSheetTheme(colors, shapes, spacing, textTheme),
     snackBarTheme: _snackBarTheme(colors, shapes, textTheme),
     inputDecorationTheme: _inputDecorationTheme(colors, shapes, textTheme),
     filledButtonTheme: FilledButtonThemeData(
@@ -172,7 +185,8 @@ ThemeData appTheme(Brightness brightness) {
 AppBarThemeData _appBarTheme(
   AppColors colors,
   AppShapes shapes,
-  TextTheme textTheme,
+  AppTypography typography,
+  AppIconSize icons,
 ) => AppBarThemeData(
   backgroundColor: colors.canvas,
   foregroundColor: colors.textPrimary,
@@ -181,80 +195,39 @@ AppBarThemeData _appBarTheme(
   elevation: shapes.elevationFlat,
   scrolledUnderElevation: shapes.elevationFlat,
   centerTitle: false,
-  titleSpacing: 16,
+  titleSpacing: AppSpacing.standard.space4,
   leadingWidth: 56,
   toolbarHeight: 56,
-  iconTheme: IconThemeData(color: colors.textPrimary, size: 22),
-  actionsIconTheme: IconThemeData(color: colors.textSecondary, size: 22),
-  titleTextStyle: textTheme.titleLarge,
-  toolbarTextStyle: textTheme.bodyMedium,
+  iconTheme: IconThemeData(color: colors.textPrimary, size: icons.lg),
+  actionsIconTheme: IconThemeData(
+    color: colors.textSecondary,
+    size: icons.lg,
+  ),
+  // One page-title role for every sub-page; before this the screens answered
+  // with displayLarge / titleLarge / display interchangeably.
+  titleTextStyle: typography.screenTitle.copyWith(color: colors.textPrimary),
+  toolbarTextStyle: typography.body.copyWith(color: colors.textPrimary),
   shape: Border(
     bottom: BorderSide(color: colors.hairline, width: shapes.strokeHairline),
   ),
   actionsPadding: const EdgeInsets.only(right: 8),
 );
 
-/// The bottom navigation bar: rail-flat, with an accent pill behind the
-/// selected destination and a state-carrying label weight.
-NavigationBarThemeData _navigationBarTheme(
-  AppColors colors,
-  AppShapes shapes,
-  TextTheme textTheme,
-) => NavigationBarThemeData(
-  height: 68,
-  backgroundColor: colors.surface,
-  surfaceTintColor: Colors.transparent,
-  shadowColor: Colors.transparent,
-  elevation: shapes.elevationFlat,
-  indicatorColor: colors.premiumSurface,
-  indicatorShape: RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(shapes.radiusControl + 6),
-  ),
-  labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-  labelPadding: const EdgeInsets.only(top: 2),
-  iconTheme: WidgetStateProperty.resolveWith<IconThemeData>((
-    Set<WidgetState> states,
-  ) {
-    final bool selected = states.contains(WidgetState.selected);
-    return IconThemeData(
-      size: 24,
-      color: selected ? colors.accentPrimary : colors.textSecondary,
-    );
-  }),
-  labelTextStyle: WidgetStateProperty.resolveWith<TextStyle>((
-    Set<WidgetState> states,
-  ) {
-    final bool selected = states.contains(WidgetState.selected);
-    final TextStyle base = selected
-        ? textTheme.labelMedium ?? const TextStyle()
-        : textTheme.labelSmall ?? const TextStyle();
-    return base.copyWith(
-      color: selected ? colors.accentPrimary : colors.textSecondary,
-      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-      letterSpacing: selected ? 0.6 : 0.8,
-    );
-  }),
-  overlayColor: WidgetStateProperty.resolveWith<Color?>((
-    Set<WidgetState> states,
-  ) {
-    if (states.contains(WidgetState.pressed)) {
-      return colors.accentPrimary.withValues(alpha: 0.10);
-    }
-    return null;
-  }),
-);
-
 /// Bottom sheets: rounded top corners, hairline handle, page-coloured barrier.
+///
+/// The sheet radius is [AppShapes.radiusMedia] (20): the value the design
+/// system reserves for full-bleed media surfaces, which a bottom sheet is.
 BottomSheetThemeData _bottomSheetTheme(
   AppColors colors,
   AppShapes shapes,
+  AppSpacing spacing,
   TextTheme textTheme,
 ) => BottomSheetThemeData(
   backgroundColor: colors.surface,
   modalBackgroundColor: colors.surface,
   surfaceTintColor: Colors.transparent,
   shadowColor: colors.shadow,
-  modalBarrierColor: colors.scrim.withValues(alpha: 0.55),
+  modalBarrierColor: colors.scrim.withValues(alpha: AppColors.modalScrimAlpha),
   elevation: shapes.elevationFlat,
   modalElevation: shapes.elevationFloating,
   clipBehavior: Clip.antiAlias,
@@ -264,7 +237,7 @@ BottomSheetThemeData _bottomSheetTheme(
   constraints: const BoxConstraints(minWidth: 320, maxWidth: 720),
   shape: RoundedRectangleBorder(
     borderRadius: BorderRadius.vertical(
-      top: Radius.circular(shapes.radiusContainer + 4),
+      top: Radius.circular(shapes.radiusMedia),
     ),
   ),
 );
