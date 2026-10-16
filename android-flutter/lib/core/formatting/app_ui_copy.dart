@@ -52,6 +52,11 @@ abstract final class AppUiCopy {
   /// Tone word shown and announced beside an informational message.
   static const String toneInfo = 'Info';
 
+  /// Helper under the new-password field: the length rule only, because the
+  /// registration instructions (pick a username, solve a captcha) do not apply
+  /// to changing an existing password.
+  static const String passwordMinimumHint = 'At least 8 characters';
+
   /// Search: heading of the results list.
   static const String searchResultsSection = 'Results';
 

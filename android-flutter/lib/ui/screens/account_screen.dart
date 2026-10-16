@@ -15,6 +15,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/formatting/app_strings.dart';
 import '../../core/formatting/navigation_contract.dart';
+import '../../core/formatting/app_ui_copy.dart';
 import '../../core/formatting/ui_formats.dart';
 import '../../core/formatting/update_ui_format.dart';
 import '../../data/models/app_models.dart';
@@ -149,7 +150,11 @@ class _IdentityCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   state.vipActive
-                      ? '$copy.accountVipStatusActive · ${state.vipUntil ?? ''}'
+                      ? <String>[
+                          copy.accountVipStatusActive,
+                          if (dateOnlyLabel(state.vipUntil).isNotEmpty)
+                            dateOnlyLabel(state.vipUntil),
+                        ].join(' · ')
                       : copy.accountVipStatusInactive,
                   style: roles.body.copyWith(color: colors.textSecondary),
                 ),
@@ -877,7 +882,9 @@ class _PasswordSheetState extends State<_PasswordSheet> {
           AppTextField(
             controller: _newPassword,
             label: copy.accountPasswordNewLabel,
-            helperText: copy.authRegisterSubtitle,
+            // Change-password needs the length rule, not the registration
+            // instructions (username and captcha do not apply here).
+            helperText: AppUiCopy.passwordMinimumHint,
             obscureText: true,
           ),
           const SizedBox(height: 18),

@@ -122,6 +122,18 @@ void main() {
     }
   });
 
+  test('presentation helpers group digits and trim timestamps', () {
+    expect(groupedDigits(0), '0');
+    expect(groupedDigits(999), '999');
+    expect(groupedDigits(1000), '1,000');
+    expect(groupedDigits(29184), '29,184');
+    expect(groupedDigits(-1234567), '-1,234,567');
+    expect(dateOnlyLabel('2026-11-13 00:00:00'), '2026-11-13');
+    expect(dateOnlyLabel('2026-11-13T00:00:00Z'), '2026-11-13');
+    expect(dateOnlyLabel(''), '');
+    expect(dateOnlyLabel(null), '');
+  });
+
   test('spacing, icon and media tokens are complete and stable', () {
     final AppSpacing spacing = AppSpacing.standard;
     expect(

@@ -588,3 +588,37 @@ class _Decimal implements Comparable<_Decimal> {
   @override
   String toString() => toPlainString();
 }
+
+
+/// Groups the digits of an integer with thousands separators (`29184` ->
+/// `29,184`).
+///
+/// Balances and point totals are rendered straight from the API integer today;
+/// an ungrouped five-digit figure is unreadable at a glance and reads as a raw
+/// database value rather than as money.
+String groupedDigits(int value) {
+  final bool negative = value < 0;
+  final String digits = value.abs().toString();
+  final StringBuffer buffer = StringBuffer();
+  for (int i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) {
+      buffer.write(',');
+    }
+    buffer.write(digits[i]);
+  }
+  return negative ? '-$buffer' : buffer.toString();
+}
+
+/// Date-only form of an ISO-ish timestamp (`2026-11-13 00:00:00` ->
+/// `2026-11-13`).
+///
+/// A membership expiry is a date, not a clock time: the API timestamp is
+/// trimmed to its date part instead of being rendered raw with the midnight
+/// component the user never chose.
+String dateOnlyLabel(String? value) {
+  final String trimmed = value?.trim() ?? '';
+  if (trimmed.isEmpty) {
+    return '';
+  }
+  return trimmed.split(RegExp(r'[T ]')).first;
+}

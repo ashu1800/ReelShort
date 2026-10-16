@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/formatting/app_strings.dart';
+import '../../core/formatting/ui_formats.dart';
 import '../../data/models/app_models.dart';
 import '../../state/app_state_controller.dart';
 import '../../state/app_ui_state.dart';
@@ -197,20 +198,20 @@ class _BalancePanel extends StatelessWidget {
             const SizedBox(height: _panelGap),
             AppLedgerRow(
               label: copy.fundsTotalPointsLabel,
-              value: '${account?.balance ?? 0}',
+              value: groupedDigits(account?.balance ?? 0),
               valueColor: colors.accentPrimary,
             ),
             AppLedgerRow(
               label: copy.fundsTodayCreditedPointsLabel,
-              value: '${account?.todayCreditedPoints ?? 0}',
+              value: groupedDigits(account?.todayCreditedPoints ?? 0),
             ),
             AppLedgerRow(
               label: copy.fundsFrozenPointsLabel,
-              value: '${account?.frozenPoints ?? 0}',
+              value: groupedDigits(account?.frozenPoints ?? 0),
             ),
             AppLedgerRow(
               label: copy.fundsAvailablePointsLabel,
-              value: '${account?.availablePoints ?? 0}',
+              value: groupedDigits(account?.availablePoints ?? 0),
               divider: false,
             ),
           ],
@@ -258,7 +259,7 @@ class _VipStatusBadge extends StatelessWidget {
           const SizedBox(width: 8),
           Flexible(
             child: Text(
-              '${copy.accountVipExpiryPrefix}${state.vipUntil}',
+              '${copy.accountVipExpiryPrefix}${dateOnlyLabel(state.vipUntil)}',
               style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
             ),
           ),

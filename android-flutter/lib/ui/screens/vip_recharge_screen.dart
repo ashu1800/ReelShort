@@ -17,6 +17,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/formatting/app_strings.dart';
+import '../../core/formatting/ui_formats.dart';
 import '../../data/models/app_models.dart';
 import '../../state/app_state_controller.dart';
 import '../../state/app_ui_state.dart';
@@ -173,7 +174,7 @@ class _VipOrderPanelState extends State<_VipOrderPanel> {
               ),
               if (state.vipUntil != null)
                 Text(
-                  '${widget.copy.vipExpiryLabel}${state.vipUntil}',
+                  '${widget.copy.vipExpiryLabel}${dateOnlyLabel(state.vipUntil)}',
                   style: Theme.of(context).textTheme.bodyMedium
                       ?.copyWith(color: colors.textSecondary),
                 ),
