@@ -19,6 +19,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/formatting/app_strings.dart';
+import '../../core/formatting/app_ui_copy.dart';
 import '../../core/formatting/reward_badge_state.dart';
 import '../../core/formatting/ui_formats.dart';
 import '../../data/models/app_models.dart';
@@ -26,9 +27,40 @@ import '../../state/app_state_controller.dart';
 import '../../state/app_ui_state.dart';
 import '../../state/playback_state.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_icons.dart';
+import '../../theme/app_media.dart';
 import '../../theme/app_shapes.dart';
+import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../components/app_button.dart';
+import '../components/app_empty_state.dart';
+import '../components/app_loading.dart';
+import '../components/app_sheet.dart';
+import '../components/episode_spine.dart';
+
+/// Minimum target of every tappable element in the player chrome.
+const double _minTargetExtent = 44;
+
+/// Height of the bottom watched-progress bar.
+const double _progressBarHeight = 3;
+
+/// How far the action rail floats above the bottom copy block.
+const double _railBottomInset = 120;
+
+/// Touch target of the reward badge (its geometry is unchanged from the port).
+const double _rewardRingTarget = 48;
+
+/// Diameter of the reward ring itself.
+const double _rewardRingDiameter = 44;
+
+/// Width of the brightness/volume feedback track.
+const double _gestureTrackWidth = 96;
+
+/// Fraction of the screen height a player sheet may occupy.
+const double _sheetHeightFactor = 0.7;
+
+/// Right inset of the bottom copy block, so it never runs under the rail.
+const double _bottomCopyRailInset = 84;
 
 /// How often the position tick runs.
 const Duration _tickInterval = Duration(seconds: 1);
@@ -476,6 +508,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget build(BuildContext context) {
     final AppUiState state = _state;
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppMedia media = appMediaOf(context);
+    final AppSpacing spacing = appSpacingOf(context);
     final PlaybackState playback = state.playback;
     final String? url = playback.videoUrl?.url;
     final VideoPlayerController? video = _video;
@@ -502,8 +536,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
 
     return Scaffold(
-      backgroundColor:
-          colors.brightness == Brightness.dark ? Colors.black : colors.canvas,
+      // The plane behind the video is the media backdrop in dark mode, the page
+      // canvas otherwise - both tokens, never a raw black.
+      backgroundColor: colors.brightness == Brightness.dark
+          ? media.gradientBase
+          : colors.canvas,
       body: Stack(
         children: <Widget>[
           // Video surface with its full-bleed overlays and gestures.
@@ -541,13 +578,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                         child: Container(
                           width: 72,
                           height: 72,
-                          decoration: const BoxDecoration(
-                            color: Colors.black45,
+                          decoration: BoxDecoration(
+                            color: media.scrim,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.play_arrow_rounded,
-                            color: Colors.white,
+                            color: media.onMedia,
                             size: 48,
                           ),
                         ),
@@ -583,8 +620,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           // Top bar: back button, reward ring, `+N pt` toast.
           Positioned(
             top: 0,
-            left: 8,
-            right: 8,
+            left: spacing.space2,
+            right: spacing.space2,
             child: SafeArea(
               bottom: false,
               child: Row(
@@ -592,7 +629,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 children: <Widget>[
                   _CircleIconButton(
                     icon: Icons.arrow_back,
-                    label: strings(state.language).playerScreen,
+                    label: AppUiCopy.back,
                     onTap: _handleBack,
                   ),
                   const Spacer(),
@@ -603,8 +640,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       if (_rewardToastVisible)
                         Padding(
                           padding: EdgeInsets.only(
-                            top: showRewardRing ? 4 : 0,
-                            right: 4,
+                            top: showRewardRing ? spacing.space1 : 0,
+                            right: spacing.space1,
                           ),
                           child: _RewardToast(points: _rewardToastPoints),
                         ),
@@ -625,7 +662,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 child: Align(
                   alignment: Alignment.topCenter,
                   child: Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: EdgeInsets.only(top: spacing.space2),
                     child: _RewardErrorBanner(state: state),
                   ),
                 ),
@@ -633,8 +670,9 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
           // Right action rail: like, comments, favourite.
           Positioned(
-            right: 12,
-            bottom: MediaQuery.viewPaddingOf(context).bottom + 120,
+            right: spacing.space4,
+            bottom:
+                MediaQuery.viewPaddingOf(context).bottom + _railBottomInset,
             child: _ActionRail(state: state),
           ),
           // Bottom info: titles, description, progress, episode selector.
@@ -653,6 +691,9 @@ class _CoverOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppMedia media = appMediaOf(context);
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final String? coverUrl = state.playback.book?.coverUrl.coverUrlOrNull();
     final int episodeNumber = state.playback.episode?.number ?? 1;
 
@@ -662,33 +703,33 @@ class _CoverOverlay extends StatelessWidget {
         if (coverUrl != null)
           CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover)
         else
-          const DecoratedBox(
+          DecoratedBox(
+            // Placeholder when the book has no artwork: the media token pair,
+            // so the chrome above it keeps its contrast contract.
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: <Color>[
-                  Color(0xFF2B2412),
-                  Color(0xFF10141D),
-                  Colors.black,
-                ],
+                colors: <Color>[AppMedia.glassBase, media.gradientBase],
               ),
             ),
           ),
-        const ColoredBox(color: Color(0xB3000000)),
+        ColoredBox(color: media.scrim),
         Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const SizedBox(
-                width: 36,
-                height: 36,
-                child: CircularProgressIndicator(strokeWidth: 2),
+              SizedBox(
+                width: spacing.space8,
+                height: spacing.space8,
+                child: const CircularProgressIndicator(strokeWidth: 2),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: spacing.space3),
               Text(
                 playerLoadingLabel(episodeNumber, state.language),
-                style: const TextStyle(color: Colors.white70),
+                style: roles.onMediaBody.copyWith(
+                  color: media.onMediaSecondary,
+                ),
               ),
             ],
           ),
@@ -706,28 +747,35 @@ class _BufferingOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppMedia media = appMediaOf(context);
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final int episodeNumber = state.playback.episode?.number ?? 1;
 
     return Center(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: EdgeInsets.symmetric(
+          horizontal: spacing.space4,
+          vertical: spacing.space3,
+        ),
         decoration: BoxDecoration(
-          color: const Color(0xD611151E),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white24),
+          color: media.glassStrong,
+          borderRadius: BorderRadius.circular(shapes.radiusMedia),
+          border: Border.all(color: media.divider),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+            SizedBox(
+              width: spacing.space5,
+              height: spacing.space5,
+              child: const CircularProgressIndicator(strokeWidth: 2),
             ),
-            const SizedBox(width: 10),
+            SizedBox(width: spacing.space3),
             Text(
               playerLoadingLabel(episodeNumber, state.language),
-              style: const TextStyle(color: Colors.white),
+              style: roles.onMediaBody.copyWith(color: media.onMedia),
             ),
           ],
         ),
@@ -754,15 +802,26 @@ class _ErrorOverlay extends StatelessWidget {
     final AppUiState state = context.watch<AppStateController>().state;
     final AppStrings copy = strings(state.language);
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
 
     return Center(
+      // The recovery card is a *surface* plane, not media glass: the three
+      // actions are `AppButton`s, whose variants paint `textPrimary` and other
+      // surface-plane foregrounds. On dark glass those are unreadable in the
+      // light theme, so the card carries the surface colours the buttons were
+      // designed against and the recovery set stays legible in both themes.
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 36),
-        padding: const EdgeInsets.all(18),
+        margin: EdgeInsets.symmetric(horizontal: spacing.space8),
+        padding: EdgeInsets.all(spacing.space4),
         decoration: BoxDecoration(
-          color: const Color(0xE611151E),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white24),
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(shapes.radiusContainer),
+          border: Border.all(
+            color: colors.hairline,
+            width: shapes.strokeHairline,
+          ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -772,33 +831,36 @@ class _ErrorOverlay extends StatelessWidget {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
+              style: roles.body.copyWith(
+                color: colors.textPrimary,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                AppButton(label: copy.playerRetryAction, onPressed: onRetry),
-                if (onNext != null) ...<Widget>[
-                  const SizedBox(width: 10),
-                  AppButton(
-                    label: copy.playerNextEpisodeAction,
-                    variant: AppButtonVariant.secondary,
-                    onPressed: onNext,
-                  ),
-                ],
-              ],
+            SizedBox(height: spacing.space3),
+            // One filled action per region: Retry is the primary recovery, Next
+            // is its outlined alternative and Back is the quiet escape. They
+            // stack full width so the recovery set survives a 320 px screen at
+            // 3.2x text instead of overflowing the row.
+            AppButton(
+              label: copy.playerRetryAction,
+              isExpanded: true,
+              onPressed: onRetry,
             ),
-            const SizedBox(height: 6),
-            TextButton(
-              onPressed: onBack,
-              child: Text(
-                copy.playerBackAction,
-                style: TextStyle(color: colors.textSecondary),
+            if (onNext != null) ...<Widget>[
+              SizedBox(height: spacing.space2),
+              AppButton(
+                label: copy.playerNextEpisodeAction,
+                variant: AppButtonVariant.secondary,
+                isExpanded: true,
+                onPressed: onNext,
               ),
+            ],
+            SizedBox(height: spacing.space2),
+            AppButton(
+              label: copy.playerBackAction,
+              variant: AppButtonVariant.tertiary,
+              isExpanded: true,
+              onPressed: onBack,
             ),
           ],
         ),
@@ -821,19 +883,28 @@ class _CircleIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppIconSize icons = appIconSizeOf(context);
+    final AppMedia media = appMediaOf(context);
+
     return Semantics(
       button: true,
       label: label,
-      child: Material(
-        color: Colors.black38,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox(
-            width: 40,
-            height: 40,
-            child: Icon(icon, color: Colors.white, size: 22),
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: label,
+        child: Material(
+          color: media.glass,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: SizedBox(
+              // The chrome target is never smaller than the touch minimum.
+              width: _minTargetExtent,
+              height: _minTargetExtent,
+              child: Icon(icon, color: media.onMedia, size: icons.md),
+            ),
           ),
         ),
       ),
@@ -851,6 +922,8 @@ class _RewardRing extends StatelessWidget {
   Widget build(BuildContext context) {
     final PlaybackState playback = state.playback;
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppMedia media = appMediaOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     // Ring state priority: error > reporting > daily limit > unavailable > claimed > ready >
     // waiting — all derived inside the shared formatter from the same inputs the Kotlin badge
     // used. The centre shows the estimate before settlement and the awarded points after.
@@ -864,39 +937,51 @@ class _RewardRing extends StatelessWidget {
       rewardStatus: playback.rewardStatus,
       awardedPoints: playback.awardedPoints,
     );
+    // Media-plane accents: the muted states use the media foreground rather
+    // than the surface-plane `textSecondary`, which is a dark grey in the light
+    // theme and vanishes over video.
     final Color ringColor = switch (badge.visualState) {
       RewardBadgeVisualState.error => colors.accentDanger,
       RewardBadgeVisualState.dailyLimit ||
-      RewardBadgeVisualState.unavailable => colors.textSecondary,
+      RewardBadgeVisualState.unavailable => media.onMediaSecondary,
       _ => colors.accentReward,
     };
 
     return Semantics(
       button: true,
       label: rewardBadgeContentDescription(badge, state.language),
+      onTap: () => _openRewardInfoSheet(context),
+      excludeSemantics: true,
       child: InkWell(
         onTap: () => _openRewardInfoSheet(context),
         customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: 48,
-          height: 48,
+        child: Container(
+          // Same geometry as before (48 target / 44 ring), now on the standard
+          // chrome plate: the figure is text over arbitrary video, so the glass
+          // makes its contrast deterministic instead of content-dependent.
+          width: _rewardRingTarget,
+          height: _rewardRingTarget,
+          decoration: BoxDecoration(color: media.glass, shape: BoxShape.circle),
           child: Stack(
             alignment: Alignment.center,
             children: <Widget>[
               SizedBox(
-                width: 44,
-                height: 44,
+                width: _rewardRingDiameter,
+                height: _rewardRingDiameter,
                 child: CircularProgressIndicator(
                   value: badge.ringProgress,
                   strokeWidth: 3,
                   color: ringColor,
-                  backgroundColor: Colors.white24,
+                  backgroundColor: media.divider,
                 ),
               ),
               Text(
                 badge.pointsText,
-                style: TextStyle(
-                  color: ringColor,
+                // Numeric role, so a 3-digit estimate still fits the ring; the
+                // arc keeps the reward/state colour, the figure stays readable
+                // over any frame.
+                style: roles.numeric.copyWith(
+                  color: media.onMedia,
                   fontSize: badge.pointsFontSizeSp,
                   fontWeight: FontWeight.w600,
                 ),
@@ -964,41 +1049,49 @@ class _GestureFeedbackPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppMedia media = appMediaOf(context);
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.symmetric(
+        horizontal: spacing.space4,
+        vertical: spacing.space3,
+      ),
       decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(24),
+        color: media.glassStrong,
+        borderRadius: BorderRadius.circular(shapes.radiusPill),
+        border: Border.all(color: media.divider),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, color: Colors.white, size: 20),
-          const SizedBox(width: 8),
+          Icon(icon, color: media.onMedia, size: appIconSizeOf(context).md),
+          SizedBox(width: spacing.space2),
           SizedBox(
-            width: 96,
-            height: 4,
+            width: _gestureTrackWidth,
+            height: spacing.space1,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(2),
+              borderRadius: shapes.inlineRadius,
               child: Stack(
                 fit: StackFit.expand,
                 children: <Widget>[
-                  const ColoredBox(color: Colors.white24),
+                  ColoredBox(color: media.divider),
                   FractionallySizedBox(
                     alignment: Alignment.centerLeft,
                     widthFactor: value.clamp(0.0, 1.0),
-                    child: const ColoredBox(color: Colors.white),
+                    child: ColoredBox(color: media.onMedia),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: spacing.space2),
           Text(
             '${(value.clamp(0.0, 1.0) * 100).round()}%',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
+            style: roles.caption.copyWith(
+              color: media.onMedia,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1017,19 +1110,24 @@ class _RewardToast extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final AppUiState state = context.watch<AppStateController>().state;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: EdgeInsets.symmetric(
+        horizontal: spacing.space3,
+        vertical: spacing.space1,
+      ),
       decoration: BoxDecoration(
         color: colors.accentReward,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(shapes.radiusMedia),
       ),
       child: Text(
         rewardBadgeAwardLabel(points, state.language),
-        style: TextStyle(
+        style: roles.caption.copyWith(
           color: colors.onReward,
-          fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -1045,17 +1143,26 @@ class _RewardErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppMedia media = appMediaOf(context);
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: spacing.space4,
+        vertical: spacing.space2,
+      ),
       decoration: BoxDecoration(
-        color: const Color(0xE63A1417),
-        borderRadius: BorderRadius.circular(10),
+        color: media.glassDanger,
+        borderRadius: BorderRadius.circular(shapes.radiusControl),
       ),
       child: Text(
+        // The danger tone is carried by the glass fill; the copy itself must
+        // use the media foreground, because a surface-plane `accentDanger` is
+        // near-black red in the light theme and disappears into the fill.
         strings(state.language).playerRewardError,
-        style: TextStyle(color: colors.accentDanger, fontSize: 12),
+        style: roles.caption.copyWith(color: media.onMedia),
       ),
     );
   }
@@ -1070,42 +1177,50 @@ class _ActionRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppMedia media = appMediaOf(context);
+    final AppSpacing spacing = appSpacingOf(context);
     final AppStrings copy = strings(state.language);
     final AppStateController controller = context.read<AppStateController>();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        // The Kotlin rail exposes only the formatted count as the icon's
-        // content description for like and comments.
         _RailAction(
           icon: state.interaction.liked ? Icons.favorite : Icons.favorite_border,
+          // Second channel: the filled glyph plus the accent, so a liked state
+          // never rests on colour alone.
           color: state.interaction.liked
-              ? const Color(0xFFFF5C7A)
-              : Colors.white,
+              ? colors.accentDanger
+              : media.onMedia,
           label: _formatCount(state.interaction.likeCount),
-          semanticLabel: _formatCount(state.interaction.likeCount),
+          semanticLabel: _railSemanticLabel(
+            AppUiCopy.playerLike,
+            _formatCount(state.interaction.likeCount),
+          ),
           onTap: () {
             unawaited(HapticFeedback.selectionClick());
             return controller.toggleLike();
           },
         ),
-        const SizedBox(height: 22),
+        SizedBox(height: spacing.space5),
         _RailAction(
           icon: Icons.mode_comment_outlined,
-          color: Colors.white,
+          color: media.onMedia,
           label: _formatCount(state.comments.length),
-          semanticLabel: _formatCount(state.comments.length),
+          semanticLabel: _railSemanticLabel(
+            AppUiCopy.playerComments,
+            _formatCount(state.comments.length),
+          ),
           onTap: () async => _openCommentSheet(context),
         ),
-        const SizedBox(height: 22),
+        SizedBox(height: spacing.space5),
         _RailAction(
           icon: state.interaction.favorited
               ? Icons.bookmark
               : Icons.bookmark_border,
           color: state.interaction.favorited
               ? colors.accentPrimary
-              : Colors.white,
+              : media.onMedia,
           label: copy.playerFavoriteLabel,
           semanticLabel: copy.playerFavoriteLabel,
           onTap: () {
@@ -1118,16 +1233,22 @@ class _ActionRail extends StatelessWidget {
   }
 
   Future<void> _openCommentSheet(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const _CommentSheet(),
+    return AppSheet.show<void>(
+      context,
+      title: '${strings(state.language).playerCommentsTitlePrefix}'
+          '${state.comments.length}',
+      maxHeightFactor: _sheetHeightFactor,
+      child: const _CommentSheet(),
     );
   }
 }
 
-/// One rail button: icon above the count/label, both readable by screen readers.
+/// Announced label of a rail action: the action word, then its count when there
+/// is one. A bare count ("1.2k") never told a screen reader what it counted.
+String _railSemanticLabel(String action, String count) =>
+    count.isEmpty ? action : '$action, $count';
+
+/// One rail button: a glass plate carrying the glyph, with its count below.
 class _RailAction extends StatelessWidget {
   const _RailAction({
     required this.icon,
@@ -1145,27 +1266,39 @@ class _RailAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppMedia media = appMediaOf(context);
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+
     return Semantics(
       button: true,
       label: semanticLabel,
+      onTap: () => unawaited(onTap()),
+      excludeSemantics: true,
       child: InkWell(
         onTap: () => unawaited(onTap()),
         customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: 48,
-          height: 52,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Icon(icon, color: color, size: 26),
-              if (label.isNotEmpty)
-                Text(
-                  label,
-                  style: const TextStyle(color: Colors.white, fontSize: 11),
-                  maxLines: 1,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: _minTargetExtent,
+              height: _minTargetExtent,
+              decoration: BoxDecoration(
+                color: media.glass,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: appIconSizeOf(context).md),
+            ),
+            if (label.isNotEmpty) ...<Widget>[
+              SizedBox(height: spacing.space1),
+              Text(
+                label,
+                style: roles.caption.copyWith(color: media.onMedia),
+                maxLines: 1,
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -1215,120 +1348,107 @@ class _CommentSheetState extends State<_CommentSheet> {
   @override
   Widget build(BuildContext context) {
     final AppUiState state = context.watch<AppStateController>().state;
-    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppIconSize icons = appIconSizeOf(context);
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
     final AppStrings copy = strings(state.language);
     final bool canSend = _draft.text.trim().isNotEmpty;
 
-    // Cap the sheet so an open keyboard never pushes its top off-screen.
-    final double screenHeight = MediaQuery.sizeOf(context).height;
-    final double keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-    final double sheetHeight = screenHeight * 0.7 < screenHeight - keyboardInset - 120
-        ? screenHeight * 0.7
-        : screenHeight - keyboardInset - 120;
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: keyboardInset),
-      child: SizedBox(
-        height: sheetHeight,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 8, 12),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      '${copy.playerCommentsTitlePrefix}${state.comments.length}',
-                      style: roles.display,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: copy.playerClose,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (state.isLoading && state.comments.isEmpty)
+          // The first load is the only time the list can be "loading but
+          // empty"; a submit-then-refresh keeps the rows on screen.
+          Expanded(
+            child: Center(
+              child: AppInlineLoading(label: AppUiCopy.playerCommentsLoading),
             ),
-            if (state.comments.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 28),
-                child: Center(
-                  child: Text(
-                    copy.playerCommentsEmpty,
-                    style: roles.body.copyWith(color: colors.textSecondary),
+          )
+        else if (state.comments.isEmpty)
+          Expanded(
+            child: AppEmptyState(
+              icon: Icons.mode_comment_outlined,
+              title: AppUiCopy.playerCommentsEmptyTitle,
+              body: AppUiCopy.playerCommentsEmptyBody,
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.separated(
+              padding: EdgeInsets.zero,
+              itemCount: state.comments.length,
+              separatorBuilder: (_, _) => SizedBox(height: spacing.space3),
+              itemBuilder: (BuildContext context, int index) {
+                final Comment comment = state.comments[index];
+                return _CommentItem(
+                  key: ValueKey<String>(comment.id),
+                  comment: comment,
+                );
+              },
+            ),
+          ),
+        SizedBox(height: spacing.space2),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.only(bottom: spacing.space2),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: TextField(
+                    controller: _draft,
+                    decoration: InputDecoration(
+                      hintText: copy.playerCommentPlaceholder,
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(shapes.radiusPill),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: colors.surfaceAlt,
+                    ),
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _submit(),
                   ),
                 ),
-              )
-            else
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  itemCount: state.comments.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (BuildContext context, int index) {
-                    final Comment comment = state.comments[index];
-                    return _CommentItem(
-                      key: ValueKey<String>(comment.id),
-                      comment: comment,
-                    );
-                  },
-                ),
-              ),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: TextField(
-                        controller: _draft,
-                        decoration: InputDecoration(
-                          hintText: copy.playerCommentPlaceholder,
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(22),
-                            borderSide: BorderSide.none,
-                          ),
-                          filled: true,
-                          fillColor: colors.surfaceAlt,
-                        ),
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _submit(),
+                SizedBox(width: spacing.space2),
+                // The send affordance keeps a full touch target and is disabled
+                // (not hidden) while the draft is blank.
+                Semantics(
+                  button: true,
+                  enabled: canSend,
+                  label: AppUiCopy.playerCommentSend,
+                  onTap: canSend ? _submit : null,
+                  excludeSemantics: true,
+                  child: InkWell(
+                    onTap: canSend ? _submit : null,
+                    customBorder: const CircleBorder(),
+                    child: Container(
+                      width: _minTargetExtent,
+                      height: _minTargetExtent,
+                      decoration: BoxDecoration(
+                        color: canSend
+                            ? colors.accentPrimary
+                            : colors.surfaceAlt,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.send,
+                        size: icons.sm,
+                        color: canSend
+                            ? colors.onAccent
+                            : colors.textSecondary,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: canSend ? _submit : null,
-                      borderRadius: BorderRadius.circular(22),
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: canSend
-                              ? colors.accentPrimary
-                              : colors.surfaceAlt,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.send,
-                          size: 20,
-                          color: canSend
-                              ? colors.onAccent
-                              : colors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -1394,6 +1514,10 @@ class _BottomInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppMedia media = appMediaOf(context);
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final PlaybackState playback = state.playback;
     final String bookTitle = playback.book?.title ?? '';
     final String episodeTitle = playback.episode?.title ?? '';
@@ -1409,14 +1533,13 @@ class _BottomInfo extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[Colors.transparent, Color(0xE6000000)],
-        ),
+      decoration: BoxDecoration(gradient: media.bottomCopyGradient),
+      padding: EdgeInsets.fromLTRB(
+        spacing.space4,
+        spacing.space8,
+        _bottomCopyRailInset,
+        spacing.space4 + navInset,
       ),
-      padding: EdgeInsets.fromLTRB(16, 32, 84, 16 + navInset),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -1426,10 +1549,9 @@ class _BottomInfo extends StatelessWidget {
               bookTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
+              style: roles.onMediaBody.copyWith(
+                color: media.onMedia,
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
               ),
             ),
           if (episodeTitle.isNotEmpty)
@@ -1437,9 +1559,12 @@ class _BottomInfo extends StatelessWidget {
               episodeTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colors.accentPrimary,
-                fontSize: 14,
+              // Media foreground, not `accentPrimary`: the light-theme accent is
+              // a dark purple that loses contrast on the copy gradient; the size
+              // step under the bold book title carries the hierarchy instead.
+              style: roles.body.copyWith(
+                color: media.onMedia,
+                fontWeight: FontWeight.w600,
               ),
             ),
           if (episodeDescription.isNotEmpty)
@@ -1447,18 +1572,18 @@ class _BottomInfo extends StatelessWidget {
               episodeDescription,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              style: roles.caption.copyWith(color: media.onMediaSecondary),
             ),
-          const SizedBox(height: 8),
+          SizedBox(height: spacing.space2),
           ClipRRect(
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: shapes.inlineRadius,
             child: SizedBox(
-              height: 3,
+              height: _progressBarHeight,
               width: double.infinity,
               child: Stack(
                 fit: StackFit.expand,
                 children: <Widget>[
-                  const ColoredBox(color: Color(0x44FFFFFF)),
+                  ColoredBox(color: media.divider),
                   FractionallySizedBox(
                     alignment: Alignment.centerLeft,
                     widthFactor: progressPercent / 100,
@@ -1469,7 +1594,7 @@ class _BottomInfo extends StatelessWidget {
             ),
           ),
           if (state.episodes.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 10),
+            SizedBox(height: spacing.space3),
             _EpisodeSelectorBar(state: state),
           ],
         ],
@@ -1486,239 +1611,245 @@ class _EpisodeSelectorBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppStrings copy = strings(state.language);
     final EpisodeSummary? current = state.selectedEpisode;
+    final String currentLabel = current == null
+        ? ''
+        : ' · ${episodeNumberLabel(current.number, state.language)}';
 
-    return InkWell(
-      onTap: () => _openEpisodeSheet(context),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        height: 54,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: const Color(0xE61A1A1A),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    episodeSelectorLabel(state.episodes.length, state.language),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                  if (current != null)
-                    Text(
-                      '${copy.playerCurrentEpisodePrefix}'
-                      '${episodeNumberLabel(current.number, state.language)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: colors.textSecondary, fontSize: 11),
-                    ),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.keyboard_arrow_up,
-              color: Colors.white,
-              size: 24,
-              semanticLabel: copy.playerExpandEpisodes,
-            ),
-          ],
-        ),
-      ),
+    // A named, full-width button instead of a bare row: the drawer entry now
+    // says what it opens and what is playing. It is a *media* button, not an
+    // `AppButton`: the component's variants paint surface-plane foregrounds
+    // (near-black `textPrimary` in the light theme), which vanish over video.
+    final String label = '${AppUiCopy.playerEpisodes}$currentLabel';
+    return _MediaButton(
+      icon: Icons.keyboard_arrow_up,
+      label: label,
+      semanticLabel: current == null
+          ? AppUiCopy.playerEpisodes
+          : '${AppUiCopy.playerEpisodes}, '
+                '${copy.playerCurrentEpisodePrefix}'
+                '${episodeNumberLabel(current.number, state.language)}',
+      onPressed: () => _openEpisodeSheet(context),
     );
   }
 
   Future<void> _openEpisodeSheet(BuildContext context) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => const _EpisodeSheet(),
+    return AppSheet.show<void>(
+      context,
+      title: episodeSelectorLabel(state.episodes.length, state.language),
+      maxHeightFactor: _sheetHeightFactor,
+      child: const _EpisodeSheet(),
+    );
+  }
+}
+
+/// A full-width action that lives on the video surface.
+///
+/// The media plane is brightness-independent dark glass, so its chrome uses the
+/// [AppMedia] foreground roles: `glass` fill, `divider` hairline and `onMedia`
+/// text. The surface-plane `AppButton` variants cannot be used here - their
+/// `textPrimary` foreground is near-black in the light theme, which is exactly
+/// how the episode entry became unreadable on device.
+class _MediaButton extends StatelessWidget {
+  const _MediaButton({
+    required this.icon,
+    required this.label,
+    required this.semanticLabel,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final String semanticLabel;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppMedia media = appMediaOf(context);
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    final AppIconSize icons = appIconSizeOf(context);
+
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      onTap: onPressed,
+      excludeSemantics: true,
+      child: Material(
+        color: media.glass,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(shapes.radiusCell),
+          side: BorderSide(color: media.divider),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: _minTargetExtent),
+            padding: EdgeInsets.symmetric(
+              horizontal: spacing.space4,
+              vertical: spacing.space3,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(icon, color: media.onMedia, size: icons.md),
+                SizedBox(width: spacing.space2),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: roles.onMediaBody.copyWith(
+                      color: media.onMedia,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
 /// The episode sheet: shared watch-status projection, VIP lock above the free
 /// threshold, re-selecting the current episode only closes.
+///
+/// Every row pairs an [EpisodeSpine] tick - the design system's signature rail,
+/// and the screen-reader target with its 44 px square - with the episode number,
+/// its title and the VIP lock. The row itself is tappable too, so a touch user
+/// never has to aim at the tick.
 class _EpisodeSheet extends StatelessWidget {
   const _EpisodeSheet();
 
   @override
   Widget build(BuildContext context) {
     final AppUiState state = context.watch<AppStateController>().state;
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppIconSize icons = appIconSizeOf(context);
+    final AppSpacing spacing = appSpacingOf(context);
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final AppStrings copy = strings(state.language);
     final AppStateController controller = context.read<AppStateController>();
     final EpisodeSummary? current = state.selectedEpisode;
     final String? bookId = state.playback.book?.id;
-    final double sheetHeight = MediaQuery.sizeOf(context).height * 0.65;
 
-    return SizedBox(
-      height: sheetHeight,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 8, 12),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    episodeSelectorLabel(state.episodes.length, state.language),
-                    style: roles.display,
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      itemCount: state.episodes.length,
+      itemBuilder: (BuildContext context, int index) {
+        final EpisodeSummary episode = state.episodes[index];
+        final bool selected =
+            episode.number == current?.number &&
+            episode.chapterId == current?.chapterId;
+        final EpisodeWatchStatus status = episodeWatchStatus(
+          bookId,
+          episode,
+          current,
+          state.watchHistory,
+        );
+        final bool locked =
+            !state.vipActive && episode.number > defaultVipFreeEpisodes;
+        final String statusLabel = selected
+            ? copy.playerEpisodeStatusCurrent
+            : episodeWatchStatusLabel(status, state.language);
+        final String number = episodeNumberLabel(
+          episode.number,
+          state.language,
+        );
+        final String title = episode.title.trim();
+        final EpisodeTickState tickState = selected
+            ? EpisodeTickState.current
+            : switch (status.type) {
+                EpisodeWatchStatusType.watched => EpisodeTickState.watched,
+                EpisodeWatchStatusType.inProgress =>
+                  EpisodeTickState.inProgress,
+                EpisodeWatchStatusType.current => EpisodeTickState.current,
+                EpisodeWatchStatusType.none => EpisodeTickState.none,
+              };
+
+        void open() {
+          // Re-selecting the current episode only closes the sheet.
+          Navigator.of(context).pop();
+          if (!selected) {
+            controller.openPlayer(episode);
+          }
+        }
+
+        return InkWell(
+          key: ValueKey<String>('${episode.chapterId}:${episode.number}'),
+          onTap: open,
+          // The spine tick carries the announcement and the activation action,
+          // so the row's own ink stays out of the semantics tree.
+          excludeFromSemantics: true,
+          child: Row(
+            children: <Widget>[
+              EpisodeSpine(
+                ticks: <EpisodeTick>[
+                  EpisodeTick(
+                    number: episode.number,
+                    state: tickState,
+                    progress: selected ? 0 : status.progressPercent,
+                    isVipLocked: locked && !selected,
+                    onTap: open,
+                  ),
+                ],
+                size: EpisodeSpineSize.full,
+                language: state.language,
+                // One tick per row: the row's own text carries the meaning, so
+                // the rail must not repeat a one-episode summary per line.
+                semanticsLabel: '',
+              ),
+              SizedBox(width: spacing.space3),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: spacing.space2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        title.isEmpty ? number : '$number · $title',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: roles.body.copyWith(
+                          color: selected
+                              ? colors.accentPrimary
+                              : colors.textPrimary,
+                          fontWeight: selected ? FontWeight.w700 : null,
+                        ),
+                      ),
+                      if (statusLabel.isNotEmpty)
+                        Text(
+                          statusLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: roles.caption.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  tooltip: copy.playerClose,
-                  onPressed: () => Navigator.of(context).pop(),
+              ),
+              if (locked && !selected)
+                Icon(
+                  Icons.lock,
+                  size: icons.sm,
+                  color: colors.accentPrimary,
+                  semanticLabel: 'VIP',
                 ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 88,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 1.125,
-              ),
-              itemCount: state.episodes.length,
-              itemBuilder: (BuildContext context, int index) {
-                final EpisodeSummary episode = state.episodes[index];
-                final bool selected =
-                    episode.number == current?.number &&
-                    episode.chapterId == current?.chapterId;
-                final EpisodeWatchStatus status = episodeWatchStatus(
-                  bookId,
-                  episode,
-                  current,
-                  state.watchHistory,
-                );
-                final bool locked =
-                    !state.vipActive && episode.number > defaultVipFreeEpisodes;
-                return _EpisodeCell(
-                  key: ValueKey<String>(
-                    '${episode.chapterId}:${episode.number}',
-                  ),
-                  number: episode.number,
-                  statusLabel: selected
-                      ? copy.playerEpisodeStatusCurrent
-                      : episodeWatchStatusLabel(status, state.language),
-                  progressPercent: selected ? 0 : status.progressPercent,
-                  selected: selected,
-                  locked: locked && !selected,
-                  watched: status.type == EpisodeWatchStatusType.watched,
-                  onTap: () {
-                    // Re-selecting the current episode only closes the sheet.
-                    Navigator.of(context).pop();
-                    if (!selected) {
-                      controller.openPlayer(episode);
-                    }
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One episode cell: number, optional VIP lock, status label and a thin
-/// bottom progress strip.
-class _EpisodeCell extends StatelessWidget {
-  const _EpisodeCell({
-    required this.number,
-    required this.statusLabel,
-    required this.progressPercent,
-    required this.selected,
-    required this.locked,
-    required this.watched,
-    required this.onTap,
-    super.key,
-  });
-
-  final int number;
-  final String statusLabel;
-  final int progressPercent;
-  final bool selected;
-  final bool locked;
-  final bool watched;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
-    final Color background = selected
-        ? colors.accentPrimary
-        : (watched ? const Color(0xFF20202A) : const Color(0xFF1B202B));
-    final Color foreground = selected ? colors.onAccent : colors.textPrimary;
-    final Color secondary = selected
-        ? colors.onAccent.withValues(alpha: 0.72)
-        : colors.textSecondary;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: shapes.inlineRadius,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: shapes.inlineRadius,
-          border: Border.all(
-            color: watched && !selected
-                ? colors.accentPrimary.withValues(alpha: 0.58)
-                : Colors.white24,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            if (locked) ...<Widget>[
-              Icon(
-                Icons.lock,
-                size: 14,
-                color: colors.accentPrimary,
-                semanticLabel: 'VIP',
-              ),
-              const SizedBox(height: 2),
+              SizedBox(width: spacing.space2),
             ],
-            Text(
-              '$number',
-              maxLines: 1,
-              style: TextStyle(
-                color: locked ? colors.textSecondary : foreground,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
-            if (statusLabel.isNotEmpty)
-              Text(
-                statusLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: secondary, fontSize: 10),
-              ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

@@ -217,6 +217,10 @@ abstract final class AppUiCopy {
   /// Player: empty body of the comment list.
   static const String playerCommentsEmptyBody = 'Be the first to comment.';
 
+  /// Player: semantic label of the comment sheet's send affordance, which is an
+  /// icon-only button and was previously announced as nothing at all.
+  static const String playerCommentSend = 'Send comment';
+
   /// Player: message shown when the media URL is missing.
   static const String playerSourceMissing =
       'This episode has no playable source yet.';
