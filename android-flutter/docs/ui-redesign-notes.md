@@ -46,8 +46,8 @@ powershell -ExecutionPolicy Bypass -File scripts/android-ui-review.ps1 -SkipInst
 3. **资金中心区块标题被底部导航栏截断** —— Phase 3 已为子页统一预留
    `AppSpacing.pageBottomInset`；Funds 仍是自绘页面（Phase 4 收口到同一外壳）。
 4. **金额未做千分位与本地化** —— 已修复：`groupedDigits`（真机显示 `29,187`）。
-5. **页标题层级不一致** —— 子页已统一为 `AppTypography.screenTitle`（`AppSubPage`）；
-   Me 页（26px `displayLarge`）与 Funds 页（`titleLarge`）仍是 Phase 4 的收敛项。
+5. **页标题层级不一致** —— 子页已统一为 `AppTypography.screenTitle`（`AppSubPage`），Phase 4-1 的
+   Me 页也从 26px `displayLarge` 收敛到 22px `screenTitle`；Funds 页仍是 `titleLarge`，随 Phase 4-2 收敛。
 6. **骨架宽度为 0，加载态不可见（本轮真机发现并修复）** —— `AppSkeleton` 的
    `SizedBox(width: widget.width)` 在宽松约束下取宽 0，Home / Favorites / Funds 三处
    `AppSkeletonList` 的加载态一直是纯空白；修法 `widget.width ?? double.infinity`
@@ -131,3 +131,105 @@ powershell -ExecutionPolicy Bypass -File scripts/android-ui-review.ps1 -SkipInst
 
 排障手法（可复用）：debug 包 `adb logcat` 里的 Dart VM service URI + `adb forward` +
 `ext.flutter.debugDumpApp` 可以直接看到那一刻的 widget 树，比只看截图快得多。
+
+## 7. Phase 4 逐屏重设计
+
+Phase 4 才是**外观真正变化**的阶段：前四个阶段（令牌/组件/收尾/路由）都是等值替换与底座，
+所以「界面看起来和之前一样」在 Phase 4 之前是预期结果。第一屏选 **Me（账户页）**，
+做完在真机截图对比后再决定后续屏幕顺序。
+
+### 7.1 Me 页重设计规格（冻结，2026-10-16）
+
+现状问题：身份卡、快捷入口、客人入口、钱包行、静态行、版本行全是各自的 `Container` 手写卡片
+（Phase 2 的 `AppPanel`/`AppSectionCard`/`AppListRow` 一个没用），入口是 3 张全宽大卡 +
+4 处 `SizedBox(height: 16)` 硬编码间距，标题用 `displayLarge` 而子页用 `screenTitle`。
+
+目标结构（自上而下，全部走令牌与组件，禁止裸 px/裸色）：
+
+1. **页面标题**：`AppTypography.screenTitle` + `copy.accountTab`，页面内边距用
+   `appSpacingOf(context).pagePadding`（= 现在的 18/12/18/28）。
+2. **身份 hero**（用令牌直接搭建，不套 `AppPanel`：`AppPanel` 只能给 premiumSurface + `hairline`
+   描边，给不出规格要求的 `accentPrimary` + `strokeEmphasis` 重点描边）：
+   - 登录态：VIP 用 `premiumSurface` 底 + `accentPrimary` 描边，非 VIP 用
+     `surface` + `hairline`；头像 56px（VIP `accentPrimary`/`onAccent`，否则
+     `surfaceAlt`/`textPrimary`）；用户名 `displayLarge`；VIP 状态做成 chip
+     （`accentSuccess`/`accentWarning` 14% 底 + 图标 + `accountVipStatusActive`/`Inactive`），
+     有效期用 `accountVipExpiryPrefix` + `dateOnlyLabel(state.vipUntil)`；
+     **账号快照未到达时不得断言「VIP not active」**（VIP 状态未知 → 中性占位，避免冷启动误报）。
+   - 游客态：同一 hero 放 `accountGuestUser` + `accountGuestStatus`，下面两个 `isExpanded` 按钮：
+     主 `accountGuestSignIn`（Sign in）、次 `accountGuestRegister`（Create account，行为同现在的
+     `showRegisterAuthMode()` + `showAuthPrompt()`）。`ui_wiring_test` 依赖这两个文案，
+     必须保持「Sign in 至少一处、Create account 恰好一处」；monogram 回退到
+     `accountGuestUser` 首字母（不是 `?`）。
+3. **快捷入口**（仅登录态）：`AppSectionHeader(AppUiCopy.accountShortcutsSection)` +
+   一个 `AppSectionCard` 内 3 行 `AppListRow`（Favorites / Watch history / Change password，
+   `leadingIcon` + `showChevron`），点击行为与文案保持现状。
+4. **继续观看**（登录态且 `watchHistory` 非空）：`AppSectionHeader(accountRecentWatchTitle)` +
+   右侧保留 `size/limit` pill；卡片轨道沿用 `PosterCard`（136 宽）与
+   `accountContinueWatchingLimit()`，行为不变。
+5. **设置区**：`AppSectionHeader(AppUiCopy.accountSettingsSection)` + 一个 `AppSectionCard`：
+   钱包行（登录态；副标题 = 地址或 `accountWalletNetworkHint`，**地址单行省略号**，尾部
+   `TextButton` 文案仍是 `accountWalletBindAction`/`accountWalletReplaceAction` 且不折行，
+   保证 `ui_wiring_test` 的 `find.text('Bind wallet')` 可点）、银行卡只读行（登录态）、
+   客服邮箱行（`SelectableText` 长按复制；`AppUiCopy.accountSupportEmailCopied` 的显式复制反馈
+   属 Phase 5「反馈闭环」，本轮不做）、版本/更新行（保留 `_VersionRow` 的检查更新行为）。
+   **整卡不得塌成一个语义节点**：每行自成节点，且不可点行的 trailing 控件（Check、邮箱）
+   必须保留可读/可点的语义节点（`AppListRow` 的语义契约，见 §7.2）。
+6. **退出登录**（登录态）：`AppButton(variant: destructive)`，文案 `accountSignOutTitle`，
+   仍不做二次确认（parity）。
+
+不做的事：不新增业务入口（不加积分/提现入口）、不改 4 个弹层（观看历史/改密/钱包/确认）的行为、
+不改 `AppStrings`（生成物）、不动 shell/路由。
+
+### 7.2 AppListRow 语义契约（本轮修复）
+
+`AppListRow` 对「无 `onTap` 的行」原来用 `Semantics(label:, excludeSemantics: true)` 且
+`container: false`，把整行的后代语义全部替换成一条标签。单独一行没问题，但一旦和可点行同装进
+`AppSectionCard`，整张卡会被合并成**一个**语义节点：客服邮箱与版本行的 Check 按钮在 TalkBack 下
+既读不到也点不到（Me 页重设计首次把可点/不可点行混装，暴露了这条既存缺陷）。
+
+契约（修复后，`design_system_test.dart` 锁定）：
+
+* 每一行（无论是否可点）都是**自己的**语义节点（`container: true`），卡片不会塌成一条；
+* 可点行的 label + `onTap` 挂在行节点上，行内 `InkWell` 用 `excludeFromSemantics: true`，
+  避免出现第二个节点；
+* 行内的说明文字（leading + title + subtitle）用 `ExcludeSemantics` 包住，由行节点的 label
+  统一播报（不重复朗读）；
+* `trailing` 交互控件（按钮等）**不被**行节点的语义排除，保留自己的可读/可点节点；
+  不可点行不得暴露任何 tap 动作。
+
+### 7.3 Phase 4-1 结果（Me 页）
+
+- 结构：`screenTitle` 页标题（22px，原 26px `displayLarge`）+ `pagePadding` → 身份 hero →
+  `SHORTCUTS`（一张卡 3 行 `AppListRow`）→ `CONTINUE WATCHING`（`size/limit` pill + PosterCard 轨道）
+  → `SETTINGS`（钱包 / 银行卡 / 客服 / 版本四项一张卡）→ destructive 退出登录；`account_screen.dart`
+  +361/−418 后继续下调，手写 `Container` 卡全部换成组件与令牌（新增行零裸色值、零硬编码间距）。
+- 验证：`flutter analyze` 0 issue；`flutter test` 全量 166+ 用例全绿；verifier 四轮对抗式复核
+  （task-11/13/16 与语义专项）抓到并修掉：**AppListRow 语义塌陷**（中等，混装可点/不可点行导致整卡
+  一个节点、邮箱与 Check 在 TalkBack 下消失）、hero **VIP 未知态误报**（冷启动先显示
+  "VIP not active"）、游客 monogram 显示 `?`、钱包地址折 6 行、钱包动作 `Replace wa…` 截断、
+  客服邮箱在 360dp 下断词折行。修复后 hero 占位与真 chip 的高度差：1× +2.0px / 2× −7.0px /
+  3.2× −16.4px（原 +166px）。
+- 真机：登录态截图来自小米真机 `c4e4da7e`（`artifacts/ui-review/phase4/27-me-fixed-top.png` 等），
+  游客态与交互来自**雷电模拟器**（Android 14 / 720×1280 @320dpi = 360×640dp，
+  `artifacts/ui-review/ldplayer/`）：guest hero、模态认证面板（含密码显隐）、Funds 游客页、
+  Android 14 预测性返回（面板先关、Funds→Me 落点一致）、首页骨架可见。
+- 已知取舍与后续项：
+  1. `AppListRow.trailingTakesIntrinsicWidth`（默认 false）目前只有钱包行开启；开启后 trailing 取
+     固有宽度，并被 **行宽的一半** 封顶（不是「自由空间的一半」，LayoutBuilder 在 padding 之外，
+     按后者理解会少算 16px），`textScaler > 1.6` 时自动退回 1:1 分摊。标签型动作建议开启，
+     值型 trailing 保持默认；值型长文本必须放 subtitle，否则会被 1:1 分摊挤到断词——客服邮箱就是
+     这么修的。**宽度口径**：真 Roboto 下 `Replace wallet` 95.67px / `Bind wallet` 72.68px，
+     360dp 与 320dp 都完整渲染；widget 测试的等宽测试字体约为 Roboto 的 **2.1 倍**宽，纯测试里
+     会误判成截断，判断真机需载入真实字体或做解析式测算。
+  2. 客服行用了屏幕内私有 `_SupportRow`（`AppListRow.subtitle` 只接受 `String`，装不下
+     `SelectableText`）。**硬约束：出现第二个消费者时必须抽取，不得第三次复制**——给
+     `AppListRow` 加 `subtitleWidget` 槽后换回共享行；抽取时必须同时补「widget subtitle 保留自身
+     语义节点、行节点不再合并它」的测试与 §7.2 段落（subtitle 可以自带语义等于给共享组件引入
+     第二种语义模式，正是 §7.2 塌陷缺陷的同源风险）。
+  3. `SelectableText` 无 `overflow`：极端字号下邮箱是裁剪而非省略号（`maxLines: 1` 保证不折行）。
+  4. 3.2× 下 VIP chip 标签视觉省略（语义仍播报完整文案），这是把高度差压到 ≤40px 的代价。
+  5. 四个弹层内部（观看历史/改密/钱包/确认）仍有 16 处历史硬编码间距，留待 Phase 4/5 清理。
+
+
+

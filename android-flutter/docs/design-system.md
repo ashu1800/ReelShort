@@ -368,6 +368,16 @@ These are enforced by the test suite in §8, not merely intended.
    activation action on the merging node itself (`onTap:`), and a disabled
    control passes `onTap: null` so it exposes no action at all. This is asserted
    for buttons, poster cards, spine ticks and the message bar.
+   **Trailing controls are never swallowed.** A merging node must exclude only
+   its *informational* content (leading glyph, title, subtitle), never a
+   `trailing` control: a row that merges its text and also carries a button has
+   to keep that button as its own readable, tappable node. `AppListRow` is the
+   reference implementation — `container: true` per row (so an
+   `AppSectionCard` can never collapse into one node), `ExcludeSemantics` around
+   the text only, `InkWell(excludeFromSemantics: true)` for the row's own
+   activation, and an untappable row that exposes no action. The counter-example
+   this rule was written from: a settings card whose non-tappable rows hid the
+   support email and the manual update-check button from TalkBack.
 5. **Live regions.** `AppMessageBar` is `liveRegion: true` and gated by
    `topMessageUsesLiveRegion()`; `AppInlineLoading` announces what is loading;
    field errors are surfaced through `InputDecoration.errorText`, which Material
@@ -423,7 +433,10 @@ The design system is covered by a widget test suite that exercises:
   (this is what caught the `PosterCard` mini-spine overflow);
 * the WCAG audit of §2, over every role in both brightnesses;
 * merged-semantics and screen-reader-activation paths for every interactive
-  component (this is what caught the dropped tap actions);
+  component (this is what caught the dropped tap actions), including that rows
+  in one card stay separate nodes and that a row's `trailing` control (a
+  manual update check, a selectable email) keeps its own readable, tappable
+  node (§7.4);
 * the empty state's pill contract: priority of action over pill label, that a
   callback without a label never becomes a dead button, and that the pill
   exposes no tap action and no focus;
