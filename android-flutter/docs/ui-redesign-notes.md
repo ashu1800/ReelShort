@@ -528,6 +528,77 @@ VIP 充值屏：
   4. VIP 状态两串（`vipActiveLabel`/`vipExpiryLabel`）与 `accountWithdrawalRecordsEmpty`
      因改用共享语言成为孤儿文案，留 Phase 5 清理。
 
+## 8. Phase 5 候选清单（2026-10-17 盘点）
+
+Phase 4 已做完 5 屏（Me / Funds / Player / Discover / VIP 充值 / 提现，其中后两者算一组）。
+**详情页暂不做**（用户决定）：它当前不可达（`AppScreen.detail` 从不被状态机赋值，点海报直进
+播放器），恢复「海报 → 详情 → 播放」会改变主流程，属产品决策而非视觉改动。
+
+Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
+
+1. **反馈闭环**（原 Phase 5 主题）：
+   - 上游/后端错误透传仍会把整段后端或网关正文显示到消息条（真机遇到过 Cloudflare 525 的 JSON；
+     代码核对：`http_reel_short_api_client.dart:626-633` 在无 `{code,message}` 信封时直接把
+     `body` 当消息，`app_state_controller.dart:2117` 又会把它原样返回）→ 加长度上限 + 非 JSON
+     正文回退到共享文案 + 「重试」动作。
+   - `AppUiCopy` 目前 77 个常量里有 **41 个在 lib/ 内零引用**（多为早期备而未用的按钮/空态/详情页
+     文案；详情页 6 个随该屏一起暂缓）。清理或标注保留原因。
+2. **孤儿文案清理**（需改 Kotlin 源后重新生成 `AppStrings`，不能手改生成物）：
+   `playerCommentsEmpty`、`vipActiveLabel`、`vipExpiryLabel`、`accountWithdrawalRecordsEmpty`、
+   `accountGuestSignInSubtitle`/`accountGuestRegisterSubtitle`、`accountOrdersTitle` 与
+   `vipRecordsTitle` 的重名、`searchEpisodeCountSuffix` 的 ' eps' 硬编码来源。
+3. **组件收敛（第三个消费者之前必须做）**：
+   - ~~`withdrawal_screen.dart` 的 `_SupportRow` 与 Me 页「客服行」的同类结构~~ —— **已结案**（见 §9）：
+     verifier 用 git 历史确认 `withdrawal_screen.dart` 全部 4 个历史提交与 Kotlin 原版都**没有**
+     `_SupportRow`，先前笔记把它记到了提现屏是错的；实际只有 Me 页一份私有行，已在 Phase 5-1 改回
+     共享 `AppListRow(subtitleWidget: SelectableText(...))`。
+   - ~~`AppAmountBlock` 的 `unit` 槽位非柔性~~ —— **已修**（Phase 5-1，见 §9）。
+   - ~~`AppSectionHeader` 的 trailing 缺少柔性~~ —— **已修**（Phase 5-1，见 §9）。
+4. **状态层小改**（可选）：用一个「已提交 query」的本地状态让 Discover 的加载骨架直接长在结果区，
+   消除加载落地时的一次重排；`state.isLoading` 目前是全局标志，跨屏刷新会串骨架。
+5. **发布**：`pubspec.yaml` 仍是 `0.9.2+44`，Phase 4/5 全部改动尚未发版；发版走
+   `scripts/publish-android.py`（需签名环境变量 + COS 配置），并在真机做一次整包验收。
+
+## 9. Phase 5-1 结果（组件收敛 + 反馈闭环）
+
+- 交付：13 文件（3 个共享组件、3 个屏幕、3 个错误链路文件、4 个测试），新建
+  `test/error_message_sanitization_test.dart` 12 条；**无新增可见文案**（错误回退全部复用既有
+  `_ControllerCopy` 常量）。
+- **A1 `AppSectionHeader.trailing` 有界**：新增公开常量 `sectionHeaderTrailingWidthFactor = 0.5`，
+  并排分支给 trailing `ConstrainedBox(maxWidth: 宽度 × 0.5)`、堆叠分支给全宽有界槽；删掉
+  `search_screen.dart` 的调用方补丁（`LayoutBuilder` + 0.45 系数 + `_CountPill.maxWidth`），
+  Discover 计数胶囊在 360@1× 仍完整渲染。verifier 实测：4000px trailing → 并排 180.0（360×0.5）、
+  堆叠 320.0，两分支零异常。
+- **A2 `AppAmountBlock.unit` 柔性**：unit 改 `Flexible + 单行省略`，320@3.2× 下真省略；
+  VIP 两处仍是 `value: '<n> USDT'`（Ph4-5 的绕开写法）——verifier 判定**可接受/遗留**：实测三态
+  六组零异常，且回填需同步改 `vip_recharge_screen_test.dart:237` 的逐字断言，留到下一批连同测试做。
+- **A3 `AppListRow.subtitleWidget`**：新增可选 `Widget? subtitleWidget`（默认 null 行为逐字不变）；
+  标题与 `subtitle` 仍 `ExcludeSemantics`（行单节点播报），而 **`subtitleWidget` 不被排除**，所以
+  `SelectableText` 保留自身 value 节点与长按复制。Me 页客服行改回共享行，私有 `_SupportRow`
+  （约 75 行）删除。verifier 实测：默认时行 label == `'Support, support@example.test'` 单节点；
+  传 SelectableText 时行 label 仅 title、邮箱以独立 `value` 节点存在、行无 tap。
+- **B4 错误透传治理（安全相关）**：`api_client_exception.dart` 新增共享纯函数
+  `sanitizeUpstreamMessage()`（首字符 `{`/`[`/`<`、长度 > 200、控制字符 → 空）、
+  `looksStructuredMessage()`、`maxUserFacingMessageLength = 200`；API 客户端对信封 message 与
+  裸 body **统一净化**，不可用则空消息但保留 statusCode/code（不再回退 reasonPhrase）；状态层
+  `_userFacingErrorMessage` 净化后为空时**5xx 回退 `contentLoadFailed`、其它回退 `requestFailed`**。
+  verifier 用真实 HTTP 客户端 + stub 传输层实测六种输入（Cloudflare 525 JSON / HTML 502 /
+  4000 字符纯文本 / 信封短消息 / 短纯文本 / 空 body），断言消息条不含 `{`/`<`/`ray_id`/`cloudflare`，
+  并逐条确认 401/403/409 既有分支（sessionExpired + 清会话、invalidCurrentPassword + 保会话、
+  usernameExists、credentialError）**未受影响**——分类判断读未净化的原始 message、位于净化之前。
+- 验证：`flutter analyze` 0 issue、`flutter test` 全量 **275 用例全绿**；verifier 一轮独立复核
+  增量缺陷 0；两护栏文件零改动。
+- 已知取舍 / 后续项：
+  1. `AppSectionHeader` 的 trailing 封顶 0.5 是启发式值——若将来出现必须占一半以上的 trailing，
+     改成参数化或 `Flexible(fit: loose)` + 标题 `Flexible` 的方案。
+  2. VIP 两处金额与 unit 槽回填（连同测试断言）留下一批。
+  3. 提现屏钱包行是「图标 + network · address」的 `Row`（不是可选中文本行），未套 `AppListRow`；
+     若要统一可后续用 `AppListRow.leading` 槽。
+  4. 净化只作用于「消息条文案」；`ApiHealthStatus.service` 也会收敛成共享文案（诊断信息收敛，
+     `kDebugMode` 仍打印截断的原始 body）。
+
+
+
 
 
 
