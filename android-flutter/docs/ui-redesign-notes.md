@@ -452,6 +452,84 @@ Phase 4 才是**外观真正变化**的阶段：前四个阶段（令牌/组件/
   3. 搜索历史（`AppUiCopy.searchRecentSection/searchRecentClear` 已存在）未接，留后续。
   4. lane 之间目前只用间距分隔；若真机看偏挤可加 hairline 或把次级标签提到 `bodySmall`。
 
+### 7.10 VIP 充值 + 提现子页重设计规格（Phase 4-5，冻结 2026-10-17）
+
+两屏已在 Phase 3 套上 `AppSubPage` 外壳（标题 + 返回由 shell 统一提供），本轮只重排**内容**：
+把两屏里的私有 `_Panel` 手写卡片、裸间距与按钮堆叠换成设计系统组件与令牌。
+
+共同规则（沿用前四屏的契约）：
+
+1. 区块结构：`AppSectionHeader`（大写） + `AppSectionCard`/`AppPanel`；金额主数字用
+   `AppAmountBlock`，明细键值用 `AppLedgerRow`；状态用「图标 + 文案 + 语义色」的 pill（第二通道，
+   不靠颜色单通道）。
+2. 间距/内边距全走 `AppSpacing`，颜色全走 `AppColors`；**禁止裸色值与内联硬编码间距**。
+3. 空态 `AppEmptyState` + 既有 `AppUiCopy` 文案；加载态与到达内容同形的骨架；游客态主 CTA。
+4. 点击目标 ≥44；一个区域只允许一个 primary 按钮；合并语义节点（不重复播报）。
+5. **行为与文案零变化**：订单创建/刷新状态/复制地址/倒计时过期转创建、提现两步流程与提交闸门、
+   二次确认、幂等键、409 处理、历史记录状态映射等一律不动；`AppStrings` 不改。
+
+VIP 充值屏：
+
+- 头部：VIP 状态 pill（`AppMembershipChip`）+ 到期 caption（复用 Me/Funds 的语言）；价格用
+  `AppAmountBlock` + 收款地址行（`AppListRow` 或 `AppLedgerRow`，地址单行省略、可复制）。
+- 二维码：令牌化卡片（保持白底 quiet zone 与现有尺寸），说明走 `AppUiCopy.vipQrUnavailable` 等。
+- 订单明细：`AppLedgerRow`（金额 / 有效期 / 收款地址），CTA 保持 create（primary）与
+  refresh status（secondary）的层级；pending 倒计时用 `numeric` 角色；confirmed 成功态用
+  `accentSuccess` + 图标。
+
+提现屏：
+
+- 头部：可提现积分主数字（`AppAmountBlock`）+ 最低提现/汇率说明 caption；游客态面板 + Sign in CTA。
+- 表单：金额 `AppTextField`（数值键盘，聚焦/失焦提示保留）、手续费与预计到账 `AppLedgerRow`；
+  步骤 2（确认）用 `AppLedgerRow` 明细 + primary Confirm / secondary Edit amount 的层级。
+- 历史：`AppSectionHeader` + `AppSectionCard`，行内金额 + 状态 pill + 网络/地址/时间（机器值走
+  subtitle 单行省略），空态走 `AppUiCopy.withdrawalRecordsEmptyTitle`。
+
+### 7.11 Phase 4-5 结果（VIP 充值 + 提现）
+
+- 交付：两屏内容重排（VIP `vip_recharge_screen.dart` 约 675 行、提现 `withdrawal_screen.dart`
+  约 665 行；都在既有 `AppSubPage` 外壳内，屏内无自绘 header）；新建 `test/vip_recharge_screen_test.dart`
+  21 条与 `test/withdrawal_screen_test.dart` 13 条；新增共享组件 `lib/ui/components/app_status_pill.dart`
+  （`AppStatusPill` + `AppStatusTone{success,warning,danger,neutral}`，12% tint 胶囊 + 图标 + 单行
+  省略 + 内部柔性 + 语义单节点无 tap）；`AppUiCopy` 追加 `statusExpired = 'Expired'`。
+- VIP 屏结构：`AppMembershipChip` + 到期 caption 头部卡（快照未知渲染中性骨架）→ 唯一
+  `AppSectionHeader(vipPayTitle)` → 按状态一张 `AppSectionCard`：create（价格 `AppAmountBlock` +
+  状态 pill + Unlock primary）、pending（金额块 + 订单号/有效期 `AppLedgerRow` + 地址 `AppListRow`
+  单行省略 + Copy + **白底 quiet-zone QR** + `numeric` 倒计时 + refresh secondary）、confirmed
+  （success pill + check + refresh）、guest（登录 + Sign in）；订单创建/刷新/复制/倒计时归零转
+  create 的决策树未动。
+- 提现屏结构：可提现积分 `AppAmountBlock` + Min/汇率 caption → 表单卡（digits-only `AppTextField`
+  + Estimated/Fee 行 + 钱包行 + Submit primary）→ 确认卡（`AppLedgerRow` 金额 + Confirm primary /
+  **Edit amount** secondary）→ 历史区（`AppSectionHeader` + 单卡多行：金额 + 状态 pill +
+  `network · address · createdAt` 单行省略 + 详情行 + `withdrawalRecordsEmptyTitle` 空态）；
+  两步流程/三重闸门/`submitWithdrawal(pointAmount)` 调用未动。
+- **本轮抓到并修掉的 5 个缺陷：**
+  1. VIP 头部 chip 在 320@3.2× 溢出 269px → 包 `Flexible`；
+  2. 提现历史状态 pill 同类溢出 → 包 `Flexible`；
+  3. `AppAmountBlock` 的 4 字符 unit 在 3.2× 溢出 → 单位折进 value（组件级 unit 仍非柔性，
+     建议 Phase 5 给 unit 也加 Flexible）；
+  4. **深色主题下二维码不可扫描**（模块色取 `colors.textPrimary`，暗色主题变浅色模块）→ 改为
+     主题无关的**白底 quiet zone + 深色模块**（`AppColors.light.surface`/`light.textPrimary`，
+     非裸色值），verifier 在真深色主题下实测 plate/ink 仍正确；
+  5. **VIP 状态 pill 在常见尺寸下溢出**（verifier 抓到、写作者首轮遗漏）：320@3.2× 下 confirmed
+     101px / rejected 63px / vipActive 629px，**360@1× 下 expired 214px**（普通字号就溢）→
+     抽共享 `AppStatusPill`（内部柔性 + 单行省略）并把 expired 整句拆成「短词 pill + caption」。
+- 验证：`flutter analyze` 0 issue、`flutter test` 全量 **259 用例全绿**；verifier 两轮
+  （task-30/32）独立取证——第一轮抓到 pill 溢出（写作者遗漏）与 'VIP active' 三处重复，第二轮
+  复跑四个修复前复现点全部 clean 且确认是**省略而非裁切**（`didExceedMaxLines == true`）、
+  四配置 × 八状态 32 组矩阵零异常、六套护栏零改动。
+- 真机（雷电 Android 14 / 360×640dp，登录态）：改造前 `60-vip-before.png` / `62-withdrawal-before.png`，
+  改造后 `65-vip-final.png` / `66-withdrawal-final.png`。
+- 已知取舍 / 后续项：
+  1. `statusExpired` 是新可见短词常量（`AppUiCopy`，非 AppStrings），整句仍作为 caption 显示；
+  2. 提现「手续费/预计到账」仍是 `withdrawalConversionLines()` 组合文本行而非 `AppLedgerRow`
+     键值对（拆开需改共享格式化器与 AppStrings，留 Phase 5）；
+  3. 提现钱包缺失告警仍是长句（320@3.2× 会省略而非溢出），建议后续改「短 pill + caption」同款结构；
+  4. VIP 状态两串（`vipActiveLabel`/`vipExpiryLabel`）与 `accountWithdrawalRecordsEmpty`
+     因改用共享语言成为孤儿文案，留 Phase 5 清理。
+
+
+
 
 
 
