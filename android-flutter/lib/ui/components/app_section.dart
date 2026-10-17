@@ -16,6 +16,18 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'app_panel.dart';
 
+/// Share of the header width a [AppSectionHeader.trailing] widget may occupy
+/// next to the title.
+///
+/// The title keeps an `Expanded` slot, so the trailing widget cannot be
+/// `Flexible` without stealing half the row from the title. Capping its width
+/// instead gives it a bounded slot: a count pill or badge then ellipsises or
+/// scrolls internally instead of overflowing the header. Every screen used to
+/// patch this from the outside (Discover's count pill was wrapped in its own
+/// `LayoutBuilder` cap), which is exactly the caller-side workaround this
+/// constant replaces.
+const double sectionHeaderTrailingWidthFactor = 0.5;
+
 /// The all-caps label above a section, with an optional trailing action.
 class AppSectionHeader extends StatelessWidget {
   /// Creates a section header.
@@ -39,6 +51,10 @@ class AppSectionHeader extends StatelessWidget {
 
   /// Optional trailing widget, used instead of [actionLabel] when a screen
   /// needs a count or a badge.
+  ///
+  /// It is capped to [sectionHeaderTrailingWidthFactor] of the header width next
+  /// to the title (and to the full width when the header stacks), so a wide
+  /// pill is the widget's own ellipsis problem and never a header overflow.
   final Widget? trailing;
 
   @override
@@ -74,6 +90,20 @@ class AppSectionHeader extends StatelessWidget {
         final bool stack =
             constraints.maxWidth < 260 ||
             MediaQuery.textScalerOf(context).scale(1) > 1.6;
+        // A bounded slot in both branches: the trailing widget sees a finite
+        // max width, so its own ellipsis applies instead of a RenderFlex
+        // overflow.
+        final Widget? boundedTrailing = trailing == null
+            ? null
+            : ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: stack
+                      ? constraints.maxWidth
+                      : constraints.maxWidth *
+                            sectionHeaderTrailingWidthFactor,
+                ),
+                child: trailing!,
+              );
 
         if (stack) {
           return Semantics(
@@ -83,11 +113,11 @@ class AppSectionHeader extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 title,
-                if (trailing != null || action != null)
+                if (boundedTrailing != null || action != null)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: <Widget>[
-                      ?trailing,
+                      ?boundedTrailing,
                       if (action != null) Flexible(child: action),
                     ],
                   ),
@@ -101,7 +131,7 @@ class AppSectionHeader extends StatelessWidget {
           child: Row(
             children: <Widget>[
               Expanded(child: title),
-              ?trailing,
+              ?boundedTrailing,
               if (action != null) Flexible(child: action),
             ],
           ),

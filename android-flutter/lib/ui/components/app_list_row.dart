@@ -39,6 +39,7 @@ class AppListRow extends StatelessWidget {
   const AppListRow({
     required this.title,
     this.subtitle,
+    this.subtitleWidget,
     this.subtitleMaxLines,
     this.leading,
     this.leadingIcon,
@@ -57,7 +58,18 @@ class AppListRow extends StatelessWidget {
   final String title;
 
   /// Optional supporting label under [title].
+  ///
+  /// Mutually exclusive with [subtitleWidget].
   final String? subtitle;
+
+  /// A widget in the subtitle slot, for a value that is more than a string - a
+  /// selectable machine value (`SelectableText`) or a composed line.
+  ///
+  /// Mutually exclusive with [subtitle]. The widget keeps its own semantics
+  /// node: the row's announcement still carries [semanticLabel] (or the title),
+  /// and a selectable value stays readable and long-press copyable underneath
+  /// it, exactly like a `trailing` control does.
+  final Widget? subtitleWidget;
 
   /// Maximum lines of [subtitle]; null lets it wrap freely.
   ///
@@ -115,7 +127,9 @@ class AppListRow extends StatelessWidget {
     final AppIconSize icons = appIconSizeOf(context);
     final bool enabled = onTap != null;
     // One announcement per row: the title plus its subtitle, unless the caller
-    // supplies a better label.
+    // supplies a better label. A `subtitleWidget` is not merged automatically -
+    // it owns its own node, so the row label stays title-only unless the caller
+    // passes an explicit label.
     final String effectiveLabel =
         semanticLabel ??
         (subtitle == null || subtitle!.isEmpty ? title : '$title, $subtitle');
@@ -162,20 +176,25 @@ class AppListRow extends StatelessWidget {
                   SizedBox(width: spacing.space4),
                 ],
                 Expanded(
-                  child: ExcludeSemantics(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <Widget>[
-                        Text(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      // The row node announces the textual half; a
+                      // `subtitleWidget` stays outside the exclusion so it can
+                      // keep its own readable (and selectable) node.
+                      ExcludeSemantics(
+                        child: Text(
                           title,
                           style: Theme.of(
                             context,
                           ).textTheme.titleMedium?.copyWith(color: titleColor),
                         ),
-                        if (subtitle != null) ...<Widget>[
-                          SizedBox(height: spacing.space1),
-                          Text(
+                      ),
+                      if (subtitle != null) ...<Widget>[
+                        SizedBox(height: spacing.space1),
+                        ExcludeSemantics(
+                          child: Text(
                             subtitle!,
                             maxLines: subtitleMaxLines,
                             overflow: subtitleMaxLines == null
@@ -184,9 +203,13 @@ class AppListRow extends StatelessWidget {
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: subtitleColor),
                           ),
-                        ],
+                        ),
                       ],
-                    ),
+                      if (subtitleWidget != null) ...<Widget>[
+                        SizedBox(height: spacing.space1),
+                        subtitleWidget!,
+                      ],
+                    ],
                   ),
                 ),
                 if (trailing != null) ...<Widget>[

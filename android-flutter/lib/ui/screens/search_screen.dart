@@ -42,9 +42,6 @@ const double _resultPosterHeight = 132;
 /// Minimum height of a discovery chip, so its target clears the touch minimum.
 const double _chipMinHeight = 44;
 
-/// Share of the content width the results count pill may occupy.
-const double _countPillWidthFactor = 0.45;
-
 /// Number of result skeletons while a query is in flight.
 const int _skeletonRowCount = 3;
 
@@ -84,21 +81,16 @@ class SearchScreen extends StatelessWidget {
             ),
             if (resultsFirst) ...<Widget>[
               SliverToBoxAdapter(child: SizedBox(height: spacing.sectionGap)),
+              // The header itself bounds its trailing slot now (see
+              // `AppSectionHeader`), so the count pill no longer needs a
+              // caller-side width cap.
               SliverToBoxAdapter(
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    return AppSectionHeader(
-                      title: AppUiCopy.searchResultsSection,
-                      trailing: _CountPill(
-                        count: state.searchResults.length,
-                        suffix: copy.searchResultCountSuffix,
-                        // The header stacks its trailing widget at large text
-                        // scales without giving it a flexible slot, so the pill
-                        // caps itself and ellipsises instead of overflowing.
-                        maxWidth: constraints.maxWidth * _countPillWidthFactor,
-                      ),
-                    );
-                  },
+                child: AppSectionHeader(
+                  title: AppUiCopy.searchResultsSection,
+                  trailing: _CountPill(
+                    count: state.searchResults.length,
+                    suffix: copy.searchResultCountSuffix,
+                  ),
                 ),
               ),
               if (query.isNotEmpty)
@@ -215,16 +207,14 @@ class _SearchFieldState extends State<_SearchField> {
 }
 
 /// The results count, as a compact status pill in the section header.
+///
+/// Its width is bounded by `AppSectionHeader`'s trailing slot, so the label
+/// ellipsises there instead of needing a width cap of its own.
 class _CountPill extends StatelessWidget {
-  const _CountPill({
-    required this.count,
-    required this.suffix,
-    required this.maxWidth,
-  });
+  const _CountPill({required this.count, required this.suffix});
 
   final int count;
   final String suffix;
-  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
@@ -233,29 +223,26 @@ class _CountPill extends StatelessWidget {
     final AppSpacing spacing = appSpacingOf(context);
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      child: Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: spacing.space3,
-          vertical: spacing.space1,
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: spacing.space3,
+        vertical: spacing.space1,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surfaceAlt,
+        borderRadius: BorderRadius.circular(shapes.radiusPill),
+        border: Border.all(
+          color: colors.hairline,
+          width: shapes.strokeHairline,
         ),
-        decoration: BoxDecoration(
-          color: colors.surfaceAlt,
-          borderRadius: BorderRadius.circular(shapes.radiusPill),
-          border: Border.all(
-            color: colors.hairline,
-            width: shapes.strokeHairline,
-          ),
-        ),
-        child: Text(
-          '$count $suffix',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: roles.caption.copyWith(
-            color: colors.textSecondary,
-            fontWeight: FontWeight.w600,
-          ),
+      ),
+      child: Text(
+        '$count $suffix',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: roles.caption.copyWith(
+          color: colors.textSecondary,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

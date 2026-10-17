@@ -623,14 +623,15 @@ class HttpReelShortApiClient implements ReelShortApiClient {
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final _BackendError? backendError = _parseBackendError(body);
-      throw ApiClientException(
-        response.statusCode,
-        backendError?.code,
-        backendError?.message ??
-            (body.trim().isEmpty
-                ? (response.reasonPhrase ?? '')
-                : body),
+      // Only a plain, short sentence from the backend may reach the message bar.
+      // An envelope message is trusted copy; an envelope-less body is a raw
+      // response body (a gateway JSON document, an HTML error page, a stack
+      // trace) and is dropped to an empty message here, so the state layer picks
+      // its own shared copy. The status code is always preserved.
+      final String message = sanitizeUpstreamMessage(
+        backendError?.message ?? body,
       );
+      throw ApiClientException(response.statusCode, backendError?.code, message);
     }
     final BackendApiResponse envelope = BackendApiResponse.fromJson(
       asJsonObject(jsonDecode(body), 'response'),

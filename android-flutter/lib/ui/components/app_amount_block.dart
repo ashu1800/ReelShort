@@ -100,9 +100,19 @@ class AppAmountBlock extends StatelessWidget {
                 Flexible(child: Text(value, style: valueStyle)),
                 if (unit != null && unit!.isNotEmpty) ...<Widget>[
                   SizedBox(width: spacing.space1),
-                  Text(
-                    unit!,
-                    style: roles.caption.copyWith(color: colors.textSecondary),
+                  // The unit is flexed too: a long unit ("USDT / 30 days")
+                  // ellipsises instead of overflowing the row at large text
+                  // scales, which is what used to force callers to fold the
+                  // unit into `value` as a workaround.
+                  Flexible(
+                    child: Text(
+                      unit!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: roles.caption.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
                   ),
                 ],
               ],

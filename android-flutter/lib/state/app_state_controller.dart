@@ -2114,7 +2114,18 @@ class AppStateController extends ChangeNotifier {
             normalizedMessage.contains('invalid credentials'))) {
       return _copy.credentialErrorMessage;
     }
-    return rawMessage.isNotEmpty ? rawMessage : _copy.requestFailed;
+    // Last resort: the copy has to be human-readable. A body that leaked
+    // through a gateway (a JSON document, an HTML error page, a stack trace) or
+    // one that is simply too long is never shown verbatim - the state layer
+    // substitutes its own sentence. A 5xx says the server is the problem, other
+    // codes keep the generic request failure.
+    final String safeMessage = sanitizeUpstreamMessage(rawMessage);
+    if (safeMessage.isEmpty) {
+      return error is ApiClientException && error.statusCode >= 500
+          ? _copy.contentLoadFailed
+          : _copy.requestFailed;
+    }
+    return safeMessage;
   }
 
   /// The raw message of [error]; Kotlin reads `Throwable.message`.

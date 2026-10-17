@@ -355,9 +355,9 @@ void main() {
     expect(find.text('Bank card'), findsNothing);
     expect(find.text('Sign out'), findsNothing);
     expect(find.byType(AppSectionCard), findsOneWidget);
-    // Exactly the two account-free settings rows: the support row (its own
-    // layout, so the mailbox keeps the full width) and the app version.
-    expect(find.byType(AppListRow), findsOneWidget);
+    // Exactly the two account-free settings rows: the support row (a shared
+    // `AppListRow` whose subtitle is the selectable mailbox) and the version.
+    expect(find.byType(AppListRow), findsNWidgets(2));
     expect(find.text('shortlink@gmail.com'), findsOneWidget);
     expect(_heroDecoration(tester).color, AppColors.light.surface);
     expect(_heroBorder(tester), AppColors.light.hairline);

@@ -531,6 +531,15 @@ void main() {
           SizedBox(height: 12),
           AppAmountBlock(value: '12.34', unit: 'USDT', size: AppAmountSize.inline),
           SizedBox(height: 12),
+          // A long unit next to a long figure: the block ellipsises both slots
+          // instead of overflowing its parent.
+          AppAmountBlock(
+            label: 'Membership',
+            value: '0.14',
+            unit: 'USDT / 30 days of membership',
+            size: AppAmountSize.large,
+          ),
+          SizedBox(height: 12),
           AppAmountBlock(
             label: 'Points earned today',
             value: '245',
@@ -1649,6 +1658,128 @@ void main() {
     expect(label.maxLines, 1);
     expect(label.overflow, TextOverflow.ellipsis);
     handle.dispose();
+  });
+
+  testWidgets('AppSectionHeader bounds its trailing slot in both branches', (
+    WidgetTester tester,
+  ) async {
+    // A trailing widget used to get unbounded width in a Row without a flex
+    // slot, so every screen that needed one patched the overflow itself. The
+    // header now caps it; the widget's own ellipsis does the rest.
+    Future<void> pumpHeader({required double width, required double scale}) {
+      return tester.pumpWidget(
+        host(
+          AppSectionHeader(
+            title: 'Results',
+            trailing: Container(
+              // Intentionally wider than the whole header: the cap must bite.
+              width: 4000,
+              height: 20,
+              color: AppColors.light.surfaceAlt,
+            ),
+          ),
+          width: width,
+          textScale: scale,
+        ),
+      );
+    }
+
+    // Side-by-side branch (wide, reading size): the trailing slot is capped to
+    // the documented share of the header width.
+    await pumpHeader(width: 600, scale: 1);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    final double wideTrailing = tester
+        .getSize(find.byType(Container).last)
+        .width;
+    expect(wideTrailing, lessThanOrEqualTo(600 * sectionHeaderTrailingWidthFactor));
+
+    // Stacked branch (narrow/large text): the trailing row still cannot
+    // overflow.
+    await pumpHeader(width: 320, scale: 3.2);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('AppAmountBlock ellipsises its unit at 3.2x on a 320px screen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        const AppAmountBlock(
+          label: 'Membership',
+          value: '0.14',
+          unit: 'USDT / 30 days of membership',
+          size: AppAmountSize.large,
+        ),
+        width: 320,
+        textScale: 3.2,
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    final Text unit = tester.widget<Text>(
+      find.text('USDT / 30 days of membership'),
+    );
+    expect(unit.maxLines, 1);
+    expect(unit.overflow, TextOverflow.ellipsis);
+  });
+
+  testWidgets('AppListRow.subtitleWidget keeps its own readable node', (
+    WidgetTester tester,
+  ) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    // The second consumer: a machine value that must stay selectable.
+    await tester.pumpWidget(
+      host(
+        AppSectionCard(
+          children: <Widget>[
+            AppListRow(
+              title: 'Contact support',
+              leadingIcon: Icons.mail_outline,
+              divider: false,
+              subtitleWidget: SelectableText('shortlink@gmail.com'),
+            ),
+          ],
+        ),
+        width: 360,
+      ),
+    );
+    await tester.pump();
+
+    // The row is its own node with the title, and exposes no action.
+    final SemanticsData row = tester.semantics
+        .find(find.bySemanticsLabel('Contact support'))
+        .getSemanticsData();
+    expect(row.hasAction(SemanticsAction.tap), isFalse);
+    // The selectable value keeps its own node instead of being merged away.
+    expect(find.text('shortlink@gmail.com'), findsOneWidget);
+    final List<String> texts = semanticsTexts(tester);
+    expect(texts, contains('Contact support'));
+    expect(texts, contains('shortlink@gmail.com'));
+    handle.dispose();
+  });
+
+  testWidgets('AppListRow.subtitleWidget row stays on one line at 320/3.2x', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        AppListRow(
+          title: 'Contact support',
+          leadingIcon: Icons.mail_outline,
+          divider: false,
+          subtitleWidget: const SelectableText(
+            'shortlink@gmail.com',
+            maxLines: 1,
+          ),
+        ),
+        width: 320,
+        textScale: 3.2,
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a card of rows keeps every row and its trailing control as its '

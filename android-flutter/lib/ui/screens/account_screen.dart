@@ -27,7 +27,6 @@ import '../../data/models/app_models.dart';
 import '../../state/app_state_controller.dart';
 import '../../state/app_ui_state.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_icons.dart';
 import '../../theme/app_shapes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
@@ -503,103 +502,25 @@ class _SettingsSection extends StatelessWidget {
                 divider: false,
               ),
             // A support mailbox is a *value*, not an action: it sits in the
-            // subtitle over the whole row width (a trailing slot squeezed it
-            // into two lines and broke the address mid-word on a 360 dp device)
-            // and stays selectable for long-press copy.
-            _SupportRow(
+            // subtitle slot over the whole row width (a trailing slot squeezed
+            // it into two lines and broke the address mid-word on a 360 dp
+            // device) and stays selectable for long-press copy.
+            AppListRow(
               title: copy.accountContactSupportTitle,
-              email: copy.accountContactSupportEmail,
+              leadingIcon: Icons.mail_outline,
+              divider: false,
+              subtitleWidget: SelectableText(
+                copy.accountContactSupportEmail,
+                maxLines: 1,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).extension<AppColors>()!.textSecondary,
+                ),
+              ),
             ),
             _VersionRow(state: state),
           ],
         ),
       ],
-    );
-  }
-}
-
-/// The support row: the title with the mailbox in the subtitle slot.
-///
-/// A deliberate variant of [AppListRow]: the mailbox has to sit in the subtitle
-/// position - left-aligned over the whole row width, so it never breaks in the
-/// middle - while staying a [SelectableText] so it keeps long-press copy and its
-/// own semantics value, which the shared row's string subtitle cannot express.
-/// The geometry ([AppSpacing.rowMinHeight] minimum, the same padding and the
-/// same leading plate) and the §7.2 semantics contract are the component's: the
-/// row is its own node, its description is announced once, the mailbox keeps its
-/// node, and a plain row exposes no tap.
-class _SupportRow extends StatelessWidget {
-  const _SupportRow({required this.title, required this.email});
-
-  final String title;
-  final String email;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
-    final AppIconSize icons = appIconSizeOf(context);
-    final AppSpacing spacing = appSpacingOf(context);
-    final TextTheme textTheme = Theme.of(context).textTheme;
-
-    return Semantics(
-      container: true,
-      label: title,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: spacing.rowMinHeight),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: spacing.space4,
-            vertical: spacing.space3,
-          ),
-          child: Row(
-            children: <Widget>[
-              ExcludeSemantics(
-                child: Container(
-                  width: spacing.space10,
-                  height: spacing.space10,
-                  decoration: BoxDecoration(
-                    color: colors.surfaceDisabled,
-                    borderRadius: shapes.controlRadius,
-                  ),
-                  child: Icon(
-                    Icons.mail_outline,
-                    size: icons.md,
-                    color: colors.onDisabled,
-                  ),
-                ),
-              ),
-              SizedBox(width: spacing.space4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    // The row node announces the title; the mailbox below keeps
-                    // its own readable, selectable node.
-                    ExcludeSemantics(
-                      child: Text(
-                        title,
-                        style: textTheme.titleMedium?.copyWith(
-                          color: colors.onDisabled,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: spacing.space1),
-                    SelectableText(
-                      email,
-                      maxLines: 1,
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

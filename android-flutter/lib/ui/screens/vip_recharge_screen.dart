@@ -325,8 +325,10 @@ class _PendingOrderState extends State<_PendingOrder> {
       children: <Widget>[
         AppAmountBlock(
           label: widget.copy.vipPayAmount,
-          // The unit rides in the value so a 4-character unit cannot overflow
-          // the figure's row at 3.2x.
+          // The unit rides in the value: this screen's tests pin the rendered
+          // single string, and the test file is outside this task's write scope.
+          // AppAmountBlock now flexes its unit slot, so restoring the split is
+          // a follow-up one-liner plus an assertion adaptation.
           value: '${widget.order.effectiveAmount} USDT',
           size: AppAmountSize.large,
           valueColor: colors.accentPrimary,
