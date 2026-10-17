@@ -83,6 +83,11 @@ abstract final class AppUiCopy {
   /// Search: label of the in-field search affordance.
   static const String searchSubmit = 'Search';
 
+  /// Search: non-interactive pill shown with the empty result state. It is a
+  /// status prompt, not a control: the field above is where a new search
+  /// starts.
+  static const String searchAgain = 'Search again';
+
   /// Favorites: page subtitle carrying the bookmarked count.
   static String favoritesCount(int count) =>
       count == 1 ? '1 drama saved' : '$count dramas saved';

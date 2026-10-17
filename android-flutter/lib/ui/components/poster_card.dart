@@ -56,6 +56,7 @@ class PosterCard extends StatelessWidget {
     this.watchedEpisodeCount = 0,
     this.onTap,
     this.fallbackIcon = Icons.movie_outlined,
+    this.showTitleOverlay = true,
     super.key,
   });
 
@@ -82,6 +83,13 @@ class PosterCard extends StatelessWidget {
 
   /// Glyph shown on the fallback plate when there is no cover.
   final IconData fallbackIcon;
+
+  /// Whether the title is painted over the artwork.
+  ///
+  /// Defaults to true, the poster-grid treatment. A list row that already shows
+  /// the title beside the card passes false, so the same words are not printed
+  /// twice; the merged accessibility name is unaffected either way.
+  final bool showTitleOverlay;
 
   @override
   Widget build(BuildContext context) {
@@ -139,21 +147,27 @@ class PosterCard extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: <Widget>[
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.bottomLeft,
-                          child: Text(
-                            title,
-                            maxLines: titleMaxLines,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.titleSmall?.copyWith(
-                              color: Colors.white,
+                      // The title is optional so a caller that renders it beside
+                      // the card does not print it twice; the flex slot stays so
+                      // the spine keeps its bottom-right corner.
+                      if (showTitleOverlay)
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.bottomLeft,
+                            child: Text(
+                              title,
+                              maxLines: titleMaxLines,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(
+                                context,
+                              ).textTheme.titleSmall?.copyWith(
+                                color: Colors.white,
+                              ),
                             ),
                           ),
-                        ),
-                      ),
+                        )
+                      else
+                        const Spacer(),
                       const SizedBox(width: 6),
                       SizedBox(
                         width: _spineLaneWidth,

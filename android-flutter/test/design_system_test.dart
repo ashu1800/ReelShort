@@ -645,6 +645,54 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('PosterCard can hide its title overlay and keeps its label', (
+    WidgetTester tester,
+  ) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    final String expected = posterCardContentDescription(
+      'Drama',
+      12,
+      AppLanguage.defaultLanguage,
+    );
+
+    // Default: the poster-grid treatment paints the title on the artwork.
+    await tester.pumpWidget(
+      host(
+        const SizedBox(
+          width: 160,
+          child: PosterCard(title: 'Drama', coverUrl: null, episodeCount: 12),
+        ),
+        width: 320,
+      ),
+    );
+    expect(find.text('Drama'), findsOneWidget);
+
+    // A row that prints the title beside the card passes false: the artwork no
+    // longer repeats it, while the merged accessibility name stays complete.
+    await tester.pumpWidget(
+      host(
+        const SizedBox(
+          width: 160,
+          child: PosterCard(
+            title: 'Drama',
+            coverUrl: null,
+            episodeCount: 12,
+            showTitleOverlay: false,
+          ),
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Drama'), findsNothing);
+    expect(find.bySemanticsLabel(expected), findsOneWidget);
+    // The spine and the fallback plate still render in the card.
+    expect(find.byType(EpisodeSpine), findsOneWidget);
+    expect(find.byIcon(Icons.movie_outlined), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    handle.dispose();
+  });
+
   testWidgets('PosterCard title line count follows posterOverlayTitleMaxLines', (
     WidgetTester tester,
   ) async {
