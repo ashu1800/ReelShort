@@ -379,6 +379,81 @@ Phase 4 才是**外观真正变化**的阶段：前四个阶段（令牌/组件/
      分支）、奖励失败横幅文字色的运行时证据、圆环 `onMediaSecondary` 静默分支（本轮输入都落在
      `accentReward`）。
 
+### 7.8 Search / Discover（发现页）重设计规格（Phase 4-4，冻结 2026-10-17）
+
+现状问题：**没有页标题**（直接以搜索框开场）；搜索区是两个整宽控件竖排、间距与水平内边距用裸值
+（`EdgeInsets.symmetric(horizontal: 16)`、`SizedBox(height: 10)` 等）；发现分组标题是「紫色圆点 +
+14px 文本」且 **`Row` 里的标题没有 `Flexible`**——已知在 320px + 3.2× 字号下横向溢出（实测
+257/353/305px 四处 `RenderFlex overflow`，Phase 4 前就记录在 §3 台账）；chips 用默认
+`ActionChip` 样式；结果行没有 loading 骨架、语义节点可能重复播报（外层 `Semantics(button, label)`
+未 `excludeSemantics`）；空态文案是**页内硬编码英文**（parity gap G3）。
+
+目标结构（自上而下，全部走令牌与共享组件）：
+
+1. **页标题**：`screenTitle` + `copy.searchTab`（"Discover"），页面内边距
+   `appSpacingOf(context).pagePadding`；替换现有 `horizontal: 16` + 顶部 12。
+2. **搜索区**：`AppTextField`（`searchHint`，保持「重建不清空未提交输入」的既有
+   `didUpdateWidget` 行为）+ 整宽 primary `AppButton`（`searchAction` = "Search"，
+   **必须保留可见的 'Search' 文本**，护栏测试依赖它）；间距走令牌。
+3. **发现分组**：顶部 `AppSectionHeader(searchTagsTitle)`（"Popular lanes" 大写化）；
+   每个 group 用 `AppSectionHeader(group.title)` 取代「圆点 + 文本」——这同时从结构上消灭
+   320px+3.2× 的溢出缺陷；chips 保持 `Wrap` 布局 + 令牌化（surfaceAlt 底 + hairline 边 +
+   44px 最小高度 + 3.2× 下可换行不裁剪），点击仍 `controller.search(tag)` 立即提交。
+4. **结果区**（`searchShowsResultsFirst` 为真时）：`AppSectionHeader(AppUiCopy.searchResultsSection)`
+   + 明细行（query 单行省略 + `${count} ${searchResultCountSuffix}` 计数胶囊）；结果行改成
+   令牌化行——88×132 海报 + 标题（2 行省略）+ 集数 + 可选简介（模型有则展示），**单一合并语义节点**
+   （label + onTap 挂在合并节点、`excludeSemantics`，不重复播报），命中区 ≥44。
+5. **加载态**：`state.isLoading` 且结果为空时渲染与结果行同形的骨架（海报块 + 两行文本），
+   不再空白。
+6. **空态**：改用 `AppUiCopy.searchStartTitle/searchStartBody`（初始）与
+   `searchNoResultsTitle/searchNoResultsBody`（无结果），重试 pill 文案进 `AppUiCopy`
+   （新增 `searchAgain = 'Search again'`，非交互 pill，遵守 §7.9）。
+7. **回归硬约束**：`trim()` 提交、空白查询无副作用、`searchShowsResultsFirst` 结果优先判据、
+   chip 立即提交、结果行点击 `openBook`、护栏 `ui_wiring_test` 的
+   `find.text('Search')` 断言不得失效；`AppStrings` 不改。
+
+检查项（前几屏踩过的坑）：新按钮变体（一个区域只允许一个 primary）与命中区 ≥44；
+320×640@3.2× 零异常（本屏就是历史溢出点，必须有回归用例）。
+
+### 7.9 Phase 4-4 结果（Search / Discover）
+
+- 交付：`search_screen.dart` 重写（358 → 约 545 行）、新增 `test/search_screen_test.dart` 18 条、
+  `AppUiCopy` 追加 `searchAgain`；新增页标题「Discover」（`screenTitle`）与整页 `pagePadding`；
+  搜索区保留 `AppTextField`（重建不清空的既有语义）+ primary「Search」（护栏依赖可见文本）；
+  发现分组改为「一个大写分区头 POPULAR LANES + 四个句首大写次级标签」两级层次（次级标签
+  `caption`/`textSecondary`/w600、无 accent 装饰），chips 令牌化（surfaceAlt/hairline/pill/
+  minHeight 44/宽度封顶单行省略）；结果区 `RESULTS` + `N dramas` 计数胶囊 + query 单行省略 +
+  令牌化结果行（88×132 海报 + 2 行标题 + 集数 + 可选简介，**单一合并语义节点**）；
+  首次搜索飞行中显示与结果行同形的骨架；初始/无结果分别用 `searchStart*` / `searchNoResults*`
+  + 非交互 'Search again' pill。
+- **本轮抓到并修掉的两个缺陷（真机/用例发现）：**
+  1. 结果区计数胶囊在 320×640@3.2× 下溢出 51px（`AppSectionHeader` 堆叠分支的 trailing 没有
+     `Flexible`）→ 用 `LayoutBuilder` 给胶囊 `maxWidth = 内容宽 × 0.45` + 省略号；verifier 复测
+     320@3.2× 胶囊宽 127.8 = 284×0.45 恰好顶到封顶、堆叠在标题下方，360/1440 为自然宽同行。
+  2. 初始态出现**两个连着的同款大写分区头**（POPULAR LANES 紧接 STORY MOODS，真机截图
+     `57-discover-final.png` 修后对比 `53-discover-after.png`）→ 保留唯一 `AppSectionHeader`，
+     group 标题降级为次级标签；顺带给 `PosterCard` 加 `showTitleOverlay`（默认 true，既有
+     6 处调用零改动），搜索结果行传 false 消除「海报叠标题 + 行内标题」视觉重复（几何与语义不变）。
+- **历史缺陷结案**：§3 台账里挂了很久的「Discover 在 320px + 3.2× 下横向溢出」由
+  `_DiscoveryGroups` 的裸 `Row`（组标题无 Flexible）改成 `AppSectionHeader` 的堆叠分支
+  **结构性消除**；verifier 用「四种尺寸逐组滚动零异常 + 各级 header 子树内 `ClipRect` 零命中」
+  取证不是 clip 掩盖，写作者的判别力实证是旧结构会以 1303/1592/1448px 溢出失败。
+- 验证：`flutter analyze` 0 issue、`flutter test` 全量 **226 用例全绿**；verifier 两轮
+  （task-26/28）独立取证增量缺陷 0（行为 parity 逐条、空态/加载态形状、结果行单一语义节点、
+  令牌合规、320/360/1440 × 减少动效、`showTitleOverlay` 调用点清查与默认分支零变化）。
+- 真机（雷电 Android 14 / 360×640dp，登录态）：改造前 `50/51/52-discover-before-*`，
+  改造后 `57-discover-final.png`（两级分区层次）与 `59-discover-results-final.png`
+  （RESULTS + 42 dramas + 干净海报 + 单行标题）。
+- 已知取舍 / 后续项：
+  1. 加载骨架同时挂在「结果区」与「发现区下段」两个分支（状态层在搜索成功前不写
+     `searchQuery`，是 Kotlin parity 的直接结果）；Phase 5 可用「已提交 query」本地状态让骨架
+     直接长在结果区，避免加载落地时的一次重排。
+  2. `' eps'` 仍是既有硬编码英文（HEAD 已存在），要本地化需改 Kotlin 源新增 `AppStrings` 字段。
+  3. 搜索历史（`AppUiCopy.searchRecentSection/searchRecentClear` 已存在）未接，留后续。
+  4. lane 之间目前只用间距分隔；若真机看偏挤可加 hairline 或把次级标签提到 `bodySmall`。
+
+
+
 
 
 
