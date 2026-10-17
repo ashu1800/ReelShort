@@ -2,14 +2,16 @@
 /// the withdrawal history.
 ///
 /// Port of `android-app/.../ui/screens/account/WithdrawalScreen.kt`, rebuilt
-/// with the ShortLink design system. The screen class itself is stateless:
-/// state is read through `context.watch<AppStateController>().state` and every
-/// action dispatches on that controller; the form keeps only the local draft
-/// state (the typed amount and the confirm step) that a form must own.
+/// with the ShortLink design system (`docs/ui-redesign-notes.md` §7.10). The
+/// screen class itself is stateless: state is read through
+/// `context.watch<AppStateController>().state` and every action dispatches on
+/// that controller; the form keeps only the local draft state (the typed amount
+/// and the confirm step) that a form must own.
 ///
-/// Phase 3: the page chrome (title, back affordance, page padding, safe area,
-/// scrolling, bottom inset) comes from the shell's `AppSubPage`, so this screen
-/// only renders its sections.
+/// Phase 3 provides the page chrome (title, back affordance, page padding, safe
+/// area, scrolling, bottom inset) through the shell's `AppSubPage`. The two-step
+/// gate, the digits-only field, the placeholder swap on focus loss and every
+/// status mapping are the port's own, untouched by the redesign.
 library;
 
 import 'dart:async';
@@ -19,29 +21,24 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/formatting/app_strings.dart';
+import '../../core/formatting/app_ui_copy.dart';
 import '../../core/formatting/ui_formats.dart';
 import '../../data/models/app_language.dart';
 import '../../data/models/app_models.dart';
 import '../../state/app_state_controller.dart';
 import '../../state/app_ui_state.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_shapes.dart';
+import '../../theme/app_icons.dart';
+import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../../ui/components/app_amount_block.dart';
 import '../../ui/components/app_button.dart';
 import '../../ui/components/app_empty_state.dart';
+import '../../ui/components/app_loading.dart';
+import '../../ui/components/app_section.dart';
+import '../../ui/components/app_status_pill.dart';
 import '../../ui/components/app_text_field.dart';
-
-/// Vertical gap between the page sections.
-const double _sectionGap = 14;
-
-/// Gap between rows inside a panel.
-const double _panelGap = 10;
-
-/// Padding inside a surface panel.
-const EdgeInsets _panelPadding = EdgeInsets.all(16);
-
-/// Gap between the two confirm-step buttons.
-const double _confirmGap = 10;
+import '../../ui/components/ledger_row.dart';
 
 /// Sentinel for an absent summary, so the submit gate stays closed.
 const int _noSummaryMinimum = 2147483647;
@@ -64,6 +61,7 @@ class WithdrawalScreen extends StatelessWidget {
     final AppStateController controller = context.watch<AppStateController>();
     final AppUiState state = controller.state;
     final AppStrings copy = strings(state.language);
+    final AppSpacing spacing = appSpacingOf(context);
     final bool loggedIn = state.session != null;
 
     return Column(
@@ -71,9 +69,14 @@ class WithdrawalScreen extends StatelessWidget {
       children: <Widget>[
         if (!loggedIn)
           _GuestPanel(copy: copy, onSignIn: controller.showAuthPrompt)
-        else
+        else ...<Widget>[
+          _AvailableHeader(state: state, copy: copy),
+          SizedBox(height: spacing.sectionGap),
           _WithdrawalFormSection(copy: copy),
-        const SizedBox(height: _sectionGap),
+          SizedBox(height: spacing.sectionGap),
+        ],
+        AppSectionHeader(title: copy.accountWithdrawalRecordsTitle),
+        SizedBox(height: spacing.space2),
         _WithdrawalHistorySection(copy: copy),
       ],
     );
@@ -90,15 +93,16 @@ class _GuestPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+
+    return AppSectionCard(
       children: <Widget>[
         Text(
           copy.fundsLoginRequired,
-          style: textTheme.titleMedium?.copyWith(color: colors.accentPrimary),
+          style: roles.body.copyWith(color: colors.accentPrimary),
         ),
-        const SizedBox(height: _panelGap),
+        SizedBox(height: spacing.space2),
         AppButton(
           label: copy.accountGuestSignIn,
           onPressed: onSignIn,
@@ -109,26 +113,55 @@ class _GuestPanel extends StatelessWidget {
   }
 }
 
-/// A raised surface card with a hairline border.
-class _Panel extends StatelessWidget {
-  const _Panel({required this.child});
+/// The header: withdrawable points as the page's figure, with the minimum and
+/// the conversion rate as the supporting lines.
+///
+/// The summary line is the shared formatter's output, so the header keeps the
+/// exact wording while the amount-dependent lines stay with the form.
+class _AvailableHeader extends StatelessWidget {
+  const _AvailableHeader({required this.state, required this.copy});
 
-  final Widget child;
+  final AppUiState state;
+  final AppStrings copy;
 
   @override
   Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: shapes.containerRadius,
-        border: Border.all(
-          color: colors.hairline,
-          width: shapes.strokeHairline,
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    final WithdrawalSummary? summary = state.withdrawalSummary;
+
+    if (summary == null) {
+      // Neutral plate while the snapshot is unknown - never a zero balance.
+      return AppSectionCard(
+        children: <Widget>[
+          const AppSkeletonText(lines: 2),
+          SizedBox(height: spacing.space2),
+        ],
+      );
+    }
+
+    final List<String> lines = withdrawalConversionLines(
+      summary,
+      0,
+      state.language,
+    );
+
+    return AppSectionCard(
+      children: <Widget>[
+        AppAmountBlock(
+          label: copy.accountWithdrawAvailableLabel,
+          value: groupedDigits(summary.availablePoints),
+          unit: copy.listPointsLabel,
+          size: AppAmountSize.large,
         ),
-      ),
-      child: Padding(padding: _panelPadding, child: child),
+        if (lines.isNotEmpty)
+          Text(
+            lines.first,
+            style: roles.caption.copyWith(
+              color: Theme.of(context).extension<AppColors>()!.textSecondary,
+            ),
+          ),
+      ],
     );
   }
 }
@@ -141,7 +174,7 @@ class _WithdrawalFormSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Panel(child: _WithdrawalForm(copy: copy));
+    return AppSectionCard(children: <Widget>[_WithdrawalForm(copy: copy)]);
   }
 }
 
@@ -297,37 +330,33 @@ class _AmountStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final TextTheme textTheme = Theme.of(context).textTheme;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final WithdrawalSummary? summary = state.withdrawalSummary;
     final int points = int.tryParse(controller.text) ?? 0;
+    // The summary line lives in the page header; the form keeps the lines that
+    // depend on the typed amount (fee and expected arrival).
+    final List<String> lines = withdrawalConversionLines(
+      summary,
+      points,
+      state.language,
+    ).skip(1).toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        for (final String line in withdrawalConversionLines(
-          summary,
-          points,
-          state.language,
-        ))
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
+        if (lines.isNotEmpty) ...<Widget>[
+          for (final String line in lines)
+            Text(
               line,
-              style: textTheme.bodyMedium?.copyWith(
-                color: colors.textSecondary,
+              style: roles.caption.copyWith(
+                color: Theme.of(context).extension<AppColors>()!.textSecondary,
               ),
             ),
-          ),
-        Text(
-          _walletLine(summary),
-          style: textTheme.bodySmall?.copyWith(
-            color: summary?.walletAddress == null
-                ? colors.accentDanger
-                : colors.textSecondary,
-          ),
-        ),
-        const SizedBox(height: _panelGap),
+          SizedBox(height: spacing.space2),
+        ],
+        _WalletLine(state: state, copy: copy),
+        SizedBox(height: spacing.space3),
         AppTextField(
           label: copy.accountWithdrawPointAmountLabel,
           controller: controller,
@@ -344,7 +373,7 @@ class _AmountStep extends StatelessWidget {
           ],
           onChanged: onChanged,
         ),
-        const SizedBox(height: _panelGap),
+        SizedBox(height: spacing.space3),
         AppButton(
           label: copy.accountWithdrawSubmitAction,
           onPressed: canSubmit ? onSubmit : null,
@@ -354,16 +383,49 @@ class _AmountStep extends StatelessWidget {
       ],
     );
   }
+}
 
-  /// The wallet line: `network · address`, or the bind-first copy in the
-  /// danger accent when no wallet is bound.
-  String _walletLine(WithdrawalSummary? summary) {
-    final String? walletAddress = summary?.walletAddress;
+/// The wallet line: `network · address`, or a warning pill when none is bound.
+class _WalletLine extends StatelessWidget {
+  const _WalletLine({required this.state, required this.copy});
+
+  final AppUiState state;
+  final AppStrings copy;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    final String? walletAddress = state.withdrawalSummary?.walletAddress;
+
     if (walletAddress == null) {
-      return copy.accountWithdrawWalletRequired;
+      return AppStatusPill(
+        tone: AppStatusTone.danger,
+        icon: Icons.error_outline,
+        label: copy.accountWithdrawWalletRequired,
+      );
     }
+
     final String network = state.wallet?.network ?? 'ERC20';
-    return '$network · $walletAddress';
+    return Row(
+      children: <Widget>[
+        Icon(
+          Icons.account_balance_wallet_outlined,
+          size: appIconSizeOf(context).sm,
+          color: colors.textSecondary,
+        ),
+        SizedBox(width: spacing.space1),
+        Expanded(
+          child: Text(
+            '$network · $walletAddress',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: roles.caption.copyWith(color: colors.textSecondary),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -391,43 +453,40 @@ class _ConfirmStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppUiState state = context.watch<AppStateController>().state;
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final TextTheme textTheme = Theme.of(context).textTheme;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final AppLanguage language = state.language;
     final WithdrawalSummary? summary = state.withdrawalSummary;
+    final List<String> lines = withdrawalConversionLines(
+      summary,
+      points,
+      language,
+    ).skip(1).toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(accountConfirmationTitle(language), style: textTheme.titleMedium),
-        const SizedBox(height: _panelGap),
-        Text(
-          '${copy.accountWithdrawSubmitAction}: '
-          '$points${copy.accountPointsSuffix}',
-          style: textTheme.bodyLarge,
+        Text(accountConfirmationTitle(language), style: roles.body),
+        SizedBox(height: spacing.space2),
+        AppLedgerRow(
+          label: copy.accountWithdrawSubmitAction,
+          value: '$points${copy.accountPointsSuffix}',
+          divider: lines.isEmpty,
         ),
-        for (final String line in withdrawalConversionLines(
-          summary,
-          points,
-          language,
-        ))
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              line,
-              style: textTheme.bodyMedium?.copyWith(
-                color: colors.textSecondary,
-              ),
-            ),
+        for (final String line in lines)
+          Text(
+            line,
+            style: roles.caption.copyWith(color: colors.textSecondary),
           ),
-        const SizedBox(height: 4),
+        SizedBox(height: spacing.space2),
         Text(
           accountConfirmationBody(
             '$points${copy.accountPointsSuffix}',
             language,
           ),
-          style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+          style: roles.caption.copyWith(color: colors.textSecondary),
         ),
-        const SizedBox(height: _panelGap),
+        SizedBox(height: spacing.space3),
         Row(
           children: <Widget>[
             Expanded(
@@ -438,10 +497,10 @@ class _ConfirmStep extends StatelessWidget {
                 isExpanded: true,
               ),
             ),
-            const SizedBox(width: _confirmGap),
+            SizedBox(width: spacing.space2),
             Expanded(
               child: AppButton(
-                label: accountConfirmationCancel(language),
+                label: AppUiCopy.withdrawalEditAmount,
                 onPressed: busy ? null : onCancel,
                 variant: AppButtonVariant.secondary,
                 isExpanded: true,
@@ -454,7 +513,7 @@ class _ConfirmStep extends StatelessWidget {
   }
 }
 
-/// The withdrawal history section: heading, rows newest first, empty state.
+/// The withdrawal history section: rows newest first, or the shared empty state.
 class _WithdrawalHistorySection extends StatelessWidget {
   const _WithdrawalHistorySection({required this.copy});
 
@@ -463,18 +522,13 @@ class _WithdrawalHistorySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppUiState state = context.watch<AppStateController>().state;
-    final TextTheme textTheme = Theme.of(context).textTheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return AppSectionCard(
       children: <Widget>[
-        Text(copy.accountWithdrawalRecordsTitle, style: textTheme.titleMedium),
-        const SizedBox(height: _panelGap),
         if (state.withdrawals.isEmpty)
           AppEmptyState(
             icon: Icons.receipt_long,
-            title: copy.accountWithdrawalRecordsTitle,
-            pillLabel: copy.accountWithdrawalRecordsEmpty,
+            title: AppUiCopy.withdrawalRecordsEmptyTitle,
           )
         else
           for (final WithdrawalRecord record in state.withdrawals)
@@ -498,9 +552,9 @@ class _WithdrawalHistoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppSpacing spacing = appSpacingOf(context);
     final AppTypography typography = Theme.of(context)
         .extension<AppTypography>()!;
-    final TextTheme textTheme = Theme.of(context).textTheme;
     final AppLanguage language = context
         .watch<AppStateController>()
         .state
@@ -514,48 +568,53 @@ class _WithdrawalHistoryRow extends StatelessWidget {
       record.txHash,
       language,
     );
-    final Color statusColor = switch (statusLabel) {
-      'Completed' => colors.accentSuccess,
-      'Rejected' => colors.accentDanger,
-      'Pending' => colors.accentWarning,
-      _ => colors.textSecondary,
+    final (IconData, AppStatusTone) status = switch (statusLabel) {
+      'Completed' => (Icons.check_circle_outline, AppStatusTone.success),
+      'Rejected' => (Icons.error_outline, AppStatusTone.danger),
+      'Pending' => (Icons.schedule, AppStatusTone.warning),
+      _ => (Icons.info_outline, AppStatusTone.neutral),
     };
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: _panelGap),
-      child: _Panel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    '${record.pointAmount} pts · ${record.usdtAmount} USDT',
-                    style: typography.numeric,
-                  ),
-                ),
-                Text(
-                  statusLabel,
-                  style: textTheme.bodySmall?.copyWith(color: statusColor),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${record.network} · ${record.walletAddress}',
-              style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-            ),
-            if (detail != null)
-              Text(
-                detail,
-                style: textTheme.bodySmall?.copyWith(
-                  color: colors.textSecondary,
-                ),
+            Expanded(
+              child: Text(
+                '${record.pointAmount} pts · ${record.usdtAmount} USDT',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: typography.numeric,
               ),
+            ),
+            SizedBox(width: spacing.space2),
+            // Flexed so the status pill's label ellipsises at large text scales
+            // instead of overflowing the row.
+            Flexible(
+              child: AppStatusPill(
+                tone: status.$2,
+                icon: status.$1,
+                label: statusLabel,
+              ),
+            ),
           ],
         ),
-      ),
+        SizedBox(height: spacing.space1),
+        Text(
+          '${record.network} · ${record.walletAddress} · ${record.createdAt}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: typography.caption.copyWith(color: colors.textSecondary),
+        ),
+        if (detail != null)
+          Text(
+            detail,
+            style: typography.caption.copyWith(color: colors.textSecondary),
+          ),
+        SizedBox(height: spacing.space2),
+      ],
     );
   }
 }
+

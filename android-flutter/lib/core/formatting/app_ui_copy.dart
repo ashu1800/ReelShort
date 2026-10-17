@@ -198,6 +198,12 @@ abstract final class AppUiCopy {
   /// VIP: action that re-checks the payment status on the create step.
   static const String vipRefreshStatus = 'Refresh status';
 
+  /// Short "Expired" status word for a status pill.
+  ///
+  /// The full sentence (`vipPayExpired`) is long-form copy: it stays visible as
+  /// a caption under the pill rather than being squeezed into the capsule.
+  static const String statusExpired = 'Expired';
+
   /// Player: action that replays the finished episode.
   static const String playerReplay = 'Replay';
 

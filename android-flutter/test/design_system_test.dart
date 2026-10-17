@@ -42,6 +42,7 @@ import 'package:shortlink/ui/components/app_membership_chip.dart';
 import 'package:shortlink/ui/components/app_message_bar.dart';
 import 'package:shortlink/ui/components/app_panel.dart';
 import 'package:shortlink/ui/components/app_section.dart';
+import 'package:shortlink/ui/components/app_status_pill.dart';
 import 'package:shortlink/ui/components/app_segmented_control.dart';
 import 'package:shortlink/ui/components/app_sheet.dart';
 import 'package:shortlink/ui/components/app_text_field.dart';
@@ -482,6 +483,35 @@ void main() {
           AppMembershipChip(active: true, label: 'VIP active'),
           SizedBox(height: 12),
           AppMembershipChip(active: false, label: 'VIP not active'),
+        ],
+      ),
+      'status pills': const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          AppStatusPill(
+            tone: AppStatusTone.success,
+            icon: Icons.check_circle_outline,
+            label: 'Confirmed',
+          ),
+          SizedBox(height: 8),
+          AppStatusPill(
+            tone: AppStatusTone.warning,
+            icon: Icons.schedule,
+            label: 'Awaiting confirmation',
+          ),
+          SizedBox(height: 8),
+          AppStatusPill(
+            tone: AppStatusTone.danger,
+            icon: Icons.error_outline,
+            label: 'Expired',
+          ),
+          SizedBox(height: 8),
+          AppStatusPill(
+            tone: AppStatusTone.neutral,
+            icon: Icons.info_outline,
+            label: 'Info',
+          ),
         ],
       ),
       'section card': AppSectionCard(
@@ -1456,6 +1486,101 @@ void main() {
       tester.getSize(find.byType(TextButton)).height,
       greaterThanOrEqualTo(44),
       reason: 'the wider label still meets the touch-target minimum',
+    );
+  });
+
+  testWidgets('AppStatusPill maps every tone to an accent, a glyph and a word', (
+    WidgetTester tester,
+  ) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    final Map<AppStatusTone, (IconData, Color, String)> cases =
+        <AppStatusTone, (IconData, Color, String)>{
+          AppStatusTone.success: (
+            Icons.check_circle_outline,
+            AppColors.light.accentSuccess,
+            'Confirmed',
+          ),
+          AppStatusTone.warning: (
+            Icons.schedule,
+            AppColors.light.accentWarning,
+            'Pending',
+          ),
+          AppStatusTone.danger: (
+            Icons.error_outline,
+            AppColors.light.accentDanger,
+            'Rejected',
+          ),
+          AppStatusTone.neutral: (
+            Icons.info_outline,
+            AppColors.light.textSecondary,
+            'Info',
+          ),
+        };
+
+    for (final MapEntry<AppStatusTone, (IconData, Color, String)> entry
+        in cases.entries) {
+      final (IconData icon, Color tone, String label) = entry.value;
+      await tester.pumpWidget(
+        host(
+          AppStatusPill(tone: entry.key, icon: icon, label: label),
+          width: 320,
+        ),
+      );
+      await tester.pump();
+      expect(find.text(label), findsOneWidget);
+
+      // The capsule carries the tone as a 12 % tint, never as a solid fill.
+      final Container capsule = tester.widget<Container>(
+        find.ancestor(of: find.text(label), matching: find.byType(Container)).first,
+      );
+      final BoxDecoration decoration = capsule.decoration! as BoxDecoration;
+      expect(decoration.color, tone.withValues(alpha: 0.12));
+      expect(
+        decoration.borderRadius,
+        BorderRadius.circular(AppShapes.light.radiusPill),
+      );
+
+      // The glyph is the second channel, painted in the same accent.
+      final Icon glyph = tester.widget<Icon>(find.byIcon(icon));
+      expect(glyph.color, tone);
+
+      // A status, not a control: one announcement, no activation.
+      final SemanticsData data = tester.semantics
+          .find(find.bySemanticsLabel(label))
+          .getSemanticsData();
+      expect(data.hasAction(SemanticsAction.tap), isFalse);
+      expect(data.flagsCollection.isButton, isFalse);
+    }
+    handle.dispose();
+  });
+
+  testWidgets('AppStatusPill ellipsises instead of overflowing at 3.2x', (
+    WidgetTester tester,
+  ) async {
+    // The device defect: inside a bounded parent a long label must ellipsise;
+    // the component owns the flexible slot so a caller cannot accidentally hand
+    // it unbounded width.
+    await tester.pumpWidget(
+      host(
+        AppStatusPill(
+          tone: AppStatusTone.danger,
+          icon: Icons.error_outline,
+          label: 'Order expired. Please create a new order.',
+        ),
+        width: 320,
+        textScale: 3.2,
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    final Text text = tester.widget<Text>(
+      find.textContaining('Order expired'),
+    );
+    expect(text.maxLines, 1);
+    expect(text.overflow, TextOverflow.ellipsis);
+    expect(
+      tester.getSize(find.byType(AppStatusPill)).width,
+      lessThanOrEqualTo(320),
     );
   });
 
