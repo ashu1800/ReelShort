@@ -37,18 +37,11 @@ class AppStrings {
   final String searchEmptyTitle;
   final String searchInitialHint;
   final String searchEmpty;
-  final String languageTitle;
-  final String languageSubtitle;
   final String loadingDialogTitle;
   final String homeHeaderTitle;
   final String homeHeaderSubtitleSuffix;
   final String favoritesHeaderTitle;
   final String favoritesHeaderSubtitleSuffix;
-  final String diagnosticsTitle;
-  final String diagnosticsExpand;
-  final String diagnosticsCollapse;
-  final String diagnosticsRefresh;
-  final String diagnosticsApiMissing;
   final String diagnosticsUnknownLabel;
   final String diagnosticsUnknownMessage;
   final String diagnosticsUpLabel;
@@ -92,15 +85,12 @@ class AppStrings {
   final String fundsVipRechargeAction;
   final String fundsVipRechargeSubtitle;
   final String fundsLoginRequired;
-  final String accountTransferTitle;
-  final String accountTransferRecordsTitle;
   final String accountChangePasswordTitle;
   final String accountBankCardTitle;
   final String authContinue;
   final String accountWithdrawalsTitle;
   final String accountWithdrawalRecordsTitle;
   final String accountWithdrawalRecordsEmpty;
-  final String accountDiagnosticsTitle;
   final String accountSignOutTitle;
   final String accountContactSupportTitle;
   final String accountContactSupportEmail;
@@ -110,22 +100,17 @@ class AppStrings {
   final String accountGuestSignInSubtitle;
   final String accountGuestRegisterSubtitle;
   final String accountFavoritesSubtitle;
-  final String accountViewAction;
   final String accountPointsSuffix;
   final String accountRecentCountPrefix;
   final String accountRecordsSuffix;
   final String accountOrdersReserved;
-  final String accountOrdersRecentSuffix;
   final String accountRecentWatchTitle;
   final String accountRecentWatchSubtitle;
-  final String accountSelectedLanguage;
   final String accountUserFallback;
   final String accountGuestUser;
   final String accountLoggedInStatus;
   final String accountGuestStatus;
-  final String accountPointsPillPrefix;
   final String accountGuestPill;
-  final String accountLoggedInRewardHint;
   final String accountGuestRewardHint;
   final String accountSignOutSubtitle;
   final String accountSignInSuccessHint;
@@ -144,7 +129,6 @@ class AppStrings {
   final String authLoginSecondary;
   final String authRegisterAction;
   final String authRegisterSecondary;
-  final String authCaptchaLabel;
   final String authCaptchaAnswerLabel;
   final String authCaptchaRefresh;
   final String authCaptchaLoading;
@@ -177,7 +161,6 @@ class AppStrings {
   final String playerCommentsEmpty;
   final String playerCommentPlaceholder;
   final String playerSend;
-  final String playerCommentUnit;
   final String listEpisodePrefix;
   final String listPointsChangeFallback;
   final String listPointRecordSubtitle;
@@ -186,7 +169,6 @@ class AppStrings {
   final String accountFrozenAvailableLabel;
   final String accountWalletNoBound;
   final String accountWalletAddressLabel;
-  final String accountWalletUnbindCode;
   final String accountWalletBindAction;
   final String accountWalletReplaceAction;
   final String accountWalletUnbindAction;
@@ -196,7 +178,6 @@ class AppStrings {
   final String accountVipUnlockAction;
   final String accountVipPriceSuffix;
   final String accountVipNoOrders;
-  final String vipDialogTitle;
   final String vipActiveLabel;
   final String vipExpiryLabel;
   final String vipPayTitle;
@@ -219,22 +200,14 @@ class AppStrings {
   final String vipRecordsTitle;
   final String accountWithdrawAvailableLabel;
   final String accountWithdrawMinimumLabel;
-  final String accountWithdrawRateLabel;
   final String accountWithdrawWalletRequired;
   final String accountWithdrawPointAmountLabel;
   final String accountWithdrawArrivalHint;
   final String accountWithdrawSubmitAction;
-  final String accountTransferHelp;
-  final String accountTransferRecipientLabel;
-  final String accountTransferPointsLabel;
-  final String accountTransferInLabel;
-  final String accountTransferOutLabel;
   final String accountPasswordNewLabel;
   final String accountBankCardUnsupported;
-  final String commonNotSupported;
   final String posterEpisodeUnit;
   final String bookRowFallbackSuffix;
-  final String bookRowViewAction;
 
   const AppStrings({
     required this.homeTab,
@@ -255,18 +228,11 @@ class AppStrings {
     required this.searchEmptyTitle,
     required this.searchInitialHint,
     required this.searchEmpty,
-    required this.languageTitle,
-    required this.languageSubtitle,
     required this.loadingDialogTitle,
     required this.homeHeaderTitle,
     required this.homeHeaderSubtitleSuffix,
     required this.favoritesHeaderTitle,
     required this.favoritesHeaderSubtitleSuffix,
-    required this.diagnosticsTitle,
-    required this.diagnosticsExpand,
-    required this.diagnosticsCollapse,
-    required this.diagnosticsRefresh,
-    required this.diagnosticsApiMissing,
     required this.diagnosticsUnknownLabel,
     required this.diagnosticsUnknownMessage,
     required this.diagnosticsUpLabel,
@@ -310,15 +276,12 @@ class AppStrings {
     required this.fundsVipRechargeAction,
     required this.fundsVipRechargeSubtitle,
     required this.fundsLoginRequired,
-    required this.accountTransferTitle,
-    required this.accountTransferRecordsTitle,
     required this.accountChangePasswordTitle,
     required this.accountBankCardTitle,
     required this.authContinue,
     required this.accountWithdrawalsTitle,
     required this.accountWithdrawalRecordsTitle,
     required this.accountWithdrawalRecordsEmpty,
-    required this.accountDiagnosticsTitle,
     required this.accountSignOutTitle,
     required this.accountContactSupportTitle,
     required this.accountContactSupportEmail,
@@ -328,22 +291,17 @@ class AppStrings {
     required this.accountGuestSignInSubtitle,
     required this.accountGuestRegisterSubtitle,
     required this.accountFavoritesSubtitle,
-    required this.accountViewAction,
     required this.accountPointsSuffix,
     required this.accountRecentCountPrefix,
     required this.accountRecordsSuffix,
     required this.accountOrdersReserved,
-    required this.accountOrdersRecentSuffix,
     required this.accountRecentWatchTitle,
     required this.accountRecentWatchSubtitle,
-    required this.accountSelectedLanguage,
     required this.accountUserFallback,
     required this.accountGuestUser,
     required this.accountLoggedInStatus,
     required this.accountGuestStatus,
-    required this.accountPointsPillPrefix,
     required this.accountGuestPill,
-    required this.accountLoggedInRewardHint,
     required this.accountGuestRewardHint,
     required this.accountSignOutSubtitle,
     required this.accountSignInSuccessHint,
@@ -362,7 +320,6 @@ class AppStrings {
     required this.authLoginSecondary,
     required this.authRegisterAction,
     required this.authRegisterSecondary,
-    required this.authCaptchaLabel,
     required this.authCaptchaAnswerLabel,
     required this.authCaptchaRefresh,
     required this.authCaptchaLoading,
@@ -395,7 +352,6 @@ class AppStrings {
     required this.playerCommentsEmpty,
     required this.playerCommentPlaceholder,
     required this.playerSend,
-    required this.playerCommentUnit,
     required this.listEpisodePrefix,
     required this.listPointsChangeFallback,
     required this.listPointRecordSubtitle,
@@ -404,7 +360,6 @@ class AppStrings {
     required this.accountFrozenAvailableLabel,
     required this.accountWalletNoBound,
     required this.accountWalletAddressLabel,
-    required this.accountWalletUnbindCode,
     required this.accountWalletBindAction,
     required this.accountWalletReplaceAction,
     required this.accountWalletUnbindAction,
@@ -414,7 +369,6 @@ class AppStrings {
     required this.accountVipUnlockAction,
     required this.accountVipPriceSuffix,
     required this.accountVipNoOrders,
-    required this.vipDialogTitle,
     required this.vipActiveLabel,
     required this.vipExpiryLabel,
     required this.vipPayTitle,
@@ -437,22 +391,14 @@ class AppStrings {
     required this.vipRecordsTitle,
     required this.accountWithdrawAvailableLabel,
     required this.accountWithdrawMinimumLabel,
-    required this.accountWithdrawRateLabel,
     required this.accountWithdrawWalletRequired,
     required this.accountWithdrawPointAmountLabel,
     required this.accountWithdrawArrivalHint,
     required this.accountWithdrawSubmitAction,
-    required this.accountTransferHelp,
-    required this.accountTransferRecipientLabel,
-    required this.accountTransferPointsLabel,
-    required this.accountTransferInLabel,
-    required this.accountTransferOutLabel,
     required this.accountPasswordNewLabel,
     required this.accountBankCardUnsupported,
-    required this.commonNotSupported,
     required this.posterEpisodeUnit,
     required this.bookRowFallbackSuffix,
-    required this.bookRowViewAction,
   });
 }
 
@@ -475,18 +421,11 @@ const AppStrings _english = AppStrings(
     searchEmptyTitle: 'Find your next drama',
     searchInitialHint: 'Choose a preset tag or search by title.',
     searchEmpty: 'No dramas matched this search.',
-    languageTitle: 'Language',
-    languageSubtitle: 'English',
     loadingDialogTitle: 'Loading',
     homeHeaderTitle: 'Today\'s picks',
     homeHeaderSubtitleSuffix: 'dramas selected for you',
     favoritesHeaderTitle: 'Favorites',
     favoritesHeaderSubtitleSuffix: 'saved dramas',
-    diagnosticsTitle: 'Diagnostics',
-    diagnosticsExpand: 'View',
-    diagnosticsCollapse: 'Collapse',
-    diagnosticsRefresh: 'Refresh diagnostics',
-    diagnosticsApiMissing: 'API base URL is not configured',
     diagnosticsUnknownLabel: 'Unchecked',
     diagnosticsUnknownMessage: 'Tap refresh to verify the emulator can reach the Spring Boot API.',
     diagnosticsUpLabel: 'Connected',
@@ -530,15 +469,12 @@ const AppStrings _english = AppStrings(
     fundsVipRechargeAction: 'VIP recharge',
     fundsVipRechargeSubtitle: 'Open VIP membership',
     fundsLoginRequired: 'Sign in to view your points',
-    accountTransferTitle: 'Transfer points',
-    accountTransferRecordsTitle: 'Transfer records',
     accountChangePasswordTitle: 'Change password',
     accountBankCardTitle: 'Bank card',
     authContinue: 'Continue',
     accountWithdrawalsTitle: 'Withdrawals',
     accountWithdrawalRecordsTitle: 'Withdrawal records',
     accountWithdrawalRecordsEmpty: 'No withdrawal records yet',
-    accountDiagnosticsTitle: 'Diagnostics',
     accountSignOutTitle: 'Sign out',
     accountContactSupportTitle: 'Contact support',
     accountContactSupportEmail: 'shortlink@gmail.com',
@@ -548,22 +484,17 @@ const AppStrings _english = AppStrings(
     accountGuestSignInSubtitle: 'Sign in to watch dramas and earn rewards',
     accountGuestRegisterSubtitle: 'Create an account to keep your progress',
     accountFavoritesSubtitle: 'Saved dramas',
-    accountViewAction: 'View',
     accountPointsSuffix: ' pts',
     accountRecentCountPrefix: 'Recent ',
     accountRecordsSuffix: ' items',
     accountOrdersReserved: 'No VIP orders yet',
-    accountOrdersRecentSuffix: ' orders',
     accountRecentWatchTitle: 'Continue watching',
     accountRecentWatchSubtitle: 'Pick up from your last episode',
-    accountSelectedLanguage: 'Selected',
     accountUserFallback: 'ShortLink user',
     accountGuestUser: 'Guest',
     accountLoggedInStatus: 'Signed in · ShortLink',
     accountGuestStatus: 'Sign in to keep watch progress and rewards',
-    accountPointsPillPrefix: 'Points ',
     accountGuestPill: 'Guest mode',
-    accountLoggedInRewardHint: 'Keep watching to earn rewards',
     accountGuestRewardHint: 'Browse Home and Discover before signing in',
     accountSignOutSubtitle: 'Sign out of this account',
     accountSignInSuccessHint: 'Signed in',
@@ -582,7 +513,6 @@ const AppStrings _english = AppStrings(
     authLoginSecondary: 'Already have access? Sign in',
     authRegisterAction: 'Create account',
     authRegisterSecondary: 'New here? Create account',
-    authCaptchaLabel: 'Captcha',
     authCaptchaAnswerLabel: 'Captcha answer',
     authCaptchaRefresh: 'Refresh captcha',
     authCaptchaLoading: 'Loading captcha',
@@ -615,7 +545,6 @@ const AppStrings _english = AppStrings(
     playerCommentsEmpty: 'No comments yet. Be the first one here.',
     playerCommentPlaceholder: 'Write a comment…',
     playerSend: 'Send',
-    playerCommentUnit: 'comments',
     listEpisodePrefix: 'Episode ',
     listPointsChangeFallback: 'Point update',
     listPointRecordSubtitle: 'Point record',
@@ -624,7 +553,6 @@ const AppStrings _english = AppStrings(
     accountFrozenAvailableLabel: 'Frozen / available',
     accountWalletNoBound: 'No wallet bound',
     accountWalletAddressLabel: 'Wallet address',
-    accountWalletUnbindCode: 'Unbind code',
     accountWalletBindAction: 'Bind wallet',
     accountWalletReplaceAction: 'Replace wallet',
     accountWalletUnbindAction: 'Unbind',
@@ -634,7 +562,6 @@ const AppStrings _english = AppStrings(
     accountVipUnlockAction: 'Unlock VIP',
     accountVipPriceSuffix: ' USDT / 30 days',
     accountVipNoOrders: 'No VIP orders yet.',
-    vipDialogTitle: 'VIP Membership',
     vipActiveLabel: 'Status: Active',
     vipExpiryLabel: 'Expires: ',
     vipPayTitle: 'VIP Payment',
@@ -657,22 +584,14 @@ const AppStrings _english = AppStrings(
     vipRecordsTitle: 'VIP Orders',
     accountWithdrawAvailableLabel: 'Available',
     accountWithdrawMinimumLabel: 'Min',
-    accountWithdrawRateLabel: '1 pt',
     accountWithdrawWalletRequired: 'Bind a cold wallet before withdrawal.',
     accountWithdrawPointAmountLabel: 'Point amount',
     accountWithdrawArrivalHint: 'Arrives in 1 day',
     accountWithdrawSubmitAction: 'Submit withdrawal',
-    accountTransferHelp: 'Use the recipient\'s username, for example alice.',
-    accountTransferRecipientLabel: 'Recipient account',
-    accountTransferPointsLabel: 'Points',
-    accountTransferInLabel: 'Received',
-    accountTransferOutLabel: 'Sent',
     accountPasswordNewLabel: 'New password (8+ characters)',
     accountBankCardUnsupported: 'Bank card withdrawal is not supported. This entry is reserved.',
-    commonNotSupported: 'Not supported',
     posterEpisodeUnit: ' eps',
     bookRowFallbackSuffix: ' episodes',
-    bookRowViewAction: 'View',
 );
 
 /// Resolves the copy table for [language].
