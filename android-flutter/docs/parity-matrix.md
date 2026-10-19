@@ -85,7 +85,7 @@ python tool/port_app_ui_state.py  # -> lib/state/app_ui_state.dart + test/state/
 | D7 | 金额运算 | `BigDecimal` + `RoundingMode.DOWN`/`HALF_UP` + `stripTrailingZeros` | 手写定点小数（按位缩放整数） | 二进制浮点无法复现 `setScale`/去尾零的字符串结果；自实现可精确对齐 `1536 → "1.5 KB"` 一类断言 |
 | D8 | 更新安装 | 直接构造 `ACTION_VIEW` intent 调起系统安装器 | 抽象为 `UpdateInstaller` 接口，Android 侧提供实现 | 平台相关代码必须可测；状态机（权限矩阵、失败映射）保持 1:1 |
 | D9 | 字体 | 系统默认字体 | 系统默认字体族，通过字重/字距/大小与 `FontFeature.tabularFigures()` 区分显示/正文/数字三类角色 | 不引入字体二进制、不做运行时字体下载，避免联网与体积风险 |
-| D10 | Launcher 图标 | 深色 + 金色自适应图标 | 深色 + 紫色（accentPrimary）自适应图标，保留"竖版画框 + 竖排集数轨"的品牌剪影 | 与新主题统一。属可见的品牌调整，故在此登记 |
+| D10 | Launcher 图标 | 深色 + 金色自适应图标 | 深色画布 + 紫色**实心播放徽章**自适应图标，带 Android 13+ 单色层 | 与新主题统一。早先的「竖版画框 + 竖排集数轨」方案在 32dp 下退化成噪点，已替换为单徽章 + 单播放三角：32dp 仍锐利。属可见的品牌调整，故在此登记 |
 | D11 | 提现状态色 | 见 G16：颜色判断用了 `"CONFIRMED"`，已完成的提现没有成功色 | 按 `withdrawalStatusLabel` 的标签语义取色 | 修正一处明显的视觉错误；标签映射本身逐字保留 |
 | D12 | 冗余的 `meta` 依赖 | 无 | `pubspec.yaml` 引入 `meta` 以支持生成文件里的 `@immutable` | 生成代码需要；`meta` 由 Flutter SDK 固定版本，不引入额外传递依赖 |
 | D13 | Gradle 依赖源 | `google()` / `mavenCentral()` | 阿里云镜像优先，上游仓库兜底 | 本机 `maven.google.com` 不稳定；保留上游兜底使其他网络环境同样可用 |

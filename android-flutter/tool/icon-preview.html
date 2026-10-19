@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ShortLink icon — final</title>
+<style>
+  body{margin:0;background:#0B0D11;color:#9AA1AE;font:13px/1.6 system-ui,-apple-system,sans-serif;padding:26px 28px 60px}
+  h1{font-size:15px;color:#F4F5F7;margin:0 0 4px;font-weight:600}
+  h2{font-size:11px;color:#6E7684;margin:30px 0 12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+  .row{display:flex;gap:26px;align-items:flex-end;flex-wrap:wrap}
+  .item{text-align:center}
+  .cap{margin-top:9px;font-size:10.5px;color:#6E7684}
+  .mask{overflow:hidden;box-shadow:0 6px 20px #0006}
+  .circle{border-radius:50%}
+  .squircle{border-radius:24%}
+  .rounded{border-radius:17%}
+  .note{max-width:660px;color:#8B93A1;font-size:12.5px;margin-top:6px}
+  .light{background:#F7F8FA;border-radius:12px;padding:20px;margin-top:16px}
+  .dark{background:#0B0D11;border-radius:12px;padding:20px;margin-top:16px}
+  svg{display:block}
+</style>
+</head>
+<body>
+<h1>ShortLink — final launcher icon</h1>
+<div class="note">Exactly the geometry now in <code>ic_launcher_foreground.xml</code> / <code>ic_launcher_background.xml</code> / <code>ic_launcher_monochrome.xml</code>.</div>
+<div id="root"></div>
+<script>
+const BG='#0B0D11', ACCENT='#6C4DFF', INK='#F7F8FA';
+const badge = `<path d="M41,20h26a21,21 0 0 1 21,21v26a21,21 0 0 1 -21,21h-26a21,21 0 0 1 -21,-21v-26a21,21 0 0 1 21,-21z" fill="${ACCENT}"/>`;
+const glyph = `<path d="M46,37.5l27,16.5l-27,16.5z" fill="${INK}"/>`;
+// background: five stacked 0.05-alpha discs, matching the VectorDrawable
+const halo = [38,32,26,20,14].map(r =>
+  `<circle cx="54" cy="54" r="${r}" fill="${ACCENT}" fill-opacity="0.05"/>`).join('');
+const themed = `<path d="M41,20h26a21,21 0 0 1 21,21v26a21,21 0 0 1 -21,21h-26a21,21 0 0 1 -21,-21v-26a21,21 0 0 1 21,-21z M46,37.5l27,16.5l-27,16.5z" fill="#111" fill-rule="evenodd"/>`;
+
+function svg(inner, px, bg) {
+  return `<svg width="${px}" height="${px}" viewBox="0 0 108 108"><rect width="108" height="108" fill="${bg}"/>${inner}</svg>`;
+}
+function cell(inner, px, mask, label, bg=BG) {
+  return `<div class="item"><div class="mask ${mask}" style="width:${px}px;height:${px}px">${svg(inner,px,bg)}</div><div class="cap">${label}</div></div>`;
+}
+const full = halo + badge + glyph;
+
+document.getElementById('root').innerHTML = `
+  <h2>Size ladder</h2>
+  <div class="row">
+    ${cell(full,144,'squircle','144')}${cell(full,96,'squircle','96')}
+    ${cell(full,72,'squircle','72')}${cell(full,48,'squircle','48')}
+    ${cell(full,36,'squircle','36')}${cell(full,32,'squircle','32')}
+    ${cell(full,24,'squircle','24')}
+  </div>
+  <h2>Masks</h2>
+  <div class="row">
+    ${cell(full,112,'circle','circle')}${cell(full,112,'squircle','squircle')}
+    ${cell(full,112,'rounded','rounded square')}
+    ${cell(themed,112,'circle','themed (mono)','#F7F8FA')}
+  </div>
+  <h2>On a home screen</h2>
+  <div class="dark"><div class="row">
+    ${cell(full,56,'squircle','dark wallpaper')}
+    <div class="item"><div class="light"><div class="row">${cell(full,56,'squircle','light')}</div></div></div>
+  </div></div>`;
+</script>
+</body>
+</html>

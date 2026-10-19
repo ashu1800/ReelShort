@@ -1,42 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Adaptive launcher icon foreground: the ShortLink "episode spine" mark - a portrait reel frame
-     with a vertical rail whose centre tick is the accent violet. -->
+<!-- Adaptive launcher icon foreground: the ShortLink play badge.
+
+     A single solid rounded square carrying one play triangle. The mark is
+     deliberately reduced: at 32 dp every extra element (device frames, episode
+     rails, counters) collapses into noise, while one badge and one glyph stay
+     crisp down to the smallest launcher size.
+
+     Geometry is confined to the 66 dp safe zone (21..87 on both axes) that every
+     Android adaptive-icon mask keeps, so no mask can crop the badge. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Portrait reel frame -->
+    <!-- Badge: 68 dp square, 21 dp corner radius, inset 20 dp all round. -->
     <path
-        android:pathData="M44,22h20a6,6 0 0 1 6,6v52a6,6 0 0 1 -6,6h-20a6,6 0 0 1 -6,-6v-52a6,6 0 0 1 6,-6z"
-        android:strokeColor="#8CF4F5F7"
-        android:strokeWidth="3" />
-    <!-- Spine rail -->
+        android:pathData="M41,20h26a21,21 0 0 1 21,21v26a21,21 0 0 1 -21,21h-26a21,21 0 0 1 -21,-21v-26a21,21 0 0 1 21,-21z"
+        android:fillColor="#FF6C4DFF" />
+    <!-- Play glyph: optically centred (shifted 3 dp right of the badge centre),
+         so the triangle does not read as leaning left. -->
     <path
-        android:pathData="M46,32v44"
-        android:strokeColor="#A69AA1AE"
-        android:strokeLineCap="round"
-        android:strokeWidth="2" />
-    <!-- Watched tick -->
-    <path
-        android:pathData="M43,40h7"
-        android:strokeColor="#B39AA1AE"
-        android:strokeLineCap="round"
-        android:strokeWidth="2.5" />
-    <!-- Current tick: the accent -->
-    <path
-        android:pathData="M43,54h9"
-        android:strokeColor="#FF9C8BFF"
-        android:strokeLineCap="round"
-        android:strokeWidth="3.5" />
-    <!-- Remaining tick -->
-    <path
-        android:pathData="M43,68h7"
-        android:strokeColor="#B39AA1AE"
-        android:strokeLineCap="round"
-        android:strokeWidth="2.5" />
-    <!-- Play glyph, tying the mark to video -->
-    <path
-        android:fillColor="#FFF4F5F7"
-        android:pathData="M58,50.5l7,3.5l-7,3.5z" />
+        android:fillColor="#FFF7F8FA"
+        android:pathData="M46,37.5l27,16.5l-27,16.5z" />
 </vector>
