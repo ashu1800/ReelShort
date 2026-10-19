@@ -174,69 +174,72 @@ class UpdateDialog extends StatelessWidget {
   }
 }
 
-/// The `label / percent · amount` row under the download progress bar.
+/// The progress figure under the download bar: a percentage line and a
+/// transferred-bytes line.
 ///
 /// Public so the layout can be exercised without mounting the whole update
 /// dialog: the dialog's coordinator wiring needs real async plumbing, while this
-/// row's only job is to survive an arbitrarily long amount ("82% · 44.4 MB /
-/// 54.0 MB") inside the dialog's fixed width.
+/// widget's only job is to show the numbers in full inside the dialog's width.
+///
+/// The earlier single-line `Downloading update   82% · 44.4 MB / 54.0 MB`
+/// layout either overflowed (its own Row, 24 px) or, once bounded, ellipsised
+/// the total away (`29% · 16.2 MB / 54.…`) — the user could not read what was
+/// left to download. Splitting into two lines gives each number the full width.
 class DownloadProgressRow extends StatelessWidget {
-  /// Creates the row.
+  /// Creates the progress figure.
   const DownloadProgressRow({
     required this.progress,
     required this.textTheme,
-    required this.labelColor,
     required this.amountColor,
+    this.secondaryColor,
     super.key,
   });
 
   /// Bytes downloaded so far, with the declared total when known.
   final DownloadProgress progress;
 
-  /// Theme whose `bodySmall` carries the row's type.
+  /// Theme whose `bodySmall` / `bodyMedium` carry the two lines.
   final TextTheme textTheme;
 
-  /// Colour of the static label.
-  final Color labelColor;
-
-  /// Colour of the progress figure.
+  /// Colour of the percentage line.
   final Color amountColor;
+
+  /// Colour of the byte line; defaults to [amountColor] at 70% opacity.
+  final Color? secondaryColor;
 
   @override
   Widget build(BuildContext context) {
     final int? percent = updateProgressPercent(progress);
-    final String amount = progress.totalBytes == null
+    final Color secondary =
+        secondaryColor ?? amountColor.withValues(alpha: 0.7);
+
+    // "16.2 MB of 54.0 MB" reads better than "16.2 MB / 54.0 MB" and survives
+    // wrapping; with an unknown total there is only the first number.
+    final String bytes = progress.totalBytes == null
         ? formatUpdateBytes(progress.downloadedBytes)
-        : '${formatUpdateBytes(progress.downloadedBytes)} / '
+        : '${formatUpdateBytes(progress.downloadedBytes)} of '
               '${formatUpdateBytes(progress.totalBytes!)}';
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        // Neither label is bounded on its own, so a long amount overflowed the
-        // dialog by 2 px and the debug overflow banner painted over the copy.
-        // The static label yields first; the figure keeps the remaining space
-        // and ellipsises.
-        Flexible(
-          child: Text(
-            updateStrings().downloading,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: textTheme.bodySmall?.copyWith(color: labelColor),
+        // The percentage is the headline: it is the number people look for.
+        // It wraps rather than ellipsises so a huge value is never truncated.
+        Text(
+          percent == null ? updateStrings().downloading : '$percent%',
+          style: textTheme.titleMedium?.copyWith(
+            color: amountColor,
+            fontWeight: FontWeight.bold,
           ),
         ),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            percent == null ? amount : '$percent% · $amount',
-            maxLines: 1,
-            textAlign: TextAlign.end,
-            overflow: TextOverflow.ellipsis,
-            style: textTheme.bodySmall?.copyWith(
-              color: amountColor,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+        const SizedBox(height: 2),
+        Text(
+          bytes,
+          // Two lines is enough for the longest realistic amount; anything past
+          // that is a formatting bug, not a layout one.
+          maxLines: 2,
+          style: textTheme.bodySmall?.copyWith(color: secondary),
         ),
       ],
     );
@@ -410,8 +413,8 @@ class _UpdateDialogBody extends StatelessWidget {
     DownloadProgressRow(
       progress: progress,
       textTheme: textTheme,
-      labelColor: colors.textSecondary,
       amountColor: colors.textPrimary,
+      secondaryColor: colors.textSecondary,
     ),
   ];
 

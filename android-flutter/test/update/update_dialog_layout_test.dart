@@ -1,12 +1,15 @@
-/// Layout regression tests for the update dialog's download row.
+/// Layout regression tests for the update dialog's download figure.
 ///
 /// The dialog renders real device values whose length nobody controls (sizes,
-/// percents). A `RenderFlex` overflow there is not cosmetic: in debug builds
-/// Flutter paints the red "RIGHT OVERFLOWED BY N PIXELS" banner straight over
-/// the dialog copy, which is what the 0.9.6 screenshot showed.
+/// percents). Two failure modes have shipped from this widget:
 ///
-/// The row is exercised on its own — `DownloadProgressRow` is public precisely so
-/// this layout contract can be tested without wiring the coordinator's async
+///  * a `RenderFlex` overflow, which in debug builds paints the red
+///    "RIGHT OVERFLOWED BY N PIXELS" banner over the dialog copy;
+///  * truncation, where a bounded single line ellipsised the total away
+///    (`29% · 16.2 MB / 54.…`) so the user could not read the remaining bytes.
+///
+/// The figure is exercised on its own — `DownloadProgressRow` is public precisely
+/// so this contract can be tested without wiring the coordinator's async
 /// download plumbing.
 library;
 
@@ -18,7 +21,7 @@ import 'package:shortlink/theme/app_theme.dart';
 import 'package:shortlink/ui/update/update_dialog.dart';
 import 'package:shortlink/update/release_models.dart';
 
-/// Renders the row at the dialog's narrowest realistic content width.
+/// Renders the figure at a given width and text scale.
 Future<void> _pump(
   WidgetTester tester,
   DownloadProgress progress, {
@@ -38,8 +41,8 @@ Future<void> _pump(
                 builder: (BuildContext context) => DownloadProgressRow(
                   progress: progress,
                   textTheme: Theme.of(context).textTheme,
-                  labelColor: Colors.grey,
                   amountColor: Colors.black,
+                  secondaryColor: Colors.grey,
                 ),
               ),
             ),
@@ -52,49 +55,53 @@ Future<void> _pump(
 }
 
 void main() {
-  testWidgets('a long amount ellipsises instead of overflowing', (
+  testWidgets('percent and total bytes are both readable in full', (
     WidgetTester tester,
   ) async {
-    // 78% · 42.4 MB / 54.0 MB — an amount long enough to overflow the row.
-    await _pump(
-      tester,
-      const DownloadProgress(44433333, 56668800),
-    );
+    const DownloadProgress progress = DownloadProgress(44433333, 56668800);
+    await _pump(tester, progress);
 
+    expect(tester.takeException(), isNull);
+
+    final int percent = updateProgressPercent(progress)!;
+    expect(find.text('$percent%'), findsOneWidget);
+    // The whole amount is on screen, not ellipsised: this is the regression the
+    // single-line layout caused.
     expect(
-      tester.takeException(),
-      isNull,
-      reason: 'the label/amount row must not overflow the dialog',
-    );
-    expect(find.text(updateStrings().downloading), findsOneWidget);
-    expect(
-      find.text('${updateProgressPercent(const DownloadProgress(44433333, 56668800))}% · '
-          '${formatUpdateBytes(44433333)} / ${formatUpdateBytes(56668800)}'),
+      find.text(
+        '${formatUpdateBytes(44433333)} of ${formatUpdateBytes(56668800)}',
+      ),
       findsOneWidget,
     );
+    // The static "Downloading update" label moved to the dialog title; the
+    // figure no longer repeats it.
+    expect(find.text(updateStrings().downloading), findsNothing);
   });
 
-  testWidgets('an unknown total keeps the plain amount', (
+  testWidgets('an unknown total keeps the single byte figure', (
     WidgetTester tester,
   ) async {
     await _pump(tester, const DownloadProgress(44433333, null));
 
     expect(tester.takeException(), isNull);
-    expect(find.textContaining('%'), findsNothing);
+    expect(find.text('of'), findsNothing);
     expect(find.text(formatUpdateBytes(44433333)), findsOneWidget);
+    // With no percentage the figure falls back to the state label.
+    expect(find.text(updateStrings().downloading), findsOneWidget);
   });
 
-  testWidgets('the row survives a narrow width at 3.2x text', (
+  testWidgets('the narrowest dialog at 3.2x text still shows the full amount', (
     WidgetTester tester,
   ) async {
-    // The worst realistic case: a small dialog and the largest font setting.
-    await _pump(
-      tester,
-      const DownloadProgress(44433333, 56668800),
-      width: 160,
-      textScale: 3.2,
-    );
+    // Worst realistic case: a small dialog and the largest font setting. The
+    // bytes line may wrap to two lines, but it must not overflow or truncate.
+    const DownloadProgress progress = DownloadProgress(44433333, 56668800);
+    await _pump(tester, progress, width: 140, textScale: 3.2);
 
     expect(tester.takeException(), isNull);
+    final Finder bytes = find.text(
+      '${formatUpdateBytes(44433333)} of ${formatUpdateBytes(56668800)}',
+    );
+    expect(bytes, findsOneWidget);
   });
 }
