@@ -174,6 +174,75 @@ class UpdateDialog extends StatelessWidget {
   }
 }
 
+/// The `label / percent · amount` row under the download progress bar.
+///
+/// Public so the layout can be exercised without mounting the whole update
+/// dialog: the dialog's coordinator wiring needs real async plumbing, while this
+/// row's only job is to survive an arbitrarily long amount ("82% · 44.4 MB /
+/// 54.0 MB") inside the dialog's fixed width.
+class DownloadProgressRow extends StatelessWidget {
+  /// Creates the row.
+  const DownloadProgressRow({
+    required this.progress,
+    required this.textTheme,
+    required this.labelColor,
+    required this.amountColor,
+    super.key,
+  });
+
+  /// Bytes downloaded so far, with the declared total when known.
+  final DownloadProgress progress;
+
+  /// Theme whose `bodySmall` carries the row's type.
+  final TextTheme textTheme;
+
+  /// Colour of the static label.
+  final Color labelColor;
+
+  /// Colour of the progress figure.
+  final Color amountColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final int? percent = updateProgressPercent(progress);
+    final String amount = progress.totalBytes == null
+        ? formatUpdateBytes(progress.downloadedBytes)
+        : '${formatUpdateBytes(progress.downloadedBytes)} / '
+              '${formatUpdateBytes(progress.totalBytes!)}';
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: <Widget>[
+        // Neither label is bounded on its own, so a long amount overflowed the
+        // dialog by 2 px and the debug overflow banner painted over the copy.
+        // The static label yields first; the figure keeps the remaining space
+        // and ellipsises.
+        Flexible(
+          child: Text(
+            updateStrings().downloading,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.bodySmall?.copyWith(color: labelColor),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            percent == null ? amount : '$percent% · $amount',
+            maxLines: 1,
+            textAlign: TextAlign.end,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.bodySmall?.copyWith(
+              color: amountColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// The per-state dialog content and actions.
 class _UpdateDialogBody extends StatelessWidget {
   const _UpdateDialogBody({required this.coordinator, required this.state});
@@ -277,7 +346,6 @@ class _UpdateDialogBody extends StatelessWidget {
       ),
     ],
     Downloading(:final DownloadProgress progress) => _downloadContent(
-      copy,
       colors,
       textTheme,
       progress,
@@ -320,48 +388,32 @@ class _UpdateDialogBody extends StatelessWidget {
   /// The percent comes from `updateProgressPercent`; an unknown total keeps the
   /// indeterminate bar and the plain amount.
   List<Widget> _downloadContent(
-    UpdateStrings copy,
     AppColors colors,
     TextTheme textTheme,
     DownloadProgress progress,
-  ) {
-    final int? percent = updateProgressPercent(progress);
-    final String amount = progress.totalBytes == null
-        ? formatUpdateBytes(progress.downloadedBytes)
-        : '${formatUpdateBytes(progress.downloadedBytes)} / '
-              '${formatUpdateBytes(progress.totalBytes!)}';
-    return <Widget>[
-      ClipRRect(
-        borderRadius: BorderRadius.circular(999),
-        child: SizedBox(
-          height: _progressBarHeight,
-          width: double.infinity,
-          child: LinearProgressIndicator(
-            value: percent == null ? null : percent / 100,
-            minHeight: _progressBarHeight,
-            color: colors.accentPrimary,
-            backgroundColor: colors.surfaceAlt,
-          ),
+  ) => <Widget>[
+    ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        height: _progressBarHeight,
+        width: double.infinity,
+        child: LinearProgressIndicator(
+          value: updateProgressPercent(progress) == null
+              ? null
+              : updateProgressPercent(progress)! / 100,
+          minHeight: _progressBarHeight,
+          color: colors.accentPrimary,
+          backgroundColor: colors.surfaceAlt,
         ),
       ),
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: <Widget>[
-          Text(
-            copy.downloading,
-            style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
-          ),
-          Text(
-            percent == null ? amount : '$percent% · $amount',
-            style: textTheme.bodySmall?.copyWith(
-              color: colors.textPrimary,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    ];
-  }
+    ),
+    DownloadProgressRow(
+      progress: progress,
+      textTheme: textTheme,
+      labelColor: colors.textSecondary,
+      amountColor: colors.textPrimary,
+    ),
+  ];
 
   Widget _metaLine(
     String label,
