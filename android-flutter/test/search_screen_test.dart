@@ -22,6 +22,7 @@ import 'package:shortlink/core/formatting/app_strings.dart';
 import 'package:shortlink/core/formatting/app_ui_copy.dart';
 import 'package:shortlink/data/models/app_models.dart';
 import 'package:shortlink/data/models/app_language.dart';
+import 'package:shortlink/data/network/api_client_exception.dart';
 import 'package:shortlink/state/app_state_controller.dart';
 import 'package:shortlink/theme/app_colors.dart';
 import 'package:shortlink/theme/app_spacing.dart';
@@ -41,6 +42,14 @@ class _StalledSearchDataSource extends FakeAppDataSource {
 
   @override
   Future<List<BookSummary>> search(String query) => _stalled.future;
+}
+
+/// A data source whose search fails immediately, so the screen can be observed
+/// after a settled-but-failed request.
+class _FailingSearchDataSource extends FakeAppDataSource {
+  _FailingSearchDataSource() {
+    failWith('search', const ApiClientException(503, null, 'Service paused'));
+  }
 }
 
 /// The English copy the screen renders in these tests.
@@ -351,7 +360,6 @@ void main() {
     );
     addTearDown(controller.dispose);
     controller.showSearch();
-    unawaited(controller.search('alpha'));
 
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(360, 800);
@@ -365,12 +373,28 @@ void main() {
         ),
       ),
     );
+    // Submit through the screen: the pending query is screen state, so a
+    // direct `controller.search()` would test a path the UI never takes.
+    await tester.enterText(find.byType(TextField), 'alpha');
+    await tester.tap(find.text('Search'));
     await tester.pump();
 
     expect(controller.state.isLoading, isTrue);
     expect(find.byType(AppSkeletonList), findsNothing);
     expect(find.byType(AppSkeleton), findsWidgets);
     expect(find.byType(AppSkeletonText), findsWidgets);
+    // The first search moves straight to the results area: the discovery
+    // lanes and the start prompt are gone while the request is in flight, so
+    // nothing is painted twice when the rows land.
+    expect(find.text(AppUiCopy.searchStartTitle), findsNothing);
+    expect(find.text(_copy.searchTagsTitle), findsNothing);
+    expect(
+      tester
+          .widgetList<AppSectionHeader>(find.byType(AppSectionHeader))
+          .map((AppSectionHeader header) => header.title),
+      contains(AppUiCopy.searchResultsSection),
+    );
+    expect(find.text('alpha'), findsWidgets);
     // The skeleton is full width and never collapses to zero.
     final Finder blocks = find.byType(AppSkeleton);
     for (int index = 0; index < blocks.evaluate().length; index++) {
@@ -380,6 +404,55 @@ void main() {
     }
     // The empty state is not claimed while the request is in flight.
     expect(find.text(AppUiCopy.searchNoResultsTitle), findsNothing);
+  });
+
+  testWidgets('a failed search returns to the discovery lanes', (
+    WidgetTester tester,
+  ) async {
+    // The state layer never echoes a query it did not answer, so a failed
+    // request leaves `searchQuery` empty. The screen drops its pending query
+    // with the request: claiming "no results" would say the search ran and
+    // found nothing, when the shell's message bar is saying it failed.
+    final _FailingSearchDataSource dataSource = _FailingSearchDataSource();
+    final AppStateController controller = AppStateController(
+      dataSource: dataSource,
+    );
+    addTearDown(controller.dispose);
+    controller.showSearch();
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 800);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppStateController>.value(
+        value: controller,
+        child: MaterialApp(
+          theme: appTheme(Brightness.light),
+          home: const Scaffold(body: SearchScreen()),
+        ),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), 'gamma');
+    await tester.tap(find.text('Search'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(controller.state.isLoading, isFalse);
+    expect(controller.state.searchResults, isEmpty);
+    expect(
+      tester
+          .widgetList<AppSectionHeader>(find.byType(AppSectionHeader))
+          .map((AppSectionHeader header) => header.title),
+      isNot(contains(AppUiCopy.searchResultsSection)),
+    );
+    expect(
+      tester
+          .widgetList<AppSectionHeader>(find.byType(AppSectionHeader))
+          .map((AppSectionHeader header) => header.title),
+      contains(_copy.searchTagsTitle),
+    );
+    expect(find.text(AppUiCopy.searchNoResultsTitle), findsNothing);
+    expect(find.text(AppUiCopy.searchStartTitle), findsOneWidget);
   });
 
   testWidgets('the no-results state uses the shared copy and a status pill', (

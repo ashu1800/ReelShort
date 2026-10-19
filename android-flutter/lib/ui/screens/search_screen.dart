@@ -46,22 +46,68 @@ const double _chipMinHeight = 44;
 const int _skeletonRowCount = 3;
 
 /// The search / discovery screen.
-class SearchScreen extends StatelessWidget {
+class SearchScreen extends StatefulWidget {
   /// Creates the search screen.
   const SearchScreen({super.key});
 
   @override
+  State<SearchScreen> createState() => _SearchScreenState();
+}
+
+class _SearchScreenState extends State<SearchScreen> {
+  /// The query this screen submitted before the state layer echoes it back.
+  ///
+  /// The controller writes `searchQuery` only when the response lands, so
+  /// without this the first search would paint the discovery lanes and the
+  /// start prompt, then jump to the results area when the request returned.
+  String? _submittedQuery;
+
+  /// Whether the outstanding request was started on this screen.
+  ///
+  /// `isLoading` is a global flag; a login or account refresh elsewhere must not
+  /// paint a search skeleton here.
+  bool _awaitingResults = false;
+
+  void _search(String query) {
+    setState(() {
+      _submittedQuery = query;
+      _awaitingResults = true;
+    });
+    context.read<AppStateController>().search(query);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final AppUiState state = context.watch<AppStateController>().state;
+    // The request settled (success or failure), so a global loading flag no
+    // longer means this screen's search is in flight. This is bookkeeping for
+    // the decisions below, not widget state - it never schedules a rebuild.
+    if (_awaitingResults && !state.isLoading) {
+      _awaitingResults = false;
+      // A failure leaves `searchQuery` untouched, so the pending query goes
+      // with it: claiming "no results" would contradict the failure message.
+      if (state.searchQuery.trim().isEmpty) {
+        _submittedQuery = null;
+      }
+    }
+    final bool awaitingResults = _awaitingResults && state.isLoading;
     final AppStrings copy = strings(state.language);
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppSpacing spacing = appSpacingOf(context);
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    // Only the first search needs the pending query: the results area does not
+    // exist yet and the discovery lanes would otherwise paint and then vanish.
+    // With rows already on screen the header keeps the query those rows answer,
+    // so the header and the list never disagree while the next one is in flight.
+    final String displayQuery =
+        awaitingResults && state.searchQuery.trim().isEmpty
+        ? (_submittedQuery ?? '')
+        : state.searchQuery;
     final bool resultsFirst = searchShowsResultsFirst(
-      state.searchQuery,
+      displayQuery,
       state.searchResults.length,
     );
-    final String query = state.searchQuery.trim();
+    final String query = displayQuery.trim();
 
     return SafeArea(
       bottom: false,
@@ -77,7 +123,11 @@ class SearchScreen extends StatelessWidget {
             ),
             SliverToBoxAdapter(child: SizedBox(height: spacing.space4)),
             SliverToBoxAdapter(
-              child: _SearchField(copy: copy, initial: state.searchQuery),
+              child: _SearchField(
+                copy: copy,
+                initial: state.searchQuery,
+                onSearch: _search,
+              ),
             ),
             if (resultsFirst) ...<Widget>[
               SliverToBoxAdapter(child: SizedBox(height: spacing.sectionGap)),
@@ -106,28 +156,32 @@ class SearchScreen extends StatelessWidget {
                   ),
                 ),
               SliverToBoxAdapter(child: SizedBox(height: spacing.space3)),
-              _ResultsSection(state: state),
+              _ResultsSection(
+                hasResults: state.searchResults.isNotEmpty,
+                results: state.searchResults,
+                awaitingResults: awaitingResults,
+              ),
             ] else ...<Widget>[
               SliverToBoxAdapter(child: SizedBox(height: spacing.sectionGap)),
               SliverToBoxAdapter(
                 child: AppSectionHeader(title: copy.searchTagsTitle),
               ),
               SliverToBoxAdapter(child: SizedBox(height: spacing.space2)),
-              const SliverToBoxAdapter(child: _DiscoveryGroups()),
+              SliverToBoxAdapter(
+                child: _DiscoveryGroups(onTagSelected: _search),
+              ),
               SliverToBoxAdapter(child: SizedBox(height: spacing.sectionGap)),
-              // While a search is in flight, the lower region shows the shape of
-              // the results that are coming instead of an empty prompt: the
-              // shared loading flag is the only signal available this early.
-              if (state.isLoading && state.searchResults.isEmpty)
-                const SliverToBoxAdapter(child: _SearchResultSkeletons())
-              else
-                const SliverToBoxAdapter(
-                  child: AppEmptyState(
-                    icon: Icons.travel_explore_outlined,
-                    title: AppUiCopy.searchStartTitle,
-                    body: AppUiCopy.searchStartBody,
-                  ),
+              // Reached only with no submitted query and no results, so the
+              // prompt is always the right thing to show here. An in-flight
+              // search keeps `resultsFirst` true and paints its skeleton in the
+              // results area instead.
+              const SliverToBoxAdapter(
+                child: AppEmptyState(
+                  icon: Icons.travel_explore_outlined,
+                  title: AppUiCopy.searchStartTitle,
+                  body: AppUiCopy.searchStartBody,
                 ),
+              ),
             ],
             SliverToBoxAdapter(child: SizedBox(height: spacing.sectionGap)),
           ],
@@ -139,10 +193,18 @@ class SearchScreen extends StatelessWidget {
 
 /// The query field plus the one primary action of the screen.
 class _SearchField extends StatefulWidget {
-  const _SearchField({required this.copy, required this.initial});
+  const _SearchField({
+    required this.copy,
+    required this.initial,
+    required this.onSearch,
+  });
 
   final AppStrings copy;
   final String initial;
+
+  /// Submits a trimmed, non-blank query. The screen owns the call so it can
+  /// remember the query while the request is in flight.
+  final void Function(String query) onSearch;
 
   @override
   State<_SearchField> createState() => _SearchFieldState();
@@ -178,7 +240,7 @@ class _SearchFieldState extends State<_SearchField> {
     if (query.isEmpty) {
       return;
     }
-    context.read<AppStateController>().search(query);
+    widget.onSearch(query);
   }
 
   @override
@@ -256,13 +318,16 @@ class _CountPill extends StatelessWidget {
 /// 3.2x text. [AppSectionHeader] stacks its title at that scale, so the overflow
 /// is gone structurally rather than clipped away.
 class _DiscoveryGroups extends StatelessWidget {
-  const _DiscoveryGroups();
+  const _DiscoveryGroups({required this.onTagSelected});
+
+  /// Submits the tapped tag through the screen, which records the query before
+  /// the response lands.
+  final void Function(String tag) onTagSelected;
 
   @override
   Widget build(BuildContext context) {
     final AppUiState state = context.watch<AppStateController>().state;
     final AppSpacing spacing = appSpacingOf(context);
-    final AppStateController controller = context.read<AppStateController>();
     final List<SearchDiscoveryGroup> groups = searchDiscoveryGroups(
       state.language,
     );
@@ -288,7 +353,7 @@ class _DiscoveryGroups extends StatelessWidget {
                       // A chip never exceeds the lane width, so a long tag at a
                       // large scale ellipsises instead of overflowing the run.
                       maxWidth: constraints.maxWidth,
-                      onTap: () => controller.search(tag),
+                      onTap: () => onTagSelected(tag),
                     ),
                 ],
               );
@@ -404,16 +469,24 @@ class _DiscoveryChip extends StatelessWidget {
 
 /// The results list, its content-shaped loading skeleton, or the empty state.
 class _ResultsSection extends StatelessWidget {
-  const _ResultsSection({required this.state});
+  const _ResultsSection({
+    required this.hasResults,
+    required this.results,
+    required this.awaitingResults,
+  });
 
-  final AppUiState state;
+  final bool hasResults;
+  final List<BookSummary> results;
+
+  /// Set only while this screen's own search is in flight.
+  final bool awaitingResults;
 
   @override
   Widget build(BuildContext context) {
-    if (state.isLoading && state.searchResults.isEmpty) {
+    if (awaitingResults && !hasResults) {
       return const SliverToBoxAdapter(child: _SearchResultSkeletons());
     }
-    if (state.searchResults.isEmpty) {
+    if (!hasResults) {
       return const SliverToBoxAdapter(
         child: AppEmptyState(
           icon: Icons.travel_explore_outlined,
@@ -427,9 +500,9 @@ class _ResultsSection extends StatelessWidget {
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (BuildContext context, int index) => _SearchResultRow(
-          book: state.searchResults[index],
+          book: results[index],
         ),
-        childCount: state.searchResults.length,
+        childCount: results.length,
       ),
     );
   }

@@ -566,8 +566,9 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
      共享 `AppListRow(subtitleWidget: SelectableText(...))`。
    - ~~`AppAmountBlock` 的 `unit` 槽位非柔性~~ —— **已修**（Phase 5-1，见 §9）。
    - ~~`AppSectionHeader` 的 trailing 缺少柔性~~ —— **已修**（Phase 5-1，见 §9）。
-4. **状态层小改**（可选）：用一个「已提交 query」的本地状态让 Discover 的加载骨架直接长在结果区，
-   消除加载落地时的一次重排；`state.isLoading` 目前是全局标志，跨屏刷新会串骨架。
+4. **状态层小改** —— **已结案（Phase 5-3，见 §11）**：Discover 的首次搜索改由屏幕本地记住「已提交
+   query」，加载骨架直接长在结果区，不再先画发现分组和起始提示再跳变；`state.isLoading` 仍是全局
+   标志，但屏幕只在「自己发起的请求」尚未落地时才认它，跨屏刷新不会再串出搜索骨架。
 5. **发布**：`pubspec.yaml` 仍是 `0.9.2+44`，Phase 4/5 全部改动尚未发版；发版走
    `scripts/publish-android.py`（需签名环境变量 + COS 配置），并在真机做一次整包验收。
 
@@ -655,3 +656,26 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
 
 
 
+
+## 11. Phase 5-3 结果（Discover 搜索骨架重排）
+
+- 问题（§8.4 挂账项）：`AppStateController.search()` 只在**响应落地后**才写 `searchQuery`，所以首次
+  搜索期间 `searchShowsResultsFirst('', 0)` 返回 false —— 屏幕先渲染发现分组 + 起始提示，响应回来
+  再整块换成结果区，一次明显的跳变；同时 `state.isLoading` 是全局标志，别处（登录、账户刷新）的
+  加载也会让 Discover 挂出搜索骨架。
+- 改法：`SearchScreen` 从 `StatelessWidget` 改为 `StatefulWidget`，持有两个本地字段 ——
+  `_submittedQuery`（本屏刚提交、状态层还没回显的 query）与 `_awaitingResults`（当前这轮加载是不是
+  本屏发起的）。`resultsFirst` 改由 `displayQuery` 判定；只有「本屏发起 + 仍在加载 + 状态层尚无结果」
+  时才用 `_submittedQuery`，所以第二次搜索时标题仍显示**屏幕上那批结果**对应的旧 query，标题与列表
+  不会互相矛盾。
+- 失败语义：状态层失败时不会写 `searchQuery`，屏幕随请求结束一并丢弃 `_submittedQuery`，回到发现
+  分组 + 起始提示，而不是错误地声称"没有结果"（失败文案由 shell 的消息条负责）。
+- 连带简化：原先挂在发现分组下段的 `if (state.isLoading && results.isEmpty) 骨架 else 起始提示`
+  分支删除 —— 该分支现在只可能在"无提交 query 且无结果"时到达，提示恒为正确内容；`_ResultsSection`
+  改收 `hasResults` / `results` / `awaitingResults` 三个显式参数，不再读全局 `state`。
+- 验证：`flutter analyze` 0 issue、`flutter test` 全量 **285 用例全绿**（`search_screen_test.dart`
+  18 → 19）。改写了两条既有用例使其走真实 UI 提交路径（直接调 `controller.search()` 会绕开本屏
+  本地状态，测的是 UI 永远不会走的分支），新增「搜索失败回到发现分组」用例；顺带发现原用例里
+  `find.text('Results')` / `find.text('Popular lanes')` 断言不成立 —— `AppSectionHeader` 会把标题
+  转成大写，改用 `widgetList<AppSectionHeader>` 比对原始 title。
+- 未做：真机复核（本机设备未连接）；`' eps'` 硬编码、详情页、发布仍是未结项。
