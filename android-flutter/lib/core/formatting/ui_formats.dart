@@ -422,6 +422,23 @@ String posterCardContentDescription(
   AppLanguage language,
 ) => '$title, $episodeCount${strings(language).posterEpisodeUnit}';
 
+/// The label on the poster's episode-count badge, for example `12 eps`.
+///
+/// Unlike [posterCardContentDescription] this is not a sentence: it is a compact
+/// tag competing with artwork for a corner of the card. A single episode is
+/// counted in the singular so "1 eps" never ships.
+String episodeCountBadgeLabel(
+  int episodeCount, [
+  AppLanguage language = AppLanguage.defaultLanguage,
+]) {
+  if (episodeCount <= 0) {
+    return '';
+  }
+  final AppStrings copy = strings(language);
+  return '$episodeCount'
+      '${episodeCount == 1 ? copy.posterEpisodeUnitSingular : copy.posterEpisodeUnit}';
+}
+
 bool posterImageIsDecorativeInsideCard() => true;
 
 enum MessageVisualTone { success, error, info }

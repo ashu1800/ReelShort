@@ -545,6 +545,8 @@ class _SearchResultRow extends StatelessWidget {
                   // The row prints the title beside the card already, so the
                   // poster does not repeat it over the artwork.
                   showTitleOverlay: false,
+                  // The row prints the episode count below the title too.
+                  showEpisodeBadge: false,
                 ),
               ),
               SizedBox(width: spacing.space3),

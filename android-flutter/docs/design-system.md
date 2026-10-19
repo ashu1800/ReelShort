@@ -266,15 +266,16 @@ directions. A tick without an `onTap` keeps the 16 px row, so an informational
 spine does not grow.
 
 `mini` takes an `availableHeight` and scales itself with `FittedBox` rather than
-overflowing the artwork it annotates. `PosterCard` measures its own inner height
-and passes it down, so a 200-episode series simply renders smaller instead of
-painting outside the card.
+overflowing the artwork it annotates.
 
-`PosterCard` also **windows** the mini spine: beyond 30 episodes it shows the 30
-ticks around the current episode instead of every episode, because at that point
-a tick is thinner than a physical pixel. The window is a compression of the
-series, not a claim about it — the card's accessible name still states the real
-episode count.
+`PosterCard` no longer hosts a mini spine. A vertical rail inside a 136 dp
+poster was thinner than a physical pixel on a phone and read as a screen artefact
+rather than information; the card now carries a **single episode-count badge** in
+its top-right corner (a dark translucent pill, `12 eps`), with the title opposite
+it at the bottom-left. The badge is decorative for accessibility — the merged
+card label already ends with the same count — and a row that prints the count
+beside the poster passes `showEpisodeBadge: false`. The spine itself is unchanged
+where it belongs: the player's episode drawer and the episodes sheet use `full`.
 
 ### Describing it
 

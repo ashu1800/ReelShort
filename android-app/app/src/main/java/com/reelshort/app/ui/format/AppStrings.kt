@@ -191,6 +191,7 @@ internal data class AppStrings(
     val accountPasswordNewLabel: String,
     val accountBankCardUnsupported: String,
     val posterEpisodeUnit: String,
+    val posterEpisodeUnitSingular: String,
     val bookRowFallbackSuffix: String,
 )
 
@@ -385,6 +386,7 @@ internal fun strings(language: AppLanguage): AppStrings =
             accountPasswordNewLabel = "New password (8+ characters)",
             accountBankCardUnsupported = "Bank card withdrawal is not supported. This entry is reserved.",
             posterEpisodeUnit = " eps",
+            posterEpisodeUnitSingular = " ep",
             bookRowFallbackSuffix = " episodes",
         )
     }

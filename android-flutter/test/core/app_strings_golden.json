@@ -1,6 +1,6 @@
 {
   "source": "android-app/app/src/main/java/com/reelshort/app/ui/format/AppStrings.kt",
-  "field_count": 189,
+  "field_count": 190,
   "fields": {
     "homeTab": "Home",
     "searchTab": "Discover",
@@ -190,6 +190,7 @@
     "accountPasswordNewLabel": "New password (8+ characters)",
     "accountBankCardUnsupported": "Bank card withdrawal is not supported. This entry is reserved.",
     "posterEpisodeUnit": " eps",
+    "posterEpisodeUnitSingular": " ep",
     "bookRowFallbackSuffix": " episodes"
   },
   "search_discovery_groups": [

@@ -2,7 +2,7 @@
 """Generate the Dart port of android-app's AppStrings.kt.
 
 The Flutter rewrite must preserve the exact English copy of the Kotlin app
-(189 fields) without hand-transcribing it. This script reads the Kotlin source
+(190 fields) without hand-transcribing it. This script reads the Kotlin source
 of truth and emits:
 
   * lib/core/formatting/app_strings.dart   -- the Dart port
@@ -41,7 +41,7 @@ KOTLIN_SOURCE = (
 DART_OUTPUT = REPO_ROOT / "android-flutter" / "lib" / "core" / "formatting" / "app_strings.dart"
 GOLDEN_OUTPUT = REPO_ROOT / "android-flutter" / "test" / "core" / "app_strings_golden.json"
 
-EXPECTED_FIELD_COUNT = 189
+EXPECTED_FIELD_COUNT = 190
 
 KOTLIN_FIELD_RE = re.compile(r"^\s*val\s+(\w+)\s*:\s*String\s*,\s*$")
 KOTLIN_PAIR_RE = re.compile(r'(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"')

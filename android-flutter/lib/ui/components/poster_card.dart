@@ -1,5 +1,5 @@
-/// The ShortLink poster card: cover art, gradient-scrimmed title, and a mini
-/// episode spine.
+/// The ShortLink poster card: cover art, a gradient-scrimmed title and an
+/// episode-count badge.
 ///
 /// This is the only component in the design system that is allowed to be
 /// colourful - the chrome around it is neutral precisely so the artwork carries
@@ -13,21 +13,12 @@ import '../../core/formatting/ui_formats.dart';
 import '../../data/models/app_language.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_shapes.dart';
-import 'episode_spine.dart';
 
 /// Poster aspect ratio, the standard 2:3 drama key art.
 const double posterAspectRatio = 2 / 3;
 
 /// Horizontal padding for the overlaid title.
 const EdgeInsets _overlayPadding = EdgeInsets.fromLTRB(10, 10, 10, 9);
-
-/// Width reserved on the right of the overlay for the mini spine.
-const double _spineLaneWidth = 26;
-
-/// Largest episode count the mini spine will draw. Beyond this the spine would
-/// be finer than a single physical pixel on a phone, so it renders a window of
-/// the series around the current episode instead of every episode.
-const int _maxSpineTicks = 30;
 
 /// Corner radius applied to the fallback plate glyph.
 const double _fallbackGlyphSize = 30;
@@ -38,7 +29,7 @@ const double _fallbackGlyphSize = 30;
 ///  * the whole card is **one merged** [Semantics] node whose label is
 ///    [posterCardContentDescription], so a screen reader reads
 ///    "title, 12 episodes" once instead of reading the image, the title and the
-///    spine separately;
+///    count separately;
 ///  * the cover image is marked decorative through
 ///    [posterImageIsDecorativeInsideCard], because the merged label already
 ///    names the drama;
@@ -57,6 +48,7 @@ class PosterCard extends StatelessWidget {
     this.onTap,
     this.fallbackIcon = Icons.movie_outlined,
     this.showTitleOverlay = true,
+    this.showEpisodeBadge = true,
     super.key,
   });
 
@@ -66,16 +58,18 @@ class PosterCard extends StatelessWidget {
   /// Cover URL; null or blank renders the fallback plate.
   final String? coverUrl;
 
-  /// Total episodes, used by the description and by the mini spine.
+  /// Total episodes, used by the description and by the episode badge.
   final int episodeCount;
 
-  /// Language used for the generated content description.
+  /// Language used for the generated content description and the badge.
   final AppLanguage language;
 
-  /// Episode the user is on, emphasised by the mini spine.
+  /// Episode the user is on. Kept for the merged description and for callers
+  /// that surface progress themselves; the badge itself only reports the total.
   final int? currentEpisode;
 
-  /// How many leading episodes are already watched.
+  /// How many leading episodes are already watched. Same note as
+  /// [currentEpisode]: the badge reports the total, not the progress.
   final int watchedEpisodeCount;
 
   /// Tap handler; a null handler renders a non-interactive card.
@@ -90,6 +84,13 @@ class PosterCard extends StatelessWidget {
   /// the title beside the card passes false, so the same words are not printed
   /// twice; the merged accessibility name is unaffected either way.
   final bool showTitleOverlay;
+
+  /// Whether the episode-count badge is painted on the poster.
+  ///
+  /// Defaults to true. A row that prints the episode count beside the card
+  /// (the search result row) passes false so the same number is not shown
+  /// twice in one row.
+  final bool showEpisodeBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -135,57 +136,35 @@ class PosterCard extends StatelessWidget {
           children: <Widget>[
             if (decorativeImage) ExcludeSemantics(child: art) else art,
             const _Scrim(),
-            // The mini spine is offered the card's real inner height so it can
-            // scale itself down; a 60-episode series must never overflow the
-            // artwork it annotates.
-            LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final double laneHeight =
-                    constraints.maxHeight - _overlayPadding.vertical;
-                return Padding(
-                  padding: _overlayPadding,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: <Widget>[
-                      // The title is optional so a caller that renders it beside
-                      // the card does not print it twice; the flex slot stays so
-                      // the spine keeps its bottom-right corner.
-                      if (showTitleOverlay)
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.bottomLeft,
-                            child: Text(
-                              title,
-                              maxLines: titleMaxLines,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(
-                                context,
-                              ).textTheme.titleSmall?.copyWith(
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        width: _spineLaneWidth,
-                        child: Align(
-                          alignment: Alignment.bottomRight,
-                          child: EpisodeSpine(
-                            ticks: _ticks(),
-                            size: EpisodeSpineSize.mini,
+            // Bottom-left title, top-right episode count. The two never share a
+            // line, so a long title cannot squeeze the badge and the badge never
+            // sits on top of artwork the title needs.
+            Padding(
+              padding: _overlayPadding,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: showEpisodeBadge
+                        ? _EpisodeBadge(
+                            count: episodeCount,
                             language: language,
-                            availableHeight: laneHeight,
-                            semanticsLabel: '',
-                          ),
-                        ),
-                      ),
-                    ],
+                          )
+                        : const SizedBox.shrink(),
                   ),
-                );
-              },
+                  const Spacer(),
+                  if (showTitleOverlay)
+                    Text(
+                      title,
+                      maxLines: titleMaxLines,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ],
         ),
@@ -217,48 +196,63 @@ class PosterCard extends StatelessWidget {
       child: interactive,
     );
   }
+}
 
-  /// Builds the mini spine's ticks: at most [_maxSpineTicks] of them, windowed
-  /// around the episode the user is on when the series is longer than that.
-  List<EpisodeTick> _ticks() {
-    if (episodeCount <= 0) {
-      return const <EpisodeTick>[];
+/// The episode-count badge in the poster's top-right corner.
+///
+/// A near-opaque pill rather than bare text or a light tint: covers are
+/// arbitrary artwork, and the top-right corner is exactly where key-art titles
+/// sit. At the previous 70% black the artwork's own lettering showed through and
+/// collided with the count; 88% reads as a deliberate label on a pale sky, a
+/// bright golden frame and a black one alike.
+/// It is decorative for accessibility - the merged card label already ends with
+/// the same count.
+class _EpisodeBadge extends StatelessWidget {
+  const _EpisodeBadge({required this.count, required this.language});
+
+  final int count;
+  final AppLanguage language;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) {
+      return const SizedBox.shrink();
     }
-    final int? current = currentEpisode;
-    final int first;
-    final int last;
-    if (episodeCount <= _maxSpineTicks) {
-      first = 1;
-      last = episodeCount;
-    } else {
-      final int focus = (current ?? watchedEpisodeCount + 1).clamp(
-        1,
-        episodeCount,
-      );
-      first = (focus - _maxSpineTicks ~/ 2).clamp(
-        1,
-        episodeCount - _maxSpineTicks + 1,
-      );
-      last = first + _maxSpineTicks - 1;
-    }
-    return <EpisodeTick>[
-      for (int episode = first; episode <= last; episode++)
-        EpisodeTick(
-          number: episode,
-          state: _stateFor(episode, current),
-          isVipLocked: episode > episodeSpineGateEpisode,
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final double fontScale = MediaQuery.textScalerOf(context).scale(1.0);
+
+    return ExcludeSemantics(
+      child: ConstrainedBox(
+        // Never wider than the card can afford: at a large text scale the badge
+        // shrinks instead of pushing the title out of the poster.
+        constraints: BoxConstraints(maxWidth: fontScale > 1.6 ? 120 : 96),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xE0000000),
+            borderRadius: BorderRadius.circular(shapes.radiusPill),
+            border: Border.all(color: const Color(0x33FFFFFF)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            // The badge is a compact tag on the artwork, not body copy, so it
+            // does not follow the system font scale: at 3.2x a scaled label
+            // would ellipsise to "38 e…" and defeat its own purpose. The count
+            // is still announced in full by the card's merged semantics label.
+            child: MediaQuery.withNoTextScaling(
+              child: Text(
+                episodeCountBadgeLabel(count, language),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
         ),
-    ];
-  }
-
-  EpisodeTickState _stateFor(int episode, int? current) {
-    if (current != null && episode == current) {
-      return EpisodeTickState.current;
-    }
-    if (episode <= watchedEpisodeCount) {
-      return EpisodeTickState.watched;
-    }
-    return EpisodeTickState.none;
+      ),
+    );
   }
 }
 

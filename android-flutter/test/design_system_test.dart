@@ -725,11 +725,88 @@ void main() {
     await tester.pump();
     expect(find.text('Drama'), findsNothing);
     expect(find.bySemanticsLabel(expected), findsOneWidget);
-    // The spine and the fallback plate still render in the card.
-    expect(find.byType(EpisodeSpine), findsOneWidget);
+    // The episode badge and the fallback plate still render in the card. The
+    // badge is decorative for accessibility: the merged label already carries
+    // the count, so it must not add a second node.
+    expect(find.byType(EpisodeSpine), findsNothing);
+    expect(
+      find.text('12${strings(AppLanguage.english).posterEpisodeUnit}'),
+      findsOneWidget,
+    );
     expect(find.byIcon(Icons.movie_outlined), findsOneWidget);
     expect(tester.takeException(), isNull);
     handle.dispose();
+  });
+
+  testWidgets('PosterCard shows an episode badge, not a mini spine', (
+    WidgetTester tester,
+  ) async {
+    final AppStrings copy = strings(AppLanguage.english);
+
+    await tester.pumpWidget(
+      host(
+        const SizedBox(
+          width: 160,
+          child: PosterCard(title: 'Drama', coverUrl: null, episodeCount: 12),
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('12${copy.posterEpisodeUnit}'), findsOneWidget);
+    expect(find.byType(EpisodeSpine), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    // A single episode is counted in the singular, never "1 eps".
+    await tester.pumpWidget(
+      host(
+        const SizedBox(
+          width: 160,
+          child: PosterCard(title: 'Pilot', coverUrl: null, episodeCount: 1),
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('1${copy.posterEpisodeUnitSingular}'), findsOneWidget);
+
+    // A row that prints the count itself suppresses the badge.
+    await tester.pumpWidget(
+      host(
+        const SizedBox(
+          width: 160,
+          child: PosterCard(
+            title: 'Drama',
+            coverUrl: null,
+            episodeCount: 12,
+            showEpisodeBadge: false,
+          ),
+        ),
+        width: 320,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('12${copy.posterEpisodeUnit}'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('PosterCard badge never overflows at 3.2x text', (
+    WidgetTester tester,
+  ) async {
+    // The badge lives in a corner of a 136 dp card; at the largest supported
+    // scale a long count must ellipsise rather than push the card's content out.
+    await tester.pumpWidget(
+      host(
+        const SizedBox(
+          width: 136,
+          child: PosterCard(title: 'Drama', coverUrl: null, episodeCount: 2400),
+        ),
+        width: 320,
+        textScale: 3.2,
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('PosterCard title line count follows posterOverlayTitleMaxLines', (

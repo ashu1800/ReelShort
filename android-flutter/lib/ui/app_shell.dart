@@ -471,20 +471,26 @@ class _AppNavigationBar extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          height: 64,
-          child: Row(
-            children: primaryTabs
-                .map(
-                  (AppScreen tab) => Expanded(
-                    child: _NavTab(
-                      tab: tab,
-                      selected: screen == tab,
-                      onTap: () => onSelect(tab),
+        child: ConstrainedBox(
+          // A floor, not a fixed height: the labels scale with the user's font
+          // setting, and locking the bar to 64 px overflowed it at 3.2x. The
+          // intrinsic height lets the bar grow with its labels; at normal scales
+          // the content is exactly 64 px, so nothing moves.
+          constraints: const BoxConstraints(minHeight: 64),
+          child: IntrinsicHeight(
+            child: Row(
+              children: primaryTabs
+                  .map(
+                    (AppScreen tab) => Expanded(
+                      child: _NavTab(
+                        tab: tab,
+                        selected: screen == tab,
+                        onTap: () => onSelect(tab),
+                      ),
                     ),
-                  ),
-                )
-                .toList(growable: false),
+                  )
+                  .toList(growable: false),
+            ),
           ),
         ),
       ),

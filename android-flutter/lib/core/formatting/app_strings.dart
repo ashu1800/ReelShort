@@ -207,6 +207,7 @@ class AppStrings {
   final String accountPasswordNewLabel;
   final String accountBankCardUnsupported;
   final String posterEpisodeUnit;
+  final String posterEpisodeUnitSingular;
   final String bookRowFallbackSuffix;
 
   const AppStrings({
@@ -398,6 +399,7 @@ class AppStrings {
     required this.accountPasswordNewLabel,
     required this.accountBankCardUnsupported,
     required this.posterEpisodeUnit,
+    required this.posterEpisodeUnitSingular,
     required this.bookRowFallbackSuffix,
   });
 }
@@ -591,6 +593,7 @@ const AppStrings _english = AppStrings(
     accountPasswordNewLabel: 'New password (8+ characters)',
     accountBankCardUnsupported: 'Bank card withdrawal is not supported. This entry is reserved.',
     posterEpisodeUnit: ' eps',
+    posterEpisodeUnitSingular: ' ep',
     bookRowFallbackSuffix: ' episodes',
 );
 
@@ -795,6 +798,7 @@ Map<String, String> copyValues(AppLanguage language) {
     'accountPasswordNewLabel': copy.accountPasswordNewLabel,
     'accountBankCardUnsupported': copy.accountBankCardUnsupported,
     'posterEpisodeUnit': copy.posterEpisodeUnit,
+    'posterEpisodeUnitSingular': copy.posterEpisodeUnitSingular,
     'bookRowFallbackSuffix': copy.bookRowFallbackSuffix,
   };
 }
