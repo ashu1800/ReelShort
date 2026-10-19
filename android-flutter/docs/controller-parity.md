@@ -281,7 +281,7 @@ Behavioural invariants that were checked against the Kotlin source:
    returned the same English string in every branch (the `M1` guard). The port
    keeps one constant per message, so `state.language` no longer influences that
    copy - unobservable while there is exactly one language.
-7. **`app_strings.dart` is not used by this file.** The generated 216-string
+7. **`app_strings.dart` is not used by this file.** The generated 189-string
    table holds UI copy only; the controller's messages are not part of it, and
    importing it without using it would be an `unused_import` error. All
    controller copy therefore lives in `_ControllerCopy`, as required.

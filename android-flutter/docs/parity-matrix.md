@@ -27,7 +27,7 @@
 | `app-core/.../state/PlaybackState.kt` | `lib/state/playback_state.dart` | 手写 1:1 |
 | `app-core/.../state/AppStateController.kt` | `lib/state/app_state_controller.dart` | 手写 1:1，逐方法对照见 [controller-parity.md](controller-parity.md) |
 | `app-core/.../session/UpdateCoordinator.kt`、`ShortLinkUpdateClient.kt`、`OkHttpReleaseDownloader.kt`、`ReleaseModels.kt`、`SemanticVersion.kt` | `lib/update/**` | 手写 1:1（安装步骤抽象为接口，见 §3.8） |
-| `app/src/main/java/.../ui/format/AppStrings.kt` | `lib/core/formatting/app_strings.dart` | **代码生成**（`tool/port_app_strings.py`）+ JSON golden 契约测试锁定 216 个字段 |
+| `app/src/main/java/.../ui/format/AppStrings.kt` | `lib/core/formatting/app_strings.dart` | **代码生成**（`tool/port_app_strings.py`）+ JSON golden 契约测试锁定 189 个字段 |
 | `app/src/main/java/.../ui/format/UiFormats.kt` | `lib/core/formatting/ui_formats.dart` | 手写 1:1 |
 | `app/src/main/java/.../ui/format/RewardBadgeState.kt` | `lib/core/formatting/reward_badge_state.dart` | 手写 1:1 |
 | `app/src/main/java/.../ui/format/NavigationContract.kt` | `lib/core/formatting/navigation_contract.dart` | 手写 1:1 |
@@ -36,7 +36,7 @@
 
 ### 代码生成 + golden 的用法
 
-`AppStrings`（216 字段）与 `AppUiState`（47 字段 / 4 枚举）规模大且必须逐字一致，因此用 Python 脚本从 Kotlin 源**机械生成** Dart，同时输出 JSON golden。Dart 契约测试读取 golden 并逐字段比对，从而在不引入跨语言测试框架的前提下证明两端一致。
+`AppStrings`（189 字段）与 `AppUiState`（47 字段 / 4 枚举）规模大且必须逐字一致，因此用 Python 脚本从 Kotlin 源**机械生成** Dart，同时输出 JSON golden。Dart 契约测试读取 golden 并逐字段比对，从而在不引入跨语言测试框架的前提下证明两端一致。
 
 ```powershell
 python tool/port_app_strings.py   # -> lib/core/formatting/app_strings.dart + test/core/app_strings_golden.json
@@ -67,7 +67,7 @@ python tool/port_app_ui_state.py  # -> lib/state/app_ui_state.dart + test/state/
 | G12 | `ListRow.OrderRow` | 死代码 | 不移植死代码本身，但保留 `ReelShortApiClient.getOrders()` 与状态层对订单的加载能力 |
 | G13 | 事件计数器 | `withdrawalSubmissionVersion` 无 UI 消费者；`AccountOperation.POINT_TRANSFER` / `WALLET_VERIFICATION` / `PASSWORD_VERIFICATION`、`AccountAction`、`accountActionRequiresConfirmation` 在 UI 中未被使用 | **必须**保留计数器自增（Kotlin 测试断言其存在）与枚举/函数的定义 |
 | G14 | `AppScreen.LOGIN` | 渲染 `Unit`，导航栏仍在且无高亮项；整屏 `LoginScreen` / `BrandLockup` 为死代码 | 保留"LOGIN 不渲染内容且导航栏保持"的行为；不移植死代码 `LoginScreen` |
-| G15 | 三套字符串表 | `AppStrings`(216) + `UpdateStrings`(25) + `RewardBadgeState` 内联字面量，另有 `UiFormats` 的确认/状态文案 | 三套表**全部保留并各自移植**，不合并——合并会改变字段数量与契约测试断言 |
+| G15 | 三套字符串表 | `AppStrings`(189) + `UpdateStrings`(25) + `RewardBadgeState` 内联字面量，另有 `UiFormats` 的确认/状态文案 | 三套表**全部保留并各自移植**，不合并——合并会改变字段数量与契约测试断言 |
 | G16 | 提现状态色 | 颜色判断 `status == "CONFIRMED"`，而 `withdrawalStatusLabel` 把 `"APPROVED"` 映射为 "Completed" → 已完成的提现在界面上拿不到成功语义色 | 标签映射逐字保留；重写后的界面按**标签语义**取色（见 §3.11）。这是一处刻意的修正 |
 
 ---
@@ -216,7 +216,7 @@ python tool/port_app_ui_state.py  # -> lib/state/app_ui_state.dart + test/state/
 | --- | --- | --- |
 | 静态分析 | `flutter analyze` | `No issues found!`（含 info 级） |
 | 单元/Widget 测试 | `flutter test` | 全绿（含 `test/ui_wiring_test.dart` 的 5 条宿主接线回归） |
-| 契约测试 | `flutter test test/core/app_strings_contract_test.dart test/state/app_ui_state_contract_test.dart` | 216 字段与 47 字段/4 枚举逐项匹配 golden |
+| 契约测试 | `flutter test test/core/generated_contract_test.dart` | 189 字段的读写切片 + 5 个「Kotlin 零引用但 Dart 在用」的字段 + discovery 分组（含 tag 顺序）+ 47 字段/4 枚举的结构与默认值逐项匹配 golden |
 | Debug 构建 | `flutter build apk --debug`（需 `ANDROID_SIGNING_*`） | 产物生成，签名校验通过 |
 | Release 构建 | `flutter build apk --release` | 产物生成，R8 后运行正常 |
 | 签名证书 | `apksigner verify --print-certs` | SHA-256 = `c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9` |

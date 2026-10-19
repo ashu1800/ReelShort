@@ -171,8 +171,9 @@ Phase 4 才是**外观真正变化**的阶段：前四个阶段（令牌/组件/
    钱包行（登录态；副标题 = 地址或 `accountWalletNetworkHint`，**地址单行省略号**，尾部
    `TextButton` 文案仍是 `accountWalletBindAction`/`accountWalletReplaceAction` 且不折行，
    保证 `ui_wiring_test` 的 `find.text('Bind wallet')` 可点）、银行卡只读行（登录态）、
-   客服邮箱行（`SelectableText` 长按复制；`AppUiCopy.accountSupportEmailCopied` 的显式复制反馈
-   属 Phase 5「反馈闭环」，本轮不做）、版本/更新行（保留 `_VersionRow` 的检查更新行为）。
+   客服邮箱行（`SelectableText` 长按复制；显式「已复制」反馈目前没有 —— Phase 5-2 把当时备而未用
+   的 `accountSupportEmailCopied` 作为孤儿常量删掉了，将来要做复制反馈时重新加一个常量即可）、
+   版本/更新行（保留 `_VersionRow` 的检查更新行为）。
    **整卡不得塌成一个语义节点**：每行自成节点，且不可点行的 trailing 控件（Check、邮箱）
    必须保留可读/可点的语义节点（`AppListRow` 的语义契约，见 §7.2）。
 6. **退出登录**（登录态）：`AppButton(variant: destructive)`，文案 `accountSignOutTitle`，
@@ -320,7 +321,7 @@ Phase 4 才是**外观真正变化**的阶段：前四个阶段（令牌/组件/
    `accentReward`/`onReward`、圆心数字走 `numeric` 角色；`+N pt` 浮层与奖励错误横幅令牌化。
 3. **右侧动作栏**：`like` / `comments` / `favorite` 三项统一 44px 命中区、玻璃底圆形底板、
    `AppMedia.onMedia` 图标与计数；选中态必须是**第二通道**（实心图标 + accent 色），计数仍走
-   `formatCount`；语义标签保持 `AppUiCopy.playerLike/playerComments/playerFavorite` 与既有文案。
+   `formatCount`；语义标签保持 `AppUiCopy.playerLike/playerComments`（收藏项用 `AppStrings.playerFavoriteLabel`）与既有文案。
 4. **底部信息区**：加 `AppMedia.gradientBase` → 透明的底部渐变保证文字可读；标题/集标题/简介走
    排版角色并限行；进度条走令牌（轨道 + 已完成色）；选集入口改成明确按钮
    （文案 `AppUiCopy.playerEpisodes` + 当前集号）。
@@ -449,7 +450,7 @@ Phase 4 才是**外观真正变化**的阶段：前四个阶段（令牌/组件/
      `searchQuery`，是 Kotlin parity 的直接结果）；Phase 5 可用「已提交 query」本地状态让骨架
      直接长在结果区，避免加载落地时的一次重排。
   2. `' eps'` 仍是既有硬编码英文（HEAD 已存在），要本地化需改 Kotlin 源新增 `AppStrings` 字段。
-  3. 搜索历史（`AppUiCopy.searchRecentSection/searchRecentClear` 已存在）未接，留后续。
+  3. 搜索历史未接（当时的 `AppUiCopy.searchRecentSection/searchRecentClear` 已在 Phase 5-2 作为孤儿常量删除，要做时重新加回）。
   4. lane 之间目前只用间距分隔；若真机看偏挤可加 hairline 或把次级标签提到 `bodySmall`。
 
 ### 7.10 VIP 充值 + 提现子页重设计规格（Phase 4-5，冻结 2026-10-17）
@@ -472,7 +473,7 @@ VIP 充值屏：
 
 - 头部：VIP 状态 pill（`AppMembershipChip`）+ 到期 caption（复用 Me/Funds 的语言）；价格用
   `AppAmountBlock` + 收款地址行（`AppListRow` 或 `AppLedgerRow`，地址单行省略、可复制）。
-- 二维码：令牌化卡片（保持白底 quiet zone 与现有尺寸），说明走 `AppUiCopy.vipQrUnavailable` 等。
+- 二维码：令牌化卡片（保持白底 quiet zone 与现有尺寸），不可用说明文案在 Phase 5-2 随孤儿常量一起删除，需要时重新加回。
 - 订单明细：`AppLedgerRow`（金额 / 有效期 / 收款地址），CTA 保持 create（primary）与
   refresh status（secondary）的层级；pending 倒计时用 `numeric` 角色；confirmed 成功态用
   `accentSuccess` + 图标。
@@ -541,12 +542,23 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
      代码核对：`http_reel_short_api_client.dart:626-633` 在无 `{code,message}` 信封时直接把
      `body` 当消息，`app_state_controller.dart:2117` 又会把它原样返回）→ 加长度上限 + 非 JSON
      正文回退到共享文案 + 「重试」动作。
-   - `AppUiCopy` 目前 77 个常量里有 **41 个在 lib/ 内零引用**（多为早期备而未用的按钮/空态/详情页
-     文案；详情页 6 个随该屏一起暂缓）。清理或标注保留原因。
-2. **孤儿文案清理**（需改 Kotlin 源后重新生成 `AppStrings`，不能手改生成物）：
-   `playerCommentsEmpty`、`vipActiveLabel`、`vipExpiryLabel`、`accountWithdrawalRecordsEmpty`、
-   `accountGuestSignInSubtitle`/`accountGuestRegisterSubtitle`、`accountOrdersTitle` 与
-   `vipRecordsTitle` 的重名、`searchEpisodeCountSuffix` 的 ' eps' 硬编码来源。
+   - **已结案（Phase 5-2）**：`AppUiCopy` 从 77 个成员清到 **39 个**（删 35 常量 + 3 方法）；现仅
+     `seeAll` 为 lib 零引用（但 design_system_test 在用，保留）。详情页那 6 个 `detail*` 常量随该屏
+     一起删除了，以后做详情页时再加回 `AppUiCopy`（非生成物，无生成链路约束）。
+2. **孤儿文案清理**：
+   - **已结案（Phase 5-2）**：Kotlin `AppStrings.kt` 删掉 **27 个**两端都无引用的字段（`language*`、
+     `diagnostics*`、`accountTransfer*`、`commonNotSupported`、`bookRowViewAction` 等）并重新生成，
+     生成器 `EXPECTED_FIELD_COUNT` 216 → **189**；`AppUiCopy` 删 **38 个**成员（77 → 39）。
+     过程中发现并修复了一条**失效的验收声明**：`parity-matrix.md` 曾声称存在
+     `test/core/app_strings_contract_test.dart` 与 `test/state/app_ui_state_contract_test.dart`，但这两个
+     文件在任何提交里都不存在、也没有任何测试读 golden —— 现补上 `test/core/generated_contract_test.dart`
+     （9 条）真正消费两个 golden。
+   - **仍待办**（需改 Kotlin 源后重新生成，不能手改生成物）：`playerCommentsEmpty`（评论空态已改用
+     `AppUiCopy` 两段式）、`vipActiveLabel`/`vipExpiryLabel`（改用共享 `accountVipStatus*`/`accountVipExpiryPrefix`）、
+     `accountWithdrawalRecordsEmpty`（改用 `withdrawalRecordsEmptyTitle`）、
+     `accountGuestSignInSubtitle`/`accountGuestRegisterSubtitle`（游客入口收进 hero 后无引用）、
+     `accountOrdersTitle` 与 `vipRecordsTitle` 重名、`searchEpisodeCountSuffix` 的 ' eps' 硬编码来源。
+     这些都属于「Kotlin 侧仍在用、Dart 侧已不用」的字段，删它们要连 Kotlin UI 一起改，超出纯文案清理范围。
 3. **组件收敛（第三个消费者之前必须做）**：
    - ~~`withdrawal_screen.dart` 的 `_SupportRow` 与 Me 页「客服行」的同类结构~~ —— **已结案**（见 §9）：
      verifier 用 git 历史确认 `withdrawal_screen.dart` 全部 4 个历史提交与 Kotlin 原版都**没有**
@@ -596,6 +608,40 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
      若要统一可后续用 `AppListRow.leading` 槽。
   4. 净化只作用于「消息条文案」；`ApiHealthStatus.service` 也会收敛成共享文案（诊断信息收敛，
      `kDebugMode` 仍打印截断的原始 body）。
+
+## 10. Phase 5-2 结果（孤儿文案清理）
+
+- 交付：5 个文件 + 1 个新测试。Kotlin `AppStrings.kt` 删 **27 个**两端都无引用的字段（−54 行，
+  `git diff` 里 **0 新增行**）；生成器 `EXPECTED_FIELD_COUNT` 216 → **189** 并重新生成
+  `lib/core/formatting/app_strings.dart`（189 fields / 4 groups）与 `test/core/app_strings_golden.json`
+  （`field_count: 189`）；`AppUiCopy` 删 **38 个**成员（35 常量 + 3 个 `static String` 方法，77 → 39）。
+- **只删不改的证据**：golden 216 → 189 键，**新增键 0**、**189 个保留值逐字节不变**、键顺序保持；
+  27 个被删字段的「声明集合 == 值条目集合」双向一致；被删字段在 HEAD 的 Kotlin 源码里确实零引用。
+- **生成物纯度**：磁盘文件与生成器输出的 LF 归一化 SHA-256 完全相同；连跑两次生成器哈希不变（幂等）。
+  计数口径：必须用「`data class AppStrings(...)` 块内」正则才是 189；全文宽松匹配会得到 191
+  （多 `SearchDiscoveryGroup.title` 与 `tags`），生成器的严格正则得到 190。
+- **Kotlin 安全网**：`:app:compileDebugKotlin` 与 `:app:compileDebugUnitTestKotlin` 用 `--rerun-tasks`
+  真编译通过（首跑 UP-TO-DATE 是缓存命中，不能当证据）；另真跑 `:app:testDebugUnitTest`，
+  **119 用例 0 失败**（含锁文案的 `VisualTextContractTest`）。
+- **Dart 侧**：`flutter analyze` 0 issue、`flutter test` 全量 **284 用例全绿**（275 + 新增 9 条契约测试）。
+- **补上一条失效的验收声明（本轮最有价值的发现）**：`parity-matrix.md` 曾写「契约测试
+  `test/core/app_strings_contract_test.dart` / `test/state/app_ui_state_contract_test.dart` 逐项匹配
+  golden」，但**这两个文件在任何提交里都不存在**，且全仓没有任何测试读 `app_strings_golden.json` /
+  `app_ui_state_golden.json` —— golden 一直是**无消费者的快照**，跨语言一致性实际只能靠人工 diff。
+  现新增 `test/core/generated_contract_test.dart`（9 条）真正消费两个 golden：AppStrings 的读写切片、
+  5 个「Kotlin 零引用但 Dart 在用」的保留字段、discovery 分组（含 tag 顺序）、AppUiState 的
+  47 字段 / 4 枚举结构与字面量默认值、枚举成员顺序、集合默认空。`parity-matrix.md` 与
+  `controller-parity.md` 里的 216 计数与契约测试路径已同步为 189 / 新路径。
+- 保留项确认：5 个 Kotlin 零引用但 Dart 在用的字段（`accountWalletAddressLabel`、
+  `accountVipStatusActive`、`accountVipStatusInactive`、`accountVipExpiryPrefix`、`bookRowFallbackSuffix`）
+  三处俱在；`seeAll` 仍是唯一「lib 零引用但测试在用」的 AppUiCopy 常量，保留。
+- 后续项：
+  1. 「Kotlin 侧仍在用、Dart 侧已不用」的字段（`playerCommentsEmpty`、`vipActiveLabel`/`vipExpiryLabel`、
+     `accountWithdrawalRecordsEmpty`、`accountGuestSignIn*`/`RegisterSubtitle`、`accountOrdersTitle` 重名、
+     `' eps'`）要删必须连 Kotlin UI 一起改，属另一批工作。
+  2. 未来若做详情页 / 加载失败重试 / 复制反馈，需要重新往 `AppUiCopy` 加回对应常量（非生成物，随时可加）。
+  3. `.worktrees/` 下 20+ 个旧 worktree 各自带一份旧的 `AppStrings.kt` 与 golden（216 版），
+     从那些 worktree 构建会拿到旧值；本次未同步它们。
 
 
 
