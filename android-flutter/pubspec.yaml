@@ -16,9 +16,9 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-# The published Android app is at 0.9.3 (45); this build must be a versionCode
+# The published Android app is at 0.9.4 (46); this build must be a versionCode
 # upgrade so it can overwrite-upgrade the installed build in place.
-version: 0.9.4+46
+version: 0.9.5+47
 
 environment:
   sdk: ^3.13.5
