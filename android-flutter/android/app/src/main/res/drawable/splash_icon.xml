@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash icon for Android 12+ (the system splash-screen API).
+
+     It is the launcher foreground with **no background layer**: the launcher
+     icon's dark canvas would otherwise be painted as a black square over the
+     light splash background, which is exactly what the adaptive icon showed
+     before this drawable existed.
+
+     The system places this inside a 2/3 circle of the icon box, so the badge is
+     drawn well inside the 108 dp viewport rather than bleeding to its edges. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Badge: 60 dp square, 19 dp corner radius, centred with a 24 dp margin. -->
+    <path
+        android:pathData="M43,24h22a19,19 0 0 1 19,19v22a19,19 0 0 1 -19,19h-22a19,19 0 0 1 -19,-19v-22a19,19 0 0 1 19,-19z"
+        android:fillColor="#FF6C4DFF" />
+    <!-- Play glyph, optically centred: shifted right of the badge centre. -->
+    <path
+        android:fillColor="#FFF7F8FA"
+        android:pathData="M47.5,39.5l24,14.5l-24,14.5z" />
+</vector>
