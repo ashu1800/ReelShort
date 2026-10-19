@@ -76,7 +76,7 @@ Set-Location 'D:\Sync\AICoding\ReelShort\android-flutter'
 
 ## 版本号
 
-版本由 `pubspec.yaml` 的 `version: 0.9.5+47` 决定，`build.gradle.kts` 把它读成 `versionName` / `versionCode`。
+版本由 `pubspec.yaml` 的 `version: 0.9.6+48` 决定，`build.gradle.kts` 把它读成 `versionName` / `versionCode`。
 
 `-PappVersionName=... -PappVersionCode=...` 可以覆盖它，方便发布脚本不改仓库：
 
@@ -84,7 +84,7 @@ Set-Location 'D:\Sync\AICoding\ReelShort\android-flutter'
 & $FLUTTER build apk --release --build-name=0.9.3 --build-number=45
 ```
 
-`versionCode` 必须为正整数，否则构建直接失败。当前线上版本是 `0.9.4 (46)`，因此 `47` 起步才能覆盖升级。
+`versionCode` 必须为正整数，否则构建直接失败。当前线上版本是 `0.9.5 (47)`，因此 `48` 起步才能覆盖升级。
 
 打印当前版本：
 

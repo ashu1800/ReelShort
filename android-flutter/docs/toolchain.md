@@ -17,7 +17,7 @@
 | Android Build-Tools | `36.0.0` | |
 | `minSdk` / `targetSdk` | `26` / `35` | 与 `android-app` 一致 |
 | `applicationId` | `com.reelshort.app` | 与已发布应用一致，可覆盖升级 |
-| versionName / versionCode | `0.9.5` / `47` | 由 `pubspec.yaml` 的 `version:` 决定 |
+| versionName / versionCode | `0.9.6` / `48` | 由 `pubspec.yaml` 的 `version:` 决定 |
 
 Flutter SDK 的 `bin` 目录已写入**用户级** `PATH`；已经打开的终端需要重启才会生效，因此本文命令都直接调用绝对路径。
 
@@ -57,7 +57,7 @@ python tool/port_app_ui_state.py
 发布已切换到 Flutter 应用（Kotlin 版进入维护淘汰）：`scripts/publish-android.py` 默认构建 `android-flutter/`（`--source kotlin` 可回退旧链路），flutter CLI 按 FLUTTER_BIN > PATH > `C:\Users\12801\flutter\3.47.7\bin` 发现；
 
 - 后端 `GET /api/app/release/latest`（游客可访问）返回版本清单与 COS 预签名下载地址。
-- 打包需要一个 versionCode 高于线上 `0.9.4 (46)` 的 APK：`pubspec.yaml` 已设为 `0.9.5+47`。
+- 打包需要一个 versionCode 高于线上 `0.9.5 (47)` 的 APK：`pubspec.yaml` 已设为 `0.9.6+48`。
 - 正式 APK 必须使用 `android-app/release-signing/shortlink-release.jks` 的原正式证书签名，详见 [signing.md](signing.md)。
 
 ## 环境约束与已知问题
