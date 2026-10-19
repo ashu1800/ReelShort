@@ -182,6 +182,11 @@ class ReelShortClient:
         self.site_url = site_url.rstrip("/")
         self.site_id = site_id
         self.timeout_seconds = timeout_seconds
+        # An empty build id means "discover it", not "pin the empty string".
+        # `REELSHORT_NEXT_BUILD_ID=` in an env file yields `""`, and treating
+        # that as a pin disables the 404-triggered build-id refresh: every shelf
+        # whose upstream JSON disappeared then failed permanently with 404.
+        build_id = build_id or None
         self.build_id = build_id
         self.fixed_build_id = build_id is not None
         self.diagnostics = diagnostics or ProviderDiagnostics()
@@ -217,7 +222,7 @@ class ReelShortClient:
             os.getenv("REELSHORT_UPSTREAM_SITE_URL") or os.getenv("REELSHORT_SITE_URL", "https://www.reelshort.com"),
             os.getenv("REELSHORT_SITE_ID", "37"),
             timeout_seconds,
-            os.getenv("REELSHORT_NEXT_BUILD_ID"),
+            os.getenv("REELSHORT_NEXT_BUILD_ID") or None,
             max_response_bytes=max_response_bytes,
             max_redirects=max_redirects,
         )

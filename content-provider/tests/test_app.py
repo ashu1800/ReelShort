@@ -1855,6 +1855,66 @@ def test_reelshort_client_from_env_rejects_invalid_numeric_limits(monkeypatch):
         ReelShortClient.from_env()
 
 
+def test_empty_build_id_env_still_refreshes_on_404(monkeypatch):
+    """An empty REELSHORT_NEXT_BUILD_ID must mean "discover", not "pin empty".
+
+    The deployed env file carries `REELSHORT_NEXT_BUILD_ID=`, which os.getenv
+    returns as `""`. Treating that as a pinned id disabled the 404-triggered
+    refresh, so every shelf whose upstream JSON had moved failed permanently
+    with `upstream not found` instead of falling back to the home shelf.
+    """
+    monkeypatch.setenv("REELSHORT_NEXT_BUILD_ID", "")
+    client = ReelShortClient.from_env()
+    assert client.build_id is None
+    assert client.fixed_build_id is False
+
+    # The same rule holds for a caller that passes the empty string directly.
+    assert ReelShortClient("https://site.example", "id", 3, build_id="").fixed_build_id is False
+
+
+def test_stale_build_id_refreshes_when_shelf_json_disappears(monkeypatch):
+    """A 404 on the shelf JSON must refresh the build id and use the fallback."""
+    calls = []
+
+    def fake_get(url, **_):
+        calls.append(url)
+
+        class Response:
+            status_code = 200
+            ok = True
+            text = ""
+
+            @staticmethod
+            def json():
+                return {
+                    "pageProps": {
+                        "fallback": {
+                            "/api/ms/hall/webInfo": {
+                                "bookShelfList": [
+                                    {
+                                        "bookshelf_name": "New Release",
+                                        "books": [{"book_id": "book-1", "book_title": "Shelf Story"}],
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+
+        return Response()
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    monkeypatch.setattr(ReelShortClient, "_discover_build_id", lambda self: "fresh")
+    monkeypatch.setenv("REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD", "0")
+
+    # The fixed id must be False for the refresh path to run at all.
+    client = ReelShortClient("https://site.example", "37", 3)
+    assert client.fixed_build_id is False
+    client.build_id = "stale"
+    assert client.shelf("recommend")[0]["book_id"] == "book-1"
+    assert calls[0].startswith("https://site.example/_next/data/stale/")
+
+
 # ---------------------------------------------------------------------------
 # P2-6 / P2-16 / P3-21：内容源健壮性、出网收紧与内部鉴权
 # ---------------------------------------------------------------------------
