@@ -44,9 +44,6 @@ const double _minTargetExtent = 44;
 /// Height of the bottom watched-progress bar.
 const double _progressBarHeight = 3;
 
-/// How far the action rail floats above the bottom copy block.
-const double _railBottomInset = 120;
-
 /// Touch target of the reward badge (its geometry is unchanged from the port).
 const double _rewardRingTarget = 48;
 
@@ -58,9 +55,6 @@ const double _gestureTrackWidth = 96;
 
 /// Fraction of the screen height a player sheet may occupy.
 const double _sheetHeightFactor = 0.7;
-
-/// Right inset of the bottom copy block, so it never runs under the rail.
-const double _bottomCopyRailInset = 84;
 
 /// How often the position tick runs.
 const Duration _tickInterval = Duration(seconds: 1);
@@ -668,15 +662,30 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
               ),
             ),
-          // Right action rail: like, comments, favourite.
+          // The action rail and the bottom copy are one stack at the bottom:
+          // the rail sits directly above the copy instead of at a hard-coded
+          // offset, so it tracks the block when the description wraps to two
+          // lines or the episode selector disappears.
           Positioned(
-            right: spacing.space4,
-            bottom:
-                MediaQuery.viewPaddingOf(context).bottom + _railBottomInset,
-            child: _ActionRail(state: state),
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: <Widget>[
+                Padding(
+                  padding: EdgeInsets.only(
+                    right: spacing.space4,
+                    bottom: spacing.space3,
+                  ),
+                  child: _ActionRail(state: state),
+                ),
+                // Bottom info: titles, description, progress, episode selector.
+                _BottomInfo(state: state),
+              ],
+            ),
           ),
-          // Bottom info: titles, description, progress, episode selector.
-          Positioned(left: 0, right: 0, bottom: 0, child: _BottomInfo(state: state)),
         ],
       ),
     );
@@ -1537,7 +1546,7 @@ class _BottomInfo extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(
         spacing.space4,
         spacing.space8,
-        _bottomCopyRailInset,
+        spacing.space4,
         spacing.space4 + navInset,
       ),
       child: Column(
