@@ -216,7 +216,7 @@ python tool/port_app_ui_state.py  # -> lib/state/app_ui_state.dart + test/state/
 | --- | --- | --- |
 | 静态分析 | `flutter analyze` | `No issues found!`（含 info 级） |
 | 单元/Widget 测试 | `flutter test` | 全绿（含 `test/ui_wiring_test.dart` 的 5 条宿主接线回归） |
-| 契约测试 | `flutter test test/core/generated_contract_test.dart` | 189 字段的读写切片 + 5 个「Kotlin 零引用但 Dart 在用」的字段 + discovery 分组（含 tag 顺序）+ 47 字段/4 枚举的结构与默认值逐项匹配 golden |
+| 契约测试 | `flutter test test/core/generated_contract_test.dart` | 189 字段**逐项**匹配 golden（生成器同时产出 `copyValues()`，测试比对全表而非手挑切片）+ 5 个「Kotlin 零引用但 Dart 在用」的字段 + discovery 分组（含 tag 顺序）+ 47 字段/4 枚举的结构与默认值 |
 | Debug 构建 | `flutter build apk --debug`（需 `ANDROID_SIGNING_*`） | 产物生成，签名校验通过 |
 | Release 构建 | `flutter build apk --release` | 产物生成，R8 后运行正常 |
 | 签名证书 | `apksigner verify --print-certs` | SHA-256 = `c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9` |

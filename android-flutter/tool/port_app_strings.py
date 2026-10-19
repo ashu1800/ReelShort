@@ -144,13 +144,15 @@ def build_dart(fields: list[str], pairs: dict[str, str], groups) -> str:
         for title, tags in groups
     )
 
+    value_entries = "\n".join(f"    '{name}': copy.{name}," for name in fields)
+
     return f'''// GENERATED FILE - DO NOT EDIT BY HAND.
 //
 // Source of truth: android-app/app/src/main/java/com/reelshort/app/ui/format/AppStrings.kt
 // Regenerate with: python tool/port_app_strings.py
 //
 // The Flutter rewrite keeps every user-visible English string of the Kotlin app
-// in one place, exactly like the original. test/core/app_strings_contract_test.dart
+// in one place, exactly like the original. test/core/generated_contract_test.dart
 // compares every value below against test/core/app_strings_golden.json, which the
 // same generator snapshots straight from the Kotlin source.
 
@@ -180,6 +182,18 @@ const AppStrings _english = AppStrings(
 AppStrings strings(AppLanguage language) => switch (language) {{
   AppLanguage.english => _english,
 }};
+
+/// Every field of [strings]'s table for [language], keyed by field name.
+///
+/// Generated alongside the table so a contract test can compare *all* fields
+/// against the golden rather than a hand-picked slice: a hand-maintained list
+/// silently stops checking whatever it forgets to add.
+Map<String, String> copyValues(AppLanguage language) {{
+  final AppStrings copy = strings(language);
+  return <String, String>{{
+{value_entries}
+  }};
+}}
 
 /// A themed cluster of discovery keywords shown on the Discover screen.
 @immutable

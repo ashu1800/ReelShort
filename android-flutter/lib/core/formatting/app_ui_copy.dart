@@ -25,9 +25,6 @@ abstract final class AppUiCopy {
   /// Tooltip of the message bar dismiss button.
   static const String dismissMessage = 'Dismiss message';
 
-  /// Tooltip of a copy-to-clipboard affordance.
-  static const String copy = 'Copy';
-
   /// Tone word shown and announced beside a success message.
   static const String toneSuccess = 'Success';
 
@@ -83,9 +80,6 @@ abstract final class AppUiCopy {
 
   /// Funds: guest-state call to action.
   static const String fundsGuestAction = 'Sign in';
-
-  /// Generic retry action for an inline error state.
-  static const String retry = 'Retry';
 
   /// Withdrawal: label of the step that returns to the amount input.
   static const String withdrawalEditAmount = 'Edit amount';

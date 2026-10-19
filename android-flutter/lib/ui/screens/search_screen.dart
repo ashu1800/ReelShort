@@ -157,7 +157,6 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               SliverToBoxAdapter(child: SizedBox(height: spacing.space3)),
               _ResultsSection(
-                hasResults: state.searchResults.isNotEmpty,
                 results: state.searchResults,
                 awaitingResults: awaitingResults,
               ),
@@ -469,13 +468,8 @@ class _DiscoveryChip extends StatelessWidget {
 
 /// The results list, its content-shaped loading skeleton, or the empty state.
 class _ResultsSection extends StatelessWidget {
-  const _ResultsSection({
-    required this.hasResults,
-    required this.results,
-    required this.awaitingResults,
-  });
+  const _ResultsSection({required this.results, required this.awaitingResults});
 
-  final bool hasResults;
   final List<BookSummary> results;
 
   /// Set only while this screen's own search is in flight.
@@ -483,18 +477,17 @@ class _ResultsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (awaitingResults && !hasResults) {
-      return const SliverToBoxAdapter(child: _SearchResultSkeletons());
-    }
-    if (!hasResults) {
-      return const SliverToBoxAdapter(
-        child: AppEmptyState(
-          icon: Icons.travel_explore_outlined,
-          title: AppUiCopy.searchNoResultsTitle,
-          body: AppUiCopy.searchNoResultsBody,
-          // A status pill, never a control: a new search starts in the field.
-          pillLabel: AppUiCopy.searchAgain,
-        ),
+    if (results.isEmpty) {
+      return SliverToBoxAdapter(
+        child: awaitingResults
+            ? const _SearchResultSkeletons()
+            : const AppEmptyState(
+                icon: Icons.travel_explore_outlined,
+                title: AppUiCopy.searchNoResultsTitle,
+                body: AppUiCopy.searchNoResultsBody,
+                // A status pill, never a control: a new search starts in the field.
+                pillLabel: AppUiCopy.searchAgain,
+              ),
       );
     }
     return SliverList(

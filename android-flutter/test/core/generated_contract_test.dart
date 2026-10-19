@@ -64,22 +64,14 @@ void main() {
       );
     });
 
-    test('a representative slice of the port matches the golden verbatim', () {
+    test('every generated field matches the golden verbatim', () {
       final Map<String, Object?> fields = _stringFields(golden);
-      final AppStrings copy = strings(AppLanguage.english);
-      final Map<String, String> slice = <String, String>{
-        'homeTab': copy.homeTab,
-        'searchTab': copy.searchTab,
-        'accountTab': copy.accountTab,
-        'playerScreen': copy.playerScreen,
-        'fundsTitle': copy.fundsTitle,
-        'vipPayTitle': copy.vipPayTitle,
-        'vipPayExpired': copy.vipPayExpired,
-        'playerEpisodePrefix': copy.playerEpisodePrefix,
-        'accountWithdrawWalletRequired': copy.accountWithdrawWalletRequired,
-        'searchTagsTitle': copy.searchTagsTitle,
-      };
-      slice.forEach((String name, String value) {
+      // `copyValues` is generated alongside the table, so this compares all 189
+      // fields rather than a hand-picked slice: a slice silently stops checking
+      // whatever nobody remembers to add to it.
+      final Map<String, String> live = copyValues(AppLanguage.english);
+      expect(live.keys.toSet(), fields.keys.toSet());
+      live.forEach((String name, String value) {
         expect(
           fields[name],
           value,

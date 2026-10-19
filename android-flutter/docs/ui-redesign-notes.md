@@ -542,7 +542,8 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
      代码核对：`http_reel_short_api_client.dart:626-633` 在无 `{code,message}` 信封时直接把
      `body` 当消息，`app_state_controller.dart:2117` 又会把它原样返回）→ 加长度上限 + 非 JSON
      正文回退到共享文案 + 「重试」动作。
-   - **已结案（Phase 5-2）**：`AppUiCopy` 从 77 个成员清到 **39 个**（删 35 常量 + 3 方法）；现仅
+   - **已结案（Phase 5-2）**：`AppUiCopy` 从 77 个成员清到 **39 个**（删 35 常量 + 3 方法）；Phase 5-3 复查又删掉
+     仍零引用的 `copy`/`retry` → **37 个**。现仅
      `seeAll` 为 lib 零引用（但 design_system_test 在用，保留）。详情页那 6 个 `detail*` 常量随该屏
      一起删除了，以后做详情页时再加回 `AppUiCopy`（非生成物，无生成链路约束）。
 2. **孤儿文案清理**：
@@ -636,6 +637,7 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
 - 保留项确认：5 个 Kotlin 零引用但 Dart 在用的字段（`accountWalletAddressLabel`、
   `accountVipStatusActive`、`accountVipStatusInactive`、`accountVipExpiryPrefix`、`bookRowFallbackSuffix`）
   三处俱在；`seeAll` 仍是唯一「lib 零引用但测试在用」的 AppUiCopy 常量，保留。
+  （Phase 5-3 复查发现当时还漏了同样零引用的 `copy`/`retry`，已一并删除，成员数 39 → 37。）
 - 后续项：
   1. 「Kotlin 侧仍在用、Dart 侧已不用」的字段（`playerCommentsEmpty`、`vipActiveLabel`/`vipExpiryLabel`、
      `accountWithdrawalRecordsEmpty`、`accountGuestSignIn*`/`RegisterSubtitle`、`accountOrdersTitle` 重名、

@@ -36,7 +36,7 @@ Flutter SDK 的 `bin` 目录已写入**用户级** `PATH`；已经打开的终�
 & $FLUTTER test
 
 # 单个测试文件
-& $FLUTTER test test/core/app_strings_contract_test.dart
+& $FLUTTER test test/core/generated_contract_test.dart
 
 # 契约数据重新生成（AppStrings / AppUiState）
 python tool/port_app_strings.py
