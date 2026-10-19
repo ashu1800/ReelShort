@@ -56,7 +56,7 @@ $env:ANDROID_SIGNING_STORE_FILE = (Resolve-Path "$signingDir\shortlink-release.j
 & "C:\Users\12801\flutter\3.47.7\bin\flutter.bat" build apk --debug
 ```
 
-产出的 debug APK 版本取自 `pubspec.yaml`（当前 `0.9.6+48`）。设备上若已装更高 versionCode 的
+产出的 debug APK 版本取自 `pubspec.yaml`（当前 `0.9.7+49`）。设备上若已装更高 versionCode 的
 正式包，`adb install -r` 会被 `INSTALL_FAILED_VERSION_DOWNGRADE` 拒绝，可用
 `-AllowDowngrade`（脚本内部传 `adb install -r -d`）。
 
