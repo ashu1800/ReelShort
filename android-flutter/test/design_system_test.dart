@@ -47,6 +47,7 @@ import 'package:shortlink/ui/components/app_segmented_control.dart';
 import 'package:shortlink/ui/components/app_sheet.dart';
 import 'package:shortlink/ui/components/app_text_field.dart';
 import 'package:shortlink/ui/components/episode_spine.dart';
+import 'package:shortlink/ui/components/episode_tile.dart';
 import 'package:shortlink/ui/components/ledger_row.dart';
 import 'package:shortlink/ui/components/poster_card.dart';
 
@@ -258,7 +259,7 @@ void main() {
               : EpisodeTickState.none,
           progress: i == 4 ? 40 : 0,
           isVipLocked: i >= 8,
-          onTap: () {},
+          isGate: i == 8,
         ),
     ];
 
@@ -382,15 +383,18 @@ void main() {
           watchedEpisodeCount: 4,
         ),
       ),
-      'spine full': EpisodeSpine(ticks: ticks),
-      'spine mini capped': EpisodeSpine(
-        ticks: ticks,
-        size: EpisodeSpineSize.mini,
-        availableHeight: 120,
-      ),
-      'spine inline': EpisodeSpine(
-        ticks: ticks,
-        size: EpisodeSpineSize.inline,
+      'spine': EpisodeSpine(ticks: ticks),
+      'episode tile': SizedBox(
+        width: 64,
+        height: 64,
+        child: EpisodeTile(
+          number: 7,
+          state: EpisodeTickState.inProgress,
+          progressPercent: 40,
+          locked: false,
+          semanticLabel: 'EP 07, 40%',
+          onTap: () {},
+        ),
       ),
       'ledger': const Column(
         mainAxisSize: MainAxisSize.min,
@@ -979,11 +983,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('EpisodeSpine describes its state and marks the VIP gate at episode 8', () {
-    expect(episodeSpineGateEpisode, 8);
+  test('EpisodeSpine describes its state and counts the locked run', () {
     expect(defaultVipFreeEpisodes, 7);
     final AppStrings copy = strings(AppLanguage.defaultLanguage);
-    final String described = EpisodeSpine.describe(<EpisodeTick>[
+    final List<EpisodeTick> ticks = <EpisodeTick>[
       for (int i = 1; i <= 12; i++)
         EpisodeTick(
           number: i,
@@ -995,9 +998,13 @@ void main() {
               ? EpisodeTickState.watched
               : EpisodeTickState.none,
           progress: i == 4 ? 40 : 0,
+          isVipLocked: i >= 8,
+          isGate: i == 8,
         ),
-    ]);
-    expect(described.contains('12${copy.playerEpisodeUnit}'), isTrue);
+    ];
+    final String described = EpisodeSpine.describe(ticks);
+    // The count reuses the poster badge's `eps` unit, so the two never disagree.
+    expect(described.startsWith('12${copy.posterEpisodeUnit}'), isTrue);
     expect(described.contains('2 ${copy.playerEpisodeStatusWatched}'), isTrue);
     expect(
       described.contains(
@@ -1005,40 +1012,92 @@ void main() {
       ),
       isTrue,
     );
+    expect(described.contains('5 ${AppUiCopy.episodeLocked}'), isTrue);
+    // The visible summary line uses the same sentence with a middle dot.
+    expect(
+      EpisodeSpine.describe(ticks, separator: ' · '),
+      contains(' · '),
+    );
     expect(EpisodeSpine.describe(const <EpisodeTick>[]), '');
     expect(EpisodeTick.unwatched(3).length, 3);
-    expect(EpisodeTick.unwatched(3, isVipLocked: (int e) => e >= 2).last.isVipLocked, isTrue);
-    expect(const EpisodeTick(number: 1, state: EpisodeTickState.inProgress, progress: 250).clampedProgress, 100);
-    expect(const EpisodeTick(number: 1, state: EpisodeTickState.none, progress: -4).clampedProgress, 0);
+    expect(
+      EpisodeTick.unwatched(3, isVipLocked: (int e) => e >= 2).last.isVipLocked,
+      isTrue,
+    );
+    expect(
+      const EpisodeTick(number: 1, state: EpisodeTickState.inProgress, progress: 250)
+          .clampedProgress,
+      100,
+    );
+    expect(
+      const EpisodeTick(number: 1, state: EpisodeTickState.none, progress: -4)
+          .clampedProgress,
+      0,
+    );
   });
 
-  testWidgets('EpisodeSpine ticks are individually labelled and tappable', (
+  testWidgets('EpisodeSpine is one summary node and renders every state', (
     WidgetTester tester,
   ) async {
     final SemanticsHandle handle = tester.ensureSemantics();
-    final List<int> tapped = <int>[];
-    final AppStrings copy = strings(AppLanguage.defaultLanguage);
     await tester.pumpWidget(
       host(
         EpisodeSpine(
           ticks: <EpisodeTick>[
-            EpisodeTick(
-              number: 8,
-              state: EpisodeTickState.watched,
-              onTap: () => tapped.add(8),
-            ),
-            EpisodeTick(number: 9, state: EpisodeTickState.none, onTap: () {}),
+            for (int i = 1; i <= 10; i++)
+              EpisodeTick(
+                number: i,
+                state: i == 1
+                    ? EpisodeTickState.watched
+                    : i == 2
+                    ? EpisodeTickState.inProgress
+                    : i == 3
+                    ? EpisodeTickState.current
+                    : EpisodeTickState.none,
+                progress: i == 2 ? 60 : 0,
+                isVipLocked: i >= 8,
+                isGate: i == 8,
+              ),
           ],
+          language: AppLanguage.defaultLanguage,
         ),
         width: 320,
       ),
     );
-    final String label =
-        '${copy.playerEpisodePrefix}08 - ${copy.playerEpisodeStatusWatched}';
-    expect(find.bySemanticsLabel(label), findsOneWidget);
-    await tester.tap(find.bySemanticsLabel(label));
     await tester.pump();
-    expect(tapped, <int>[8]);
+
+    // A picture of data with no inner text: exactly one node, labelled with the
+    // generated summary, and no tap action of its own.
+    expect(
+      find.bySemanticsLabel(
+        EpisodeSpine.describe(<EpisodeTick>[
+          for (int i = 1; i <= 10; i++)
+            EpisodeTick(
+              number: i,
+              state: i == 1
+                  ? EpisodeTickState.watched
+                  : i == 2
+                  ? EpisodeTickState.inProgress
+                  : i == 3
+                  ? EpisodeTickState.current
+                  : EpisodeTickState.none,
+              progress: i == 2 ? 60 : 0,
+              isVipLocked: i >= 8,
+              isGate: i == 8,
+            ),
+        ]),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+
+    // The bar is a pure row of segments, so it must never wrap or scroll.
+    expect(find.byType(Row), findsWidgets);
+    expect(
+      tester.getSize(find.byType(EpisodeSpine)).height,
+      lessThanOrEqualTo(20),
+      reason: 'the overview is a single thin line, not a list',
+    );
     handle.dispose();
   });
 
@@ -1070,6 +1129,7 @@ void main() {
     int cardTaps = 0;
     int tickTaps = 0;
     int dismissals = 0;
+    final AppStrings copy = strings(AppLanguage.defaultLanguage);
 
     await tester.pumpWidget(
       host(
@@ -1086,14 +1146,17 @@ void main() {
                 onTap: () => cardTaps++,
               ),
             ),
-            EpisodeSpine(
-              ticks: <EpisodeTick>[
-                EpisodeTick(
-                  number: 1,
-                  state: EpisodeTickState.none,
-                  onTap: () => tickTaps++,
-                ),
-              ],
+            SizedBox(
+              width: 64,
+              height: 64,
+              child: EpisodeTile(
+                number: 1,
+                state: EpisodeTickState.none,
+                progressPercent: 0,
+                locked: false,
+                semanticLabel: '${copy.playerEpisodePrefix}01',
+                onTap: () => tickTaps++,
+              ),
             ),
             AppMessageBar(
               message: 'Saved',
@@ -1129,10 +1192,9 @@ void main() {
     await tester.pump();
     expect(cardTaps, 1, reason: 'PosterCard must expose a tap action');
 
-    final AppStrings copy = strings(AppLanguage.defaultLanguage);
     activate('${copy.playerEpisodePrefix}01');
     await tester.pump();
-    expect(tickTaps, 1, reason: 'EpisodeSpine tick must expose a tap action');
+    expect(tickTaps, 1, reason: 'EpisodeTile must expose a tap action');
 
     activate('Success: Saved');
     await tester.pump();
@@ -2686,118 +2748,38 @@ void main() {
     node.dispose();
   });
 
-  testWidgets('EpisodeSpine full ticks keep a 44px target that never overlaps', (
+  testWidgets('EpisodeSpine is a single thin bar at every width', (
     WidgetTester tester,
   ) async {
-    final List<int> tapped = <int>[];
-    await tester.pumpWidget(
-      host(
-        EpisodeSpine(
-          ticks: <EpisodeTick>[
-            for (int episode = 1; episode <= 4; episode++)
-              EpisodeTick(
-                number: episode,
-                state: episode == 2
-                    ? EpisodeTickState.current
-                    : EpisodeTickState.none,
-                onTap: () => tapped.add(episode),
-              ),
-          ],
+    // The spine no longer draws one row per episode; the grid does that. Its
+    // only job is the season at a glance, so it must stay one line high no
+    // matter how many episodes there are or how narrow the screen is.
+    for (final double width in <double>[200, 320, 360, 1440]) {
+      await tester.pumpWidget(
+        host(
+          EpisodeSpine(ticks: EpisodeTick.unwatched(38, isVipLocked: (int e) => e > 7)),
+          width: width,
         ),
-        width: 320,
-      ),
-    );
-    await tester.pump();
-
-    expect(episodeSpineMinTargetExtent, 44);
-    final Finder targets = find.descendant(
-      of: find.byType(EpisodeSpine),
-      matching: find.byType(InkWell),
-    );
-    expect(targets, findsNWidgets(4));
-    final List<Rect> rects = <Rect>[
-      for (int index = 0; index < 4; index++) tester.getRect(targets.at(index)),
-    ];
-    for (int index = 0; index < rects.length; index++) {
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull, reason: 'width $width');
+      final Size size = tester.getSize(find.byType(EpisodeSpine));
+      expect(size.height, lessThanOrEqualTo(20), reason: 'width $width');
+      // The host's view is 800 wide, so a wider request is clamped to it.
       expect(
-        rects[index].width,
-        greaterThanOrEqualTo(episodeSpineMinTargetExtent),
-        reason: 'tick $index target width',
+        size.width,
+        closeTo(math.min(width, 800), 0.01),
+        reason: 'fills the width',
       );
       expect(
-        rects[index].height,
-        greaterThanOrEqualTo(episodeSpineMinTargetExtent),
-        reason: 'tick $index target height',
+        find.descendant(
+          of: find.byType(EpisodeSpine),
+          matching: find.byType(InkWell),
+        ),
+        findsNothing,
+        reason: 'the bar carries no tap targets of its own',
       );
     }
-    for (int a = 0; a < rects.length; a++) {
-      for (int b = a + 1; b < rects.length; b++) {
-        expect(
-          rects[a].overlaps(rects[b]),
-          isFalse,
-          reason: 'targets $a and $b must not overlap',
-        );
-      }
-    }
-    expect(
-      rects[1].top - rects[0].top,
-      episodeSpineMinTargetExtent,
-      reason: 'the row pitch is the target extent',
-    );
-
-    // The whole square is live: a corner the visual tick never covers still
-    // fires that tick and only that tick.
-    await tester.tapAt(rects[0].topLeft + const Offset(2, 2));
-    await tester.pump();
-    expect(tapped, <int>[1]);
-
-    // The visual geometry is untouched: the same tick sizes as before, still
-    // flush with the rail's gutter, now centred inside the taller row.
-    final Finder bars = find.descendant(
-      of: find.byType(EpisodeSpine),
-      matching: find.byType(Opacity),
-    );
-    expect(tester.getSize(bars.at(0)).width, closeTo(9.6, 0.01));
-    expect(tester.getSize(bars.at(0)).height, closeTo(4, 0.01));
-    expect(tester.getSize(bars.at(1)).width, closeTo(16, 0.01));
-    expect(tester.getSize(bars.at(1)).height, closeTo(5, 0.01));
-    expect(tester.getTopLeft(bars.at(1)).dx - rects[1].left, 7);
-    expect(
-      tester.getTopLeft(bars.at(1)).dy - rects[1].top,
-      closeTo((episodeSpineMinTargetExtent - 5) / 2, 0.01),
-      reason: 'the visual tick is centred in the 44px row',
-    );
-  });
-
-  testWidgets('EpisodeSpine keeps its 16px rows when nothing is tappable', (
-    WidgetTester tester,
-  ) async {
-    // A full spine without handlers is informational: it must not grow.
-    await tester.pumpWidget(
-      host(EpisodeSpine(ticks: EpisodeTick.unwatched(3)), width: 320),
-    );
-    await tester.pump();
-    expect(tester.getSize(find.byType(EpisodeSpine)).height, 48);
-    expect(
-      find.descendant(
-        of: find.byType(EpisodeSpine),
-        matching: find.byType(InkWell),
-      ),
-      findsNothing,
-    );
-
-    // The mini spine is unchanged too, at its own 12px pitch.
-    await tester.pumpWidget(
-      host(
-        EpisodeSpine(
-          ticks: EpisodeTick.unwatched(3),
-          size: EpisodeSpineSize.mini,
-        ),
-        width: 320,
-      ),
-    );
-    await tester.pump();
-    expect(tester.getSize(find.byType(EpisodeSpine)).height, 36);
   });
 
   test('EpisodeSpine describes the in-progress state through AppUiCopy', () {
@@ -2813,7 +2795,7 @@ void main() {
     expect(AppUiCopy.episodeInProgress, 'in progress');
     expect(
       described,
-      '2${copy.playerEpisodeUnit}, 1 ${AppUiCopy.episodeInProgress}',
+      '2${copy.posterEpisodeUnit}, 1 ${AppUiCopy.episodeInProgress}',
     );
   });
 

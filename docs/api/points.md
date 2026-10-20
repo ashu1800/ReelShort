@@ -12,6 +12,8 @@ Authorization: Bearer <token>
 
 返回当前用户积分账户。首次查询会自动创建余额为 `0` 的账户。`todayCreditedPoints` 按服务器上海时区当天 `[00:00, 次日 00:00)` 统计所有正向积分流水（`amount > 0`），提现等负向流水不计入。
 
+`freeEpisodes` 是后台系统配置 `vip.free-episodes` 的当前值（非 VIP 免费可看的集数），与播放接口 `403 VIP required` 的门禁读同一个键。App 用它画选集面板的锁集边界，因此后台调整该值后客户端与服务端始终一致；字段缺省时客户端回退到 `7`。
+
 响应：
 
 ```json
@@ -22,7 +24,8 @@ Authorization: Bearer <token>
       "balance": 3,
       "frozenPoints": 0,
       "availablePoints": 3,
-      "todayCreditedPoints": 2
+      "todayCreditedPoints": 2,
+      "freeEpisodes": 7
   },
   "requestId": "uuid",
   "timestamp": "2026-06-26T17:30:00+08:00"

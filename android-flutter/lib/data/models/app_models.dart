@@ -127,13 +127,20 @@ class EpisodeSummary {
   );
 }
 
-/// Episodes 1..7 are free; episode 8 and later require VIP membership.
+/// Fallback free-episode count used only until the account snapshot arrives.
+///
+/// The real boundary is the backend's `vip.free-episodes` system config, which
+/// rides along on `GET /api/app/points/account` as `freeEpisodes` and is applied
+/// by the play endpoint. This constant matches its default (7) so a guest, or a
+/// client talking to an older backend, behaves exactly as before.
 const int defaultVipFreeEpisodes = 7;
 
-extension EpisodeVipGate on EpisodeSummary {
-  /// Whether this episode sits behind the VIP paywall.
-  bool requiresVip() => number > defaultVipFreeEpisodes;
-}
+/// Whether [episode] sits behind the VIP paywall at [freeEpisodes].
+///
+/// A pure function rather than an extension method on purpose: the boundary is
+/// server configuration, so every caller has to name where its value came from.
+bool episodeRequiresVip(EpisodeSummary episode, int freeEpisodes) =>
+    episode.number > freeEpisodes;
 
 /// A resolved, playable media URL plus the server-authoritative duration.
 class VideoUrl {
@@ -311,6 +318,7 @@ class PointAccount {
     this.vipActive = false,
     this.vipUntil,
     this.todayCreditedPoints = 0,
+    this.freeEpisodes = defaultVipFreeEpisodes,
   }) : availablePoints = availablePoints ?? (balance - frozenPoints);
 
   final int balance;
@@ -326,6 +334,11 @@ class PointAccount {
 
   /// Positive points credited today, computed by the backend in Asia/Shanghai.
   final int todayCreditedPoints;
+
+  /// Live `vip.free-episodes` from the backend: episodes above this number need
+  /// VIP membership. Falls back to [defaultVipFreeEpisodes] when the server did
+  /// not send it (older backend), which restores the pre-config behaviour.
+  final int freeEpisodes;
 }
 
 /// One point ledger row.

@@ -152,17 +152,20 @@ EpisodeSummary? playerErrorNextEpisode(
   return episodes[currentIndex + 1];
 }
 
-String episodeSelectorLabel(
-  int totalEpisodes, [
+/// `EP 08–38`: the episode range shown on the episode sheet's section headers
+/// and in the paywall banner.
+///
+/// A single episode renders as `EP 08` rather than `EP 08–08`, and a reversed
+/// range is normalised so the header can never read backwards.
+String episodeRangeLabel(
+  int start,
+  int end, [
   AppLanguage language = AppLanguage.defaultLanguage,
 ]) {
-  final AppStrings copy = strings(language);
-  final int total = totalEpisodes < 0 ? 0 : totalEpisodes;
-  return '${copy.playerEpisodeSelectorPrefix} · '
-      '${copy.playerEpisodeSelectorCompleted} · '
-      '${copy.playerEpisodeSelectorTotalPrefix}'
-      '$total'
-      '${copy.playerEpisodeSelectorTotalSuffix}';
+  final int first = (start <= end ? start : end).clamp(0, 1 << 30);
+  final int last = (start <= end ? end : start).clamp(0, 1 << 30);
+  final String head = episodeNumberLabel(first, language);
+  return first == last ? head : '$head–${last.toString().padLeft(2, '0')}';
 }
 
 enum EpisodeWatchStatusType { none, current, inProgress, watched }

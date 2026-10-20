@@ -36,7 +36,7 @@ import '../components/app_button.dart';
 import '../components/app_empty_state.dart';
 import '../components/app_loading.dart';
 import '../components/app_sheet.dart';
-import '../components/episode_spine.dart';
+import '../sheets/episode_sheet.dart';
 
 /// Minimum target of every tappable element in the player chrome.
 const double _minTargetExtent = 44;
@@ -1646,9 +1646,9 @@ class _EpisodeSelectorBar extends StatelessWidget {
   Future<void> _openEpisodeSheet(BuildContext context) {
     return AppSheet.show<void>(
       context,
-      title: episodeSelectorLabel(state.episodes.length, state.language),
+      title: AppUiCopy.playerEpisodes,
       maxHeightFactor: _sheetHeightFactor,
-      child: const _EpisodeSheet(),
+      child: const EpisodeSheet(),
     );
   }
 }
@@ -1723,142 +1723,6 @@ class _MediaButton extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// The episode sheet: shared watch-status projection, VIP lock above the free
-/// threshold, re-selecting the current episode only closes.
-///
-/// Every row pairs an [EpisodeSpine] tick - the design system's signature rail,
-/// and the screen-reader target with its 44 px square - with the episode number,
-/// its title and the VIP lock. The row itself is tappable too, so a touch user
-/// never has to aim at the tick.
-class _EpisodeSheet extends StatelessWidget {
-  const _EpisodeSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    final AppUiState state = context.watch<AppStateController>().state;
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppIconSize icons = appIconSizeOf(context);
-    final AppSpacing spacing = appSpacingOf(context);
-    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
-    final AppStrings copy = strings(state.language);
-    final AppStateController controller = context.read<AppStateController>();
-    final EpisodeSummary? current = state.selectedEpisode;
-    final String? bookId = state.playback.book?.id;
-
-    return ListView.builder(
-      padding: EdgeInsets.zero,
-      itemCount: state.episodes.length,
-      itemBuilder: (BuildContext context, int index) {
-        final EpisodeSummary episode = state.episodes[index];
-        final bool selected =
-            episode.number == current?.number &&
-            episode.chapterId == current?.chapterId;
-        final EpisodeWatchStatus status = episodeWatchStatus(
-          bookId,
-          episode,
-          current,
-          state.watchHistory,
-        );
-        final bool locked =
-            !state.vipActive && episode.number > defaultVipFreeEpisodes;
-        final String statusLabel = selected
-            ? copy.playerEpisodeStatusCurrent
-            : episodeWatchStatusLabel(status, state.language);
-        final String number = episodeNumberLabel(
-          episode.number,
-          state.language,
-        );
-        final String title = episode.title.trim();
-        final EpisodeTickState tickState = selected
-            ? EpisodeTickState.current
-            : switch (status.type) {
-                EpisodeWatchStatusType.watched => EpisodeTickState.watched,
-                EpisodeWatchStatusType.inProgress =>
-                  EpisodeTickState.inProgress,
-                EpisodeWatchStatusType.current => EpisodeTickState.current,
-                EpisodeWatchStatusType.none => EpisodeTickState.none,
-              };
-
-        void open() {
-          // Re-selecting the current episode only closes the sheet.
-          Navigator.of(context).pop();
-          if (!selected) {
-            controller.openPlayer(episode);
-          }
-        }
-
-        return InkWell(
-          key: ValueKey<String>('${episode.chapterId}:${episode.number}'),
-          onTap: open,
-          // The spine tick carries the announcement and the activation action,
-          // so the row's own ink stays out of the semantics tree.
-          excludeFromSemantics: true,
-          child: Row(
-            children: <Widget>[
-              EpisodeSpine(
-                ticks: <EpisodeTick>[
-                  EpisodeTick(
-                    number: episode.number,
-                    state: tickState,
-                    progress: selected ? 0 : status.progressPercent,
-                    isVipLocked: locked && !selected,
-                    onTap: open,
-                  ),
-                ],
-                size: EpisodeSpineSize.full,
-                language: state.language,
-                // One tick per row: the row's own text carries the meaning, so
-                // the rail must not repeat a one-episode summary per line.
-                semanticsLabel: '',
-              ),
-              SizedBox(width: spacing.space3),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: spacing.space2),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        title.isEmpty ? number : '$number · $title',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: roles.body.copyWith(
-                          color: selected
-                              ? colors.accentPrimary
-                              : colors.textPrimary,
-                          fontWeight: selected ? FontWeight.w700 : null,
-                        ),
-                      ),
-                      if (statusLabel.isNotEmpty)
-                        Text(
-                          statusLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: roles.caption.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              if (locked && !selected)
-                Icon(
-                  Icons.lock,
-                  size: icons.sm,
-                  color: colors.accentPrimary,
-                  semanticLabel: 'VIP',
-                ),
-              SizedBox(width: spacing.space2),
-            ],
-          ),
-        );
-      },
     );
   }
 }

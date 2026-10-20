@@ -30,6 +30,7 @@ import 'package:shortlink/ui/components/app_button.dart';
 import 'package:shortlink/ui/components/app_loading.dart';
 import 'package:shortlink/ui/components/app_sheet.dart';
 import 'package:shortlink/ui/components/episode_spine.dart';
+import 'package:shortlink/ui/components/episode_tile.dart';
 import 'package:shortlink/ui/screens/player_screen.dart';
 
 import 'support/fake_app_data_source.dart';
@@ -429,7 +430,7 @@ void main() {
     });
   }
 
-  testWidgets('the episode drawer is a spine of 44px ticks', (
+  testWidgets('the episode drawer is a numeric grid at the touch minimum', (
     WidgetTester tester,
   ) async {
     final AppStateController controller = await _pumpPlayer(
@@ -440,30 +441,26 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    final Finder spines = find.byType(EpisodeSpine);
-    expect(spines, findsNWidgets(4));
-    for (int index = 0; index < 4; index++) {
-      expect(
-        tester.widget<EpisodeSpine>(spines.at(index)).size,
-        EpisodeSpineSize.full,
-        reason: 'the drawer is the component\'s documented full-size consumer',
-      );
-    }
-    // Every row advertises the episode: number, title and status.
-    expect(find.text('EP 01 · Episode 1 title'), findsOneWidget);
-    expect(find.text('EP 04 · Episode 4 title'), findsOneWidget);
-    expect(find.text(_copy.playerEpisodeStatusCurrent), findsOneWidget);
+    // One cell per episode, and no list rows: the sheet is a grid plus one
+    // season overview bar, not four "EP n · title" rows.
+    final Finder tiles = find.byType(EpisodeTile);
+    expect(tiles, findsNWidgets(4));
+    expect(find.byType(EpisodeSpine), findsOneWidget);
+    expect(find.text('EP 01 · Episode 1 title'), findsNothing);
 
-    final Finder ticks = find.descendant(
-      of: spines,
-      matching: find.byType(InkWell),
-    );
-    expect(ticks, findsNWidgets(4));
     for (int index = 0; index < 4; index++) {
-      final Size size = tester.getSize(ticks.at(index));
-      expect(size.width, greaterThanOrEqualTo(44));
-      expect(size.height, greaterThanOrEqualTo(44));
+      final Size size = tester.getSize(tiles.at(index));
+      expect(size.width, greaterThanOrEqualTo(episodeTileMinExtent));
+      expect(size.height, greaterThanOrEqualTo(episodeTileMinExtent));
     }
+
+    // The title is still read out; only the printed row disappeared.
+    final SemanticsHandle handle = tester.ensureSemantics();
+    expect(
+      find.bySemanticsLabel('EP 04, Episode 4 title'),
+      findsOneWidget,
+    );
+    handle.dispose();
 
     // Tapping another episode switches to it and closes the drawer.
     await tester.tap(find.byKey(const ValueKey<String>('ch-3:3')));
@@ -503,11 +500,22 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // Episodes above the free threshold carry the lock marker.
-    // Episodes 8 and above sit behind the gate: 8, 9 and 10 here.
-    expect(find.byIcon(Icons.lock), findsNWidgets(3));
+    // Episodes above the free threshold carry the lock glyph: 8, 9 and 10
+    // here. The paywall banner carries one too, so count inside the cells.
+    expect(
+      find.descendant(
+        of: find.byType(EpisodeTile),
+        matching: find.byIcon(Icons.lock),
+      ),
+      findsNWidgets(3),
+    );
 
-    await tester.tap(find.byKey(const ValueKey<String>('ch-8:8')));
+    // The gated run sits below the paywall banner, so scroll it into view the
+    // way a user would before tapping.
+    final Finder locked = find.byKey(const ValueKey<String>('ch-8:8'));
+    await tester.ensureVisible(locked);
+    await tester.pump();
+    await tester.tap(locked);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(controller.state.vipPaywallVisible, isTrue);

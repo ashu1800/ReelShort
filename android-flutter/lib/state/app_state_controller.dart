@@ -73,6 +73,14 @@ class AppStateController extends ChangeNotifier {
   /// The current immutable UI state.
   AppUiState get state => _state;
 
+  /// The backend's live `vip.free-episodes` boundary.
+  ///
+  /// Delivered on the point-account snapshot the playback entry already loads;
+  /// until it arrives — a guest, or a backend that predates the field — the
+  /// documented default applies, which is what every screen used to hard-code.
+  int get freeEpisodes =>
+      _state.pointAccount?.freeEpisodes ?? defaultVipFreeEpisodes;
+
   /// Replaces the state and notifies listeners - the one mutation helper.
   void _set(AppUiState next) {
     _state = next;
@@ -246,20 +254,38 @@ class AppStateController extends ChangeNotifier {
   Future<void> _openHomeAfterAuthentication(AuthSession session) async {
     final EpisodeSummary? pendingVipEpisode = _state.pendingVipEpisode;
     if (pendingVipEpisode != null) {
+      // The guest branch decided on the documented default. Now that the
+      // account is reachable, re-check against the backend's real
+      // vip.free-episodes: an episode the operator made free must play instead
+      // of opening the paywall. A snapshot already in state wins, so the usual
+      // case adds no request.
+      final PointAccount account =
+          _state.pointAccount ?? await _loadPointAccountSilently() ??
+              const PointAccount(balance: 0, records: <PointRecord>[]);
+      if (episodeRequiresVip(pendingVipEpisode, account.freeEpisodes)) {
+        _set(
+          _state.copyWith(
+            session: session,
+            authPromptVisible: false,
+            pendingPlaybackEpisode: null,
+            isLoading: false,
+            errorMessage: null,
+          ),
+        );
+        await _openVipPaywall(
+          episode: pendingVipEpisode,
+          requestVersion: _pendingVipEpisodeRequestVersion,
+        );
+        return;
+      }
+      // Not gated after all: hand it to the ordinary pending-episode path below.
       _set(
         _state.copyWith(
           session: session,
-          authPromptVisible: false,
-          pendingPlaybackEpisode: null,
-          isLoading: false,
-          errorMessage: null,
+          pendingVipEpisode: null,
+          pendingPlaybackEpisode: pendingVipEpisode,
         ),
       );
-      await _openVipPaywall(
-        episode: pendingVipEpisode,
-        requestVersion: _pendingVipEpisodeRequestVersion,
-      );
-      return;
     }
     final EpisodeSummary? pendingEpisode = _state.pendingPlaybackEpisode;
     if (pendingEpisode != null) {
@@ -525,21 +551,18 @@ class AppStateController extends ChangeNotifier {
           ),
         );
         if (session == null) {
+          // No account snapshot yet for a guest, so the boundary is the
+          // documented default; the authenticated replay re-evaluates it.
+          final bool vipGated = episodeRequiresVip(firstEpisode, freeEpisodes);
           _set(
             _state.copyWith(
               authPromptVisible: true,
-              pendingPlaybackEpisode: firstEpisode.requiresVip()
-                  ? null
-                  : firstEpisode,
-              pendingVipEpisode: firstEpisode.requiresVip()
-                  ? firstEpisode
-                  : null,
+              pendingPlaybackEpisode: vipGated ? null : firstEpisode,
+              pendingVipEpisode: vipGated ? firstEpisode : null,
               isLoading: false,
             ),
           );
-          _pendingVipEpisodeRequestVersion = firstEpisode.requiresVip()
-              ? requestVersion
-              : null;
+          _pendingVipEpisodeRequestVersion = vipGated ? requestVersion : null;
           return;
         }
         final EpisodeSummary? resume = await _chooseResumeEpisode(
@@ -561,17 +584,18 @@ class AppStateController extends ChangeNotifier {
         final BookSummary book = _requireSelectedBook();
         final int requestVersion = ++_playbackRequestVersion;
         if (_state.session == null) {
+          // Guest: no account snapshot, so the documented default decides; the
+          // post-login replay uses the real configuration.
+          final bool vipGated = episodeRequiresVip(episode, freeEpisodes);
           _set(
             _state.copyWith(
               authPromptVisible: true,
-              pendingPlaybackEpisode: episode.requiresVip() ? null : episode,
-              pendingVipEpisode: episode.requiresVip() ? episode : null,
+              pendingPlaybackEpisode: vipGated ? null : episode,
+              pendingVipEpisode: vipGated ? episode : null,
               isLoading: false,
             ),
           );
-          _pendingVipEpisodeRequestVersion = episode.requiresVip()
-              ? requestVersion
-              : null;
+          _pendingVipEpisodeRequestVersion = vipGated ? requestVersion : null;
           return;
         }
         await _requestEpisodePlayback(book, episode, requestVersion);
@@ -650,7 +674,12 @@ class AppStateController extends ChangeNotifier {
     if (!_isActivePlaybackRequest(requestVersion)) {
       return;
     }
-    if (episode.requiresVip() && pointAccount?.vipActive != true) {
+    // Use the account just loaded, not the stale state snapshot: the boundary
+    // and the membership flag have to describe the same backend answer.
+    final int freeEpisodes =
+        pointAccount?.freeEpisodes ?? defaultVipFreeEpisodes;
+    if (episodeRequiresVip(episode, freeEpisodes) &&
+        pointAccount?.vipActive != true) {
       await _openVipPaywall(episode: episode, requestVersion: requestVersion);
       return;
     }
@@ -784,6 +813,10 @@ class AppStateController extends ChangeNotifier {
     if (!_isActivePlaybackRequest(requestVersion)) {
       return null;
     }
+    // Keep the history: playback entry just paid for it, and the episode sheet
+    // paints each episode's watched/progress state from `state.watchHistory`.
+    // Without this the sheet stayed blank until the account screen loaded.
+    _set(_state.copyWith(watchHistory: history));
     final int index = history.indexWhere(
       (WatchRecord record) => record.bookId == book.id,
     );

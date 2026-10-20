@@ -247,4 +247,36 @@ class ContentControllerTests {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value(400));
 	}
+
+	@Test
+	void playGatesEpisodesAtTheConfiguredFreeBoundary() throws Exception {
+		// The boundary must come from vip.free-episodes, not a constant: the app
+		// reads the same key through /api/app/points/account.
+		when(vipGateService.isVip(nullable(com.reelshort.backend.auth.CurrentUser.class))).thenReturn(false);
+		when(systemConfigService.intValue(com.reelshort.backend.system.config.SystemConfigRegistry.VIP_FREE_EPISODES))
+				.thenReturn(5);
+		when(contentCacheService.getVideoUrl("book-1", 5, "love-story", "chapter-5", ContentLocale.ENGLISH))
+				.thenReturn(new ContentVideo("https://cdn.example.com/video.m3u8", 5, 120, null));
+		UUID userId = UUID.randomUUID();
+		SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+				new AppUserPrincipal(userId, "viewer", UserStatus.ACTIVE), null));
+
+		try {
+			mockMvc.perform(get("/api/app/content/books/book-1/episodes/5/play")
+					.param("filteredTitle", "love-story")
+					.param("chapterId", "chapter-5"))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.data.episode").value(5));
+
+			mockMvc.perform(get("/api/app/content/books/book-1/episodes/6/play")
+					.param("filteredTitle", "love-story")
+					.param("chapterId", "chapter-6"))
+					.andExpect(status().isForbidden())
+					.andExpect(jsonPath("$.code").value(403))
+					.andExpect(jsonPath("$.message").value("VIP required to watch this episode"));
+		}
+		finally {
+			SecurityContextHolder.clearContext();
+		}
+	}
 }

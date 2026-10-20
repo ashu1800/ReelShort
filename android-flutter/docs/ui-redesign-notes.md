@@ -570,7 +570,7 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
 4. **状态层小改** —— **已结案（Phase 5-3，见 §11）**：Discover 的首次搜索改由屏幕本地记住「已提交
    query」，加载骨架直接长在结果区，不再先画发现分组和起始提示再跳变；`state.isLoading` 仍是全局
    标志，但屏幕只在「自己发起的请求」尚未落地时才认它，跨屏刷新不会再串出搜索骨架。
-5. **发布**：Phase 4/5/5-3 全部改动尚未发版，`pubspec.yaml` 已升到 `0.9.8+50`（线上是
+5. **发布**：Phase 4/5/5-3 全部改动尚未发版，`pubspec.yaml` 已升到 `0.9.9+51`（线上是
    `0.9.7 (49)`）；发版走 `scripts/publish-android.py`（需签名环境变量 + COS 配置），并在真机做一次整包验收。
 
 ## 9. Phase 5-1 结果（组件收敛 + 反馈闭环）
@@ -681,3 +681,36 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
   `find.text('Results')` / `find.text('Popular lanes')` 断言不成立 —— `AppSectionHeader` 会把标题
   转成大写，改用 `widgetList<AppSectionHeader>` 比对原始 title。
 - 未做：真机复核（本机设备未连接）；`' eps'` 硬编码、详情页、发布仍是未结项。
+
+---
+
+## 12. 选集面板重做（Phase 6）：数字网格 + 整季概览条 + 锁集跟随后台配置
+
+- 问题：旧面板每集一行（`EP n · 标题` + 左侧刻度轨），38 集要滚很久；表头 `Episodes · Completed
+  · Total 38` 是拼接文案、会折行；刻度轨挤在行首 44px 命中区里，实际只是装饰。更严重的是**锁集
+  边界写死在客户端**：`defaultVipFreeEpisodes = 7` 出现在详情页、播放器与状态层三处，后台
+  `vip.free-episodes` 一改，App 与服务端就各说各话。
+- 形态（用户选定）：整季概览条 → `FREE 1–7` 网格 → VIP 解锁横幅 → `VIP 8–38` 网格；VIP 生效或免费
+  集数覆盖全季时不分段、不挂横幅，只有一片网格。
+- 边界来源：后端 `PointAccountResponse` 新增 `freeEpisodes`（读 `SystemConfigRegistry.VIP_FREE_EPISODES`，
+  与 play 接口的门禁同一个键），App 侧落在 `PointAccount.freeEpisodes`，经
+  `AppStateController.freeEpisodes` 暴露；`episode.requiresVip()` 扩展删除，改为纯函数
+  `episodeRequiresVip(episode, freeEpisodes)`，每个调用点必须自己说明这个数字从哪来。旧后端不返回该
+  字段时回退 7，行为与改造前逐字一致。
+- 组件：`EpisodeSpine` 从「三档尺寸的纵向刻度轨」收敛为**单行概览条**（每集一个 `Expanded` 段，6/10dp
+  高，2dp 间距，锁集降透明度，VIP 边界挂 `accentWarning` 记号），`EpisodeSpineSize`、`mini`、`inline`、
+  `episodeSpineMinTargetExtent`、`episodeSpineGateEpisode` 全部删除；新增 `EpisodeTile` 与
+  `episodeTileSemanticLabel`，单元格最小 44dp，360dp 下每行 6 个。
+- 顺带修掉的两个真实缺陷：
+  1. **已看/进行中的下划线一直是 0 高**——`FractionallySizedBox` 放在 `Positioned(height: 2)` 里时高度
+     约束无界，缺 `heightFactor: 1` 就塌成 0，于是所有已看集看起来和未看集一模一样。真机文案渲染截图
+     发现，新增 `watched and in-progress cells paint a visible underline` 用例锁定。
+  2. **选集面板拿不到观看历史**——`_chooseResumeEpisode` 拉完历史只用来选续播集、随即丢弃，而面板的
+     每集状态读 `state.watchHistory`，所以从首页直接进入播放后整季都是"未看"。现在拉到的历史会写回状态。
+- 验证：`flutter analyze` 0 issue、`flutter test` **300 用例全绿**（新增 `episode_sheet_test.dart` 11
+  条，其中「后台免费集数=5 时锁从第 6 集开始」是核心回归）；后端 `./gradlew test` **94 类 / 588 用例**
+  （+2：`accountReportsTheConfiguredFreeEpisodeBoundary`、`playGatesEpisodesAtTheConfiguredFreeBoundary`）。
+- 未能真机复核：生产服务器 `104.143.38.190` 从本机 ping 100% 丢包、SSH 与 HTTPS 均超时，模拟器上的
+  App 停在 Cloudflare 522/525，无法走真实链路。改用真实 Roboto 字体的离屏渲染取证（截图见
+  `artifacts/ui-review/episode-sheet/`，gitignored），覆盖 360dp 锁集、360dp 会员、320dp 窄屏三态与
+  单元格状态放大图。

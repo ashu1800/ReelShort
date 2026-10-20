@@ -63,9 +63,15 @@ public class PointsService {
 			long todayCreditedPoints = pointTransactionRepository.sumPositiveAmountByUserIdAndCreatedAtBetween(
 					userId, start.toOffsetDateTime(), end.toOffsetDateTime());
 			// balance 永远是真实整数积分（小数部分由 PointAccount.fractionalPart 承载），直接透传。
+			// freeEpisodes 与 play 接口的 VIP 门禁读同一个配置键，App 据此画锁。
 			return new PointAccountResponse(account.balance(), account.frozenPoints(), account.availablePoints(),
-					vip, vipUntil, walletAddress, Math.toIntExact(todayCreditedPoints));
+					vip, vipUntil, walletAddress, Math.toIntExact(todayCreditedPoints), freeEpisodes());
 		});
+	}
+
+	/** The live {@code vip.free-episodes} setting; the single boundary the app draws. */
+	private int freeEpisodes() {
+		return systemConfigService.intValue(SystemConfigRegistry.VIP_FREE_EPISODES);
 	}
 
 	@Transactional(readOnly = true)
@@ -128,8 +134,10 @@ public class PointsService {
 	}
 
 	public PointAccountResponse adjustByAdmin(UUID userId, int amount, String reason, String idempotencyKey) {
+		int freeEpisodes = freeEpisodes();
 		return userActionLocks.withUserLock(userId,
-				() -> PointAccountResponse.from(pointAwardTransaction.adjustByAdmin(userId, amount, reason, idempotencyKey)));
+				() -> PointAccountResponse.from(
+						pointAwardTransaction.adjustByAdmin(userId, amount, reason, idempotencyKey), freeEpisodes));
 	}
 
 	/** Internal maintenance callers that do not expose a retryable HTTP request key. */
@@ -138,7 +146,9 @@ public class PointsService {
 	}
 
 	public PointAccountResponse creditRechargeOrder(UUID userId, String orderNo, int amount) {
+		int freeEpisodes = freeEpisodes();
 		return userActionLocks.withUserLock(userId,
-				() -> PointAccountResponse.from(pointAwardTransaction.creditRechargeOrder(userId, orderNo, amount)));
+				() -> PointAccountResponse.from(
+						pointAwardTransaction.creditRechargeOrder(userId, orderNo, amount), freeEpisodes));
 	}
 }

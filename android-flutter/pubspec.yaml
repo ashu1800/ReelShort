@@ -18,7 +18,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 # The published Android app is at 0.9.7 (49); this build must be a versionCode
 # upgrade so it can overwrite-upgrade the installed build in place.
-version: 0.9.8+50
+version: 0.9.9+51
 
 environment:
   sdk: ^3.13.5

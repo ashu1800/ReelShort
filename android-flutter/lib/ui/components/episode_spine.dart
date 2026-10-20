@@ -1,38 +1,36 @@
 /// The **Episode Spine** - the signature element of the ShortLink design
-/// system.
+/// system, now rendered as one full-width overview bar.
 ///
-/// A thin vertical rail carries one tick per episode: the rail is the series,
-/// each tick is one episode, and the tick's fill is that episode's watch state.
-/// A gate marker sits at the VIP boundary (episode 8), the current episode is
-/// the only tick drawn at full width, watched ticks are solid, in-progress ticks
-/// are partially filled, and untouched ticks use the minimum-contrast neutral
-/// rather than the decorative hairline. It replaces the old episode grid.
+/// One segment per episode fills the width: the bar *is* the series, and a
+/// segment's fill is that episode's watch state. The current episode is the only
+/// segment that grows, watched segments are solid, in-progress segments are
+/// partly filled, untouched segments use the minimum-contrast neutral, locked
+/// segments are dimmed, and the VIP boundary carries a small warning notch
+/// beneath it.
 ///
-/// Three sizes are provided:
-///  * [EpisodeSpineSize.full] - the episodes sheet and the player episode
-///    drawer, where each tick is a real tap target of
-///    [episodeSpineMinTargetExtent] square;
-///  * [EpisodeSpineSize.mini] - a non-interactive spine inset into a poster
-///    card, scaled down to whatever height the card can spare;
-///  * [EpisodeSpineSize.inline] - a horizontal dash run for dense rows, where a
-///    vertical rail would not fit.
+/// The earlier version drew a 16 px vertical rail with a 44 px tap target per
+/// tick and was inset into the episode drawer's row header. Inside a 38-episode
+/// list that is 38 rows of chrome for information the numeric grid shows in two
+/// lines, so the spine was reduced to what it says best: a summary of the whole
+/// season at a glance. Individual episodes are tapped in the grid
+/// ([EpisodeTile]), and [EpisodeSpine.describe] still produces the sentence a
+/// screen reader announces.
 library;
 
 import 'package:flutter/material.dart';
 
 import '../../core/formatting/app_strings.dart';
 import '../../core/formatting/app_ui_copy.dart';
+import '../../core/formatting/ui_formats.dart';
 import '../../data/models/app_language.dart';
 import '../../theme/app_colors.dart';
 
-/// Watch state of one tick. Mirrors `EpisodeWatchStatusType` in
-/// `ui_formats.dart`; the enum is re-declared here as a UI-layer enum so the
-/// component does not depend on the formatting layer for its own vocabulary.
+/// Watch state of one segment.
 enum EpisodeTickState {
   /// Never opened.
   none,
 
-  /// The episode the player is on. Draws at full tick width.
+  /// The episode the player is on. Draws taller than the rest.
   current,
 
   /// Partially watched; [EpisodeTick.progress] carries the percentage.
@@ -42,7 +40,7 @@ enum EpisodeTickState {
   watched,
 }
 
-/// One tick of the spine.
+/// One segment of the spine.
 @immutable
 class EpisodeTick {
   /// Creates a tick.
@@ -51,7 +49,7 @@ class EpisodeTick {
     required this.state,
     this.progress = 0,
     this.isVipLocked = false,
-    this.onTap,
+    this.isGate = false,
   });
 
   /// 1-based episode number.
@@ -66,15 +64,17 @@ class EpisodeTick {
   /// Whether the episode sits behind the VIP gate.
   final bool isVipLocked;
 
-  /// Tap handler. A non-null handler makes this tick interactive in
-  /// [EpisodeSpineSize.full], where it gets a [episodeSpineMinTargetExtent]
-  /// square target; the mini and inline sizes ignore it.
-  final VoidCallback? onTap;
+  /// Whether this segment is the first locked one, i.e. the paywall landmark.
+  final bool isGate;
 
   /// [progress] clamped to `0..100`.
   int get clampedProgress => progress.clamp(0, 100);
 
-  /// Builds one tick per episode in `1..count`, all unwatched.
+  /// Builds one segment per episode in `1..count`, all unwatched.
+  ///
+  /// Simplifies the old API: the caller no longer supplies a lock predicate,
+  /// because the spine's own state model already carries [isVipLocked] and the
+  /// episode-sheet builder computes both flags from the same boundary.
   static List<EpisodeTick> unwatched(
     int count, {
     bool Function(int episode)? isVipLocked,
@@ -88,110 +88,62 @@ class EpisodeTick {
   ];
 }
 
-/// Which of the three spine sizes to render.
-enum EpisodeSpineSize {
-  /// Vertical rail with interactive ticks.
-  full,
+/// Height of a normal segment.
+const double _segmentHeight = 6;
 
-  /// Vertical rail scaled down inside a poster card.
-  mini,
+/// Height of the current episode's segment.
+const double _currentSegmentHeight = 10;
 
-  /// Horizontal dash run for dense rows.
-  inline,
-}
+/// Gap between two segments.
+const double _segmentGap = 2;
 
-/// Height of one full-size tick row.
-const double _fullTickHeight = 16;
+/// Width of the VIP notch under the gate segment.
+const double _gateNotchWidth = 10;
 
-/// Minimum interactive target of one full-size tick, in logical pixels.
-///
-/// A tappable tick is drawn inside a square of this extent and its row pitch is
-/// the same value, so the target clears the platform minimum in both directions
-/// and two neighbouring targets share an edge without ever overlapping. The
-/// visual tick keeps its own geometry and is only centred inside the row.
-const double episodeSpineMinTargetExtent = 44;
+/// Height of the VIP notch.
+const double _gateNotchHeight = 2;
 
-/// Height of one mini tick row, before [FittedBox] scaling.
-const double _miniTickHeight = 12;
+/// Opacity of a locked segment; the locked grid below repeats the message in
+/// words, so the spine only has to dim.
+const double _lockedOpacity = 0.45;
 
-/// Width of the left gutter that holds the rail, so ticks sit to the right of
-/// the rail instead of on top of it.
-const double _leftGutter = 7;
-
-/// Width of a current or gate tick, which is drawn wider than the rest.
-const double _emphasisTickWidth = 16;
-
-/// Rail thickness.
-const double _railWidth = 2;
-
-/// Width of the mini rail, which is thinner so it reads as a detail at card
-/// size.
-const double _miniRailWidth = 1.5;
-
-/// Horizontal gap between inline dashes.
-const double _inlineGap = 4;
-
-/// Vertical gap between two inline rows.
-const double _inlineRowGap = 4;
-
-/// Width of one inline dash.
-const double _inlineDashWidth = 14;
-
-/// Height of one inline dash.
-const double _inlineDashHeight = 3;
-
-/// Extra height a VIP gate marker adds to a row.
-const double _gateOverhang = 3;
-
-/// The episode at which the VIP paywall starts, as in
-/// `defaultVipFreeEpisodes`. Kept as a local constant so the component has no
-/// data-layer dependency.
-const int episodeSpineGateEpisode = 8;
-
-/// The signature vertical (or horizontal) episode rail.
+/// The full-width, one-segment-per-episode overview bar.
 ///
 /// Every visual difference between states is a **shape or fill** difference as
-/// well as a colour difference, so the spine is still readable in greyscale:
-/// current is wider and outlined, watched is solid, in progress is a partly
-/// filled bar, untouched is a faint dash, and the gate is wider and taller than
-/// any other tick.
+/// well as a colour difference, so the bar is still readable in greyscale:
+/// current is taller, watched is solid, in progress is a partly filled bar,
+/// untouched is the faint neutral, and the gate carries a notch underneath.
 class EpisodeSpine extends StatelessWidget {
   /// Creates an episode spine.
   const EpisodeSpine({
     required this.ticks,
-    this.size = EpisodeSpineSize.full,
     this.language = AppLanguage.defaultLanguage,
-    this.availableHeight,
     this.semanticsLabel,
     super.key,
   });
 
-  /// One tick per episode, in ascending episode order.
+  /// One segment per episode, in ascending episode order.
   final List<EpisodeTick> ticks;
-
-  /// Which of the three sizes to render.
-  final EpisodeSpineSize size;
 
   /// Language used for the generated semantic description.
   final AppLanguage language;
 
-  /// Height the spine may occupy. [EpisodeSpineSize.mini] scales itself down to
-  /// fit; the other sizes ignore it.
-  final double? availableHeight;
-
-  /// Overrides the generated semantic description.
+  /// Overrides the generated semantic description. An empty string drops the
+  /// summary node entirely (the caller already announced it in text).
   final String? semanticsLabel;
 
   /// Builds the summary announced to screen readers, for example
-  /// `12 eps, 5 Watched, Current ep 03, 2 in progress`.
+  /// `38 eps, 5 Watched, Current EP 03, 2 in progress`.
   ///
   /// The vocabulary comes entirely from [AppStrings] and [AppUiCopy] so the
   /// description stays localisable; no new user-visible wording is introduced
-  /// by this component.
+  /// by this component. The episode count reuses [episodeCountBadgeLabel], the
+  /// same `eps` / `ep` pair the poster badge prints, so the two never disagree.
   static String describe(
-    List<EpisodeTick> ticks, [
+    List<EpisodeTick> ticks, {
     AppLanguage language = AppLanguage.defaultLanguage,
-  ]) {
+    String separator = ', ',
+  }) {
     if (ticks.isEmpty) {
       return '';
     }
@@ -202,6 +154,7 @@ class EpisodeSpine extends StatelessWidget {
     final int inProgress = ticks
         .where((EpisodeTick tick) => tick.state == EpisodeTickState.inProgress)
         .length;
+    final int locked = ticks.where((EpisodeTick tick) => tick.isVipLocked).length;
     final EpisodeTick? current = ticks
         .cast<EpisodeTick?>()
         .firstWhere(
@@ -209,416 +162,157 @@ class EpisodeSpine extends StatelessWidget {
           orElse: () => null,
         );
     final List<String> parts = <String>[
-      '${ticks.length}${copy.playerEpisodeUnit}',
+      episodeCountBadgeLabel(ticks.length, language),
       if (watched > 0) '$watched ${copy.playerEpisodeStatusWatched}',
       if (current != null)
         '${copy.playerEpisodeStatusCurrent} '
             '${copy.playerEpisodePrefix}'
             '${current.number.toString().padLeft(2, '0')}',
-      if (inProgress > 0)
-        '$inProgress ${AppUiCopy.episodeInProgress}',
+      if (inProgress > 0) '$inProgress ${AppUiCopy.episodeInProgress}',
+      if (locked > 0) '$locked ${AppUiCopy.episodeLocked}',
     ];
-    return parts.join(', ');
+    return parts.join(separator);
   }
 
   @override
   Widget build(BuildContext context) {
-    final String description = semanticsLabel ?? describe(ticks, language);
-    final Widget spine = switch (size) {
-      EpisodeSpineSize.full => _FullSpine(ticks: ticks, language: language),
-      EpisodeSpineSize.mini => _MiniSpine(
-        ticks: ticks,
-        availableHeight: availableHeight,
-      ),
-      EpisodeSpineSize.inline => _InlineSpine(ticks: ticks),
-    };
+    final String description =
+        semanticsLabel ?? describe(ticks, language: language);
+    final Widget bar = _SpineBar(ticks: ticks);
     if (description.isEmpty) {
-      return spine;
+      return bar;
     }
-    // A full-size spine whose ticks are individually tappable must keep them as
-    // separate, activatable semantics nodes; only the non-interactive sizes
-    // collapse into this single summary node. Either way the summary is
-    // announced first.
-    final bool ticksAreInteractive =
-        size == EpisodeSpineSize.full &&
-        ticks.any((EpisodeTick tick) => tick.onTap != null);
+    // The bar is a picture of data with no text of its own, so it collapses
+    // into a single summary node: there is nothing inside to walk to.
     return Semantics(
       container: true,
-      explicitChildNodes: ticksAreInteractive,
-      excludeSemantics: !ticksAreInteractive,
+      excludeSemantics: true,
       label: description,
-      child: spine,
+      child: bar,
     );
   }
 }
 
-/// The vertical rail with full-size ticks.
-///
-/// A tick that carries an [EpisodeTick.onTap] is drawn as a tappable row with a
-/// [episodeSpineMinTargetExtent] square target; a tick without one keeps the
-/// original compact 16 px row, so a purely informational spine did not grow.
-class _FullSpine extends StatelessWidget {
-  const _FullSpine({required this.ticks, required this.language});
+/// The segments themselves.
+class _SpineBar extends StatelessWidget {
+  const _SpineBar({required this.ticks});
 
   final List<EpisodeTick> ticks;
-  final AppLanguage language;
-
-  @override
-  Widget build(BuildContext context) => Stack(
-    children: <Widget>[
-      Positioned(
-        left: _leftGutter / 2 - _railWidth / 2,
-        top: 0,
-        bottom: 0,
-        child: const _RailSegment(width: _railWidth, height: null),
-      ),
-      Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          for (final EpisodeTick tick in ticks)
-            if (tick.onTap != null)
-              _InteractiveTickRow(tick: tick, language: language)
-            else
-              SizedBox(
-                height: _fullTickHeight + _rowGateOverhang(tick),
-                child: _TickRow(tick: tick, tickWidth: _emphasisTickWidth),
-              ),
-        ],
-      ),
-    ],
-  );
-}
-
-/// The rail inset into a poster card. Non-interactive, and scaled down to the
-/// height the caller can spare rather than overflowing the card.
-class _MiniSpine extends StatelessWidget {
-  const _MiniSpine({required this.ticks, this.availableHeight});
-
-  final List<EpisodeTick> ticks;
-  final double? availableHeight;
 
   @override
   Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
     if (ticks.isEmpty) {
       return const SizedBox.shrink();
     }
-    final double naturalHeight = ticks.fold<double>(0, (
-      double sum,
-      EpisodeTick tick,
-    ) {
-      return sum + _miniTickHeight + _rowGateOverhang(tick);
-    });
-    final Widget rail = Stack(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      spacing: _segmentGap,
       children: <Widget>[
-        Positioned(
-          left: _leftGutter / 2 - _miniRailWidth / 2,
-          top: 0,
-          bottom: 0,
-          child: const _RailSegment(width: _miniRailWidth, height: null),
-        ),
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            for (final EpisodeTick tick in ticks)
-              SizedBox(
-                height: _miniTickHeight + _rowGateOverhang(tick),
-                child: _TickRow(
-                  tick: tick,
-                  tickWidth: _emphasisTickWidth,
-                  mini: true,
-                ),
-              ),
-          ],
-        ),
+        for (final EpisodeTick tick in ticks)
+          Expanded(child: _Segment(tick: tick, colors: colors)),
       ],
     );
-    final double? cap = availableHeight;
-    if (cap == null || cap <= 0 || cap >= naturalHeight) {
-      return rail;
-    }
-    return SizedBox(
-      height: cap,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.topCenter,
-        child: SizedBox(width: _emphasisTickWidth, child: rail),
-      ),
-    );
   }
 }
 
-/// The horizontal dash run used in dense rows.
-class _InlineSpine extends StatelessWidget {
-  const _InlineSpine({required this.ticks});
-
-  final List<EpisodeTick> ticks;
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: _inlineGap,
-    runSpacing: _inlineRowGap,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    children: <Widget>[
-      for (final EpisodeTick tick in ticks)
-        _InlineDash(tick: tick),
-    ],
-  );
-}
-
-/// One horizontal dash of the inline spine.
-class _InlineDash extends StatelessWidget {
-  const _InlineDash({required this.tick});
+/// One segment: a rounded bar plus, at the gate, its notch underneath.
+class _Segment extends StatelessWidget {
+  const _Segment({required this.tick, required this.colors});
 
   final EpisodeTick tick;
+  final AppColors colors;
 
   @override
   Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final double width = tick.state == EpisodeTickState.current
-        ? _inlineDashWidth * 1.4
-        : _inlineDashWidth;
-    final double height = tick.state == EpisodeTickState.current
-        ? _inlineDashHeight + 2
-        : _inlineDashHeight;
-    return SizedBox(
-      width: width,
-      height: height + (tick.number == episodeSpineGateEpisode ? 2 : 0),
-      child: Opacity(
-        opacity: _tickOpacity(tick),
-        child: Stack(
-          alignment: Alignment.centerLeft,
-          children: <Widget>[
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: _tickTrack(colors),
-                borderRadius: BorderRadius.circular(height / 2),
-              ),
-              child: SizedBox(width: width, height: height),
-            ),
-            if (tick.state == EpisodeTickState.inProgress ||
-                tick.state == EpisodeTickState.watched)
-              FractionallySizedBox(
-                widthFactor: tick.state == EpisodeTickState.watched
-                    ? 1
-                    : tick.clampedProgress / 100,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: _tickFill(colors),
-                    borderRadius: BorderRadius.circular(height / 2),
-                  ),
-                  child: SizedBox(width: width, height: height),
-                ),
-              ),
-            if (tick.number == episodeSpineGateEpisode)
-              Positioned(
-                left: 0,
-                bottom: 0,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: _tickGate(colors),
-                    borderRadius: BorderRadius.circular(1),
-                  ),
-                  child: const SizedBox(width: 3, height: 1.5),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// One vertical tick row: the tick bar, its fill and the optional gate marker.
-///
-/// This is the **visual** geometry only, and it is identical in every size: the
-/// tick keeps its width and height, the bar stays flush with the rail's gutter,
-/// and only [_InteractiveTickRow] adds a larger target around it.
-class _TickRow extends StatelessWidget {
-  const _TickRow({required this.tick, required this.tickWidth, this.mini = false});
-
-  final EpisodeTick tick;
-  final double tickWidth;
-  final bool mini;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final double barHeight = mini ? 2.5 : 4;
-    final double emphasisBarHeight = mini ? 3.5 : 5;
     final bool isCurrent = tick.state == EpisodeTickState.current;
-    final bool isGate = tick.number == episodeSpineGateEpisode;
-    final double width = isCurrent || isGate
-        ? tickWidth
-        : tickWidth * (mini ? 0.5 : 0.6);
-    final double height = isCurrent || isGate ? emphasisBarHeight : barHeight;
-
-    final Widget bar = Opacity(
-      opacity: _tickOpacity(tick),
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: Stack(
-          alignment: Alignment.centerLeft,
-          children: <Widget>[
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: _tickTrack(colors),
-                borderRadius: BorderRadius.circular(height / 2),
-              ),
-              child: SizedBox(width: width, height: height),
-            ),
-            if (tick.state == EpisodeTickState.inProgress ||
-                tick.state == EpisodeTickState.watched)
-              FractionallySizedBox(
-                widthFactor: tick.state == EpisodeTickState.watched
-                    ? 1
-                    : tick.clampedProgress / 100,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: _tickFill(colors),
-                    borderRadius: BorderRadius.circular(height / 2),
-                  ),
-                  child: SizedBox(width: width, height: height),
-                ),
-              ),
-            if (isCurrent)
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(height / 2),
-                  border: Border.all(color: _tickCurrent(colors), width: 1.5),
-                ),
-                child: SizedBox(width: width, height: height),
-              ),
-          ],
-        ),
-      ),
-    );
-
-    return Padding(
-      padding: const EdgeInsets.only(left: _leftGutter),
+    final double height = isCurrent ? _currentSegmentHeight : _segmentHeight;
+    // The notch hangs under the bar without changing the row's height: the
+    // locked run of segments already tells the story, the notch only marks
+    // where it starts.
+    return SizedBox(
+      height: _currentSegmentHeight + _gateNotchHeight + 1,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: <Widget>[
-          bar,
-          if (isGate)
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: _tickGate(colors),
-                  borderRadius: BorderRadius.circular(1),
-                ),
-                child: SizedBox(width: tickWidth / 2, height: 1.5),
+          Opacity(
+            opacity: tick.isVipLocked ? _lockedOpacity : 1,
+            child: SizedBox(
+              height: height,
+              width: double.infinity,
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: _trackColor(colors, tick),
+                      borderRadius: BorderRadius.circular(height / 2),
+                    ),
+                  ),
+                  if (tick.state == EpisodeTickState.inProgress ||
+                      tick.state == EpisodeTickState.watched)
+                    FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: tick.state == EpisodeTickState.watched
+                          ? 1
+                          : tick.clampedProgress / 100,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colors.accentPrimary,
+                          borderRadius: BorderRadius.circular(height / 2),
+                        ),
+                      ),
+                    ),
+                  if (isCurrent)
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(height / 2),
+                        border: Border.all(
+                          color: colors.accentPrimary,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
+          ),
+          const SizedBox(height: 1),
+          SizedBox(
+            height: _gateNotchHeight,
+            child: tick.isGate
+                ? Center(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.accentWarning,
+                        borderRadius: BorderRadius.circular(_gateNotchHeight / 2),
+                      ),
+                      child: const SizedBox(
+                        width: _gateNotchWidth,
+                        height: _gateNotchHeight,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
         ],
       ),
     );
   }
-}
 
-/// One tappable full-size tick.
-///
-/// The target is a [episodeSpineMinTargetExtent] square and the row pitch is
-/// the same extent, so the hit areas of two neighbouring ticks share an edge but
-/// never overlap. The visual tick is unchanged in size and stays flush with the
-/// rail; only its row grew, and the tick is centred inside it.
-class _InteractiveTickRow extends StatelessWidget {
-  const _InteractiveTickRow({required this.tick, required this.language});
-
-  final EpisodeTick tick;
-  final AppLanguage language;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppStrings copy = strings(language);
-    final String stateWord = switch (tick.state) {
-      EpisodeTickState.watched => copy.playerEpisodeStatusWatched,
-      EpisodeTickState.current => copy.playerEpisodeStatusCurrent,
-      EpisodeTickState.inProgress => '${tick.clampedProgress}%',
-      EpisodeTickState.none => '',
-    };
-    final String label =
-        '${copy.playerEpisodePrefix}'
-        '${tick.number.toString().padLeft(2, '0')}'
-        '${stateWord.isEmpty ? '' : ' - $stateWord'}';
-    return Semantics(
-      container: true,
-      button: true,
-      label: label,
-      // The activation action lives on this node because `excludeSemantics`
-      // below replaces the InkWell's own semantics, which would otherwise take
-      // the tap action away from screen readers.
-      onTap: tick.onTap,
-      excludeSemantics: true,
-      child: SizedBox(
-        width: episodeSpineMinTargetExtent,
-        height: episodeSpineMinTargetExtent,
-        child: InkWell(
-          onTap: tick.onTap,
-          canRequestFocus: false,
-          customBorder: const StadiumBorder(),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: _TickRow(tick: tick, tickWidth: _emphasisTickWidth),
-          ),
-        ),
-      ),
-    );
+  /// The unfilled track of one segment.
+  ///
+  /// Untouched episodes use the minimum-contrast neutral rather than the
+  /// hairline, because *which* episodes exist is real information: at the
+  /// hairline's ~1.3:1 an untouched episode would be invisible. The current
+  /// segment uses the accent so its outline reads even when it is also watched.
+  static Color _trackColor(AppColors colors, EpisodeTick tick) {
+    if (tick.state == EpisodeTickState.current) {
+      return colors.accentPrimary.withValues(alpha: 0.22);
+    }
+    if (tick.state == EpisodeTickState.watched) {
+      return colors.outlineStrong;
+    }
+    return colors.outlineStrong.withValues(alpha: 0.55);
   }
 }
-
-/// The vertical rail itself, drawn behind the ticks.
-class _RailSegment extends StatelessWidget {
-  const _RailSegment({required this.width, this.height});
-
-  final double width;
-  final double? height;
-
-  @override
-  Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    return SizedBox(
-      width: width,
-      height: height,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: _railTrack(colors),
-          borderRadius: BorderRadius.circular(width / 2),
-        ),
-        child: SizedBox(width: width, height: height),
-      ),
-    );
-  }
-}
-
-/// Extra row height a VIP gate tick needs for its marker.
-double _rowGateOverhang(EpisodeTick tick) =>
-    tick.number == episodeSpineGateEpisode ? _gateOverhang : 0;
-
-/// The rail's colour. Decorative scaffold only: the rail spans the whole series,
-/// so it is never itself a state.
-Color _railTrack(AppColors colors) => colors.hairline;
-
-/// The colour of an un-watched tick.
-///
-/// Uses the minimum-contrast neutral rather than the hairline, because *which*
-/// episodes exist is real information: at the hairline's ~1.3:1 an untouched
-/// episode would be invisible.
-Color _tickTrack(AppColors colors) => colors.outlineStrong;
-
-/// Fill colour for watched and in-progress ticks.
-Color _tickFill(AppColors colors) => colors.accentPrimary;
-
-/// Outline colour for the current tick.
-Color _tickCurrent(AppColors colors) => colors.accentPrimary;
-
-/// Colour of the VIP gate marker, which also flags the locked run of episodes.
-Color _tickGate(AppColors colors) => colors.accentWarning;
-
-/// Opacity applied to a tick, so the locked run of episodes reads as dimmed
-/// without changing any state colour.
-double _tickOpacity(EpisodeTick tick) => tick.isVipLocked ? 0.7 : 1;

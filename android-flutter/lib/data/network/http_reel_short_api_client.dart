@@ -309,6 +309,7 @@ class HttpReelShortApiClient implements ReelShortApiClient {
       vipActive: account.vip,
       vipUntil: account.vipUntil,
       todayCreditedPoints: account.todayCreditedPoints,
+      freeEpisodes: account.freeEpisodes,
     );
   }
 

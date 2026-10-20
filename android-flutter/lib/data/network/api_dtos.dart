@@ -368,6 +368,7 @@ class PointAccountDto {
     this.vip = false,
     this.vipUntil,
     this.todayCreditedPoints = 0,
+    this.freeEpisodes = defaultVipFreeEpisodes,
   });
 
   final int balance;
@@ -379,6 +380,10 @@ class PointAccountDto {
   final bool vip;
   final String? vipUntil;
   final int todayCreditedPoints;
+
+  /// Backend `vip.free-episodes`; the tolerant default keeps a client built
+  /// before the field existed working against an older backend.
+  final int freeEpisodes;
 
   static PointAccountDto fromJson(Map<String, dynamic> json) {
     final int balance = readInt(json, 'balance');
@@ -394,6 +399,11 @@ class PointAccountDto {
       vip: readBoolOrDefault(json, 'vip', false),
       vipUntil: readStringOrNull(json, 'vipUntil'),
       todayCreditedPoints: readIntOrDefault(json, 'todayCreditedPoints', 0),
+      freeEpisodes: readIntOrDefault(
+        json,
+        'freeEpisodes',
+        defaultVipFreeEpisodes,
+      ),
     );
   }
 }

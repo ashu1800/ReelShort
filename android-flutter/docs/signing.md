@@ -76,7 +76,7 @@ Set-Location 'D:\Sync\AICoding\ReelShort\android-flutter'
 
 ## 版本号
 
-版本由 `pubspec.yaml` 的 `version: 0.9.8+50` 决定，`build.gradle.kts` 把它读成 `versionName` / `versionCode`。
+版本由 `pubspec.yaml` 的 `version: 0.9.9+51` 决定，`build.gradle.kts` 把它读成 `versionName` / `versionCode`。
 
 `-PappVersionName=... -PappVersionCode=...` 可以覆盖它，方便发布脚本不改仓库：
 

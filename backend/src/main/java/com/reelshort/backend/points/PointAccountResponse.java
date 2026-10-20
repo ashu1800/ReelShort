@@ -1,5 +1,14 @@
 package com.reelshort.backend.points;
 
+/**
+ * Point account snapshot returned to the app.
+ *
+ * <p>
+ * {@code freeEpisodes} carries the live {@code vip.free-episodes} system
+ * configuration so the app can draw the VIP lock at the same boundary the play
+ * endpoint enforces; before it was added the client assumed a hard-coded 7 and
+ * silently disagreed with the server whenever an operator changed the value.
+ */
 public record PointAccountResponse(
 		int balance,
 		int frozenPoints,
@@ -7,21 +16,11 @@ public record PointAccountResponse(
 		boolean vip,
 		String vipUntil,
 		String walletAddress,
-		int todayCreditedPoints) {
+		int todayCreditedPoints,
+		int freeEpisodes) {
 
-	public PointAccountResponse(int balance, int frozenPoints, int availablePoints, boolean vip, String vipUntil,
-			String walletAddress) {
-		this(balance, frozenPoints, availablePoints, vip, vipUntil, walletAddress, 0);
-	}
-
-	public static PointAccountResponse from(PointAccount account) {
+	public static PointAccountResponse from(PointAccount account, int freeEpisodes) {
 		return new PointAccountResponse(account.balance(), account.frozenPoints(), account.availablePoints(),
-				false, null, null);
-	}
-
-	public static PointAccountResponse withVipAndWallet(PointAccount account, boolean vip, String vipUntil,
-			String walletAddress) {
-		return new PointAccountResponse(account.balance(), account.frozenPoints(), account.availablePoints(),
-				vip, vipUntil, walletAddress);
+				false, null, null, 0, freeEpisodes);
 	}
 }

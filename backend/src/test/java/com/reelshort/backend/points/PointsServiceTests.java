@@ -78,6 +78,7 @@ class PointsServiceTests {
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
 		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "0");
+		systemConfigService.update(SystemConfigRegistry.VIP_FREE_EPISODES, "7");
 		dailyEarningQuotaRepository.deleteAll();
 		dailyEarningRuleRepository.deleteAll();
 	}
@@ -144,6 +145,22 @@ class PointsServiceTests {
 
 		assertThat(account.balance()).isZero();
 		assertThat(account.todayCreditedPoints()).isZero();
+	}
+
+	@Test
+	void accountReportsTheConfiguredFreeEpisodeBoundary() {
+		// The app draws the VIP lock from this field, so it must follow the same
+		// system-config key the play endpoint enforces.
+		assertThat(pointsService.account(UUID.randomUUID()).freeEpisodes()).isEqualTo(7);
+
+		systemConfigService.update(SystemConfigRegistry.VIP_FREE_EPISODES, "5");
+
+		try {
+			assertThat(pointsService.account(UUID.randomUUID()).freeEpisodes()).isEqualTo(5);
+		}
+		finally {
+			systemConfigService.update(SystemConfigRegistry.VIP_FREE_EPISODES, "7");
+		}
 	}
 
 	@Test

@@ -20,7 +20,7 @@ Authorization: Bearer <admin-token>
 | `withdraw.minimum-usdt` | `10` | 正数，最多 8 位小数 | 单笔提现最低到账 USDT。 |
 | `withdraw.fee-percent` | `10` | 整数，`0..100` | 从用户提交积分中扣除的提现手续费百分比。 |
 | `vip.price-usdt` | `15` | 正数，最多 8 位小数 | VIP 月费 USDT 价格。 |
-| `vip.free-episodes` | `7` | 整数，`1..100` | 非 VIP 免费可看的集数。 |
+| `vip.free-episodes` | `7` | 整数，`1..100` | 非 VIP 免费可看的集数。该值同时随 `GET /api/app/points/account` 的 `freeEpisodes` 字段下发给 App，客户端据此绘制锁集边界。 |
 | `vip.collection-address` | 空 | 允许为空；非空必须是合法 TRON 地址（Base58Check） | VIP 收款地址。为空表示未配置/未开启链上 VIP 支付；保存非法地址返回 `400`。 |
 | `vip.order-timeout-minutes` | `20` | 整数，`1..10000` | VIP 订单支付超时分钟数。 |
 | `content.recommendation.strategy` | `LATEST` | `LATEST` / `POPULAR` | 首页推荐策略占位。 |

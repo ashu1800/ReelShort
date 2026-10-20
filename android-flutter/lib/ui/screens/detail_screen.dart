@@ -2,9 +2,9 @@
 ///
 /// Contract parity with the Kotlin `DetailScreen`: episode rows key on
 /// `"{chapterId}-{number}"`, row subtitles fall back from the episode
-/// description to the book description, VIP locking starts after
-/// [defaultVipFreeEpisodes] free episodes, the empty states reuse the shared
-/// copy with a wired action, and every tap goes through
+/// description to the book description, VIP locking starts after the backend's
+/// `vip.free-episodes` boundary ([AppStateController.freeEpisodes]), the empty
+/// states reuse the shared copy with a wired action, and every tap goes through
 /// `AppStateController.openPlayer` (the controller API that owns the auth
 /// prompt and the pending VIP episode; there is no `requestEpisodePlayback`).
 /// The episode-spine signature stays on the poster card, which is where the
@@ -154,7 +154,7 @@ class _DetailContent extends StatelessWidget {
                       language: state.language,
                       locked:
                           !state.vipActive &&
-                          episode.number > defaultVipFreeEpisodes,
+                          episodeRequiresVip(episode, controller.freeEpisodes),
                       onTap: () => controller.openPlayer(episode),
                     );
                   },

@@ -127,6 +127,22 @@ abstract final class AppUiCopy {
   /// Player: episode-drawer heading.
   static const String playerEpisodes = 'Episodes';
 
+  /// Episode sheet: heading of the free run, when a VIP gate splits the grid.
+  static const String episodesFreeSection = 'Free';
+
+  /// Episode sheet: heading of the VIP-gated run.
+  static const String episodesVipSection = 'VIP';
+
+  /// Episode sheet: the word announced for an episode behind the gate.
+  ///
+  /// The grid cell prints only the lock glyph, so this word exists solely for
+  /// the semantic label and the spine summary.
+  static const String episodeLocked = 'VIP locked';
+
+  /// Episode sheet: lead-in of the paywall banner, followed by an episode range
+  /// (`VIP unlocks EP 08–38`).
+  static const String vipUnlockRangePrefix = 'VIP unlocks ';
+
   /// Password field: semantic label and tooltip of the toggle that reveals a
   /// masked value.
   static const String showPassword = 'Show password';

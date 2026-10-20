@@ -217,77 +217,83 @@ behind the navigation bar.
 
 ---
 
-## 5. The Episode Spine
+## 5. The Episode Spine and the episode sheet
 
-The signature element, and the one piece of pure invention in the system. It
-replaces the original app's episode grid.
+The signature element, and the one piece of pure invention in the system.
 
-> A thin vertical rail carries **one tick per episode**. The rail is the series;
-> each tick is one episode; a tick's fill is that episode's watch state.
+> A full-width bar carries **one segment per episode**. The bar is the season;
+> each segment is one episode; a segment's fill is that episode's watch state.
 
 ```
- │  ▬▬▬▬▬▬▬▬▬   watched       (solid accent fill, 60 % tick width)
- │  ╔════════╗   current       (full width, accent outline)
- │  ▬▬▬▬      in progress   (partial accent fill from the left)
- ├╌╌╌╌╌╌╌╌╌╌   VIP gate      (wider + taller, warning marker below)
- │  ▬▬▬▬▬▬      untouched     (outlineStrong, 60 % tick width)
+ ███▏▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎▎
+ 38 eps · 4 Watched · Current EP 05 · 31 VIP locked
 ```
 
 ### Anatomy
 
-* **Rail** — `hairline`, 2 px (1.5 px at mini). Spans the whole series; it is
-  scaffold, never state.
-* **Tick** — one per episode. Width and height encode state, so the spine reads
-  in greyscale:
-  * *untouched*: 60 % width, thin, `outlineStrong`
-  * *watched*: 60 % width, thin, solid `accentPrimary`
-  * *in progress*: watched geometry, `accentPrimary` filled to `progress` %
-  * *current*: **full width, taller, accent outline** — the only tick that grows
-  * *VIP-locked*: any of the above at 70 % opacity
-* **Gate marker** — at the `episodeSpineGateEpisode` boundary (**episode 8**,
-  matching `defaultVipFreeEpisodes = 7`: episodes 1–7 free, 8+ need VIP). Drawn
-  wider and taller than any other tick with an `accentWarning` notch beneath it,
-  so the paywall is a visible landmark rather than a surprise tap.
+One `Expanded` segment per episode, 6 dp tall (10 dp for the current one), 2 dp
+apart. Every difference is a shape/fill difference as well as a colour one, so
+the bar survives greyscale:
 
-### The three sizes
+| State | Fill |
+| --- | --- |
+| untouched | `outlineStrong` at 55 % |
+| watched | solid `accentPrimary` |
+| in progress | `accentPrimary` filled to `progress` % |
+| current | taller, `accentPrimary` track with an accent outline |
+| VIP-locked | the state above at 45 % opacity |
+| gate | any segment, plus an `accentWarning` notch underneath |
 
-| Size | Orientation | Interactive | Where |
-| --- | --- | --- | --- |
-| `full` | Vertical; 16 px visual rows, **44 px pitch** | Yes — each tick is its own merged `Semantics` node with a tap action, and its target is a 44 × 44 square (`episodeSpineMinTargetExtent`) | Detail page, player episode drawer |
-| `mini` | Vertical, 12 px rows | No | Inside a poster card |
-| `inline` | Horizontal dash run, wraps | No | Dense ledger/history rows |
+The gate notch marks **where the paywall starts**. That boundary is the
+backend's `vip.free-episodes` system config, delivered on
+`GET /api/app/points/account` as `freeEpisodes` and read through
+`AppStateController.freeEpisodes` — the same key the play endpoint enforces.
+Clients used to carry `defaultVipFreeEpisodes = 7` in three places; an operator
+who changed the setting then drew a lock the server did not agree with, so free
+episodes refused to play and paid episodes looked blocked.
 
-**The full-size target, not the tick, is 44 px.** The visual tick keeps its own
-geometry (60 % / full width, 4–5 px tall) and is centred inside a 44 px row, so
-the row pitch equals the target extent and two neighbouring targets share an edge
-without ever overlapping. Widening the row to 44 px is unavoidable: the old
-interactive row was ~23 × 16 px, which is below the platform minimum in both
-directions. A tick without an `onTap` keeps the 16 px row, so an informational
-spine does not grow.
+### The grid
 
-`mini` takes an `availableHeight` and scales itself with `FittedBox` rather than
-overflowing the artwork it annotates.
+Individual episodes are tapped in the **numeric grid** below the bar, not in the
+spine: `EpisodeTile` renders `EP 04` in a cell of at least
+`episodeTileMinExtent` (44 dp). Cells pack six to a line at 360 dp via
+`SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 56)`, so a
+38-episode season is seven rows instead of the thirty-eight a list needed.
 
-`PosterCard` no longer hosts a mini spine. A vertical rail inside a 136 dp
-poster was thinner than a physical pixel on a phone and read as a screen artefact
-rather than information; the card now carries a **single episode-count badge** in
-its top-right corner (a dark translucent pill, `12 eps`), with the title opposite
-it at the bottom-left. The badge is decorative for accessibility — the merged
-card label already ends with the same count — and a row that prints the count
-beside the poster passes `showEpisodeBadge: false`. The spine itself is unchanged
-where it belongs: the player's episode drawer and the episodes sheet use `full`.
+| State | Cell |
+| --- | --- |
+| none | `surface` + `hairline`, `textPrimary` |
+| watched | `surfaceAlt`, `textSecondary`, full-width underline |
+| in progress | `surface` + accent border, underline at `progress` % |
+| current | `accentPrimary` fill, `onAccent` number, `selected` semantics |
+| locked | `surfaceDisabled`, `onDisabled`, lock glyph |
+
+The underline is the *second* channel for watched/in progress; it needs
+`heightFactor: 1` inside its `Positioned`, because the height constraint there
+is unbounded and a `FractionallySizedBox` without it collapses to zero.
+
+The cell prints only the number — a 49 dp cell cannot hold a title — but the
+title, the watch state and the lock are all in the merged semantic label
+(`EP 08, The Reckoning, Watched, VIP locked`), so a screen reader keeps exactly
+what the old list row announced.
+
+### Sizes
+
+One shape now. The three former sizes were retired with the list: `mini` had no
+caller since `PosterCard` moved to an episode-count badge, and `full` existed
+only to give the old drawer's rows a 44 px target — a target the grid cells now
+provide directly.
 
 ### Describing it
 
-`EpisodeSpine.describe(ticks, language)` builds the summary announced to screen
-readers (for example `12 eps, 2 Watched, Current EP 03, 1 in progress`) using
-**only** strings that already exist in `AppStrings` plus the redesign-only
-`AppUiCopy` entries (the in-progress word, which `AppStrings` never had), so the
-description stays localisable and the component introduces no new user-visible
-wording of its own.
-
-See §6 for how `full` keeps its ticks reachable while still announcing that
-summary.
+`EpisodeSpine.describe(ticks, language:…, separator: ', ')` builds the summary
+announced to screen readers (`38 eps, 4 Watched, Current EP 05, 31 VIP locked`)
+using **only** strings that already exist in `AppStrings` plus the
+redesign-only `AppUiCopy` entries, so the description stays localisable. The
+episode count reuses `episodeCountBadgeLabel`, the same `eps`/`ep` pair the
+poster badge prints. The sheet prints the same sentence with ` · ` as the
+visible summary line — that line is `ExcludeSemantics`, because the bar already
+announces it.
 
 ---
 
