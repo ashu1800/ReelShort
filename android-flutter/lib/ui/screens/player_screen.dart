@@ -1496,6 +1496,8 @@ class _CommentSheet extends StatefulWidget {
 
 class _CommentSheetState extends State<_CommentSheet> {
   final TextEditingController _draft = TextEditingController();
+  bool _loading = false;
+  bool _failed = false;
 
   @override
   void initState() {
@@ -1504,6 +1506,39 @@ class _CommentSheetState extends State<_CommentSheet> {
       if (mounted) {
         setState(() {});
       }
+    });
+    // The player prefetches comments when playback starts; a failed prefetch
+    // used to leave this drawer empty for the whole session. Opening the drawer
+    // retries, so a transient failure no longer costs the user the list.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadIfEmpty());
+  }
+
+  Future<void> _reloadIfEmpty() async {
+    if (!mounted) {
+      return;
+    }
+    if (context.read<AppStateController>().state.comments.isNotEmpty) {
+      return;
+    }
+    await _reload();
+  }
+
+  Future<void> _reload() async {
+    if (_loading) {
+      return;
+    }
+    final AppStateController controller = context.read<AppStateController>();
+    setState(() {
+      _loading = true;
+      _failed = false;
+    });
+    final bool refreshed = await controller.refreshComments();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _loading = false;
+      _failed = !refreshed;
     });
   }
 
@@ -1532,16 +1567,29 @@ class _CommentSheetState extends State<_CommentSheet> {
     final AppSpacing spacing = appSpacingOf(context);
     final AppStrings copy = strings(state.language);
     final bool canSend = _draft.text.trim().isNotEmpty;
+    final bool showLoading =
+        state.comments.isEmpty && (_loading || state.isLoading);
+    final bool showFailure = state.comments.isEmpty && !showLoading && _failed;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        if (state.isLoading && state.comments.isEmpty)
+        if (showLoading)
           // The first load is the only time the list can be "loading but
           // empty"; a submit-then-refresh keeps the rows on screen.
           Expanded(
             child: Center(
               child: AppInlineLoading(label: AppUiCopy.playerCommentsLoading),
+            ),
+          )
+        else if (showFailure)
+          Expanded(
+            child: AppEmptyState(
+              icon: Icons.cloud_off_outlined,
+              title: AppUiCopy.playerCommentsLoadFailedTitle,
+              body: AppUiCopy.playerCommentsLoadFailedBody,
+              actionLabel: AppUiCopy.playerCommentsRetry,
+              onAction: _reload,
             ),
           )
         else if (state.comments.isEmpty)

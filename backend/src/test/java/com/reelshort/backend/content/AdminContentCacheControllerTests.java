@@ -45,6 +45,9 @@ class AdminContentCacheControllerTests {
 	private ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 
 	@Autowired
+	private ContentVideoCacheRepository contentVideoCacheRepository;
+
+	@Autowired
 	private ContentRefreshRunRepository contentRefreshRunRepository;
 
 	@MockitoBean
@@ -56,6 +59,7 @@ class AdminContentCacheControllerTests {
 		contentShelfCacheRepository.deleteAll();
 		contentBookCacheRepository.deleteAll();
 		contentEpisodeCacheRepository.deleteAll();
+		contentVideoCacheRepository.deleteAll();
 	}
 
 	@Test
@@ -169,6 +173,45 @@ class AdminContentCacheControllerTests {
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + appToken))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value(401));
+	}
+
+	@Test
+	void adminCanReadShelfBooksEpisodesAndProbeVideo() throws Exception {
+		String adminToken = adminLogin();
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(
+				new ContentBook("book-probe", "Probe Drama", "probe-drama", "https://example.com/cover.jpg", "Drama description", 10)));
+		when(contentProvider.getEpisodesDetail("book-probe", "probe-drama", ContentLocale.ENGLISH)).thenReturn(
+				new ContentEpisodesDetail(
+						java.util.Optional.empty(),
+						List.of(new ContentEpisode(1, "chap-1", "Episode 1", "Desc 1"))));
+		when(contentProvider.getVideoUrl("book-probe", 1, "probe-drama", "chap-1", ContentLocale.ENGLISH)).thenReturn(
+				new ContentVideo("https://example.com/video.mp4", 1, 120, null));
+
+		// 1. Read shelf books
+		mockMvc.perform(get("/api/admin/content/cache/shelves/recommend/books")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data", hasSize(1)))
+				.andExpect(jsonPath("$.data[0].bookId").value("book-probe"))
+				.andExpect(jsonPath("$.data[0].title").value("Probe Drama"));
+
+		// 2. Read episodes for the book
+		mockMvc.perform(get("/api/admin/content/cache/books/book-probe/episodes")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data", hasSize(1)))
+				.andExpect(jsonPath("$.data[0].episode").value(1))
+				.andExpect(jsonPath("$.data[0].chapterId").value("chap-1"));
+
+		// 3. Video probe for episode
+		mockMvc.perform(get("/api/admin/content/cache/books/book-probe/episodes/1/video-probe")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data.videoUrl").value("https://example.com/video.mp4"))
+				.andExpect(jsonPath("$.data.duration").value(120));
 	}
 
 	private String adminLogin() throws Exception {

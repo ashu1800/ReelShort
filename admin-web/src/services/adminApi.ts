@@ -106,6 +106,29 @@ export type WithdrawalStats = {
   payoutCount: number
 }
 
+export type ContentBook = {
+  bookId: string
+  title: string
+  filteredTitle: string
+  coverUrl: string
+  description: string
+  chapterCount: number
+}
+
+export type ContentEpisode = {
+  episode: number
+  chapterId: string
+  title: string
+  description: string
+}
+
+export type ContentVideoProbe = {
+  videoUrl: string
+  episode: number
+  duration: number
+  nextEpisode: ContentEpisode | null
+}
+
 export type ContentCacheStatus = {
   bookCount: number
   episodeCacheCount: number
@@ -331,7 +354,37 @@ export async function fetchContentCacheStatus() {
   return response.data.data
 }
 
-export async function refreshContentShelf(shelfType: string, locale: string) {
+export async function fetchShelfBooks(shelfType: string) {
+  const response = await http.get<ApiResponse<ContentBook[]>>(`/content/cache/shelves/${shelfType}/books`)
+  return response.data.data
+}
+
+export async function fetchBookEpisodes(bookId: string, filteredTitle?: string) {
+  const response = await http.get<ApiResponse<ContentEpisode[]>>(`/content/cache/books/${bookId}/episodes`, {
+    params: filteredTitle ? { filteredTitle } : undefined,
+  })
+  return response.data.data
+}
+
+export async function probeEpisodeVideo(
+  bookId: string,
+  episodeNum: number,
+  filteredTitle?: string,
+  chapterId?: string,
+) {
+  const response = await http.get<ApiResponse<ContentVideoProbe>>(
+    `/content/cache/books/${bookId}/episodes/${episodeNum}/video-probe`,
+    {
+      params: {
+        ...(filteredTitle ? { filteredTitle } : {}),
+        ...(chapterId ? { chapterId } : {}),
+      },
+    },
+  )
+  return response.data.data
+}
+
+export async function refreshContentShelf(shelfType: string, locale = 'en') {
   const response = await http.post<ApiResponse<unknown[]>>(`/content/cache/shelves/${shelfType}/refresh`, null, {
     params: { locale },
   })

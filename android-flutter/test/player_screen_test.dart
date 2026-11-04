@@ -583,6 +583,58 @@ void main() {
     await _leavePlayer(tester, controller);
   });
 
+  testWidgets('the comment drawer retries after a failed prefetch', (
+    WidgetTester tester,
+  ) async {
+    final FakeAppDataSource source = FakeAppDataSource()
+      ..episodes = _episodes(3)
+      ..comments = <Comment>[
+        const Comment(
+          id: 'c1',
+          username: 'ashu',
+          content: 'Great episode',
+          createdAt: '2026-10-01T00:00:00Z',
+        ),
+      ]
+      ..pointAccount = PointAccount(
+        balance: 100,
+        records: const <PointRecord>[],
+      );
+    // The playback-time prefetch fails, exactly like a dropped request; the
+    // state layer swallows it and the drawer used to say "no comments yet".
+    source.failWith('listComments', StateError('offline'));
+
+    final AppStateController controller = await _pumpPlayer(
+      tester,
+      dataSource: source,
+    );
+    expect(controller.state.comments, isEmpty);
+
+    await tester.tap(find.byIcon(Icons.mode_comment_outlined));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Opening the drawer retries, and the failure is reported with a way out
+    // instead of an empty list.
+    expect(find.text(AppUiCopy.playerCommentsLoadFailedTitle), findsOneWidget);
+    // Scoped to the sheet: the video error overlay behind it also offers Retry.
+    final Finder retry = find.descendant(
+      of: find.byType(AppSheet),
+      matching: find.widgetWithText(AppButton, AppUiCopy.playerCommentsRetry),
+    );
+    expect(retry, findsOneWidget);
+
+    // The connection comes back: the retry loads the list in place.
+    source.clearFailures();
+    await tester.tap(retry);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(controller.state.comments, hasLength(1));
+    expect(find.text('Great episode'), findsOneWidget);
+    await _leavePlayer(tester, controller);
+  });
+
   test('the overlay priority projection is error > cover > buffering', () {
     expect(
       playerOverlayMode(null, PlayerPhase.idle, false, false),

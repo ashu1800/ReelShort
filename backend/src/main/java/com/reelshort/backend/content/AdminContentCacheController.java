@@ -39,6 +39,59 @@ public class AdminContentCacheController {
 		return ApiResponse.success(contentCacheService.status(), requestId(request));
 	}
 
+	@GetMapping("/shelves/{shelfType}/books")
+	@RequireAdminPermission(AdminPermissions.CONTENT_CACHE_READ)
+	public ApiResponse<List<ContentBook>> shelfBooks(@PathVariable String shelfType,
+			@RequestParam(required = false) String locale, HttpServletRequest request) {
+		ContentShelfType resolvedShelfType = ContentShelfType.fromApiValue(shelfType);
+		ContentLocale resolvedLocale = parseLocale(locale);
+		List<ContentBook> books = contentCacheService.getShelf(resolvedShelfType, resolvedLocale);
+		return ApiResponse.success(books, requestId(request));
+	}
+
+	@GetMapping("/books/{bookId}/episodes")
+	@RequireAdminPermission(AdminPermissions.CONTENT_CACHE_READ)
+	public ApiResponse<List<ContentEpisode>> episodes(@PathVariable String bookId,
+			@RequestParam(required = false) String filteredTitle,
+			@RequestParam(required = false) String locale,
+			HttpServletRequest request) {
+		ContentLocale resolvedLocale = parseLocale(locale);
+		String titleToUse = filteredTitle;
+		if (titleToUse == null || titleToUse.isBlank()) {
+			ContentBook book = contentCacheService.getBook(bookId, resolvedLocale);
+			titleToUse = book.filteredTitle();
+		}
+		List<ContentEpisode> episodes = contentCacheService.getEpisodes(bookId, titleToUse, resolvedLocale);
+		return ApiResponse.success(episodes, requestId(request));
+	}
+
+	@GetMapping("/books/{bookId}/episodes/{episodeNum}/video-probe")
+	@RequireAdminPermission(AdminPermissions.CONTENT_CACHE_READ)
+	public ApiResponse<ContentVideo> videoProbe(@PathVariable String bookId,
+			@PathVariable int episodeNum,
+			@RequestParam(required = false) String filteredTitle,
+			@RequestParam(required = false) String chapterId,
+			@RequestParam(required = false) String locale,
+			HttpServletRequest request) {
+		ContentLocale resolvedLocale = parseLocale(locale);
+		String titleToUse = filteredTitle;
+		if (titleToUse == null || titleToUse.isBlank()) {
+			ContentBook book = contentCacheService.getBook(bookId, resolvedLocale);
+			titleToUse = book.filteredTitle();
+		}
+		String chapterToUse = chapterId;
+		if (chapterToUse == null || chapterToUse.isBlank()) {
+			List<ContentEpisode> episodes = contentCacheService.getEpisodes(bookId, titleToUse, resolvedLocale);
+			chapterToUse = episodes.stream()
+					.filter(episode -> episode.episode() == episodeNum)
+					.findFirst()
+					.map(ContentEpisode::chapterId)
+					.orElseThrow(() -> new ContentProviderException(404, "episode not found"));
+		}
+		ContentVideo video = contentCacheService.getVideoUrl(bookId, episodeNum, titleToUse, chapterToUse, resolvedLocale);
+		return ApiResponse.success(video, requestId(request));
+	}
+
 	@PostMapping("/shelves/{shelfType}/refresh")
 	@RequireAdminPermission(AdminPermissions.CONTENT_CACHE_WRITE)
 	public ApiResponse<List<ContentBook>> refreshShelf(CurrentAdmin currentAdmin, @PathVariable String shelfType,

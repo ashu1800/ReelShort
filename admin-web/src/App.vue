@@ -3,7 +3,7 @@ import {
   Coin,
   DataAnalysis,
   Document,
-  FolderOpened,
+  Film,
   GoldMedal,
   Monitor,
   Notebook,
@@ -58,8 +58,8 @@ async function logout() {
           <span>VIP 订单</span>
         </el-menu-item>
         <el-menu-item index="/content-cache">
-          <el-icon><FolderOpened /></el-icon>
-          <span>内容缓存</span>
+          <el-icon><Film /></el-icon>
+          <span>视频内容管理</span>
         </el-menu-item>
         <el-menu-item index="/system-configs">
           <el-icon><Setting /></el-icon>

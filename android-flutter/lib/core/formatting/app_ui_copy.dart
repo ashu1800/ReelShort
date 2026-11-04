@@ -174,6 +174,19 @@ abstract final class AppUiCopy {
   /// Player: empty body of the comment list.
   static const String playerCommentsEmptyBody = 'Be the first to comment.';
 
+  /// Player: title of the comment list when its request failed.
+  ///
+  /// The player prefetches comments on playback entry; when that request fails
+  /// the drawer used to claim "no comments yet" and never retried.
+  static const String playerCommentsLoadFailedTitle = "Couldn't load comments";
+
+  /// Player: body of the failed comment list.
+  static const String playerCommentsLoadFailedBody =
+      'Check your connection and try again.';
+
+  /// Player: action that retries the comment list.
+  static const String playerCommentsRetry = 'Retry';
+
   /// Player: semantic label of the comment sheet's send affordance, which is an
   /// icon-only button and was previously announced as nothing at all.
   static const String playerCommentSend = 'Send comment';

@@ -85,14 +85,27 @@ public class FlaskContentProvider implements ContentProvider {
 	@Override
 	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId,
 			ContentLocale locale) {
-		FlaskVideo response = get(FlaskVideo.class,
-				uri("/api/v1/reelshort/video/{bookId}/{episodeNum}")
-						.queryParam("filtered_title", filteredTitle)
-						.queryParam("chapter_id", chapterId)
-						.queryParam("locale", "en")
-						.buildAndExpand(bookId, episodeNum)
-						.toUriString());
-		return response.toContentVideo();
+		try {
+			FlaskVideo response = get(FlaskVideo.class,
+					uri("/api/v1/reelshort/video/{bookId}/{episodeNum}")
+							.queryParam("filtered_title", filteredTitle)
+							.queryParam("chapter_id", chapterId)
+							.queryParam("locale", "en")
+							.buildAndExpand(bookId, episodeNum)
+							.toUriString());
+			return response.toContentVideo();
+		}
+		catch (ContentProviderException exception) {
+			if (exception.statusCode() == 404) {
+				// The upstream source only publishes play URLs for the chapters it
+				// gives away; for a locked chapter it returns the page without a
+				// video URL and the provider answers 404. Users used to be shown the
+				// provider's internal wording ("content provider returned 404"), so
+				// this path says what actually happened.
+				throw new ContentProviderException(404, "This episode is not available yet", exception);
+			}
+			throw exception;
+		}
 	}
 
 	private <T> T get(Class<T> responseType, String url) {

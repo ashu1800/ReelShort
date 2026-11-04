@@ -1154,6 +1154,34 @@ class AppStateController extends ChangeNotifier {
     );
   });
 
+  /// Reloads the comment list for the book on screen.
+  ///
+  /// The player prefetches comments when playback starts, but that prefetch is
+  /// silent: a failed request left the drawer empty for the rest of the session
+  /// with no way back. Opening the drawer retries through here, and a failure
+  /// is reported in the global bar instead of being swallowed.
+  ///
+  /// Returns whether the list was refreshed.
+  Future<bool> refreshComments() async {
+    final BookSummary? book = _state.selectedBook;
+    if (book == null) {
+      return false;
+    }
+    try {
+      final List<Comment> comments = await _dataSource.listComments(book);
+      _set(_state.copyWith(comments: comments));
+      return true;
+    } on Object catch (error) {
+      _set(
+        _state.copyWith(
+          errorMessage: _userFacingErrorMessage(error, _ErrorContext.social),
+          messageType: UiMessageType.error,
+        ),
+      );
+      return false;
+    }
+  }
+
   /// Posts a comment and reloads the list.
   Future<void> submitComment(String content) => _runSocialAction(() async {
     final String trimmed = content.trim();
