@@ -39,7 +39,7 @@ async function logout() {
   <router-view v-if="isLoginRoute" />
   <el-container v-else class="app-shell">
     <el-aside width="220px" class="sidebar">
-      <div class="brand">ReelShort Admin</div>
+      <div class="brand">ShortLink</div>
       <el-menu router :default-active="route.path">
         <el-menu-item index="/">
           <el-icon><DataAnalysis /></el-icon>

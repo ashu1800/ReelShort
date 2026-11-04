@@ -38,7 +38,7 @@ async function submit() {
   <main class="login-page">
     <section class="login-panel">
       <div class="login-copy">
-        <p class="eyebrow">ReelShort Admin</p>
+        <p class="eyebrow">ShortLink</p>
         <h1>后台管理</h1>
       </div>
       <el-form class="login-form" @submit.prevent="submit">
