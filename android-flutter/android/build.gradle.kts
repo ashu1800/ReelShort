@@ -8,6 +8,21 @@ allprojects {
         google()
         mavenCentral()
     }
+    configurations.all {
+        resolutionStrategy {
+            eachDependency {
+                if (requested.group == "androidx.test" && requested.name == "runner") {
+                    useVersion("1.5.2")
+                }
+                if (requested.group == "androidx.test" && requested.name == "rules") {
+                    useVersion("1.5.0")
+                }
+                if (requested.group == "androidx.test.espresso" && requested.name == "espresso-core") {
+                    useVersion("3.5.1")
+                }
+            }
+        }
+    }
     // Plugin modules re-declare the Android Gradle plugin in their own `buildscript`, which does
     // not inherit the root repositories. Force every buildscript classpath onto the same mirrors
     // so no plugin resolution ever reaches dl.google.com directly.
