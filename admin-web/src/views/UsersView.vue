@@ -71,8 +71,6 @@ watch(
   },
 )
 
-const statusOptions: UserStatus[] = ['ACTIVE', 'DISABLED', 'BLACKLISTED']
-
 // 指标卡计算
 const totalUsersCount = computed(() => users.value.length)
 const vipUsersCount = computed(() => users.value.filter((u) => u.vip).length)
@@ -82,6 +80,20 @@ const totalPointBalance = computed(() =>
 const totalFrozenPoints = computed(() =>
   users.value.reduce((acc, cur) => acc + (cur.frozenPoints || 0), 0),
 )
+
+// 实时可用积分与变动预测
+const projectedBalance = computed(() => {
+  if (!selectedUser.value) return 0
+  return (selectedUser.value.availablePoints || 0) + (pointsForm.amount || 0)
+})
+
+// 实时 VIP 剩余天数计算
+const projectedVipDays = computed(() => {
+  if (!vipForm.vipUntil) return 0
+  const diff = vipForm.vipUntil.getTime() - Date.now()
+  if (diff <= 0) return 0
+  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+})
 
 // 过滤后的用户列表
 const filteredUsers = computed(() => {
@@ -640,91 +652,278 @@ onMounted(loadUsers)
               <!-- 1. VIP 权益管理 -->
               <section class="operation-block">
                 <div class="block-header">
-                  <div class="block-title"><el-icon><GoldMedal /></el-icon> VIP 会员权益配置</div>
-                  <div class="block-desc">直接设置未来到期时间或立即终止特权，不影响链上 VIP 充值订单。</div>
+                  <div class="block-title-row">
+                    <div class="block-title">
+                      <el-icon><GoldMedal /></el-icon>
+                      <span>VIP 会员特权管理</span>
+                    </div>
+                    <div class="vip-status-indicator">
+                      <span v-if="selectedUser.vip" class="pill-active-vip">
+                        <el-icon><GoldMedal /></el-icon>
+                        已激活 · 剩 {{ getVipRemainingDays(selectedUser.vipUntil) }} 天
+                      </span>
+                      <span v-else class="pill-inactive-vip">普通用户 (未开通)</span>
+                    </div>
+                  </div>
+                  <div class="block-desc">设定未来到期时间或立即终止特权，到期后将自动收回 VIP 权益。</div>
                 </div>
 
-                <div class="quick-preset-row">
-                  <span class="preset-label">快捷期限:</span>
-                  <el-button size="small" plain @click="setQuickVipDays(7)">+7 天</el-button>
-                  <el-button size="small" plain @click="setQuickVipDays(30)">+30 天 (月度)</el-button>
-                  <el-button size="small" plain @click="setQuickVipDays(90)">+90 天 (季度)</el-button>
-                  <el-button size="small" plain @click="setQuickVipDays(365)">+1 年</el-button>
-                </div>
+                <div class="interactive-form-body">
+                  <!-- 快捷期限选择 -->
+                  <div class="preset-row">
+                    <span class="preset-label">快捷期限:</span>
+                    <div class="preset-chips">
+                      <button
+                        type="button"
+                        class="preset-chip"
+                        :class="{ 'is-selected': projectedVipDays >= 6 && projectedVipDays <= 8 }"
+                        @click="setQuickVipDays(7)"
+                      >
+                        +7 天 (体验卡)
+                      </button>
+                      <button
+                        type="button"
+                        class="preset-chip"
+                        :class="{ 'is-selected': projectedVipDays >= 28 && projectedVipDays <= 32 }"
+                        @click="setQuickVipDays(30)"
+                      >
+                        +30 天 (月度会员)
+                      </button>
+                      <button
+                        type="button"
+                        class="preset-chip"
+                        :class="{ 'is-selected': projectedVipDays >= 88 && projectedVipDays <= 92 }"
+                        @click="setQuickVipDays(90)"
+                      >
+                        +90 天 (季度会员)
+                      </button>
+                      <button
+                        type="button"
+                        class="preset-chip"
+                        :class="{ 'is-selected': projectedVipDays >= 360 }"
+                        @click="setQuickVipDays(365)"
+                      >
+                        +365 天 (年度尊享)
+                      </button>
+                    </div>
+                  </div>
 
-                <el-form class="inline-form" @submit.prevent="submitVip">
-                  <el-date-picker
-                    v-model="vipForm.vipUntil"
-                    type="datetime"
-                    placeholder="选择 VIP 到期时间"
-                  />
-                  <el-button :loading="operationLoading" native-type="submit" type="primary">
-                    确认设置 VIP
-                  </el-button>
-                  <el-button
-                    :disabled="!selectedUser.vipUntil"
-                    :loading="operationLoading"
-                    type="danger"
-                    plain
-                    @click="cancelVip"
-                  >
-                    取消当前 VIP
-                  </el-button>
-                </el-form>
+                  <!-- 行内日期选择与操作按钮 -->
+                  <el-form class="compact-action-row" @submit.prevent="submitVip">
+                    <el-date-picker
+                      v-model="vipForm.vipUntil"
+                      type="datetime"
+                      placeholder="选择自定义到期时间"
+                      class="flex-input"
+                    />
+                    <el-button
+                      :loading="operationLoading"
+                      native-type="submit"
+                      type="primary"
+                      :disabled="!vipForm.vipUntil"
+                    >
+                      确认设置 VIP
+                    </el-button>
+                    <el-button
+                      v-if="selectedUser.vipUntil"
+                      :loading="operationLoading"
+                      type="danger"
+                      plain
+                      @click="cancelVip"
+                    >
+                      取消当前 VIP
+                    </el-button>
+                  </el-form>
+
+                  <!-- 设定预览反馈 -->
+                  <div v-if="vipForm.vipUntil" class="live-projection-pill">
+                    <el-icon color="#67c23a"><Check /></el-icon>
+                    <span>
+                      设置后将在 <b>{{ formatDateTime(vipForm.vipUntil.toISOString()) }}</b> 到期（共 <b>{{ projectedVipDays }}</b> 天）
+                    </span>
+                  </div>
+                </div>
               </section>
 
-              <!-- 2. 用户状态与风控 -->
+              <!-- 2. 用户状态与安全风控 -->
               <section class="operation-block">
                 <div class="block-header">
-                  <div class="block-title"><el-icon><Lock /></el-icon> 账号状态与安全风控</div>
-                  <div class="block-desc">DISABLED（禁用）与 BLACKLISTED（黑名单）均会立即阻止用户登录及客户端写操作。</div>
+                  <div class="block-title">
+                    <el-icon><Lock /></el-icon>
+                    <span>账号状态与安全风控</span>
+                  </div>
+                  <div class="block-desc">切换用户登录与客户端操作权限，变更立即生效并在全平台生效。</div>
                 </div>
-                <div class="status-actions">
-                  <el-button
-                    v-for="status in statusOptions"
-                    :key="status"
-                    :disabled="status === selectedUser.status"
-                    :loading="operationLoading"
-                    :type="status === 'ACTIVE' ? 'success' : status === 'BLACKLISTED' ? 'danger' : 'warning'"
-                    :plain="status !== selectedUser.status"
-                    @click="changeSelectedUserStatus(status)"
+
+                <!-- 3 列平铺的状态看板 -->
+                <div class="status-tiers-grid">
+                  <!-- ACTIVE -->
+                  <div
+                    class="status-tier-card"
+                    :class="{ 'tier-active': selectedUser.status === 'ACTIVE' }"
                   >
-                    <el-icon v-if="status === selectedUser.status"><Check /></el-icon>
-                    切换为 {{ status }}
-                  </el-button>
+                    <div class="tier-top">
+                      <div class="tier-dot green"></div>
+                      <span class="tier-name">正常 (ACTIVE)</span>
+                      <span v-if="selectedUser.status === 'ACTIVE'" class="active-badge">当前生效</span>
+                    </div>
+                    <div class="tier-info">允许正常登录，可浏览内容、试看、充值与提现</div>
+                    <div class="tier-btn-wrap">
+                      <el-button
+                        v-if="selectedUser.status !== 'ACTIVE'"
+                        size="small"
+                        type="success"
+                        plain
+                        :loading="operationLoading"
+                        @click="changeSelectedUserStatus('ACTIVE')"
+                      >
+                        恢复正常
+                      </el-button>
+                      <span v-else class="tier-status-text green">✓ 状态生效中</span>
+                    </div>
+                  </div>
+
+                  <!-- DISABLED -->
+                  <div
+                    class="status-tier-card"
+                    :class="{ 'tier-active': selectedUser.status === 'DISABLED' }"
+                  >
+                    <div class="tier-top">
+                      <div class="tier-dot amber"></div>
+                      <span class="tier-name">禁用 (DISABLED)</span>
+                      <span v-if="selectedUser.status === 'DISABLED'" class="active-badge amber">当前生效</span>
+                    </div>
+                    <div class="tier-info">禁止用户登录与调用所有写接口，保留已有资产</div>
+                    <div class="tier-btn-wrap">
+                      <el-button
+                        v-if="selectedUser.status !== 'DISABLED'"
+                        size="small"
+                        type="warning"
+                        plain
+                        :loading="operationLoading"
+                        @click="changeSelectedUserStatus('DISABLED')"
+                      >
+                        禁用账号
+                      </el-button>
+                      <span v-else class="tier-status-text amber">⚠ 已被禁用</span>
+                    </div>
+                  </div>
+
+                  <!-- BLACKLISTED -->
+                  <div
+                    class="status-tier-card"
+                    :class="{ 'tier-active': selectedUser.status === 'BLACKLISTED' }"
+                  >
+                    <div class="tier-top">
+                      <div class="tier-dot red"></div>
+                      <span class="tier-name">黑名单 (BLACKLISTED)</span>
+                      <span v-if="selectedUser.status === 'BLACKLISTED'" class="active-badge red">当前生效</span>
+                    </div>
+                    <div class="tier-info">严重作弊或风控拉黑，阻断登录并拦截充提请求</div>
+                    <div class="tier-btn-wrap">
+                      <el-button
+                        v-if="selectedUser.status !== 'BLACKLISTED'"
+                        size="small"
+                        type="danger"
+                        plain
+                        :loading="operationLoading"
+                        @click="changeSelectedUserStatus('BLACKLISTED')"
+                      >
+                        移入黑名单
+                      </el-button>
+                      <span v-else class="tier-status-text red">⛔ 黑名单中</span>
+                    </div>
+                  </div>
                 </div>
               </section>
 
-              <!-- 3. 积分调整 -->
+              <!-- 3. 人工积分调整 -->
               <section class="operation-block">
                 <div class="block-header">
-                  <div class="block-title"><el-icon><Coin /></el-icon> 人工积分调整</div>
-                  <div class="block-desc">支持正数（赠送）与负数（扣减），后端自动校验扣减余额下限。</div>
+                  <div class="block-title">
+                    <el-icon><Coin /></el-icon>
+                    <span>人工积分变动调节</span>
+                  </div>
+                  <div class="block-desc">运营人工入账奖励或违规扣减调账，变动结果即刻反映在用户账户与审计流中。</div>
                 </div>
 
-                <div class="quick-preset-row">
-                  <span class="preset-label">快捷数值:</span>
-                  <el-button size="small" plain @click="setQuickPoints(100)">+100</el-button>
-                  <el-button size="small" plain @click="setQuickPoints(500)">+500</el-button>
-                  <el-button size="small" plain @click="setQuickPoints(1000)">+1,000</el-button>
-                  <el-button size="small" plain @click="setQuickPoints(10000)">+10,000</el-button>
-                  <el-button size="small" plain type="danger" @click="setQuickPoints(-100)">-100</el-button>
-                  <el-button size="small" plain type="danger" @click="setQuickPoints(-500)">-500</el-button>
-                </div>
+                <div class="interactive-form-body">
+                  <!-- 实时余额联动预测条 -->
+                  <div class="balance-projection-bar">
+                    <div class="proj-segment">
+                      <span class="proj-label">当前可用</span>
+                      <span class="proj-val mono">{{ formatNumber(selectedUser.availablePoints) }}</span>
+                    </div>
+                    <span class="proj-op">+</span>
+                    <div class="proj-segment">
+                      <span class="proj-label">调整数额</span>
+                      <span
+                        class="proj-val mono"
+                        :class="{
+                          'text-green': pointsForm.amount > 0,
+                          'text-red': pointsForm.amount < 0,
+                          'text-muted': pointsForm.amount === 0,
+                        }"
+                      >
+                        {{ pointsForm.amount > 0 ? `+${formatNumber(pointsForm.amount)}` : formatNumber(pointsForm.amount) }}
+                      </span>
+                    </div>
+                    <span class="proj-op">=</span>
+                    <div class="proj-segment">
+                      <span class="proj-label">调整后预计</span>
+                      <span
+                        class="proj-val mono font-bold"
+                        :class="projectedBalance < 0 ? 'text-red' : 'text-primary'"
+                      >
+                        {{ formatNumber(projectedBalance) }}
+                      </span>
+                    </div>
+                    <div v-if="projectedBalance < 0" class="proj-warn-tip">
+                      ⚠️ 扣减超额（低于 0），后端将拒绝
+                    </div>
+                  </div>
 
-                <el-form class="inline-form" @submit.prevent="submitPointAdjustment">
-                  <el-input-number v-model="pointsForm.amount" :step="10" />
-                  <el-input
-                    v-model="pointsForm.reason"
-                    maxlength="255"
-                    placeholder="请输入调整原因（用于审计）"
-                    show-word-limit
-                    style="flex: 1;"
-                  />
-                  <el-button :loading="operationLoading" native-type="submit" type="primary">
-                    提交调整
-                  </el-button>
-                </el-form>
+                  <!-- 快捷数值选择 -->
+                  <div class="preset-row">
+                    <span class="preset-label">快捷数值:</span>
+                    <div class="preset-chips">
+                      <button type="button" class="preset-chip plus" @click="setQuickPoints(100)">+100</button>
+                      <button type="button" class="preset-chip plus" @click="setQuickPoints(500)">+500</button>
+                      <button type="button" class="preset-chip plus" @click="setQuickPoints(1000)">+1,000</button>
+                      <button type="button" class="preset-chip plus" @click="setQuickPoints(10000)">+10,000</button>
+                      <button type="button" class="preset-chip minus" @click="setQuickPoints(-100)">-100</button>
+                      <button type="button" class="preset-chip minus" @click="setQuickPoints(-500)">-500</button>
+                      <button type="button" class="preset-chip minus" @click="setQuickPoints(-1000)">-1,000</button>
+                      <button type="button" class="preset-chip" @click="setQuickPoints(0)">清零</button>
+                    </div>
+                  </div>
+
+                  <!-- 紧凑行内表单 -->
+                  <el-form class="compact-action-row" @submit.prevent="submitPointAdjustment">
+                    <el-input-number
+                      v-model="pointsForm.amount"
+                      :step="10"
+                      class="points-input-num"
+                      controls-position="right"
+                    />
+                    <el-input
+                      v-model="pointsForm.reason"
+                      maxlength="255"
+                      placeholder="请输入调整原因（将记入审计日志，如：活动补偿、误充调账）"
+                      show-word-limit
+                      clearable
+                      class="flex-input"
+                    />
+                    <el-button
+                      :loading="operationLoading"
+                      native-type="submit"
+                      type="primary"
+                      :disabled="pointsForm.amount === 0 || !pointsForm.reason.trim() || projectedBalance < 0"
+                    >
+                      确认提交调整
+                    </el-button>
+                  </el-form>
+                </div>
               </section>
             </el-tab-pane>
 
@@ -1259,66 +1458,305 @@ onMounted(loadUsers)
 .operation-block {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 10px;
+  padding: 16px 18px;
   margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .block-header {
   margin-bottom: 12px;
 }
 
-.block-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1e293b;
+.block-title-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.block-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .block-desc {
   font-size: 12px;
   color: #64748b;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
-.quick-preset-row {
+.vip-status-indicator {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+}
+
+.pill-active-vip {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  color: #b45309;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #fcd34d;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pill-inactive-vip {
+  background: #f1f5f9;
+  color: #64748b;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+}
+
+.interactive-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .preset-label {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
-.inline-form {
+.preset-chips {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
-.status-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+.preset-chip {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
 }
 
-.pts-delta-plus {
-  color: #16a34a;
+.preset-chip:hover {
+  border-color: #cbd5e1;
+  background: #ffffff;
+}
+
+.preset-chip.is-selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
   font-weight: 600;
 }
 
-.pts-delta-minus {
+.preset-chip.plus {
+  color: #15803d;
+}
+.preset-chip.plus:hover {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.preset-chip.minus {
+  color: #b91c1c;
+}
+.preset-chip.minus:hover {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.compact-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.flex-input {
+  flex: 1;
+  min-width: 240px;
+}
+
+.points-input-num {
+  width: 140px;
+  flex-shrink: 0;
+}
+
+.live-projection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #15803d;
+  background: #f0fdf4;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #bbf7d0;
+}
+
+/* 3 列状态平铺看板 */
+.status-tiers-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+@media (max-width: 768px) {
+  .status-tiers-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.status-tier-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.status-tier-card:hover {
+  border-color: #cbd5e1;
+}
+
+.status-tier-card.tier-active {
+  border-width: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.tier-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tier-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tier-dot.green { background: #22c55e; }
+.tier-dot.amber { background: #f59e0b; }
+.tier-dot.red { background: #ef4444; }
+
+.tier-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.active-badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.active-badge.amber {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.active-badge.red {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.tier-info {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.tier-btn-wrap {
+  margin-top: 2px;
+}
+
+.tier-status-text {
+  font-size: 12px;
+  font-weight: 600;
+}
+.tier-status-text.green { color: #16a34a; }
+.tier-status-text.amber { color: #d97706; }
+.tier-status-text.red { color: #dc2626; }
+
+/* 积分预测条 */
+.balance-projection-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.proj-segment {
+  display: flex;
+  flex-direction: column;
+}
+
+.proj-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.proj-val {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.proj-op {
+  font-size: 16px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.proj-warn-tip {
+  margin-left: auto;
+  font-size: 12px;
   color: #ef4444;
   font-weight: 600;
 }
+
+.text-green { color: #16a34a; }
+.text-red { color: #ef4444; }
+.text-primary { color: #2563eb; }
+.text-muted { color: #94a3b8; }
 
 .wallet-copy-cell {
   display: flex;
