@@ -78,6 +78,8 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 原�
 
 ## 变更历史
 
+[2026-11-04] admin-web/ui + backend/content - 视频内容管理重塑与全季巡检升级，已部署到 `177.4.8.115`（Server ID 297，原 104.143.38.190 已下线）：后台内容管理全量重构，包含：① 指标大盘升级与实时健康呼吸灯；② 货架短剧资产双视图（9:16 竖版海报卡片流与数据表格）；③ Cinematic 暗色审片监看视窗（Studio Monitor）配合原生 HTML5 播放器；④ 流媒体技术参数透视胶囊（TTFB 毫秒阶梯色标、CDN 节点域名、协议解析）；⑤ 42px 百集短剧热力方块网格（四态动态染色与断流集一键过滤）；⑥ 整季一键并发断流巡检（受控 3 路并发队列、实时进度条、动态统计）；⑦ 移除失效的 English 单语言选择框与全部语言刷新冗余按钮。后端 `AdminContentCacheController` 新增受 `CONTENT_CACHE_READ` 保护的只读货架片库、分集索引与单集流媒体探针管理端点。新增自动化契约测试 `admin-web/tests/content-management.test.mjs`。新增自动化极速打包部署工具 `scripts/deploy-production.ps1`。验证：14 项前端契约测试全绿，7 项后端内容测试全绿，线上 Tomcat 健康检查 UP，公网 Nginx 与 Cloudflare CDN 响应正常。
+
 [2026-10-20] android-flutter/ui + backend/points - 选集面板改为「整季概览条 + 数字网格 + VIP 分段」，锁集边界改由后台 `vip.free-episodes` 下发（后端 `PointAccountResponse` 新增 `freeEpisodes`，与 play 接口门禁同源；客户端 `AppStateController.freeEpisodes` 暴露，`episodeRequiresVip` 取代写死的 `requiresVip()`）；`EpisodeSpine` 从纵向刻度轨收敛为单行概览条，新增 `EpisodeTile` 网格（≥44dp，360dp 每行 6 个）。顺带修掉两个真实缺陷：已看/进行中单元格下划线因 `FractionallySizedBox` 缺 `heightFactor` 一直是 0 高；`_chooseResumeEpisode` 拉到的观看历史被丢弃，导致从首页进播放后选集面板整季显示"未看"。验证：`flutter analyze` 0 issue、`flutter test` 300 全绿、后端 94 类 / 588 用例全绿；生产服务器当时不可达，真机复核改用真实 Roboto 离屏渲染取证。详见 `android-flutter/docs/ui-redesign-notes.md` §12。
 
 [2026-10-19] android-flutter/ui - 重新设计更新弹窗的下载进度信息（提交 `c083821`）：`febfe2c` 只解决了溢出（包 `Flexible` + 单行省略），长字节数随即被截断成 `29% · 16.2 MB / 54.…`——用户看不到剩余总量。改为两行：主行百分比（`titleMedium` 加粗），副行 `14.9 MB of 54.0 MB`（分隔符由 ` / ` 改为 `of`，`bodySmall` 次要色、最多两行、不省略）；同时删除与弹窗标题重复的 `Downloading update`，仅当总大小未知时回退显示该状态文案。测试改为断言「百分比与完整总量都可见」，新增窄宽 + 3.2× 用例。验证：`flutter analyze` 0 issue、`flutter test` 290 用例全绿；雷电模拟器装 0.9.6 触发真实更新，截图确认 `27%` 与 `14.9 MB of 54.0 MB` 完整显示、无溢出。
