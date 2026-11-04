@@ -178,13 +178,23 @@ class PosterCard extends StatelessWidget {
 
     final Widget interactive = onTap == null
         ? sized
-        : Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: shapes.containerRadius,
-              child: sized,
-            ),
+        : _PosterPressFeedback(
+            onTap: onTap,
+            builder: (
+              BuildContext context,
+              VoidCallback? tap,
+              ValueChanged<bool> onHighlight,
+            ) {
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: tap,
+                  onHighlightChanged: onHighlight,
+                  borderRadius: shapes.containerRadius,
+                  child: sized,
+                ),
+              );
+            },
           );
 
     return Semantics(
@@ -194,6 +204,77 @@ class PosterCard extends StatelessWidget {
       onTap: onTap,
       excludeSemantics: true,
       child: interactive,
+    );
+  }
+}
+
+/// Lightweight physical scale feedback (0.96x) on card press.
+class _PosterPressFeedback extends StatefulWidget {
+  const _PosterPressFeedback({
+    required this.builder,
+    required this.onTap,
+  });
+
+  final Widget Function(
+    BuildContext context,
+    VoidCallback? onTap,
+    ValueChanged<bool> onHighlight,
+  ) builder;
+  final VoidCallback? onTap;
+
+  @override
+  State<_PosterPressFeedback> createState() => _PosterPressFeedbackState();
+}
+
+class _PosterPressFeedbackState extends State<_PosterPressFeedback>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+      lowerBound: 0.96,
+      upperBound: 1.0,
+      value: 1.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onHighlightChanged(bool value) {
+    if (widget.onTap == null) {
+      return;
+    }
+    final bool disableAnimations = WidgetsBinding
+        .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+    if (disableAnimations) {
+      return;
+    }
+
+    if (value) {
+      _controller.reverse();
+    } else {
+      _controller.forward();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget child =
+        widget.builder(context, widget.onTap, _onHighlightChanged);
+    if (widget.onTap == null) {
+      return child;
+    }
+    return ScaleTransition(
+      scale: _controller,
+      child: child,
     );
   }
 }

@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/formatting/app_strings.dart';
+import '../../core/formatting/app_ui_copy.dart';
 import '../../core/formatting/ui_formats.dart';
 import '../../data/models/app_language.dart';
 import '../../data/models/app_models.dart';
@@ -81,6 +82,8 @@ class _DetailContent extends StatelessWidget {
                 title: book.title,
                 coverUrl: book.coverUrl,
                 episodeCount: book.chapterCount,
+                showTitleOverlay: false,
+                showEpisodeBadge: false,
               ),
             ),
           ),
@@ -92,13 +95,10 @@ class _DetailContent extends StatelessWidget {
                 children: <Widget>[
                   Text(book.title, style: roles.displayLarge),
                   const SizedBox(height: 8),
-                  Text(
-                    book.description.trim().isNotEmpty
+                  _ExpandableDescription(
+                    text: book.description.trim().isNotEmpty
                         ? book.description
                         : '${book.chapterCount}${copy.bookRowFallbackSuffix}',
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: roles.body.copyWith(color: colors.textSecondary),
                   ),
                   const SizedBox(height: 16),
                   _SocialRow(state: state),
@@ -454,6 +454,60 @@ class _PlayBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Expandable drama description block with Read more / Show less toggle.
+class _ExpandableDescription extends StatefulWidget {
+  const _ExpandableDescription({required this.text});
+
+  final String text;
+
+  @override
+  State<_ExpandableDescription> createState() => _ExpandableDescriptionState();
+}
+
+class _ExpandableDescriptionState extends State<_ExpandableDescription> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+    final String trimmed = widget.text.trim();
+    if (trimmed.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final bool canExpand = trimmed.length > 90;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          trimmed,
+          maxLines: _expanded ? null : 3,
+          overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+          style: roles.body.copyWith(color: colors.textSecondary),
+        ),
+        if (canExpand) ...<Widget>[
+          const SizedBox(height: 4),
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                _expanded ? AppUiCopy.showLess : AppUiCopy.readMore,
+                style: roles.caption.copyWith(
+                  color: colors.accentPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

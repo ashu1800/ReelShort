@@ -43,7 +43,7 @@ class HomeScreen extends StatelessWidget {
               const SliverToBoxAdapter(child: SizedBox(height: 8)),
               if (state.isLoading && state.homeShelf.isEmpty)
                 const SliverToBoxAdapter(
-                  child: AppSkeletonList(itemHeight: 204, itemCount: 4),
+                  child: AppSkeletonPosterGrid(itemCount: 6),
                 )
               else if (state.homeShelf.isEmpty)
                 SliverToBoxAdapter(

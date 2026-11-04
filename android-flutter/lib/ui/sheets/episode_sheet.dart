@@ -62,9 +62,79 @@ const double _tileGap = 6;
 const double _blockGap = 12;
 
 /// The episode sheet body. Mount it as the child of `AppSheet.show`.
-class EpisodeSheet extends StatelessWidget {
+class EpisodeSheet extends StatefulWidget {
   /// Creates the episode sheet body.
   const EpisodeSheet({super.key});
+
+  @override
+  State<EpisodeSheet> createState() => _EpisodeSheetState();
+}
+
+class _EpisodeSheetState extends State<EpisodeSheet> {
+  final ScrollController _scrollController = ScrollController();
+  bool _didInitialScroll = false;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToOffset(double targetOffset) {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final double maxScroll = _scrollController.position.maxScrollExtent;
+    final double target = targetOffset.clamp(0.0, maxScroll);
+    final bool disableAnimations = WidgetsBinding
+        .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+    if (disableAnimations) {
+      _scrollController.jumpTo(target);
+    } else {
+      _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _scrollToCurrent(
+    List<EpisodeSummary> episodes,
+    EpisodeSummary? current,
+    bool gated,
+    List<EpisodeSummary> free,
+  ) {
+    if (_didInitialScroll || current == null) {
+      return;
+    }
+    _didInitialScroll = true;
+
+    int rowIndex = 0;
+    if (!gated) {
+      final int idx = episodes.indexWhere((e) => e.number == current.number);
+      if (idx >= 0) {
+        rowIndex = idx ~/ 6;
+      }
+    } else {
+      final int freeIdx = free.indexWhere((e) => e.number == current.number);
+      if (freeIdx >= 0) {
+        rowIndex = freeIdx ~/ 6;
+      } else {
+        final int freeRows = (free.length + 5) ~/ 6;
+        final int lockedIdx =
+            current.number - (free.isNotEmpty ? free.last.number : 0) - 1;
+        rowIndex = freeRows + 3 + (lockedIdx ~/ 6);
+      }
+    }
+
+    final double target = rowIndex * 54.0 - 36.0;
+    if (target > 8.0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToOffset(target);
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,12 +169,26 @@ class EpisodeSheet extends StatelessWidget {
         _tickFor(state, episode, current, freeEpisodes),
     ];
 
+    _scrollToCurrent(episodes, current, gated, free);
+
     return ListView(
+      controller: _scrollController,
       padding: EdgeInsets.zero,
       children: <Widget>[
         EpisodeSpine(ticks: ticks, language: state.language),
         SizedBox(height: _blockGap / 2),
         _OverviewLine(ticks: ticks, language: state.language),
+        if (episodes.length > 30) ...<Widget>[
+          SizedBox(height: _blockGap / 2),
+          _EpisodeRangeTabs(
+            totalEpisodes: episodes.length,
+            currentEpisodeNumber: current?.number ?? 1,
+            onSelectRange: (int startEpisode) {
+              final int targetRow = (startEpisode - 1) ~/ 6;
+              _scrollToOffset(targetRow * 54.0);
+            },
+          ),
+        ],
         SizedBox(height: _blockGap),
         if (!gated)
           _EpisodeGrid(
@@ -135,6 +219,82 @@ class EpisodeSheet extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Horizontal range tabs for long seasons (>30 episodes).
+class _EpisodeRangeTabs extends StatelessWidget {
+  const _EpisodeRangeTabs({
+    required this.totalEpisodes,
+    required this.currentEpisodeNumber,
+    required this.onSelectRange,
+  });
+
+  final int totalEpisodes;
+  final int currentEpisodeNumber;
+  final ValueChanged<int> onSelectRange;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+
+    final int rangeCount = (totalEpisodes + 29) ~/ 30;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.symmetric(vertical: spacing.space1 / 2),
+      child: Row(
+        children: <Widget>[
+          for (int i = 0; i < rangeCount; i++) ...<Widget>[
+            Builder(
+              builder: (BuildContext context) {
+                final int start = i * 30 + 1;
+                final int end = (start + 29).clamp(1, totalEpisodes);
+                final bool isActive =
+                    currentEpisodeNumber >= start && currentEpisodeNumber <= end;
+
+                return Padding(
+                  padding: EdgeInsets.only(right: spacing.space2),
+                  child: InkWell(
+                    onTap: () => onSelectRange(start),
+                    borderRadius: BorderRadius.circular(shapes.radiusPill),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: spacing.space3,
+                        vertical: spacing.space1,
+                      ),
+                      decoration: BoxDecoration(
+                        color:
+                            isActive ? colors.premiumSurface : colors.surfaceAlt,
+                        borderRadius: BorderRadius.circular(shapes.radiusPill),
+                        border: Border.all(
+                          color:
+                              isActive ? colors.accentPrimary : colors.hairline,
+                          width: shapes.strokeHairline,
+                        ),
+                      ),
+                      child: Text(
+                        '$start–$end',
+                        style: roles.caption.copyWith(
+                          color: isActive
+                              ? colors.accentPrimary
+                              : colors.textSecondary,
+                          fontWeight:
+                              isActive ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

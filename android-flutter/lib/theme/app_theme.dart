@@ -232,7 +232,7 @@ BottomSheetThemeData _bottomSheetTheme(
   modalElevation: shapes.elevationFloating,
   clipBehavior: Clip.antiAlias,
   showDragHandle: true,
-  dragHandleColor: colors.hairline,
+  dragHandleColor: colors.outlineStrong.withValues(alpha: 0.55),
   dragHandleSize: const Size(36, 4),
   constraints: const BoxConstraints(minWidth: 320, maxWidth: 720),
   shape: RoundedRectangleBorder(

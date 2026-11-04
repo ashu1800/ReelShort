@@ -144,6 +144,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   String? _gestureLabel;
   double? _gestureValue;
 
+  /// Double-tap touch position and active heart burst animations.
+  Offset? _lastDoubleTapPosition;
+  final List<_HeartBurstItem> _burstHearts = <_HeartBurstItem>[];
+  int _heartCounter = 0;
+
   @override
   void initState() {
     super.initState();
@@ -369,6 +374,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!_surfaceInteractive) {
       return;
     }
+    final Offset pos = _lastDoubleTapPosition ??
+        Offset(
+          MediaQuery.sizeOf(context).width / 2,
+          MediaQuery.sizeOf(context).height / 2,
+        );
+    final int id = _heartCounter++;
+    setState(() {
+      _burstHearts.add(_HeartBurstItem(id: id, position: pos));
+    });
     // Social failures surface through the global message host; a 401 opens
     // the auth sheet right here over the player (contract rule 29).
     unawaited(HapticFeedback.mediumImpact());
@@ -544,6 +558,9 @@ class _PlayerScreenState extends State<PlayerScreen>
               // Tap pauses, double-tap likes, edge drags drive brightness and
               // volume, and a middle drag swipes to the next/previous episode.
               onTap: _togglePlayPause,
+              onDoubleTapDown: (TapDownDetails details) {
+                _lastDoubleTapPosition = details.localPosition;
+              },
               onDoubleTap: _onDoubleTapLike,
               onVerticalDragStart: _onVerticalDragStart,
               onVerticalDragUpdate: _onVerticalDragUpdate,
@@ -565,25 +582,37 @@ class _PlayerScreenState extends State<PlayerScreen>
                     )
                   else
                     _CoverOverlay(state: state),
-                  // Paused state: a large translucent play affordance.
-                  if (videoReady && !_wasPlaying)
-                    Center(
-                      child: ExcludeSemantics(
-                        child: Container(
-                          width: 72,
-                          height: 72,
-                          decoration: BoxDecoration(
-                            color: media.scrim,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.play_arrow_rounded,
-                            color: media.onMedia,
-                            size: 48,
+                  // Paused state: a smooth translucent play affordance.
+                  Center(
+                    child: ExcludeSemantics(
+                      child: AnimatedScale(
+                        scale: (videoReady && !_wasPlaying) ? 1.0 : 0.65,
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOutBack,
+                        child: AnimatedOpacity(
+                          opacity: (videoReady && !_wasPlaying) ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 160),
+                          child: Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              color: media.scrim.withValues(alpha: 0.65),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: media.divider.withValues(alpha: 0.35),
+                                width: 1,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.play_arrow_rounded,
+                              color: media.onMedia,
+                              size: 48,
+                            ),
                           ),
                         ),
                       ),
                     ),
+                  ),
                   // Brightness/volume drag feedback pill.
                   if (_gestureLabel != null)
                     Center(
@@ -611,6 +640,22 @@ class _PlayerScreenState extends State<PlayerScreen>
               ),
             ),
           ),
+          // Double-tap heart burst particles floating over the surface.
+          for (final _HeartBurstItem heart in _burstHearts)
+            _HeartBurst(
+              key: ValueKey<int>(heart.id),
+              position: heart.position,
+              rotationSeed: heart.id,
+              onFinished: () {
+                if (mounted) {
+                  setState(() {
+                    _burstHearts.removeWhere(
+                      (_HeartBurstItem item) => item.id == heart.id,
+                    );
+                  });
+                }
+              },
+            ),
           // Top bar: back button, reward ring, `+N pt` toast.
           Positioned(
             top: 0,
@@ -1110,11 +1155,49 @@ class _GestureFeedbackPill extends StatelessWidget {
   }
 }
 
-/// The settled-reward overlay: `+N pt` from the shared award label.
-class _RewardToast extends StatelessWidget {
+/// The settled-reward overlay: `+N pt` from the shared award label with spring bounce.
+class _RewardToast extends StatefulWidget {
   const _RewardToast({required this.points});
 
   final int points;
+
+  @override
+  State<_RewardToast> createState() => _RewardToastState();
+}
+
+class _RewardToastState extends State<_RewardToast>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+  late final Animation<double> _translate;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _scale = Tween<double>(begin: 0.7, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+    );
+    _translate = Tween<double>(begin: 8.0, end: 0.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutQuad),
+    );
+    final bool disableAnimations = WidgetsBinding
+        .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+    if (!disableAnimations) {
+      _controller.forward();
+    } else {
+      _controller.value = 1.0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1124,20 +1207,50 @@ class _RewardToast extends StatelessWidget {
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final AppUiState state = context.watch<AppStateController>().state;
 
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: spacing.space3,
-        vertical: spacing.space1,
-      ),
-      decoration: BoxDecoration(
-        color: colors.accentReward,
-        borderRadius: BorderRadius.circular(shapes.radiusMedia),
-      ),
-      child: Text(
-        rewardBadgeAwardLabel(points, state.language),
-        style: roles.caption.copyWith(
-          color: colors.onReward,
-          fontWeight: FontWeight.w700,
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (BuildContext context, Widget? child) {
+        return Transform.translate(
+          offset: Offset(0, _translate.value),
+          child: Transform.scale(
+            scale: _scale.value,
+            child: child,
+          ),
+        );
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: spacing.space3,
+          vertical: spacing.space1,
+        ),
+        decoration: BoxDecoration(
+          color: colors.accentReward,
+          borderRadius: BorderRadius.circular(shapes.radiusMedia),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: colors.accentReward.withValues(alpha: 0.35),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.stars_rounded,
+              size: 14,
+              color: colors.onReward,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              rewardBadgeAwardLabel(widget.points, state.language),
+              style: roles.caption.copyWith(
+                color: colors.onReward,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1258,7 +1371,7 @@ String _railSemanticLabel(String action, String count) =>
     count.isEmpty ? action : '$action, $count';
 
 /// One rail button: a glass plate carrying the glyph, with its count below.
-class _RailAction extends StatelessWidget {
+class _RailAction extends StatefulWidget {
   const _RailAction({
     required this.icon,
     required this.color,
@@ -1274,6 +1387,55 @@ class _RailAction extends StatelessWidget {
   final Future<void> Function() onTap;
 
   @override
+  State<_RailAction> createState() => _RailActionState();
+}
+
+class _RailActionState extends State<_RailAction>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _scale = TweenSequence<double>(<TweenSequenceItem<double>>[
+      TweenSequenceItem<double>(
+        tween: Tween<double>(begin: 1.0, end: 1.25)
+            .chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 45,
+      ),
+      TweenSequenceItem<double>(
+        tween: Tween<double>(begin: 1.25, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
+        weight: 55,
+      ),
+    ]).animate(_controller);
+  }
+
+  @override
+  void didUpdateWidget(_RailAction oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.icon != oldWidget.icon || widget.color != oldWidget.color) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    _controller.forward(from: 0.0);
+    unawaited(widget.onTap());
+  }
+
+  @override
   Widget build(BuildContext context) {
     final AppMedia media = appMediaOf(context);
     final AppSpacing spacing = appSpacingOf(context);
@@ -1281,28 +1443,35 @@ class _RailAction extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: semanticLabel,
-      onTap: () => unawaited(onTap()),
+      label: widget.semanticLabel,
+      onTap: _handleTap,
       excludeSemantics: true,
       child: InkWell(
-        onTap: () => unawaited(onTap()),
+        onTap: _handleTap,
         customBorder: const CircleBorder(),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Container(
-              width: _minTargetExtent,
-              height: _minTargetExtent,
-              decoration: BoxDecoration(
-                color: media.glass,
-                shape: BoxShape.circle,
+            ScaleTransition(
+              scale: _scale,
+              child: Container(
+                width: _minTargetExtent,
+                height: _minTargetExtent,
+                decoration: BoxDecoration(
+                  color: media.glass,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  widget.icon,
+                  color: widget.color,
+                  size: appIconSizeOf(context).md,
+                ),
               ),
-              child: Icon(icon, color: color, size: appIconSizeOf(context).md),
             ),
-            if (label.isNotEmpty) ...<Widget>[
+            if (widget.label.isNotEmpty) ...<Widget>[
               SizedBox(height: spacing.space1),
               Text(
-                label,
+                widget.label,
                 style: roles.caption.copyWith(color: media.onMedia),
                 maxLines: 1,
               ),
@@ -1434,21 +1603,27 @@ class _CommentSheetState extends State<_CommentSheet> {
                   child: InkWell(
                     onTap: canSend ? _submit : null,
                     customBorder: const CircleBorder(),
-                    child: Container(
-                      width: _minTargetExtent,
-                      height: _minTargetExtent,
-                      decoration: BoxDecoration(
-                        color: canSend
-                            ? colors.accentPrimary
-                            : colors.surfaceAlt,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.send,
-                        size: icons.sm,
-                        color: canSend
-                            ? colors.onAccent
-                            : colors.textSecondary,
+                    child: AnimatedScale(
+                      scale: canSend ? 1.0 : 0.88,
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutBack,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: _minTargetExtent,
+                        height: _minTargetExtent,
+                        decoration: BoxDecoration(
+                          color: canSend
+                              ? colors.accentPrimary
+                              : colors.surfaceAlt,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.send,
+                          size: icons.sm,
+                          color: canSend
+                              ? colors.onAccent
+                              : colors.textSecondary,
+                        ),
                       ),
                     ),
                   ),
@@ -1719,6 +1894,114 @@ class _MediaButton extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A lightweight record tracking an active double-tap heart burst.
+class _HeartBurstItem {
+  const _HeartBurstItem({required this.id, required this.position});
+  final int id;
+  final Offset position;
+}
+
+/// The animated heart burst particle appearing at the double-tap location.
+class _HeartBurst extends StatefulWidget {
+  const _HeartBurst({
+    required this.position,
+    required this.rotationSeed,
+    required this.onFinished,
+    super.key,
+  });
+
+  final Offset position;
+  final int rotationSeed;
+  final VoidCallback onFinished;
+
+  @override
+  State<_HeartBurst> createState() => _HeartBurstState();
+}
+
+class _HeartBurstState extends State<_HeartBurst>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _anim;
+  late final Animation<double> _scale;
+  late final Animation<double> _opacity;
+  late final double _rotation;
+
+  @override
+  void initState() {
+    super.initState();
+    final bool disableAnimations =
+        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+    final Duration duration = disableAnimations
+        ? Duration.zero
+        : const Duration(milliseconds: 700);
+    _anim = AnimationController(vsync: this, duration: duration);
+    _scale = TweenSequence<double>(<TweenSequenceItem<double>>[
+      TweenSequenceItem<double>(
+        tween: Tween<double>(begin: 0.2, end: 1.25)
+            .chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 35,
+      ),
+      TweenSequenceItem<double>(
+        tween: Tween<double>(begin: 1.25, end: 1.0),
+        weight: 20,
+      ),
+      TweenSequenceItem<double>(
+        tween: Tween<double>(begin: 1.0, end: 0.85),
+        weight: 45,
+      ),
+    ]).animate(_anim);
+
+    _opacity = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: _anim, curve: const Interval(0.65, 1.0)),
+    );
+
+    // Minor pseudo-random tilt between -12° and +12°.
+    _rotation = (((widget.rotationSeed % 7) - 3) * 4.0) * (3.141592653589793 / 180.0);
+
+    if (duration == Duration.zero) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onFinished();
+      });
+    } else {
+      _anim.forward().then((_) {
+        if (mounted) widget.onFinished();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    return Positioned(
+      left: widget.position.dx - 36,
+      top: widget.position.dy - 50 - (_anim.value * 45),
+      child: IgnorePointer(
+        child: ExcludeSemantics(
+          child: Transform.rotate(
+            angle: _rotation,
+            child: FadeTransition(
+              opacity: _opacity,
+              child: ScaleTransition(
+                scale: _scale,
+                child: Icon(
+                  Icons.favorite,
+                  color: colors.accentDanger,
+                  size: 72,
+                ),
+              ),
             ),
           ),
         ),

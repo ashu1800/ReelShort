@@ -187,63 +187,73 @@ class _AuthSheetState extends State<AuthSheet> {
                   ? null
                   : (_) => _submitLogin(controller, canSubmit),
             ),
-            if (!registerMode) ...<Widget>[
-              _RememberPasswordRow(
-                checked: _rememberPassword,
-                enabled: fieldsEnabled,
-                label: rememberPasswordLabel(state.language),
-                onChanged: (bool value) =>
-                    setState(() => _rememberPassword = value),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeInOutCubic,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  if (!registerMode) ...<Widget>[
+                    _RememberPasswordRow(
+                      checked: _rememberPassword,
+                      enabled: fieldsEnabled,
+                      label: rememberPasswordLabel(state.language),
+                      onChanged: (bool value) =>
+                          setState(() => _rememberPassword = value),
+                    ),
+                    AppButton(
+                      label: busy ? copy.authLoginLoading : sheetCopy.primaryAction,
+                      isExpanded: true,
+                      isLoading: busy,
+                      loadingLabel: copy.authLoginLoading,
+                      onPressed:
+                          canSubmit ? () => _submitLogin(controller, canSubmit) : null,
+                    ),
+                    _ModeSwitchButton(
+                      label: sheetCopy.secondaryAction,
+                      enabled: fieldsEnabled,
+                      onTap: controller.showRegisterAuthMode,
+                    ),
+                  ] else ...<Widget>[
+                    const SizedBox(height: 14),
+                    AppTextField(
+                      controller: _confirmPassword,
+                      label: copy.authConfirmPasswordLabel,
+                      obscureText: true,
+                      enabled: fieldsEnabled,
+                      textInputAction: TextInputAction.next,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 14),
+                    _CaptchaRow(
+                      imageBase64: state.captchaImageBase64,
+                      answerController: _captchaAnswer,
+                      answerLabel: authCaptchaAnswerLabel(state.language),
+                      refreshLabel: copy.authCaptchaRefresh,
+                      loadingLabel: copy.authCaptchaLoading,
+                      enabled: fieldsEnabled,
+                      onRefresh: controller.fetchCaptcha,
+                      onAnswerChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 14),
+                    AppButton(
+                      label: sheetCopy.primaryAction,
+                      isExpanded: true,
+                      isLoading: busy,
+                      onPressed: canSubmit
+                          ? () => _submitRegister(controller, canSubmit)
+                          : null,
+                    ),
+                    _ModeSwitchButton(
+                      label: sheetCopy.secondaryAction,
+                      enabled: fieldsEnabled,
+                      onTap: controller.showLoginAuthMode,
+                    ),
+                  ],
+                ],
               ),
-              AppButton(
-                label: busy ? copy.authLoginLoading : sheetCopy.primaryAction,
-                isExpanded: true,
-                isLoading: busy,
-                loadingLabel: copy.authLoginLoading,
-                onPressed:
-                    canSubmit ? () => _submitLogin(controller, canSubmit) : null,
-              ),
-              _ModeSwitchButton(
-                label: sheetCopy.secondaryAction,
-                enabled: fieldsEnabled,
-                onTap: controller.showRegisterAuthMode,
-              ),
-            ] else ...<Widget>[
-              const SizedBox(height: 14),
-              AppTextField(
-                controller: _confirmPassword,
-                label: copy.authConfirmPasswordLabel,
-                obscureText: true,
-                enabled: fieldsEnabled,
-                textInputAction: TextInputAction.next,
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 14),
-              _CaptchaRow(
-                imageBase64: state.captchaImageBase64,
-                answerController: _captchaAnswer,
-                answerLabel: authCaptchaAnswerLabel(state.language),
-                refreshLabel: copy.authCaptchaRefresh,
-                loadingLabel: copy.authCaptchaLoading,
-                enabled: fieldsEnabled,
-                onRefresh: controller.fetchCaptcha,
-                onAnswerChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 14),
-              AppButton(
-                label: sheetCopy.primaryAction,
-                isExpanded: true,
-                isLoading: busy,
-                onPressed: canSubmit
-                    ? () => _submitRegister(controller, canSubmit)
-                    : null,
-              ),
-              _ModeSwitchButton(
-                label: sheetCopy.secondaryAction,
-                enabled: fieldsEnabled,
-                onTap: controller.showLoginAuthMode,
-              ),
-            ],
+            ),
           ],
         ),
       ),
@@ -311,7 +321,7 @@ class _RememberPasswordRow extends StatelessWidget {
 /// The backend image payload may carry a `data:image/png;base64,` prefix; the
 /// prefix is stripped before decoding. A payload that fails to decode renders
 /// the refresh label instead of crashing.
-class _CaptchaRow extends StatelessWidget {
+class _CaptchaRow extends StatefulWidget {
   const _CaptchaRow({
     required this.imageBase64,
     required this.answerController,
@@ -333,31 +343,63 @@ class _CaptchaRow extends StatelessWidget {
   final ValueChanged<String> onAnswerChanged;
 
   @override
+  State<_CaptchaRow> createState() => _CaptchaRowState();
+}
+
+class _CaptchaRowState extends State<_CaptchaRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _spinController;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+  }
+
+  @override
+  void dispose() {
+    _spinController.dispose();
+    super.dispose();
+  }
+
+  void _handleRefresh() {
+    final bool disableAnimations = WidgetsBinding
+        .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+    if (!disableAnimations) {
+      _spinController.forward(from: 0.0);
+    }
+    widget.onRefresh();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
     final TextTheme textTheme = Theme.of(context).textTheme;
-    final Uint8List? image = _decodeCaptcha(imageBase64);
+    final Uint8List? image = _decodeCaptcha(widget.imageBase64);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: <Widget>[
         Expanded(
           child: AppTextField(
-            controller: answerController,
-            label: answerLabel,
+            controller: widget.answerController,
+            label: widget.answerLabel,
             keyboardType: TextInputType.number,
             maxLength: 4,
-            enabled: enabled,
-            onChanged: onAnswerChanged,
+            enabled: widget.enabled,
+            onChanged: widget.onAnswerChanged,
           ),
         ),
         const SizedBox(width: 10),
         Semantics(
           button: true,
-          label: refreshLabel,
+          label: widget.refreshLabel,
           child: GestureDetector(
-            onTap: image != null && enabled ? onRefresh : null,
+            onTap: image != null && widget.enabled ? _handleRefresh : null,
             child: Container(
               width: 110,
               height: 52,
@@ -372,12 +414,17 @@ class _CaptchaRow extends StatelessWidget {
               ),
               child: image == null
                   ? Text(
-                      imageBase64.trim().isEmpty ? loadingLabel : refreshLabel,
+                      widget.imageBase64.trim().isEmpty
+                          ? widget.loadingLabel
+                          : widget.refreshLabel,
                       style: textTheme.labelSmall!.copyWith(
                         color: colors.textSecondary,
                       ),
                     )
-                  : Image.memory(image, gaplessPlayback: true),
+                  : RotationTransition(
+                      turns: _spinController,
+                      child: Image.memory(image, gaplessPlayback: true),
+                    ),
             ),
           ),
         ),

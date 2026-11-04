@@ -69,6 +69,9 @@ class ShortLinkUpdateClient implements ReleaseUpdateClient {
     if (kDebugMode) {
       debugPrint('[update] <- ${response.statusCode}');
     }
+    if (response.statusCode == 404) {
+      return null;
+    }
     if (!_isSuccessful(response.statusCode)) {
       throw ReleaseHttpException(response.statusCode);
     }

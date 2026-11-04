@@ -29,6 +29,7 @@ import '../../state/app_state_controller.dart';
 import '../../state/app_ui_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_icons.dart';
+import '../../theme/app_shapes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../../ui/components/app_amount_block.dart';
@@ -330,6 +331,8 @@ class _AmountStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
     final AppSpacing spacing = appSpacingOf(context);
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final WithdrawalSummary? summary = state.withdrawalSummary;
@@ -371,6 +374,36 @@ class _AmountStep extends StatelessWidget {
           inputFormatters: <TextInputFormatter>[
             FilteringTextInputFormatter.digitsOnly,
           ],
+          suffix: (summary != null && summary.availablePoints > 0)
+              ? Padding(
+                  padding: EdgeInsets.only(right: spacing.space1),
+                  child: InkWell(
+                    onTap: () {
+                      final String maxStr = summary.availablePoints.toString();
+                      controller.text = maxStr;
+                      onChanged(maxStr);
+                    },
+                    borderRadius: BorderRadius.circular(shapes.radiusPill),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: spacing.space2,
+                        vertical: spacing.space1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.premiumSurface,
+                        borderRadius: BorderRadius.circular(shapes.radiusPill),
+                      ),
+                      child: Text(
+                        'Max',
+                        style: roles.caption.copyWith(
+                          color: colors.accentPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : null,
           onChanged: onChanged,
         ),
         SizedBox(height: spacing.space3),

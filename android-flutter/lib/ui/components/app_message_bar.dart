@@ -283,32 +283,40 @@ class _DismissButton extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    container: true,
-    button: true,
-    label: AppUiCopy.dismissMessage,
-    onTap: onPressed,
-    excludeSemantics: true,
-    child: SizedBox(
-      width: appMessageBarDismissTargetExtent,
-      height: appMessageBarDismissTargetExtent,
-      child: Tooltip(
-        message: AppUiCopy.dismissMessage,
-        child: InkWell(
-          onTap: onPressed,
-          canRequestFocus: false,
-          customBorder: const StadiumBorder(),
-          child: Center(
-            child: Icon(
-              Icons.close,
-              size: _dismissIconSize,
-              color: color,
-            ),
-          ),
+  Widget build(BuildContext context) {
+    final Widget button = InkWell(
+      onTap: onPressed,
+      canRequestFocus: false,
+      customBorder: const StadiumBorder(),
+      child: Center(
+        child: Icon(
+          Icons.close,
+          size: _dismissIconSize,
+          color: color,
         ),
       ),
-    ),
-  );
+    );
+
+    final Widget content = Overlay.maybeOf(context) == null
+        ? button
+        : Tooltip(
+            message: AppUiCopy.dismissMessage,
+            child: button,
+          );
+
+    return Semantics(
+      container: true,
+      button: true,
+      label: AppUiCopy.dismissMessage,
+      onTap: onPressed,
+      excludeSemantics: true,
+      child: SizedBox(
+        width: appMessageBarDismissTargetExtent,
+        height: appMessageBarDismissTargetExtent,
+        child: content,
+      ),
+    );
+  }
 }
 
 /// The circular tinted glyph that distinguishes a tone without colour.

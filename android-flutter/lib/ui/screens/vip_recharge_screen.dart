@@ -261,7 +261,9 @@ class _PendingOrder extends StatefulWidget {
 
 class _PendingOrderState extends State<_PendingOrder> {
   Timer? _ticker;
+  Timer? _copiedResetTimer;
   int _remaining = 0;
+  bool _copied = false;
 
   @override
   void initState() {
@@ -284,7 +286,20 @@ class _PendingOrderState extends State<_PendingOrder> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _copiedResetTimer?.cancel();
     super.dispose();
+  }
+
+  void _copyAddress(String address) {
+    unawaited(HapticFeedback.lightImpact());
+    unawaited(Clipboard.setData(ClipboardData(text: address)));
+    _copiedResetTimer?.cancel();
+    setState(() => _copied = true);
+    _copiedResetTimer = Timer(const Duration(milliseconds: 2000), () {
+      if (mounted) {
+        setState(() => _copied = false);
+      }
+    });
   }
 
   /// Ticks the countdown down once a second until it reaches zero, exactly like
@@ -351,19 +366,31 @@ class _PendingOrderState extends State<_PendingOrder> {
           divider: false,
           trailingTakesIntrinsicWidth: true,
           trailing: AppButton(
-            label: widget.copy.vipPayCopy,
+            label: _copied ? 'Copied!' : widget.copy.vipPayCopy,
+            icon: _copied ? Icons.check : null,
             variant: AppButtonVariant.tertiary,
-            onPressed: operation == null
-                ? () {
-                    Clipboard.setData(ClipboardData(text: address));
-                  }
-                : null,
+            onPressed: operation == null ? () => _copyAddress(address) : null,
           ),
         ),
         if (address.trim().isNotEmpty) _PaymentQr(address: address),
-        Text(
-          '${widget.copy.vipPayExpiresIn} $countdown',
-          style: roles.numeric.copyWith(color: colors.accentPrimary),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 4,
+          children: <Widget>[
+            if (_remaining > 0 && _remaining <= 60)
+              Icon(Icons.warning_amber_rounded, size: 16, color: colors.accentDanger),
+            Text(
+              '${widget.copy.vipPayExpiresIn} $countdown',
+              style: roles.numeric.copyWith(
+                color: (_remaining > 0 && _remaining <= 60)
+                    ? colors.accentDanger
+                    : colors.accentPrimary,
+                fontWeight: (_remaining > 0 && _remaining <= 60)
+                    ? FontWeight.w700
+                    : FontWeight.w500,
+              ),
+            ),
+          ],
         ),
         Text(
           widget.copy.vipPayHint,

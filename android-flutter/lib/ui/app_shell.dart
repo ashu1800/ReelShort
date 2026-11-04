@@ -24,6 +24,8 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -461,10 +463,16 @@ class _AppNavigationBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final bool disableAnimations = WidgetsBinding
+        .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
 
-    return Container(
+    final Widget barContent = Container(
       decoration: BoxDecoration(
-        color: colors.surface,
+        color: disableAnimations
+            ? colors.surface
+            : colors.surface.withValues(
+                alpha: colors.brightness == Brightness.dark ? 0.82 : 0.88,
+              ),
         border: Border(
           top: BorderSide(color: colors.hairline, width: shapes.strokeHairline),
         ),
@@ -495,6 +503,22 @@ class _AppNavigationBar extends StatelessWidget {
         ),
       ),
     );
+
+    if (disableAnimations) {
+      return barContent;
+    }
+
+    // Guard against Windows flutter_tester segfault (0xC0000005) under software rendering.
+    if (Platform.environment.containsKey('FLUTTER_TEST')) {
+      return barContent;
+    }
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: barContent,
+      ),
+    );
   }
 }
 
@@ -523,29 +547,48 @@ class _NavTab extends StatelessWidget {
       label: navigationLabel(tab),
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            _TabGlyph(tab: tab, color: accent),
-            const SizedBox(height: 4),
-            Text(
-              navigationLabel(tab),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: roles.body.copyWith(color: accent, fontSize: 11),
-            ),
-            const SizedBox(height: 3),
-            AnimatedContainer(
-              duration: motion.controlState,
-              curve: motion.controlStateCurve,
-              width: 16,
-              height: 2,
-              decoration: BoxDecoration(
-                color: selected ? accent : Colors.transparent,
-                borderRadius: BorderRadius.circular(shapes.radiusInline),
+        borderRadius: BorderRadius.circular(shapes.radiusPill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              // M3 active indicator pill wrapping the icon
+              AnimatedContainer(
+                duration: motion.controlState,
+                curve: motion.controlStateCurve,
+                width: 52,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: selected ? colors.premiumSurface : Colors.transparent,
+                  borderRadius: BorderRadius.circular(shapes.radiusPill),
+                ),
+                child: Center(
+                  child: AnimatedScale(
+                    scale: selected ? 1.05 : 1.0,
+                    duration: motion.controlState,
+                    curve: motion.controlStateCurve,
+                    child: _TabGlyph(
+                      tab: tab,
+                      selected: selected,
+                      color: accent,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 3),
+              Text(
+                navigationLabel(tab),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: roles.body.copyWith(
+                  color: accent,
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -553,22 +596,45 @@ class _NavTab extends StatelessWidget {
 }
 
 class _TabGlyph extends StatelessWidget {
-  const _TabGlyph({required this.tab, required this.color});
+  const _TabGlyph({
+    required this.tab,
+    required this.selected,
+    required this.color,
+  });
 
   final AppScreen tab;
+  final bool selected;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
     switch (tab) {
       case AppScreen.home:
-        return Icon(Icons.smart_display_outlined, color: color, size: 22);
+        return Icon(
+          selected ? Icons.smart_display : Icons.smart_display_outlined,
+          color: color,
+          size: 22,
+        );
       case AppScreen.search:
-        return Icon(Icons.travel_explore_outlined, color: color, size: 22);
+        return Icon(
+          selected ? Icons.travel_explore : Icons.travel_explore_outlined,
+          color: color,
+          size: 22,
+        );
       case AppScreen.funds:
-        return Icon(Icons.account_balance_wallet_outlined, color: color, size: 22);
+        return Icon(
+          selected
+              ? Icons.account_balance_wallet
+              : Icons.account_balance_wallet_outlined,
+          color: color,
+          size: 22,
+        );
       case AppScreen.account:
-        return Icon(Icons.person_outline, color: color, size: 22);
+        return Icon(
+          selected ? Icons.person : Icons.person_outline,
+          color: color,
+          size: 22,
+        );
       // Non-primary screens are never rendered as a tab.
       default:
         return const SizedBox.shrink();
