@@ -72,6 +72,20 @@ class AppAmountBlock extends StatelessWidget {
       AppAmountSize.hero => roles.numericHero,
     }.copyWith(color: valueColor ?? colors.textPrimary);
 
+    // The hero label has to outrank the supporting rows below it, otherwise the
+    // figure's own caption reads smaller than the captions of the metrics that
+    // merely support it (12 dp caption vs the 15 dp row labels).
+    final TextStyle labelStyle = switch (size) {
+      AppAmountSize.hero => roles.body.copyWith(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: colors.textSecondary,
+      ),
+      AppAmountSize.inline || AppAmountSize.large => roles.caption.copyWith(
+        color: colors.textSecondary,
+      ),
+    };
+
     final String label = <String?>[
       this.label,
       value,
@@ -86,10 +100,7 @@ class AppAmountBlock extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             if (this.label != null) ...<Widget>[
-              Text(
-                this.label!,
-                style: roles.caption.copyWith(color: colors.textSecondary),
-              ),
+              Text(this.label!, style: labelStyle),
               SizedBox(height: spacing.space1),
             ],
             Row(
@@ -99,7 +110,7 @@ class AppAmountBlock extends StatelessWidget {
               children: <Widget>[
                 Flexible(child: Text(value, style: valueStyle)),
                 if (unit != null && unit!.isNotEmpty) ...<Widget>[
-                  SizedBox(width: spacing.space1),
+                  SizedBox(width: spacing.space2),
                   // The unit is flexed too: a long unit ("USDT / 30 days")
                   // ellipsises instead of overflowing the row at large text
                   // scales, which is what used to force callers to fold the

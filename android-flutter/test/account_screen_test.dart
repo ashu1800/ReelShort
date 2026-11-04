@@ -15,7 +15,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
-import 'package:shortlink/core/formatting/app_strings.dart';
 import 'package:shortlink/core/formatting/app_ui_copy.dart';
 import 'package:shortlink/core/formatting/navigation_contract.dart';
 import 'package:shortlink/core/formatting/update_ui_format.dart';
@@ -32,6 +31,7 @@ import 'package:shortlink/ui/components/app_list_row.dart';
 import 'package:shortlink/ui/components/app_loading.dart';
 import 'package:shortlink/ui/components/app_membership_chip.dart';
 import 'package:shortlink/ui/components/app_section.dart';
+import 'package:shortlink/ui/components/app_text_field.dart';
 import 'package:shortlink/ui/components/poster_card.dart';
 import 'package:shortlink/ui/screens/account_screen.dart';
 import 'package:shortlink/ui/update/update_dialog.dart';
@@ -250,10 +250,6 @@ List<String> semanticsTexts(WidgetTester tester) {
   walk(root);
   return texts;
 }
-
-/// The bank-card notice, resolved through the generated table.
-String _bankCardNotice() =>
-    strings(AppLanguage.defaultLanguage).accountBankCardUnsupported;
 
 void main() {
   testWidgets('the logged-in Me page uses one title role and two section cards', (
@@ -495,7 +491,7 @@ void main() {
     // Every row is its own node, and neither the card nor the list swallowed
     // them.
     expect(texts, contains('Cold wallet, $_address'));
-    expect(texts, contains('Bank card, ${_bankCardNotice()}'));
+    expect(texts, contains('Bank card, ${AppUiCopy.accountBankCardHint}'));
     expect(texts, contains('Contact support'));
     expect(texts, contains('${updateCopy.versionTitle}, --'));
     // The two controls that used to disappear.
@@ -752,7 +748,7 @@ void main() {
     expect(find.text('--'), findsOneWidget);
   });
 
-  testWidgets('signing out clears the session', (WidgetTester tester) async {
+  testWidgets('signing out clears the session after confirmation', (WidgetTester tester) async {
     final AppStateController controller = await _pumpAccount(
       tester,
       walletAddress: _address,
@@ -762,6 +758,15 @@ void main() {
     await _scrollTo(tester, find.text('Sign out'));
     await tester.tap(find.text('Sign out'));
     await tester.pumpAndSettle();
+
+    // Confirm dialog is shown; tap the dialog's confirm button.
+    expect(find.byType(AlertDialog), findsOneWidget);
+    await tester.tap(find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.widgetWithText(AppButton, 'Sign out'),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(controller.state.session, isNull);
   });
 
@@ -847,5 +852,57 @@ void main() {
     );
     expect(AppUiCopy.accountShortcutsSection, 'Shortcuts');
     expect(AppUiCopy.accountSettingsSection, 'Settings');
+  });
+
+  testWidgets('the bank-card row opens a bind sheet that always fails', (
+    WidgetTester tester,
+  ) async {
+    final AppStateController controller = await _pumpAccount(
+      tester,
+      walletAddress: _address,
+    );
+
+    await _scrollTo(tester, find.text('Bank card'));
+    // The row and its trailing button both open the sheet.
+    expect(
+      find.widgetWithText(TextButton, AppUiCopy.bankCardBindAction),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Bank card'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(AppUiCopy.bankCardBindTitle), findsOneWidget);
+
+    // The submit is gated on all three fields.
+    final Finder submit = find.widgetWithText(
+      AppButton,
+      AppUiCopy.bankCardBindAction,
+    );
+    expect(tester.widget<AppButton>(submit).onPressed, isNull);
+
+    await tester.enterText(
+      find.widgetWithText(AppTextField, AppUiCopy.bankCardNumberLabel),
+      '4242424242424242',
+    );
+    await tester.enterText(
+      find.widgetWithText(AppTextField, AppUiCopy.bankCardExpiryLabel),
+      '12/29',
+    );
+    await tester.enterText(
+      find.widgetWithText(AppTextField, AppUiCopy.bankCardCvvLabel),
+      '123',
+    );
+    await tester.pump();
+    expect(tester.widget<AppButton>(submit).onPressed, isNotNull);
+
+    await tester.tap(submit);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 800));
+
+    // The stub reports the generic failure and keeps the sheet and the input.
+    expect(controller.state.errorMessage, AppUiCopy.bankCardBindFailed);
+    expect(controller.state.messageType, UiMessageType.error);
+    expect(find.text(AppUiCopy.bankCardBindTitle), findsOneWidget);
+    expect(find.text('4242424242424242'), findsOneWidget);
   });
 }

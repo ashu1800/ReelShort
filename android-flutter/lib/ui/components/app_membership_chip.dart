@@ -27,13 +27,19 @@ const Size membershipChipPlaceholderSize = Size(112, 22);
 /// A compact membership pill: a tinted plate, a state glyph and a word.
 ///
 /// Semantics contract (`docs/ui-redesign-notes.md` §7.2): the chip announces its
-/// label and exposes no action, so a screen reader never invites the user to
-/// activate a status. The label is capped at one line at every text scale - the
-/// full wording stays in the announcement - which keeps a hero's height stable
-/// when the placeholder below is replaced by the real chip.
+/// label and, when it has no destination, exposes no action, so a screen reader
+/// never invites the user to activate a status. A caller that passes [onTap]
+/// turns it into a labelled shortcut instead. The label is capped at one line at
+/// every text scale - the full wording stays in the announcement - which keeps a
+/// hero's height stable when the placeholder below is replaced by the real chip.
 class AppMembershipChip extends StatelessWidget {
   /// Creates a membership chip.
-  const AppMembershipChip({required this.active, required this.label, super.key});
+  const AppMembershipChip({
+    required this.active,
+    required this.label,
+    this.onTap,
+    super.key,
+  });
 
   /// Whether the membership is currently active. Drives the accent role and the
   /// glyph, never the wording (the caller passes the already-localised label).
@@ -42,22 +48,31 @@ class AppMembershipChip extends StatelessWidget {
   /// Chip text, from `AppStrings.accountVipStatusActive` / `...Inactive`.
   final String label;
 
+  /// Optional shortcut: when set, the chip is a tappable entry into the
+  /// membership flow instead of a read-only status.
+  ///
+  /// The status word and the glyph still carry the state; the tap only adds a
+  /// destination, so the chip never becomes the only place the state lives.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
     final AppIconSize icons = appIconSizeOf(context);
     final AppSpacing spacing = appSpacingOf(context);
-    final Color accent = active ? colors.accentSuccess : colors.accentWarning;
+    // Only an active membership is good news; an ordinary non-member state is
+    // neutral, not a warning - the amber plate read as "something is wrong with
+    // the account".
+    final Color accent = active ? colors.accentSuccess : colors.textSecondary;
+    final Color plate = active
+        ? accent.withValues(alpha: 0.14)
+        : colors.surfaceAlt;
 
-    return Container(
+    final Widget content = Padding(
       padding: EdgeInsets.symmetric(
         horizontal: spacing.space3,
         vertical: spacing.space1,
-      ),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.14),
-        borderRadius: shapes.inlineRadius,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -82,6 +97,30 @@ class AppMembershipChip extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    final Widget chip = Material(
+      color: plate,
+      shape: RoundedRectangleBorder(borderRadius: shapes.inlineRadius),
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null
+          ? content
+          : InkWell(
+              onTap: onTap,
+              // The wrapper below owns the semantics: one node, one action.
+              excludeFromSemantics: true,
+              child: content,
+            ),
+    );
+
+    if (onTap == null) {
+      return chip;
+    }
+    return Semantics(
+      container: true,
+      button: true,
+      onTap: onTap,
+      child: chip,
     );
   }
 }

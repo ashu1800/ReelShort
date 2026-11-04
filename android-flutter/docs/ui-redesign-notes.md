@@ -570,7 +570,7 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
 4. **状态层小改** —— **已结案（Phase 5-3，见 §11）**：Discover 的首次搜索改由屏幕本地记住「已提交
    query」，加载骨架直接长在结果区，不再先画发现分组和起始提示再跳变；`state.isLoading` 仍是全局
    标志，但屏幕只在「自己发起的请求」尚未落地时才认它，跨屏刷新不会再串出搜索骨架。
-5. **发布**：Phase 4/5/5-3 全部改动尚未发版，`pubspec.yaml` 已升到 `0.9.9+51`（线上是
+5. **发布**：Phase 4/5/5-3 全部改动尚未发版，`pubspec.yaml` 已升到 `0.9.10+52`（线上是
    `0.9.7 (49)`）；发版走 `scripts/publish-android.py`（需签名环境变量 + COS 配置），并在真机做一次整包验收。
 
 ## 9. Phase 5-1 结果（组件收敛 + 反馈闭环）
@@ -714,3 +714,89 @@ Phase 5 的候选（按价值排序，均已在各屏小节留痕）：
   App 停在 Cloudflare 522/525，无法走真实链路。改用真实 Roboto 字体的离屏渲染取证（截图见
   `artifacts/ui-review/episode-sheet/`，gitignored），覆盖 360dp 锁集、360dp 会员、320dp 窄屏三态与
   单元格状态放大图。
+
+---
+
+## 13. 发现页二轮打磨（Discover polish）：单行搜索、层级重排、内容前置
+
+- 问题（按 718×1282 截图评审）：首屏约六成是四组灰色 chip、零内容露出；搜索区被拆成「输入框 +
+  114dp 实心按钮」，放大镜出现两次，占位符 `Search romance, CEO, revenge...` 被截成 `Search romance, ...`；
+  三级标题只靠字号区分 —— 分区头 13sp/w700 与组名 12sp/w600 **同色**，chip 反而 15sp/w600、近黑；
+  chip 的唯一边界是 1.15:1 的发丝线（设计系统自己写明 hairline 不能当控件边界）；四组标签 4/5/3/4，
+  `Doctor` 孤行、右侧空 250dp；起始提示被推到首屏之外。
+- 搜索区：一个全宽 `AppTextField`，放大镜只保留尾部的 44×44 内联动作（空输入时用 `onDisabled`
+  禁用，点不出死点击），清空用同尺寸的 ×。`searchHint` 改为 `Search titles, tags, authors`
+  （Kotlin 源 → `tool/port_app_strings.py` 重新生成，字段数不变）。
+- 层级：删除 `AppSectionHeader(searchTagsTitle)`，组名升级为 `textTheme.titleMedium`
+  （14sp/w700/`textPrimary`），chip 降到 14sp/w500、`controlRadius`(10)、边界换 `outlineStrong`
+  （对 surfaceAlt 3.3:1）。组内 8dp、组间 24dp（原 10.5 vs 15.5，比例 1.5:1）。
+- 内容前置：`homeShelf` 非空时在 lanes 上方渲染 112dp 宽的海报轨道（复用 `PosterCard`，8 张上限）；
+  货架为空时才是 `AppEmptyState` 起始提示，且位置从页尾挪到搜索框下方。
+- 交互：搜索结果头部的查询从灰字改成可移除胶囊（`activeQueryPillKey`，点击 `clearSearch()` 回到
+  lanes）；搜索历史（`SearchHistoryStore` + `PreferenceSearchHistoryStore`，键 `search_history`，
+  最多 6 条、大小写不敏感去重）以 chip 列表 + Clear 呈现；点 lane 会先把 tag 写回输入框再发请求
+  （原来要等响应回来 `searchQuery` 变化才回填，失败则一直空着）；输入草稿存
+  `AppStateController.searchDraft`，切 Tab 销毁屏幕后能恢复；搜索框用 `SliverPersistentHeader`
+  吸顶，高度按 `TextScaler.scale(24)` 现算（1× 52dp、3.2× 105dp，实测校准）。
+- 顺带：底部导航 `Funds center` → `Funds`（Kotlin `fundsTitle` + `VisualTextContractTest` 同步）；
+  四组标签收敛为 4/4/4/4（`Power roles` 去掉与 CEO 语义重复的 Boss，`Relationships` 补 Divorce）；
+  状态栏/导航栏在四个 `styles.xml` 里显式透明 + `windowLightStatusBar`，不再依赖平台默认灰条。
+- 未做（明确记录）：chip 的「多选 + Show results (2)」需要后端支持按标签过滤，当前搜索接口只接受
+  一个关键词字符串，多选拼成 `Love CEO` 只会得到噪声，因此只做了「结果页可移除查询胶囊」这条；
+  `searchTagsTitle` 在 Flutter 侧已无引用（Kotlin 仍在使用，不能删）。
+- 验证：`flutter analyze` 0 issue；`flutter test` 分文件全绿（本机 `flutter_tester` 在 Windows 上有
+  偶发加载崩溃，逐文件重试后 search 26 / funds 15 / navigation 17 / design_system 50 / ui_wiring 6 /
+  widget 2 全部通过）。
+
+## 14. 资金中心二轮打磨（Funds polish）：零余额是一种状态，不是四个 0
+
+- 问题（按 717×1277 截图评审）：hero 里 Available / Total / Credited today / Frozen 四个度量同时出现，
+  0 余额时三个 0 与主数字重复；`Total points` 的值用 `accentPrimary` 把 accent 当数据色；非会员
+  `AppMembershipChip` 用 `accentWarning` + 锁图标，读起来像账号异常；提现在 0 积分时仍是满色主按钮，
+  点进去才撞最低门槛；积分记录被 280dp hero + 100dp 按钮推到折叠线以下，空态是塞进卡片的 56dp 圆图标板；
+  hero 标签是 `caption` 12sp，比下面三条行的 15sp 标签还小；白卡边界只有 1.13:1 发丝线。
+- hero：`outlineStrong` 1dp 描边（VIP 仍 `accentPrimary` + `strokeEmphasis`）；标签改 13sp/w600，
+  数字与单位间距 4 → 8dp（`AppAmountBlock` 按 `size` 选标签角色，其它屏的 inline/large 不受影响）。
+- 零余额：主数字下方给一行引导（复用 `fundsPointRecordsEmptyBody`）+ 整宽主按钮
+  `fundsEarnAction`（"Watch to earn"）→ `controller.showHome()`；Total / Credited / Frozen 只在
+  「有信息量」时出现（frozen > 0 才带 Total，today > 0 才有 Credited），不再打印三个 0；
+  `Total points` 的 accent 去掉。
+- 非会员 chip：中性化（`textSecondary` + `surfaceAlt`），VIP 生效才 success；新增可选 `onTap`
+  （`InkWell` + 单一 `Semantics(button, onTap)`，`excludeFromSemantics` 防双节点），资金中心把它接到
+  VIP 充值，状态与入口不再分散在两处。
+- 提现：只在「已知余额为 0」时禁用并降为 secondary，caption 换成 `fundsWithdrawEmptyHint`
+  （游客 / 快照未知仍可点，保持原有登录引导）。
+- 分区：空态改紧凑 `AppListRow`（积分记录带 "Watch to earn" 按钮；hero 已经给出同一个 CTA 时
+  不再重复），不再用页面级 `AppEmptyState`
+  塞进卡片；按钮 caption 间距 8 → 4dp、字号改 `caption`。
+- 头部与加载：标题右侧加刷新 `IconButton`（`AppUiCopy.refresh`），标题下加 `fundsSubtitle`；
+  首次加载仍用内容骨架，**刷新时保留旧数字**，只在顶部加 2dp `LinearProgressIndicator`。
+- 未做（明确记录）：两个按钮保持 50/50 —— 60/40 会让 "VIP recharge" 在 360dp 下（右列 125dp，
+  去掉 40dp 内边距与 28dp 图标后仅剩 57dp 给文字）溢出；积分记录上移的诉求由 hero 收缩
+  （280 → ~150dp）满足，记录已在首屏可见；跨页单位排版（`0 pts` / `12.00 USDT` / `≈1.00 USDT`）
+  未统一，需要改共享格式化器。
+- 验证：`flutter analyze` 0 issue；`flutter test` 分文件全绿 —— funds 20（新增 5 条：零余额引导、
+  有余额保留 Total、chip 快捷入口、刷新按钮、空态行动）、account 22、search 26、player 19、
+  withdrawal 13、vip_recharge 18、navigation 17、design_system（chip 契约用例改写并通过）。
+  已知环境问题：`design_system_test` 的「every component renders ...」矩阵用例在本机
+  `flutter_tester` 上会整进程崩溃（在未修改的 HEAD 上同样 6/6 复现），属既有 Windows 抖动，与本次改动无关。
+
+## 15. 绑卡入口占位（Bank card stub）：能填、能提交、必定失败
+
+- 需求：Me 页的 Bank card 行要能点开、能输入卡号信息，确认时返回一个「未知错误」的英文提示；
+  不做真实绑卡与提现。
+- 实现：设置卡里的 Bank card 行从只读改为可点（尾部 `Bind card`，副标题
+  `AppUiCopy.accountBankCardHint`），打开 `_BankCardSheet`——三个 `AppTextField`（Card number /
+  Expiry (MM/YY) / CVV，均带 `FilteringTextInputFormatter` 与 `LengthLimitingTextInputFormatter`），
+  提交按钮在三个字段都非空前保持禁用；提交后 700ms 假延迟，然后
+  `AppStateController.showMessage(AppUiCopy.bankCardBindFailed)`，弹层保持打开、输入保留
+  （与钱包/提现表单的失败语义一致）。
+- 安全边界：卡号、有效期、CVV 只存在于该 sheet 的 `TextEditingController` 里，弹层关闭即释放；
+  `_submit` 不接收任何参数，`/api/app/wallet/bank-card` 仍固定返回 410，**没有任何代码路径能把卡数据
+  发出去**。按钮下方不再有说明文字（按评审要求移除），`accountBankCardUnsupported` 在 Flutter 侧
+  因此不再被引用（Kotlin 源仍保留该字段，生成物不手改）。
+- 未做：真实的绑卡存储、提现方式选择、后台代付队列（见 `docs/ui-redesign-notes.md` 之外的产品讨论，
+  需要实名核验与资金通道）。
+- 验证：`flutter analyze` 0 issue；`flutter test test\account_screen_test.dart` 23 用例全绿
+  （新增 1 条：开层 → 三字段门禁 → 提交 → 通用错误且弹层与输入保留）；雷电模拟器实测
+  （`artifacts/ui-review/discover-polish/07-bank-card-sheet.png`、`08-bank-card-error.png`）。

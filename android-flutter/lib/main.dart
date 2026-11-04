@@ -40,6 +40,7 @@ Future<void> main() async {
   final AppEnvironment environment = await AppEnvironment.bootstrap();
   final AppStateController controller = AppStateController(
     dataSource: environment.dataSource,
+    searchHistoryStore: environment.searchHistoryStore,
   );
 
   // Self-update subsystem: the coordinator is assembled once here, mirroring the
@@ -130,31 +131,32 @@ class ShortLinkApp extends StatelessWidget {
         // account screen can resolve the coordinator; the hosts layer the
         // global message bar and the self-update UI over every route, like the
         // Kotlin activity boxes.
-        builder: (BuildContext context, Widget? child) => AnnotatedRegion<SystemUiOverlayStyle>(
-          // The Kotlin activity pins a dark edge-to-edge scrim; the redesign
-          // follows the active palette instead, keeping the icons readable.
-          value: Theme.of(context).brightness == Brightness.dark
-              ? SystemUiOverlayStyle.light.copyWith(
-                  systemNavigationBarIconBrightness: Brightness.light,
-                )
-              : SystemUiOverlayStyle.dark.copyWith(
-                  systemNavigationBarIconBrightness: Brightness.dark,
-                ),
-          child: UpdateDialogScope(
-            coordinator: updateCoordinator,
-            // Outermost first: the message bar sits above the self-update toast
-            // (a failure message must not be covered by a transient "up to
-            // date" toast), and both sit above every route because the
-            // Navigator is the innermost child.
-            child: _GlobalMessageHost(
-              child: _UpdateHost(
+        builder: (BuildContext context, Widget? child) =>
+            AnnotatedRegion<SystemUiOverlayStyle>(
+              // The Kotlin activity pins a dark edge-to-edge scrim; the redesign
+              // follows the active palette instead, keeping the icons readable.
+              value: Theme.of(context).brightness == Brightness.dark
+                  ? SystemUiOverlayStyle.light.copyWith(
+                      systemNavigationBarIconBrightness: Brightness.light,
+                    )
+                  : SystemUiOverlayStyle.dark.copyWith(
+                      systemNavigationBarIconBrightness: Brightness.dark,
+                    ),
+              child: UpdateDialogScope(
                 coordinator: updateCoordinator,
-                navigatorKey: navigatorKey,
-                child: child ?? const SizedBox.shrink(),
+                // Outermost first: the message bar sits above the self-update toast
+                // (a failure message must not be covered by a transient "up to
+                // date" toast), and both sit above every route because the
+                // Navigator is the innermost child.
+                child: _GlobalMessageHost(
+                  child: _UpdateHost(
+                    coordinator: updateCoordinator,
+                    navigatorKey: navigatorKey,
+                    child: child ?? const SizedBox.shrink(),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
         home: AppShell(controller: controller),
       ),
     );
@@ -369,7 +371,9 @@ class _UpdateHostState extends State<_UpdateHost> {
     _toastTimer?.cancel();
     setState(() {
       _toastMessage = message;
-      _toastType = state is UpToDate ? UiMessageType.success : UiMessageType.error;
+      _toastType = state is UpToDate
+          ? UiMessageType.success
+          : UiMessageType.error;
       _toastSerial++;
     });
     _toastTimer = Timer(const Duration(milliseconds: 4000), () {

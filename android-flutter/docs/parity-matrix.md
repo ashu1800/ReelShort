@@ -153,7 +153,7 @@ python tool/port_app_ui_state.py  # -> lib/state/app_ui_state.dart + test/state/
 
 ### 4.2 账户 / 资金 / VIP 契约
 
-- 底部四个一级 Tab：Home / Discover / **Funds center** / Me；无全局 TopAppBar。
+- 底部四个一级 Tab：Home / Discover / **Funds** / Me；无全局 TopAppBar。
 - Tab 高亮判据严格为 `state.screen == tab`；切换 `Crossfade` 220 ms。
 - `LOGIN` 屏不渲染内容但导航栏保留；`PLAYER` 为全屏（在 shell 之外）。
 - 登录闸门只要求用户名与密码非空（无最小长度）。

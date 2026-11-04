@@ -61,8 +61,39 @@ abstract final class AppUiCopy {
   /// starts.
   static const String searchAgain = 'Search again';
 
+  /// Search: heading of the poster rail that gives the discover page something
+  /// to browse before the user has typed anything.
+  static const String searchTrendingSection = 'Trending now';
+
+  /// Search: heading of the recent-query list.
+  static const String searchRecentSection = 'Recent searches';
+
+  /// Search: trailing action of the recent-query list.
+  static const String searchRecentClear = 'Clear';
+
+  /// Search: semantic label of the removable query pill in the results header.
+  static const String clearSearch = 'Clear search';
+
+  /// Search: semantic label of the results pill that drops the answered query.
+  ///
+  /// Distinct from [clearSearch] on purpose: the field's own clear action only
+  /// empties the text, while this one throws the result list away.
+  static const String clearResults = 'Clear results';
+
   /// Funds: section heading of the money actions.
   static const String fundsActionsSection = 'Actions';
+
+  /// Funds: the zero-balance call to action that sends the user back to the
+  /// shelf, where points are actually earned.
+  static const String fundsEarnAction = 'Watch to earn';
+
+  /// Funds: caption under a disabled Withdraw action, explaining why it cannot
+  /// be used yet instead of letting the tap dead-end in the sub-page.
+  static const String fundsWithdrawEmptyHint =
+      'Watch an episode to earn points first';
+
+  /// Funds: accessible name of the header refresh affordance.
+  static const String refresh = 'Refresh';
 
   /// Funds: empty title of the VIP order list.
   static const String fundsVipOrdersEmptyTitle = 'No VIP orders yet';
@@ -92,6 +123,29 @@ abstract final class AppUiCopy {
 
   /// Account: section heading of the settings rows.
   static const String accountSettingsSection = 'Settings';
+
+  /// Account: subtitle of the bank-card row (it now opens a bind sheet).
+  static const String accountBankCardHint = 'Bind a bank card for withdrawal';
+
+  /// Account: bank-card bind sheet title.
+  static const String bankCardBindTitle = 'Bind bank card';
+
+  /// Account: bank-card bind submit label.
+  static const String bankCardBindAction = 'Bind card';
+
+  /// Account: bank-card form labels.
+  static const String bankCardNumberLabel = 'Card number';
+  static const String bankCardExpiryLabel = 'Expiry (MM/YY)';
+  static const String bankCardCvvLabel = 'CVV';
+
+  /// Account: what the bank-card bind call reports.
+  ///
+  /// The bind is a stub: `/api/app/wallet/bank-card` still answers 410 and the
+  /// form never sends anything, so the only honest outcome is a generic
+  /// failure. Replace this copy and the stub together when a payout channel
+  /// exists.
+  static const String bankCardBindFailed =
+      'Unknown error. Please try again later.';
 
   /// VIP: label of the validity row.
   static const String vipValidity = 'Valid for';
@@ -154,4 +208,10 @@ abstract final class AppUiCopy {
   /// Episode spine: state word for a partially watched episode, appended after
   /// the count in the generated description (for example `2 in progress`).
   static const String episodeInProgress = 'in progress';
+
+  /// Detail screen: expand action for long drama description.
+  static const String readMore = 'Read more';
+
+  /// Detail screen: collapse action for long drama description.
+  static const String showLess = 'Show less';
 }

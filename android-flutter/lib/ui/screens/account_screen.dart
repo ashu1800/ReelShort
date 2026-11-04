@@ -4,7 +4,8 @@
 /// entries (G10/G11 — only three of the four declared quick entries render), the continue-watching
 /// preview capped at two rows with the `size/limit` pill, the wallet sheet that closes itself on
 /// success through `walletMutationVersion` (bind, replace **and** unbind), the password sheet that
-/// never auto-closes, the read-only bank-card explanation, the selectable support email, the
+/// never auto-closes, the bank-card bind sheet (a stub that always reports a generic failure), the
+/// selectable support email, the
 /// version row with the manual update check, a sign-out without a confirmation step, and the
 /// guest entry that signs in or registers directly.
 ///
@@ -14,7 +15,10 @@
 /// [AppSpacing.pagePadding]. Every colour, radius, gap and type role is a token.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
@@ -33,6 +37,7 @@ import '../../theme/app_typography.dart';
 import '../../update/update_coordinator.dart';
 import '../../update/update_state.dart';
 import '../components/app_button.dart';
+import '../components/app_confirm_dialog.dart';
 import '../components/app_list_row.dart';
 import '../components/app_loading.dart';
 import '../components/app_membership_chip.dart';
@@ -112,12 +117,24 @@ class AccountScreen extends StatelessWidget {
             _SettingsSection(state: state),
             if (!guest) ...<Widget>[
               SizedBox(height: spacing.space6),
-              // Parity: signing out still has no confirmation step.
+              // Confirmation guard: prevents accidental sign-out.
               AppButton(
                 label: copy.accountSignOutTitle,
                 variant: AppButtonVariant.destructive,
                 isExpanded: true,
-                onPressed: () => context.read<AppStateController>().logout(),
+                onPressed: () async {
+                  final bool confirmed = await AppConfirmDialog.show(
+                    context,
+                    title: copy.accountSignOutTitle,
+                    body: copy.accountSignOutSubtitle,
+                    confirmLabel: copy.accountSignOutTitle,
+                    cancelLabel: accountConfirmationCancel(state.language),
+                    destructive: true,
+                  );
+                  if (confirmed && context.mounted) {
+                    unawaited(context.read<AppStateController>().logout());
+                  }
+                },
               ),
             ],
           ],
@@ -354,6 +371,8 @@ class _ContinueWatchingSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
     final AppSpacing spacing = appSpacingOf(context);
     final AppStrings copy = strings(state.language);
     final AppStateController controller = context.read<AppStateController>();
@@ -382,20 +401,51 @@ class _ContinueWatchingSection extends StatelessWidget {
               final WatchRecord record = records[index];
               final BookSummary? book =
                   state.continueWatchingBooks[record.bookId];
+              final double percent =
+                  record.progressPercent.clamp(0, 100).toDouble();
+
               return SizedBox(
                 width: _posterLaneWidth,
-                child: PosterCard(
-                  title:
-                      (book?.title ?? '').isNotEmpty
-                      ? book!.title
-                      : record.bookTitle,
-                  coverUrl: book?.coverUrl,
-                  episodeCount: book?.chapterCount ?? 0,
-                  currentEpisode: record.episode,
-                  watchedEpisodeCount: record.progressPercent >= 100
-                      ? record.episode
-                      : record.episode - 1,
-                  onTap: () => controller.openWatchRecord(record),
+                child: Stack(
+                  clipBehavior: Clip.antiAlias,
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: PosterCard(
+                        title: (book?.title ?? '').isNotEmpty
+                            ? book!.title
+                            : record.bookTitle,
+                        coverUrl: book?.coverUrl,
+                        episodeCount: book?.chapterCount ?? 0,
+                        currentEpisode: record.episode,
+                        watchedEpisodeCount: record.progressPercent >= 100
+                            ? record.episode
+                            : record.episode - 1,
+                        onTap: () => controller.openWatchRecord(record),
+                      ),
+                    ),
+                    // Visual progress indicator at the bottom edge of the poster
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: IgnorePointer(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.vertical(
+                            bottom: Radius.circular(shapes.radiusContainer),
+                          ),
+                          child: Container(
+                            height: 3,
+                            color: colors.hairline.withValues(alpha: 0.5),
+                            child: FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: (percent / 100.0).clamp(0.0, 1.0),
+                              child: Container(color: colors.accentPrimary),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -456,6 +506,7 @@ class _SettingsSection extends StatelessWidget {
     final bool bound = (address ?? '').isNotEmpty;
 
     void openWallet() => _showWalletSheet(context);
+    void openBankCard() => _showBankCardSheet(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -494,12 +545,23 @@ class _SettingsSection extends StatelessWidget {
                 ),
               ),
             if (!guest)
-              // Read-only by contract: no card data is ever collected.
+              // The bind sheet is a stub that always reports a generic failure;
+              // the card fields never leave it and the endpoint stays closed.
               AppListRow(
                 title: copy.accountBankCardTitle,
-                subtitle: copy.accountBankCardUnsupported,
+                subtitle: AppUiCopy.accountBankCardHint,
                 leadingIcon: Icons.credit_card_outlined,
                 divider: false,
+                onTap: openBankCard,
+                trailingTakesIntrinsicWidth: true,
+                trailing: TextButton(
+                  onPressed: openBankCard,
+                  child: Text(
+                    AppUiCopy.bankCardBindAction,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ),
             // A support mailbox is a *value*, not an action: it sits in the
             // subtitle slot over the whole row width (a trailing slot squeezed
@@ -611,6 +673,141 @@ Future<void> _showWalletSheet(BuildContext context) async {
     useSafeArea: true,
     builder: (_) => const _WalletSheet(),
   );
+}
+
+Future<void> _showBankCardSheet(BuildContext context) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => const _BankCardSheet(),
+  );
+}
+
+/// The bank-card bind sheet: a form that always ends in a generic failure.
+///
+/// ponytail: a stub, on purpose. `/api/app/wallet/bank-card` still answers 410
+/// and nothing here is sent anywhere - the three fields live in this widget and
+/// go out of scope when the sheet closes, so no card number, expiry or CVV can
+/// be stored or transmitted. When a payout channel exists, replace [_submit]'s
+/// body and [AppUiCopy.bankCardBindFailed]; the form is already shaped for it.
+class _BankCardSheet extends StatefulWidget {
+  const _BankCardSheet();
+
+  @override
+  State<_BankCardSheet> createState() => _BankCardSheetState();
+}
+
+class _BankCardSheetState extends State<_BankCardSheet> {
+  final TextEditingController _number = TextEditingController();
+  final TextEditingController _expiry = TextEditingController();
+  final TextEditingController _cvv = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // The submit gate reads live text, so every keystroke re-evaluates it.
+    _number.addListener(_rebuild);
+    _expiry.addListener(_rebuild);
+    _cvv.addListener(_rebuild);
+  }
+
+  void _rebuild() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _number.dispose();
+    _expiry.dispose();
+    _cvv.dispose();
+    super.dispose();
+  }
+
+  bool get _complete =>
+      _number.text.trim().isNotEmpty &&
+      _expiry.text.trim().isNotEmpty &&
+      _cvv.text.trim().isNotEmpty;
+
+  Future<void> _submit() async {
+    setState(() => _busy = true);
+    // Stand-in for the round trip: the sheet stays open with the user's input,
+    // like every other failing account form.
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    if (!mounted) {
+      return;
+    }
+    setState(() => _busy = false);
+    context.read<AppStateController>().showMessage(AppUiCopy.bankCardBindFailed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 18,
+        right: 18,
+        top: 18,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(AppUiCopy.bankCardBindTitle, style: roles.displayLarge),
+          const SizedBox(height: 4),
+          Text(
+            AppUiCopy.accountBankCardHint,
+            style: roles.body.copyWith(color: colors.textSecondary),
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: _number,
+            label: AppUiCopy.bankCardNumberLabel,
+            keyboardType: TextInputType.number,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(19),
+            ],
+          ),
+          const SizedBox(height: 12),
+          AppTextField(
+            controller: _expiry,
+            label: AppUiCopy.bankCardExpiryLabel,
+            keyboardType: TextInputType.datetime,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.allow(RegExp('[0-9/]')),
+              LengthLimitingTextInputFormatter(5),
+            ],
+          ),
+          const SizedBox(height: 12),
+          AppTextField(
+            controller: _cvv,
+            label: AppUiCopy.bankCardCvvLabel,
+            obscureText: true,
+            keyboardType: TextInputType.number,
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(4),
+            ],
+          ),
+          const SizedBox(height: 18),
+          AppButton(
+            label: AppUiCopy.bankCardBindAction,
+            isExpanded: true,
+            isLoading: _busy,
+            onPressed: !_busy && _complete ? _submit : null,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// The full watch-history sheet: every record, tap resumes that drama.

@@ -36,7 +36,10 @@ UpdateCoordinator _offlineUpdateCoordinator() => UpdateCoordinator(
   availableBytes: (Directory _) => 0,
 );
 
-Future<void> _pumpApp(WidgetTester tester, AppStateController controller) async {
+Future<void> _pumpApp(
+  WidgetTester tester,
+  AppStateController controller,
+) async {
   await tester.pumpWidget(
     ShortLinkApp(
       controller: controller,
@@ -47,54 +50,56 @@ Future<void> _pumpApp(WidgetTester tester, AppStateController controller) async 
 }
 
 void main() {
-  testWidgets('guest account page offers sign-in and register entries and no wallet row', (
-    WidgetTester tester,
-  ) async {
-    final FakeAppDataSource dataSource = FakeAppDataSource()..session = null;
-    final AppStateController controller = AppStateController(
-      dataSource: dataSource,
-    );
-    await _pumpApp(tester, controller);
+  testWidgets(
+    'guest account page offers sign-in and register entries and no wallet row',
+    (WidgetTester tester) async {
+      final FakeAppDataSource dataSource = FakeAppDataSource()..session = null;
+      final AppStateController controller = AppStateController(
+        dataSource: dataSource,
+      );
+      await _pumpApp(tester, controller);
 
-    await controller.openAccount();
-    await tester.pumpAndSettle();
+      await controller.openAccount();
+      await tester.pumpAndSettle();
 
-    expect(find.text('Sign in'), findsWidgets);
-    expect(find.text('Create account'), findsOneWidget);
-    expect(find.text('Bind wallet'), findsNothing);
-  });
+      expect(find.text('Sign in'), findsWidgets);
+      expect(find.text('Create account'), findsOneWidget);
+      expect(find.text('Bind wallet'), findsNothing);
+    },
+  );
 
-  testWidgets('the wallet sheet closes after a successful bind even when the wallet stays unbound', (
-    WidgetTester tester,
-  ) async {
-    // The fake keeps `wallet.walletAddress` null after the bind; the sheet must
-    // still close on the `walletMutationVersion` advance (the unbind path of
-    // the Kotlin `walletSheetShouldDismiss` contract).
-    final FakeAppDataSource dataSource = FakeAppDataSource();
-    final AppStateController controller = AppStateController(
-      dataSource: dataSource,
-    );
-    await _pumpApp(tester, controller);
+  testWidgets(
+    'the wallet sheet closes after a successful bind even when the wallet stays unbound',
+    (WidgetTester tester) async {
+      // The fake keeps `wallet.walletAddress` null after the bind; the sheet must
+      // still close on the `walletMutationVersion` advance (the unbind path of
+      // the Kotlin `walletSheetShouldDismiss` contract).
+      final FakeAppDataSource dataSource = FakeAppDataSource();
+      final AppStateController controller = AppStateController(
+        dataSource: dataSource,
+      );
+      await _pumpApp(tester, controller);
 
-    await controller.openAccount();
-    await tester.pumpAndSettle();
+      await controller.openAccount();
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Bind wallet'));
-    await tester.pumpAndSettle();
-    expect(find.byType(TextField), findsNWidgets(2));
+      await tester.tap(find.text('Bind wallet'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNWidgets(2));
 
-    await tester.enterText(find.byType(TextField).at(0), '0xabc');
-    await tester.enterText(find.byType(TextField).at(1), 'password-1');
-    // One frame so the submit gate re-evaluates with the typed values.
-    await tester.pump();
-    await tester.tap(find.text('Bind wallet').last);
-    await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(0), '0xabc');
+      await tester.enterText(find.byType(TextField).at(1), 'password-1');
+      // One frame so the submit gate re-evaluates with the typed values.
+      await tester.pump();
+      await tester.tap(find.text('Bind wallet').last);
+      await tester.pumpAndSettle();
 
-    // The sheet is gone and the mutation landed exactly once.
-    expect(dataSource.callsTo('bindWallet'), 1);
-    expect(controller.state.walletMutationVersion, greaterThanOrEqualTo(1));
-    expect(find.byType(TextField), findsNothing);
-  });
+      // The sheet is gone and the mutation landed exactly once.
+      expect(dataSource.callsTo('bindWallet'), 1);
+      expect(controller.state.walletMutationVersion, greaterThanOrEqualTo(1));
+      expect(find.byType(TextField), findsNothing);
+    },
+  );
 
   testWidgets('the watch-history quick entry opens the full history sheet', (
     WidgetTester tester,
@@ -190,26 +195,29 @@ void main() {
     expect(controller.state.screen, AppScreen.account);
   });
 
-  testWidgets('the discover tab mounts the search screen with groups and field', (
-    WidgetTester tester,
-  ) async {
-    // Regression: the discovery groups Column once sat directly in the
-    // CustomScrollView slivers list, which throws
-    // "RenderFlex is not a subtype of RenderSliver" on first mount and leaves
-    // the tab blank on real devices.
-    final FakeAppDataSource dataSource = FakeAppDataSource();
-    final AppStateController controller = AppStateController(
-      dataSource: dataSource,
-    );
-    await _pumpApp(tester, controller);
+  testWidgets(
+    'the discover tab mounts the search screen with groups and field',
+    (WidgetTester tester) async {
+      // Regression: the discovery groups Column once sat directly in the
+      // CustomScrollView slivers list, which throws
+      // "RenderFlex is not a subtype of RenderSliver" on first mount and leaves
+      // the tab blank on real devices.
+      final FakeAppDataSource dataSource = FakeAppDataSource();
+      final AppStateController controller = AppStateController(
+        dataSource: dataSource,
+      );
+      await _pumpApp(tester, controller);
 
-    await tester.tap(find.text('Discover'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Discover'));
+      await tester.pumpAndSettle();
 
-    expect(controller.state.screen, AppScreen.search);
-    // The mount itself is the assertion: the sliver/box mismatch throws during
-    // the first build, failing the test before this line.
-    expect(find.byType(TextField), findsOneWidget);
-    expect(find.text('Search'), findsWidgets);
-  });
+      expect(controller.state.screen, AppScreen.search);
+      // The mount itself is the assertion: the sliver/box mismatch throws during
+      // the first build, failing the test before this line.
+      expect(find.byType(TextField), findsOneWidget);
+      // The submit action is an icon inside the field now: the tab is working
+      // when the field and its magnifier are both mounted.
+      expect(find.byIcon(Icons.search), findsWidgets);
+    },
+  );
 }

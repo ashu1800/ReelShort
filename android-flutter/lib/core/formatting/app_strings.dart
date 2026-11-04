@@ -414,7 +414,7 @@ const AppStrings _english = AppStrings(
     favoritesScreen: 'Favorites',
     searchTitle: 'Discover',
     searchSubtitle: 'Start with a trope, role, or keyword.',
-    searchHint: 'Search romance, CEO, revenge...',
+    searchHint: 'Search titles, tags, authors',
     searchAction: 'Search',
     searchTagsTitle: 'Popular lanes',
     searchHeroEyebrow: 'Curated discovery',
@@ -460,7 +460,7 @@ const AppStrings _english = AppStrings(
     accountWalletTitle: 'Cold wallet',
     accountWalletNetworkHint: 'ERC20 wallets only',
     accountWithdrawTitle: 'Withdraw',
-    fundsTitle: 'Funds center',
+    fundsTitle: 'Funds',
     fundsSubtitle: 'Points, withdrawals, and VIP membership',
     fundsTotalPointsLabel: 'Total points',
     fundsTodayCreditedPointsLabel: 'Credited today',
@@ -822,8 +822,8 @@ List<SearchDiscoveryGroup> searchDiscoveryGroups(AppLanguage language) =>
     switch (language) {
       AppLanguage.english => const <SearchDiscoveryGroup>[
   SearchDiscoveryGroup(title: 'Story moods', tags: <String>['Love', 'Revenge', 'Secret', 'Family']),
-  SearchDiscoveryGroup(title: 'Power roles', tags: <String>['Billionaire', 'CEO', 'Boss', 'Queen', 'Doctor']),
-  SearchDiscoveryGroup(title: 'Relationships', tags: <String>['Marriage', 'Contract', 'Pregnant']),
+  SearchDiscoveryGroup(title: 'Power roles', tags: <String>['Billionaire', 'CEO', 'Queen', 'Doctor']),
+  SearchDiscoveryGroup(title: 'Relationships', tags: <String>['Marriage', 'Contract', 'Pregnant', 'Divorce']),
   SearchDiscoveryGroup(title: 'Fantasy heat', tags: <String>['Mafia', 'Werewolf', 'Alpha', 'Luna']),
       ],
     };

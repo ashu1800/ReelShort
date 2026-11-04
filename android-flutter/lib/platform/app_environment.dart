@@ -27,6 +27,7 @@ import '../data/network/http_reel_short_api_client.dart';
 import '../data/sources/credential_store.dart';
 import '../data/sources/home_shelf_store.dart';
 import '../data/sources/language_preference_store.dart';
+import '../data/sources/search_history_store.dart';
 import '../data/sources/session_store.dart';
 import 'preference_stores.dart';
 import 'secure_stores.dart';
@@ -48,6 +49,7 @@ class AppEnvironment {
     required this.credentialStore,
     required this.languageStore,
     required this.homeShelfStore,
+    required this.searchHistoryStore,
     required this.apiBaseUrl,
     required this.encryptedStorageAvailable,
     required this.durableStorageAvailable,
@@ -64,6 +66,7 @@ class AppEnvironment {
   final CredentialStore credentialStore;
   final LanguagePreferenceStore languageStore;
   final HomeShelfStore homeShelfStore;
+  final SearchHistoryStore searchHistoryStore;
   final String apiBaseUrl;
 
   /// False when the Android Keystore/encrypted preferences backend could not be used, so the
@@ -95,6 +98,10 @@ class AppEnvironment {
         ? await _buildLanguageStore()
         : InMemoryLanguagePreferenceStore();
 
+    final SearchHistoryStore searchHistoryStore = durableStorageAvailable
+        ? await _buildSearchHistoryStore()
+        : InMemorySearchHistoryStore();
+
     final HomeShelfStore homeShelfStore = durableStorageAvailable
         ? FileHomeShelfStore(
             File(
@@ -125,6 +132,7 @@ class AppEnvironment {
       credentialStore: credentialStore,
       languageStore: languageStore,
       homeShelfStore: homeShelfStore,
+      searchHistoryStore: searchHistoryStore,
       apiBaseUrl: resolvedConfig.baseUrl,
       encryptedStorageAvailable: encryptedStorageAvailable,
       durableStorageAvailable: durableStorageAvailable,
@@ -165,8 +173,9 @@ class AppEnvironment {
     final SecureCredentialStore store = SecureCredentialStore(
       const FlutterSecureStorage(),
       onUnavailable: kDebugMode
-          ? (Object error) =>
-                debugPrint('[secure-store] credential backend unavailable: $error')
+          ? (Object error) => debugPrint(
+              '[secure-store] credential backend unavailable: $error',
+            )
           : null,
     );
     // A read of a missing key still round-trips through the encrypted backend, which is what makes
@@ -179,5 +188,10 @@ class AppEnvironment {
   static Future<LanguagePreferenceStore> _buildLanguageStore() async {
     final SharedPreferences preferences = await SharedPreferences.getInstance();
     return PreferenceLanguageStore(preferences);
+  }
+
+  static Future<SearchHistoryStore> _buildSearchHistoryStore() async {
+    final SharedPreferences preferences = await SharedPreferences.getInstance();
+    return PreferenceSearchHistoryStore(preferences);
   }
 }

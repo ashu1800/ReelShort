@@ -1740,31 +1740,31 @@ void main() {
     // changing it moves them.
     expect(membershipChipPlaceholderSize, const Size(112, 22));
 
-    Future<BoxDecoration> plateFor({required bool active}) async {
+    Future<Material> plateFor({required bool active, VoidCallback? onTap}) async {
       final String label = active ? 'VIP active' : 'VIP not active';
       await tester.pumpWidget(
         host(
-          AppMembershipChip(active: active, label: label),
+          AppMembershipChip(active: active, label: label, onTap: onTap),
           width: 320,
         ),
       );
       await tester.pump();
       expect(tester.takeException(), isNull);
-      final Container plate = tester.widget<Container>(
-        find
-            .ancestor(of: find.text(label), matching: find.byType(Container))
-            .first,
-      );
       expect(find.text(label), findsOneWidget);
-      return plate.decoration! as BoxDecoration;
+      return tester.widget<Material>(
+        find.ancestor(of: find.text(label), matching: find.byType(Material)).first,
+      );
     }
 
-    final BoxDecoration active = await plateFor(active: true);
+    final Material active = await plateFor(active: true);
     expect(
       active.color,
       AppColors.light.accentSuccess.withValues(alpha: 0.14),
     );
-    expect(active.borderRadius, AppShapes.light.inlineRadius);
+    expect(
+      (active.shape! as RoundedRectangleBorder).borderRadius,
+      AppShapes.light.inlineRadius,
+    );
     expect(find.byIcon(Icons.verified_outlined), findsOneWidget);
     // A status, not a control: readable and with no activation.
     final SemanticsData activeData = tester.semantics
@@ -1773,14 +1773,32 @@ void main() {
     expect(activeData.hasAction(SemanticsAction.tap), isFalse);
     expect(activeData.flagsCollection.isButton, isFalse);
 
-    final BoxDecoration inactive = await plateFor(active: false);
+    final Material inactive = await plateFor(active: false);
+    // A non-member is an ordinary state, not a warning: the plate is neutral.
+    expect(inactive.color, AppColors.light.surfaceAlt);
     expect(
-      inactive.color,
-      AppColors.light.accentWarning.withValues(alpha: 0.14),
+      (inactive.shape! as RoundedRectangleBorder).borderRadius,
+      AppShapes.light.inlineRadius,
     );
-    expect(inactive.borderRadius, AppShapes.light.inlineRadius);
     expect(find.byIcon(Icons.lock_outline), findsOneWidget);
     expect(find.byIcon(Icons.verified_outlined), findsNothing);
+    expect(
+      tester.widget<Text>(find.text('VIP not active')).style?.color,
+      AppColors.light.textSecondary,
+    );
+
+    // The same chip becomes a labelled shortcut when the caller gives it a
+    // destination: one node, one activation.
+    int taps = 0;
+    await plateFor(active: false, onTap: () => taps++);
+    final SemanticsData shortcut = tester.semantics
+        .find(find.bySemanticsLabel('VIP not active'))
+        .getSemanticsData();
+    expect(shortcut.hasAction(SemanticsAction.tap), isTrue);
+    expect(shortcut.flagsCollection.isButton, isTrue);
+    await tester.tap(find.text('VIP not active'));
+    await tester.pump();
+    expect(taps, 1);
 
     // One line at 3.2x on a 320 px screen: a hero swapping the placeholder for
     // the chip does not resize.

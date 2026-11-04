@@ -4,14 +4,16 @@
 /// queries ignored without a side effect, the shared results-first decision,
 /// discovery chips that submit immediately, wide-thumb result rows, the results
 /// header with the query and the result count, and the empty-state copy with its
-/// non-interactive "Search again" pill (parity gap G3 closed with `AppUiCopy`).
+/// non-interactive "Search again" pill.
 ///
-/// Structure contract (`docs/ui-redesign-notes.md` §7.8): one `screenTitle`, the
-/// shared page inset, `AppSectionHeader` for every group title - which is also
-/// what structurally removed the 320 px + 3.2x `RenderFlex` overflow the old
-/// "dot + bare text in a Row" header produced - tokenized chips with 44 px
-/// targets, a count pill in the results header, and result rows that announce as
-/// one node.
+/// Structure contract (`docs/ui-redesign-notes.md` §7.8 and §13): one
+/// `screenTitle`, the shared page inset, a pinned search field, a poster rail
+/// and the recent queries above the lane chips, tokenized 44 px chips on the
+/// 10 dp control radius, and result rows that announce as one node.
+///
+/// The screen owns the field's [TextEditingController] (not the field widget):
+/// tapping a lane has to write the query into the field before the request
+/// lands, and the draft survives a tab switch through the controller.
 library;
 
 import 'package:flutter/material.dart';
@@ -26,12 +28,17 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_shapes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
-import '../components/app_button.dart';
 import '../components/app_empty_state.dart';
 import '../components/app_loading.dart';
 import '../components/app_section.dart';
 import '../components/app_text_field.dart';
 import '../components/poster_card.dart';
+
+/// Key of the removable query pill under the results header.
+///
+/// Public so a widget test can tap the pill without guessing between it and the
+/// identical text sitting in the search field.
+const Key activeQueryPillKey = Key('search-active-query');
 
 /// Width of the poster column in a result row.
 const double _resultPosterWidth = 88;
@@ -42,8 +49,49 @@ const double _resultPosterHeight = 132;
 /// Minimum height of a discovery chip, so its target clears the touch minimum.
 const double _chipMinHeight = 44;
 
+/// Chip label size: one step below the lane label, so the lane name leads.
+const double _chipFontSize = 14;
+
+/// Size of the search field's inline actions.
+const double _searchActionExtent = 44;
+
+/// Glyph size inside a search field action.
+const double _searchActionIconSize = 20;
+
+/// Glyph size of the removable query pill's close mark.
+const double _queryPillIconSize = 16;
+
+/// Width of one poster in the trending rail.
+const double _trendingCardWidth = 112;
+
+/// How many posters the trending rail shows.
+const int _trendingCardLimit = 8;
+
 /// Number of result skeletons while a query is in flight.
 const int _skeletonRowCount = 3;
+
+/// The field's own vertical content padding, from the input decoration theme
+/// (14 dp above and below). Used to size the pinned header.
+const double _fieldContentPadding = 28;
+
+/// One body line of the field at 1x, before text scaling.
+const double _fieldLineHeight = 24;
+
+/// Rounding guard for the pinned header: the measured field is a fraction
+/// taller than the token math at large scales (105.0 vs 104.8 at 3.2x), so the
+/// header keeps a hair of slack instead of clipping the field's border.
+const double _fieldExtentSlack = 1;
+
+/// Height the search field needs at the current text scale.
+///
+/// Calibrated against the real [AppTextField] (52 dp at 1x, 105 dp at 3.2x):
+/// content padding plus one scaled body line. The scaled line comes from
+/// [TextScaler] rather than `scale(1) * 24`, because Android's nonlinear text
+/// scaling does not scale a 1x factor linearly.
+double _searchFieldExtent(BuildContext context) =>
+    _fieldContentPadding +
+    MediaQuery.textScalerOf(context).scale(_fieldLineHeight) +
+    _fieldExtentSlack;
 
 /// The search / discovery screen.
 class SearchScreen extends StatefulWidget {
@@ -55,10 +103,14 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
+  /// The field text, owned here so a lane tap can write into it and so the
+  /// draft survives the tab switch that destroys this state.
+  late final TextEditingController _queryController;
+
   /// The query this screen submitted before the state layer echoes it back.
   ///
   /// The controller writes `searchQuery` only when the response lands, so
-  /// without this the first search would paint the discovery lanes and the
+  /// without this the first search would paint the discovery content and the
   /// start prompt, then jump to the results area when the request returned.
   String? _submittedQuery;
 
@@ -68,17 +120,69 @@ class _SearchScreenState extends State<SearchScreen> {
   /// paint a search skeleton here.
   bool _awaitingResults = false;
 
-  void _search(String query) {
+  @override
+  void initState() {
+    super.initState();
+    _queryController = TextEditingController(
+      text: context.read<AppStateController>().searchDraft,
+    );
+    _queryController.addListener(_rememberDraft);
+  }
+
+  @override
+  void dispose() {
+    _queryController.removeListener(_rememberDraft);
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  /// Keeps the controller's draft in sync on every keystroke.
+  ///
+  /// Deliberately does not notify: the field repaints itself, and a state
+  /// notification per character would rebuild the whole shell.
+  void _rememberDraft() {
+    context.read<AppStateController>().rememberSearchDraft(
+      _queryController.text,
+    );
+  }
+
+  void _submit(String raw) {
+    // Blank queries are ignored with no side effect, exactly like the Kotlin screen.
+    final String query = raw.trim();
+    if (query.isEmpty) {
+      return;
+    }
+    // A lane tap submits its own tag: show it in the field before the request
+    // lands, otherwise the field stays empty until the response echoes back.
+    if (_queryController.text != query) {
+      _queryController.value = TextEditingValue(
+        text: query,
+        selection: TextSelection.collapsed(offset: query.length),
+      );
+    }
+    FocusScope.of(context).unfocus();
+    final AppStateController controller = context.read<AppStateController>();
     setState(() {
       _submittedQuery = query;
       _awaitingResults = true;
     });
-    context.read<AppStateController>().search(query);
+    controller.search(query);
+  }
+
+  /// Drops the answered query and returns to the lanes.
+  void _clearSearch() {
+    _queryController.clear();
+    context.read<AppStateController>().clearSearch();
+    setState(() {
+      _submittedQuery = null;
+      _awaitingResults = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final AppUiState state = context.watch<AppStateController>().state;
+    final AppStateController controller = context.watch<AppStateController>();
+    final AppUiState state = controller.state;
     // The request settled (success or failure), so a global loading flag no
     // longer means this screen's search is in flight. This is bookkeeping for
     // the decisions below, not widget state - it never schedules a rebuild.
@@ -92,11 +196,10 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     final bool awaitingResults = _awaitingResults && state.isLoading;
     final AppStrings copy = strings(state.language);
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppSpacing spacing = appSpacingOf(context);
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     // Only the first search needs the pending query: the results area does not
-    // exist yet and the discovery lanes would otherwise paint and then vanish.
+    // exist yet and the discovery content would otherwise paint and then vanish.
     // With rows already on screen the header keeps the query those rows answer,
     // so the header and the list never disagree while the next one is in flight.
     final String displayQuery =
@@ -108,6 +211,9 @@ class _SearchScreenState extends State<SearchScreen> {
       state.searchResults.length,
     );
     final String query = displayQuery.trim();
+    final List<BookSummary> trending = state.homeShelf
+        .take(_trendingCardLimit)
+        .toList(growable: false);
 
     return SafeArea(
       bottom: false,
@@ -115,22 +221,28 @@ class _SearchScreenState extends State<SearchScreen> {
         // The single page inset of the system (18/12/18/28).
         padding: spacing.pagePadding,
         child: CustomScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           slivers: <Widget>[
-            // One page-title role for the whole app; the screen used to open
-            // straight into its search field.
+            // One page-title role for the whole app; the title scrolls away and
+            // the field below it pins to the top instead.
             SliverToBoxAdapter(
               child: Text(copy.searchTab, style: roles.screenTitle),
             ),
             SliverToBoxAdapter(child: SizedBox(height: spacing.space4)),
-            SliverToBoxAdapter(
-              child: _SearchField(
-                copy: copy,
-                initial: state.searchQuery,
-                onSearch: _search,
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _PinnedSearchHeader(
+                extent: spacing.space2 * 2 + _searchFieldExtent(context),
+                child: _SearchField(
+                  controller: _queryController,
+                  copy: copy,
+                  onSubmit: _submit,
+                  onClear: _queryController.clear,
+                ),
               ),
             ),
             if (resultsFirst) ...<Widget>[
-              SliverToBoxAdapter(child: SizedBox(height: spacing.sectionGap)),
+              SliverToBoxAdapter(child: SizedBox(height: spacing.space4)),
               // The header itself bounds its trailing slot now (see
               // `AppSectionHeader`), so the count pill no longer needs a
               // caller-side width cap.
@@ -146,12 +258,13 @@ class _SearchScreenState extends State<SearchScreen> {
               if (query.isNotEmpty)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.only(top: spacing.space1),
-                    child: Text(
-                      query,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: roles.body.copyWith(color: colors.textSecondary),
+                    padding: EdgeInsets.only(top: spacing.space2),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: _ActiveQueryPill(
+                        query: query,
+                        onClear: _clearSearch,
+                      ),
                     ),
                   ),
                 ),
@@ -161,28 +274,54 @@ class _SearchScreenState extends State<SearchScreen> {
                 awaitingResults: awaitingResults,
               ),
             ] else ...<Widget>[
-              SliverToBoxAdapter(child: SizedBox(height: spacing.sectionGap)),
-              SliverToBoxAdapter(
-                child: AppSectionHeader(title: copy.searchTagsTitle),
-              ),
-              SliverToBoxAdapter(child: SizedBox(height: spacing.space2)),
-              SliverToBoxAdapter(
-                child: _DiscoveryGroups(onTagSelected: _search),
-              ),
-              SliverToBoxAdapter(child: SizedBox(height: spacing.sectionGap)),
-              // Reached only with no submitted query and no results, so the
-              // prompt is always the right thing to show here. An in-flight
-              // search keeps `resultsFirst` true and paints its skeleton in the
-              // results area instead.
-              const SliverToBoxAdapter(
-                child: AppEmptyState(
-                  icon: Icons.travel_explore_outlined,
-                  title: AppUiCopy.searchStartTitle,
-                  body: AppUiCopy.searchStartBody,
+              SliverToBoxAdapter(child: SizedBox(height: spacing.space4)),
+              if (controller.searchHistory.isNotEmpty) ...<Widget>[
+                SliverToBoxAdapter(
+                  child: AppSectionHeader(
+                    title: AppUiCopy.searchRecentSection,
+                    actionLabel: AppUiCopy.searchRecentClear,
+                    onAction: controller.clearSearchHistory,
+                  ),
                 ),
+                SliverToBoxAdapter(child: SizedBox(height: spacing.space2)),
+                SliverToBoxAdapter(
+                  child: _QueryChips(
+                    queries: controller.searchHistory,
+                    onSelected: _submit,
+                  ),
+                ),
+                SliverToBoxAdapter(child: SizedBox(height: spacing.space6)),
+              ],
+              if (trending.isNotEmpty) ...<Widget>[
+                SliverToBoxAdapter(
+                  child: AppSectionHeader(
+                    title: AppUiCopy.searchTrendingSection,
+                  ),
+                ),
+                SliverToBoxAdapter(child: SizedBox(height: spacing.space3)),
+                SliverToBoxAdapter(
+                  child: _TrendingRail(
+                    books: trending,
+                    onOpen: controller.openBook,
+                  ),
+                ),
+                SliverToBoxAdapter(child: SizedBox(height: spacing.space6)),
+              ] else
+                // No shelf to browse yet: the start prompt is the only thing
+                // that can help, and it now sits above the lanes instead of
+                // below the fold.
+                SliverToBoxAdapter(
+                  child: AppEmptyState(
+                    icon: Icons.travel_explore_outlined,
+                    title: AppUiCopy.searchStartTitle,
+                    body: AppUiCopy.searchStartBody,
+                  ),
+                ),
+              SliverToBoxAdapter(
+                child: _DiscoveryGroups(onTagSelected: _submit),
               ),
             ],
-            SliverToBoxAdapter(child: SizedBox(height: spacing.sectionGap)),
+            SliverToBoxAdapter(child: SizedBox(height: spacing.space6)),
           ],
         ),
       ),
@@ -190,79 +329,290 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-/// The query field plus the one primary action of the screen.
-class _SearchField extends StatefulWidget {
+/// The search field plus its one action, pinned to the top of the viewport.
+class _PinnedSearchHeader extends SliverPersistentHeaderDelegate {
+  const _PinnedSearchHeader({required this.extent, required this.child});
+
+  /// Height of the pinned slot, including the field's vertical padding.
+  final double extent;
+
+  /// The field.
+  final Widget child;
+
+  @override
+  double get minExtent => extent;
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    return SizedBox(
+      height: extent,
+      child: DecoratedBox(
+        // The canvas plane keeps the scrolled content from showing through,
+        // and the hairline is what tells the user the field is now floating.
+        decoration: BoxDecoration(
+          color: colors.canvas,
+          border: Border(
+            bottom: BorderSide(
+              color: colors.hairline,
+              width: shapes.strokeHairline,
+            ),
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.only(top: spacing.space2, bottom: spacing.space2),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _PinnedSearchHeader oldDelegate) =>
+      oldDelegate.extent != extent || oldDelegate.child != child;
+}
+
+/// The query field plus its inline clear and submit actions.
+///
+/// One field, one magnifier: the submit action is the only search glyph on the
+/// screen, and it is disabled while the field is blank, so the control never
+/// invites a tap that does nothing.
+class _SearchField extends StatelessWidget {
   const _SearchField({
+    required this.controller,
     required this.copy,
-    required this.initial,
-    required this.onSearch,
+    required this.onSubmit,
+    required this.onClear,
   });
 
+  final TextEditingController controller;
   final AppStrings copy;
-  final String initial;
 
   /// Submits a trimmed, non-blank query. The screen owns the call so it can
   /// remember the query while the request is in flight.
-  final void Function(String query) onSearch;
+  final ValueChanged<String> onSubmit;
+
+  /// Clears the field text only; the answered query stays on screen.
+  final VoidCallback onClear;
 
   @override
-  State<_SearchField> createState() => _SearchFieldState();
+  Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (BuildContext context, TextEditingValue value, Widget? _) {
+        final bool hasInput = value.text.trim().isNotEmpty;
+        return AppTextField(
+          controller: controller,
+          label: copy.searchHint,
+          textInputAction: TextInputAction.search,
+          suffix: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (value.text.isNotEmpty)
+                _FieldAction(
+                  icon: Icons.close,
+                  label: AppUiCopy.clearSearch,
+                  color: colors.textSecondary,
+                  onTap: onClear,
+                ),
+              _FieldAction(
+                icon: Icons.search,
+                label: copy.searchAction,
+                color: hasInput ? colors.accentPrimary : colors.onDisabled,
+                onTap: hasInput ? () => onSubmit(controller.text) : null,
+              ),
+            ],
+          ),
+          onSubmitted: onSubmit,
+        );
+      },
+    );
+  }
 }
 
-class _SearchFieldState extends State<_SearchField> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initial,
-  );
+/// One 44 px icon action inside the field's suffix slot.
+class _FieldAction extends StatelessWidget {
+  const _FieldAction({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+
+  /// Accessible name; the glyph alone carries no text.
+  final String label;
+
+  final Color color;
+
+  /// Null disables the action: no tap target, no ripple, no dead press.
+  final VoidCallback? onTap;
 
   @override
-  void didUpdateWidget(_SearchField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // The field mirrors the state layer's query and re-syncs on language
-    // switches, but a rebuild whose `initial` did not move must never wipe
-    // in-progress typing — the Kotlin `remember(state.searchQuery, language)`
-    // only recreates the field when one of those two keys changes.
-    if (widget.initial != oldWidget.initial &&
-        widget.initial != _controller.text) {
-      _controller.value = TextEditingValue(text: widget.initial);
-    }
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: SizedBox(
+        width: _searchActionExtent,
+        height: _searchActionExtent,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: Center(
+              child: Icon(icon, size: _searchActionIconSize, color: color),
+            ),
+          ),
+        ),
+      ),
+    );
   }
+}
+
+/// The removable query pill under the results header.
+///
+/// It is the visible record of what is on screen and the way back to the lanes:
+/// the field can be edited, but only this pill says "this list answers this
+/// query" and can undo it in one tap.
+class _ActiveQueryPill extends StatelessWidget {
+  const _ActiveQueryPill({required this.query, required this.onClear});
+
+  final String query;
+  final VoidCallback onClear;
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
 
-  void _submit(String raw) {
-    // Blank queries are ignored with no side effect, exactly like the Kotlin screen.
-    final String query = raw.trim();
-    if (query.isEmpty) {
-      return;
-    }
-    widget.onSearch(query);
+    return Semantics(
+      button: true,
+      label: AppUiCopy.clearResults,
+      onTap: onClear,
+      excludeSemantics: true,
+      child: Material(
+        key: activeQueryPillKey,
+        color: colors.premiumSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: shapes.controlRadius,
+          side: BorderSide(
+            color: colors.accentPrimary,
+            width: shapes.strokeHairline,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onClear,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: spacing.space3,
+              vertical: spacing.space1,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Flexible(
+                  child: Text(
+                    query,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: roles.caption.copyWith(
+                      color: colors.accentPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                SizedBox(width: spacing.space1),
+                Icon(
+                  Icons.close,
+                  size: _queryPillIconSize,
+                  color: colors.accentPrimary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
+}
+
+/// The recent queries, as chips that submit on tap.
+class _QueryChips extends StatelessWidget {
+  const _QueryChips({required this.queries, required this.onSelected});
+
+  final List<String> queries;
+  final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
     final AppSpacing spacing = appSpacingOf(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) => Wrap(
+        spacing: spacing.space2,
+        runSpacing: spacing.space2,
+        children: <Widget>[
+          for (final String query in queries)
+            _DiscoveryChip(
+              tag: query,
+              maxWidth: constraints.maxWidth,
+              onTap: () => onSelected(query),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        AppTextField(
-          controller: _controller,
-          label: widget.copy.searchHint,
-          textInputAction: TextInputAction.search,
-          onSubmitted: _submit,
-        ),
-        SizedBox(height: spacing.space3),
-        // The only filled action of the screen.
-        AppButton(
-          label: widget.copy.searchAction,
-          isExpanded: true,
-          onPressed: () => _submit(_controller.text),
-        ),
-      ],
+/// The horizontal poster rail that gives the page something to browse.
+class _TrendingRail extends StatelessWidget {
+  const _TrendingRail({required this.books, required this.onOpen});
+
+  final List<BookSummary> books;
+  final ValueChanged<BookSummary> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppSpacing spacing = appSpacingOf(context);
+    return SizedBox(
+      // The poster's own aspect ratio decides the rail height, so the cards can
+      // never be clipped or letterboxed.
+      height: _trendingCardWidth / posterAspectRatio,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: books.length,
+        separatorBuilder: (BuildContext context, int index) =>
+            SizedBox(width: spacing.space3),
+        itemBuilder: (BuildContext context, int index) {
+          final BookSummary book = books[index];
+          return SizedBox(
+            width: _trendingCardWidth,
+            child: PosterCard(
+              title: book.title,
+              coverUrl: book.coverUrl,
+              episodeCount: book.chapterCount,
+              onTap: () => onOpen(book),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -310,18 +660,17 @@ class _CountPill extends StatelessWidget {
   }
 }
 
-/// The discovery groups: a section header per group, then its tokenized chips.
+/// The discovery groups: a lane label, then its tokenized chips.
 ///
-/// The old group header was a purple dot plus a bare `Text` in a `Row` with no
-/// flexible child, which produced four `RenderFlex` overflows at 320 px with
-/// 3.2x text. [AppSectionHeader] stacks its title at that scale, so the overflow
-/// is gone structurally rather than clipped away.
+/// The lane label carries the second level on its own now: the page used to put
+/// a "Popular lanes" section header above four labels that differed from it by
+/// one point of type, which read as five peers rather than as a hierarchy.
 class _DiscoveryGroups extends StatelessWidget {
   const _DiscoveryGroups({required this.onTagSelected});
 
   /// Submits the tapped tag through the screen, which records the query before
   /// the response lands.
-  final void Function(String tag) onTagSelected;
+  final ValueChanged<String> onTagSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -334,11 +683,11 @@ class _DiscoveryGroups extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        for (final SearchDiscoveryGroup group in groups) ...<Widget>[
-          // A second-level lane label, not another section header: repeating the
-          // full header treatment here read as an empty section followed by a
-          // new one on device.
-          _GroupLabel(title: group.title),
+        for (int index = 0; index < groups.length; index++) ...<Widget>[
+          // Between groups, not after every group: the gap that separates the
+          // lanes must be visibly larger than the gap inside one.
+          if (index > 0) SizedBox(height: spacing.space6),
+          _GroupLabel(title: groups[index].title),
           SizedBox(height: spacing.space2),
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
@@ -346,7 +695,7 @@ class _DiscoveryGroups extends StatelessWidget {
                 spacing: spacing.space2,
                 runSpacing: spacing.space2,
                 children: <Widget>[
-                  for (final String tag in group.tags)
+                  for (final String tag in groups[index].tags)
                     _DiscoveryChip(
                       tag: tag,
                       // A chip never exceeds the lane width, so a long tag at a
@@ -358,20 +707,18 @@ class _DiscoveryGroups extends StatelessWidget {
               );
             },
           ),
-          SizedBox(height: spacing.space4),
         ],
       ],
     );
   }
 }
 
-/// A lane label: the second level under the single "Popular lanes" header.
+/// A lane label: the level between the page title and the chips.
 ///
-/// The group names are rendered in sentence case with the caption role and the
-/// secondary colour - no upper-casing, no accent decoration, no section-header
-/// geometry - so "Popular lanes" stays the only section head. The row is flexed
-/// and ellipsised, so a long lane name at a large text scale can never restore
-/// the old bare-`Row` overflow.
+/// It uses the 14 dp title role in the primary text colour, which is what makes
+/// it read as a heading rather than as a caption that happens to sit above the
+/// chips. The row is flexed and ellipsised, so a long lane name at a large text
+/// scale can never restore the old bare-`Row` overflow.
 class _GroupLabel extends StatelessWidget {
   const _GroupLabel({required this.title});
 
@@ -380,8 +727,6 @@ class _GroupLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
-
     return Row(
       children: <Widget>[
         Flexible(
@@ -389,10 +734,8 @@ class _GroupLabel extends StatelessWidget {
             title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: roles.caption.copyWith(
-              color: colors.textSecondary,
-              fontWeight: FontWeight.w600,
-            ),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: colors.textPrimary),
           ),
         ),
       ],
@@ -400,7 +743,12 @@ class _GroupLabel extends StatelessWidget {
   }
 }
 
-/// A tokenized discovery chip: 44 px tall, surface fill, hairline edge.
+/// A tokenized discovery chip: 44 px tall, control radius, real boundary.
+///
+/// The border is the control neutral (`outlineStrong`), not the decorative
+/// hairline: at 1.07:1 against the canvas a hairline edge is not perceivable as
+/// a control boundary (see the `hairline` contract in `app_colors.dart`), and
+/// the chips read as colour blobs instead of buttons.
 class _DiscoveryChip extends StatelessWidget {
   const _DiscoveryChip({
     required this.tag,
@@ -432,9 +780,9 @@ class _DiscoveryChip extends StatelessWidget {
         child: Material(
           color: colors.surfaceAlt,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(shapes.radiusPill),
+            borderRadius: shapes.controlRadius,
             side: BorderSide(
-              color: colors.hairline,
+              color: colors.outlineStrong,
               width: shapes.strokeHairline,
             ),
           ),
@@ -453,8 +801,9 @@ class _DiscoveryChip extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: roles.body.copyWith(
+                    fontSize: _chipFontSize,
                     color: colors.textPrimary,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
@@ -492,9 +841,8 @@ class _ResultsSection extends StatelessWidget {
     }
     return SliverList(
       delegate: SliverChildBuilderDelegate(
-        (BuildContext context, int index) => _SearchResultRow(
-          book: results[index],
-        ),
+        (BuildContext context, int index) =>
+            _SearchResultRow(book: results[index]),
         childCount: results.length,
       ),
     );
@@ -567,9 +915,8 @@ class _SearchResultRow extends StatelessWidget {
                     SizedBox(height: spacing.space2),
                     Text(
                       '${book.chapterCount} eps',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: colors.textSecondary),
                     ),
                     if (description.isNotEmpty) ...<Widget>[
                       SizedBox(height: spacing.space1),

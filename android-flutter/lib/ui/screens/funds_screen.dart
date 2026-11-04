@@ -32,7 +32,6 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../components/app_amount_block.dart';
 import '../components/app_button.dart';
-import '../components/app_empty_state.dart';
 import '../components/app_list_row.dart';
 import '../components/app_loading.dart';
 import '../components/app_membership_chip.dart';
@@ -81,32 +80,67 @@ class FundsScreen extends StatelessWidget {
     final AppSpacing spacing = appSpacingOf(context);
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
 
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+
     return SafeArea(
       bottom: false,
-      child: ListView(
-        // The single page inset of the system (18/12/18/28).
-        padding: spacing.pagePadding,
-        children: <Widget>[
-          // One page-title role for the whole app, so Funds matches Me and the
-          // sub-pages instead of using the smaller `titleLarge`.
-          Text(copy.fundsTitle, style: roles.screenTitle),
-          SizedBox(height: spacing.sectionGap),
-          if (state.isLoading)
-            const _FundsLoadingSkeleton()
-          else ...<Widget>[
-            _BalanceHero(state: state),
+      child: RefreshIndicator.adaptive(
+        color: colors.accentPrimary,
+        backgroundColor: colors.surface,
+        onRefresh: controller.openFunds,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          // The single page inset of the system (18/12/18/28).
+          padding: spacing.pagePadding,
+          children: <Widget>[
+            // One page-title role for the whole app, so Funds matches Me and the
+            // sub-pages instead of using the smaller `titleLarge`.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: Text(copy.fundsTitle, style: roles.screenTitle),
+                ),
+                // The page is money: a visible refresh beats hoping the user
+                // discovers the pull gesture.
+                IconButton(
+                  onPressed: state.isLoading
+                      ? null
+                      : () => unawaited(controller.openFunds()),
+                  tooltip: AppUiCopy.refresh,
+                  color: colors.textSecondary,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+            Text(
+              copy.fundsSubtitle,
+              style: roles.caption.copyWith(color: colors.textSecondary),
+            ),
             SizedBox(height: spacing.sectionGap),
-            _ActionsSection(state: state),
-            SizedBox(height: spacing.sectionGap),
-            _PointRecordsSection(state: state),
-            SizedBox(height: spacing.sectionGap),
-            _VipOrdersSection(state: state),
-            if (state.orders.isNotEmpty) ...<Widget>[
+            if (state.isLoading && state.pointAccount == null)
+              const _FundsLoadingSkeleton()
+            else ...<Widget>[
+              if (state.isLoading) ...<Widget>[
+                // A refresh keeps the numbers on screen and reports the work in
+                // a hairline bar instead of flashing the page to skeletons.
+                const LinearProgressIndicator(minHeight: 2),
+                SizedBox(height: spacing.space3),
+              ],
+              _BalanceHero(state: state),
               SizedBox(height: spacing.sectionGap),
-              _RechargeOrdersSection(state: state),
+              _ActionsSection(state: state),
+              SizedBox(height: spacing.sectionGap),
+              _PointRecordsSection(state: state),
+              SizedBox(height: spacing.sectionGap),
+              _VipOrdersSection(state: state),
+              if (state.orders.isNotEmpty) ...<Widget>[
+                SizedBox(height: spacing.sectionGap),
+                _RechargeOrdersSection(state: state),
+              ],
             ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -149,7 +183,9 @@ class _BalanceHero extends StatelessWidget {
         color: vip ? colors.premiumSurface : colors.surface,
         borderRadius: shapes.containerRadius,
         border: Border.all(
-          color: vip ? colors.accentPrimary : colors.hairline,
+          // The hero is the page's only container: a decorative hairline is
+          // not enough to make it read as a card on the near-white canvas.
+          color: vip ? colors.accentPrimary : colors.outlineStrong,
           width: vip ? shapes.strokeEmphasis : shapes.strokeHairline,
         ),
       ),
@@ -157,11 +193,6 @@ class _BalanceHero extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           if (!loggedIn) ...<Widget>[
-            Text(
-              copy.fundsSubtitle,
-              style: roles.body.copyWith(color: colors.textSecondary),
-            ),
-            SizedBox(height: spacing.space3),
             Text(
               copy.fundsLoginRequired,
               style: textTheme.titleMedium?.copyWith(
@@ -187,6 +218,10 @@ class _BalanceHero extends StatelessWidget {
                       label: vip
                           ? copy.accountVipStatusActive
                           : copy.accountVipStatusInactive,
+                      // The status doubles as the shortcut into the membership
+                      // flow: the page used to state the VIP state here and
+                      // offer the only way to act on it two blocks below.
+                      onTap: () => unawaited(controller.openVipRecharge()),
                     ),
                   )
                 else
@@ -210,32 +245,54 @@ class _BalanceHero extends StatelessWidget {
             ),
             SizedBox(height: spacing.space5),
             if (account != null) ...<Widget>[
-              AppAmountBlock(
+              _AnimatedPointFigure(
+                points: account.availablePoints,
                 label: copy.fundsAvailablePointsLabel,
-                value: groupedDigits(account.availablePoints),
                 unit: copy.listPointsLabel,
-                size: AppAmountSize.hero,
               ),
-              SizedBox(height: spacing.space4),
-              AppLedgerRow(
-                label: copy.fundsTotalPointsLabel,
-                value: groupedDigits(account.balance),
-                valueColor: colors.accentPrimary,
-              ),
-              AppLedgerRow(
-                label: copy.fundsTodayCreditedPointsLabel,
-                value: groupedDigits(account.todayCreditedPoints),
-              ),
-              AppLedgerRow(
-                label: copy.fundsFrozenPointsLabel,
-                value: groupedDigits(account.frozenPoints),
-                // Frozen points are the one metric that can be a problem, so
-                // they take the warning accent while they are non-zero.
-                valueColor: account.frozenPoints > 0
-                    ? colors.accentWarning
-                    : null,
-                divider: false,
-              ),
+              if (account.availablePoints <= 0) ...<Widget>[
+                // A zero wallet is a state, not a figure: lead with the way out
+                // instead of three more zeros.
+                SizedBox(height: spacing.space3),
+                Text(
+                  AppUiCopy.fundsPointRecordsEmptyBody,
+                  style: roles.body.copyWith(color: colors.textSecondary),
+                ),
+                SizedBox(height: spacing.space3),
+                AppButton(
+                  label: AppUiCopy.fundsEarnAction,
+                  isExpanded: true,
+                  onPressed: controller.showHome,
+                ),
+              ] else if (account.frozenPoints > 0) ...<Widget>[
+                // Total only differs from Available while something is frozen,
+                // so it appears with the row that explains the difference.
+                SizedBox(height: spacing.space4),
+                AppLedgerRow(
+                  label: copy.fundsTotalPointsLabel,
+                  value: groupedDigits(account.balance),
+                ),
+                if (account.todayCreditedPoints > 0)
+                  AppLedgerRow(
+                    label: copy.fundsTodayCreditedPointsLabel,
+                    value: groupedDigits(account.todayCreditedPoints),
+                  ),
+                AppLedgerRow(
+                  label: copy.fundsFrozenPointsLabel,
+                  value: groupedDigits(account.frozenPoints),
+                  // Frozen points are the one metric that can be a problem, so
+                  // they take the warning accent while they are non-zero.
+                  valueColor: colors.accentWarning,
+                  divider: false,
+                ),
+              ] else if (account.todayCreditedPoints > 0) ...<Widget>[
+                SizedBox(height: spacing.space4),
+                AppLedgerRow(
+                  label: copy.fundsTodayCreditedPointsLabel,
+                  value: groupedDigits(account.todayCreditedPoints),
+                  divider: false,
+                ),
+              ],
             ] else ...<Widget>[
               AppSkeleton(
                 width: _skeletonFigureSize.width * textScale,
@@ -267,6 +324,11 @@ class _ActionsSection extends StatelessWidget {
     final AppStrings copy = strings(state.language);
     final AppStateController controller = context.read<AppStateController>();
     final bool loggedIn = state.session != null;
+    final PointAccount? account = state.pointAccount;
+    // Disable only when the balance is known to be zero: a guest or an unknown
+    // snapshot keeps the entry live so the tap can still explain itself.
+    final bool canWithdraw =
+        !loggedIn || account == null || account.availablePoints > 0;
 
     void openWithdrawal() {
       if (loggedIn) {
@@ -296,12 +358,16 @@ class _ActionsSection extends StatelessWidget {
               child: _ActionTile(
                 icon: Icons.account_balance_wallet,
                 label: copy.fundsWithdrawalAction,
-                caption: copy.fundsWithdrawalSubtitle,
-                // Withdraw is the primary money action of the page; the VIP
-                // entry is its outlined alternative (one filled action per
-                // region).
-                variant: AppButtonVariant.primary,
-                onPressed: openWithdrawal,
+                caption: canWithdraw
+                    ? copy.fundsWithdrawalSubtitle
+                    : AppUiCopy.fundsWithdrawEmptyHint,
+                // Withdraw is the primary money action of the page while there
+                // is something to withdraw; a zero balance demotes it and says
+                // why instead of letting the tap dead-end in the sub-page.
+                variant: canWithdraw
+                    ? AppButtonVariant.primary
+                    : AppButtonVariant.secondary,
+                onPressed: canWithdraw ? openWithdrawal : null,
               ),
             ),
             SizedBox(width: spacing.panelGap),
@@ -339,12 +405,14 @@ class _ActionTile extends StatelessWidget {
   /// [AppButtonVariant.primary], and a region renders exactly one of those.
   final AppButtonVariant variant;
 
-  final VoidCallback onPressed;
+  /// Null disables the action (the zero-balance Withdraw case).
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,12 +425,12 @@ class _ActionTile extends StatelessWidget {
           isExpanded: true,
           onPressed: onPressed,
         ),
-        SizedBox(height: spacing.space2),
+        // The caption belongs to the button: a section-sized gap here used to
+        // make it read as the subtitle of the next section.
+        SizedBox(height: spacing.space1),
         Text(
           caption,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+          style: roles.caption.copyWith(color: colors.textSecondary),
         ),
       ],
     );
@@ -380,8 +448,14 @@ class _PointRecordsSection extends StatelessWidget {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppSpacing spacing = appSpacingOf(context);
     final AppStrings copy = strings(state.language);
+    final AppStateController controller = context.read<AppStateController>();
     final List<PointRecord> records =
         state.pointAccount?.records ?? const <PointRecord>[];
+    // A zero wallet already offers the earning path in the hero; repeating the
+    // same button in the empty row puts two identical calls to action on one
+    // screen.
+    final bool heroOffersEarning =
+        state.session != null && (state.pointAccount?.availablePoints ?? 1) <= 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -391,10 +465,22 @@ class _PointRecordsSection extends StatelessWidget {
         AppSectionCard(
           children: <Widget>[
             if (records.isEmpty)
-              AppEmptyState(
-                icon: Icons.receipt_long,
+              // A compact row with a working action, not a page-sized empty
+              // state squeezed into a list card.
+              AppListRow(
                 title: AppUiCopy.fundsPointRecordsEmptyTitle,
-                body: AppUiCopy.fundsPointRecordsEmptyBody,
+                subtitle: AppUiCopy.fundsPointRecordsEmptyBody,
+                trailingTakesIntrinsicWidth: true,
+                trailing: heroOffersEarning
+                    ? null
+                    : TextButton(
+                        onPressed: controller.showHome,
+                        child: const Text(
+                          AppUiCopy.fundsEarnAction,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
               )
             else
               for (final PointRecord record in records)
@@ -437,10 +523,9 @@ class _VipOrdersSection extends StatelessWidget {
         AppSectionCard(
           children: <Widget>[
             if (state.vipOrders.isEmpty)
-              AppEmptyState(
-                icon: Icons.workspace_premium,
+              AppListRow(
                 title: AppUiCopy.fundsVipOrdersEmptyTitle,
-                body: AppUiCopy.fundsVipOrdersEmptyBody,
+                subtitle: AppUiCopy.fundsVipOrdersEmptyBody,
               )
             else
               for (final VipOrder order in state.vipOrders)
@@ -575,6 +660,73 @@ class _FundsLoadingSkeleton extends StatelessWidget {
         SizedBox(height: spacing.space2),
         const AppSkeletonText(lines: 2),
       ],
+    );
+  }
+}
+
+/// Smooth CountUp animation for the hero point figure on funds screen.
+class _AnimatedPointFigure extends StatefulWidget {
+  const _AnimatedPointFigure({
+    required this.points,
+    required this.label,
+    required this.unit,
+  });
+
+  final int points;
+  final String label;
+  final String unit;
+
+  @override
+  State<_AnimatedPointFigure> createState() => _AnimatedPointFigureState();
+}
+
+class _AnimatedPointFigureState extends State<_AnimatedPointFigure> {
+  int _oldPoints = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _oldPoints = widget.points;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedPointFigure oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.points != widget.points) {
+      _oldPoints = oldWidget.points;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool disableAnimations = MediaQuery.maybeDisableAnimationsOf(context) ??
+        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+
+    if (disableAnimations || _oldPoints == widget.points) {
+      return AppAmountBlock(
+        label: widget.label,
+        value: groupedDigits(widget.points),
+        unit: widget.unit,
+        size: AppAmountSize.hero,
+      );
+    }
+
+    return TweenAnimationBuilder<double>(
+      key: ValueKey<int>(widget.points),
+      tween: Tween<double>(
+        begin: _oldPoints.toDouble(),
+        end: widget.points.toDouble(),
+      ),
+      duration: const Duration(milliseconds: 650),
+      curve: Curves.easeOutCubic,
+      builder: (BuildContext context, double value, Widget? child) {
+        return AppAmountBlock(
+          label: widget.label,
+          value: groupedDigits(value.round()),
+          unit: widget.unit,
+          size: AppAmountSize.hero,
+        );
+      },
     );
   }
 }

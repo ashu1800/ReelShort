@@ -198,7 +198,7 @@ void main() {
     await _pumpFunds(tester, vip: true);
 
     // The shared `screenTitle` role (22 px), not the old `titleLarge` (16 px).
-    final Text title = tester.widget<Text>(find.text('Funds center'));
+    final Text title = tester.widget<Text>(find.text('Funds'));
     expect(title.style?.fontSize, AppTypography.light.screenTitle.fontSize);
     expect(
       title.style?.fontSize,
@@ -264,7 +264,7 @@ void main() {
     await _pumpFunds(tester, vip: false, frozen: 0);
 
     expect(_heroDecoration(tester).color, AppColors.light.surface);
-    expect(_heroBorder(tester), AppColors.light.hairline);
+    expect(_heroBorder(tester), AppColors.light.outlineStrong);
     expect(find.text('VIP not active'), findsOneWidget);
     expect(find.text('Expires 2026-11-13'), findsNothing);
     expect(find.text('Available points'), findsOneWidget);
@@ -545,6 +545,9 @@ void main() {
     final SemanticsHandle handle = tester.ensureSemantics();
     await _pumpFunds(
       tester,
+      // Frozen points make Total differ from Available, which is the only
+      // case the hero still reports it.
+      frozen: 10,
       records: const <PointRecord>[
         PointRecord(amount: -50, reason: 'Withdrawal'),
       ],
@@ -629,4 +632,108 @@ void main() {
     expect(find.text('POINT RECORDS'), findsOneWidget);
     expect(find.text('Watch reward'), findsOneWidget);
   });
+
+  testWidgets('a zero wallet leads with the earning path, not three zeros', (
+    WidgetTester tester,
+  ) async {
+    final AppStateController controller = await _pumpFunds(
+      tester,
+      balance: 0,
+    );
+
+    // The hero states the situation and offers the way out.
+    final Finder heroCta = find.descendant(
+      of: find.byKey(fundsBalanceHeroKey),
+      matching: find.text(AppUiCopy.fundsEarnAction),
+    );
+    expect(heroCta, findsOneWidget);
+    // Total, today and frozen add nothing while they are all zero, so the hero
+    // no longer prints them.
+    expect(find.text('Total points'), findsNothing);
+    expect(find.text('Credited today'), findsNothing);
+    expect(find.text('Frozen points'), findsNothing);
+
+    // Withdraw is demoted and disabled, with the reason under it instead of a
+    // tap that dead-ends in the sub-page.
+    final AppButton withdraw = tester.widget<AppButton>(
+      find.ancestor(
+        of: find.text('Withdraw'),
+        matching: find.byType(AppButton),
+      ),
+    );
+    expect(withdraw.variant, AppButtonVariant.secondary);
+    expect(withdraw.onPressed, isNull);
+    expect(find.text(AppUiCopy.fundsWithdrawEmptyHint), findsOneWidget);
+
+    await tester.tap(heroCta);
+    await tester.pump();
+    expect(controller.state.screen, AppScreen.home);
+  });
+
+  testWidgets('a funded wallet keeps Total and the withdraw action live', (
+    WidgetTester tester,
+  ) async {
+    await _pumpFunds(tester, balance: 100, frozen: 10);
+
+    // Frozen points are the only case where Total differs from Available.
+    expect(find.text('Total points'), findsOneWidget);
+    expect(find.text('Frozen points'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(fundsBalanceHeroKey),
+        matching: find.text(AppUiCopy.fundsEarnAction),
+      ),
+      findsNothing,
+    );
+
+    final AppButton withdraw = tester.widget<AppButton>(
+      find.ancestor(
+        of: find.text('Withdraw'),
+        matching: find.byType(AppButton),
+      ),
+    );
+    expect(withdraw.variant, AppButtonVariant.primary);
+    expect(withdraw.onPressed, isNotNull);
+  });
+
+  testWidgets('the membership chip is a shortcut into VIP recharge', (
+    WidgetTester tester,
+  ) async {
+    final AppStateController controller = await _pumpFunds(tester);
+
+    await tester.tap(find.text('VIP not active'));
+    await tester.pump();
+    expect(controller.state.screen, AppScreen.vipRecharge);
+  });
+
+  testWidgets('the header exposes a refresh action', (
+    WidgetTester tester,
+  ) async {
+    await _pumpFunds(tester);
+
+    expect(find.byTooltip(AppUiCopy.refresh), findsOneWidget);
+    expect(find.byIcon(Icons.refresh), findsOneWidget);
+  });
+
+  testWidgets('the empty point ledger offers the earning action', (
+    WidgetTester tester,
+  ) async {
+    final AppStateController controller = await _pumpFunds(tester);
+
+    // The empty ledger is a compact row with a working action, not a page-sized
+    // empty state squeezed into a card.
+    expect(find.text(AppUiCopy.fundsPointRecordsEmptyTitle), findsOneWidget);
+    final Finder action = find.widgetWithText(
+      TextButton,
+      AppUiCopy.fundsEarnAction,
+    );
+    expect(action, findsOneWidget);
+
+    await _scrollTo(tester, action);
+    await tester.tap(action);
+    await tester.pump();
+    expect(controller.state.screen, AppScreen.home);
+  });
 }
+
+

@@ -207,7 +207,7 @@ internal fun strings(language: AppLanguage): AppStrings =
             favoritesScreen = "Favorites",
             searchTitle = "Discover",
             searchSubtitle = "Start with a trope, role, or keyword.",
-            searchHint = "Search romance, CEO, revenge...",
+            searchHint = "Search titles, tags, authors",
             searchAction = "Search",
             searchTagsTitle = "Popular lanes",
             searchHeroEyebrow = "Curated discovery",
@@ -253,7 +253,7 @@ internal fun strings(language: AppLanguage): AppStrings =
             accountWalletTitle = "Cold wallet",
             accountWalletNetworkHint = "ERC20 wallets only",
             accountWithdrawTitle = "Withdraw",
-            fundsTitle = "Funds center",
+            fundsTitle = "Funds",
             fundsSubtitle = "Points, withdrawals, and VIP membership",
             fundsTotalPointsLabel = "Total points",
             fundsTodayCreditedPointsLabel = "Credited today",
@@ -403,8 +403,8 @@ internal fun searchDiscoveryGroups(language: AppLanguage): List<SearchDiscoveryG
     when (language) {
         AppLanguage.ENGLISH -> listOf(
             SearchDiscoveryGroup("Story moods", listOf("Love", "Revenge", "Secret", "Family")),
-            SearchDiscoveryGroup("Power roles", listOf("Billionaire", "CEO", "Boss", "Queen", "Doctor")),
-            SearchDiscoveryGroup("Relationships", listOf("Marriage", "Contract", "Pregnant")),
+            SearchDiscoveryGroup("Power roles", listOf("Billionaire", "CEO", "Queen", "Doctor")),
+            SearchDiscoveryGroup("Relationships", listOf("Marriage", "Contract", "Pregnant", "Divorce")),
             SearchDiscoveryGroup("Fantasy heat", listOf("Mafia", "Werewolf", "Alpha", "Luna")),
         )
     }

@@ -27,6 +27,7 @@ import '../data/app_data_source.dart';
 import '../data/models/app_language.dart';
 import '../data/models/app_models.dart';
 import '../data/network/api_client_exception.dart';
+import '../data/sources/search_history_store.dart';
 import 'app_ui_state.dart';
 import 'playback_state.dart';
 
@@ -41,8 +42,10 @@ class AppStateController extends ChangeNotifier {
   /// to the system clock and exists so tests can control time.
   AppStateController({
     required AppDataSource dataSource,
+    SearchHistoryStore? searchHistoryStore,
     int Function()? nowMillis,
   }) : _dataSource = dataSource,
+       _searchHistoryStore = searchHistoryStore ?? InMemorySearchHistoryStore(),
        _nowMillis = nowMillis ?? _systemNowMillis,
        _state = AppUiState(apiBaseUrl: dataSource.apiBaseUrl);
 
@@ -50,7 +53,20 @@ class AppStateController extends ChangeNotifier {
   static int _systemNowMillis() => DateTime.now().millisecondsSinceEpoch;
 
   final AppDataSource _dataSource;
+  final SearchHistoryStore _searchHistoryStore;
   final int Function() _nowMillis;
+
+  /// Recent queries, newest first. Lives outside [AppUiState] because it is
+  /// preference data, not a screen state: no screen other than Discover reads
+  /// it, and it never participates in the parity contract.
+  List<String> _searchHistory = const <String>[];
+
+  /// The unsubmitted text of the Discover field.
+  ///
+  /// The screen is rebuilt from scratch when the user switches tabs, so the
+  /// draft is kept here to survive that; it is never echoed into
+  /// [AppUiState.searchQuery], which means "a query the server answered".
+  String _searchDraft = '';
 
   /// The single mutable state value; only `_set` may replace it.
   AppUiState _state;
@@ -72,6 +88,20 @@ class AppStateController extends ChangeNotifier {
 
   /// The current immutable UI state.
   AppUiState get state => _state;
+
+  /// Recent queries, newest first.
+  List<String> get searchHistory => _searchHistory;
+
+  /// The unsubmitted Discover field text.
+  String get searchDraft => _searchDraft;
+
+  /// Remembers the Discover field text without notifying listeners.
+  ///
+  /// Called on every keystroke, so a notification here would rebuild the whole
+  /// shell; the field already owns its own rendering.
+  void rememberSearchDraft(String draft) {
+    _searchDraft = draft;
+  }
 
   /// The backend's live `vip.free-episodes` boundary.
   ///
@@ -98,12 +128,20 @@ class AppStateController extends ChangeNotifier {
   /// `isLoading = false`, then a silent background refresh replaces it and
   /// writes the fresh shelf back to the cache. An empty cache loads from the
   /// network; a failure there keeps the session but shows content-error copy.
-  Future<void> restoreSession() => _runWithLoading(_ErrorContext.content, () async {
+  Future<void>
+  restoreSession() => _runWithLoading(_ErrorContext.content, () async {
     if (_sessionRestored) {
       _set(_state.copyWith(isLoading: false));
       return;
     }
     _sessionRestored = true;
+    // Preference data: a broken history file must never stop the session from
+    // restoring, so the failure is swallowed like every other optional store.
+    try {
+      _searchHistory = await _searchHistoryStore.loadHistory();
+    } on Object catch (error) {
+      _ignoreFailure(error);
+    }
     final AppLanguage language = await _dataSource.loadLanguagePreference();
     final AuthSession? session = await _dataSource.restoreSession();
     final SavedCredentials? savedCredentials = await _dataSource
@@ -169,10 +207,7 @@ class AppStateController extends ChangeNotifier {
         final SavedCredentials? savedCredentials = await _dataSource
             .loadSavedCredentials();
         _set(
-          _state.copyWith(
-            savedCredentials: savedCredentials,
-            isLoading: false,
-          ),
+          _state.copyWith(savedCredentials: savedCredentials, isLoading: false),
         );
       });
 
@@ -260,8 +295,9 @@ class AppStateController extends ChangeNotifier {
       // of opening the paywall. A snapshot already in state wins, so the usual
       // case adds no request.
       final PointAccount account =
-          _state.pointAccount ?? await _loadPointAccountSilently() ??
-              const PointAccount(balance: 0, records: <PointRecord>[]);
+          _state.pointAccount ??
+          await _loadPointAccountSilently() ??
+          const PointAccount(balance: 0, records: <PointRecord>[]);
       if (episodeRequiresVip(pendingVipEpisode, account.freeEpisodes)) {
         _set(
           _state.copyWith(
@@ -443,6 +479,7 @@ class AppStateController extends ChangeNotifier {
   Future<void> search(String query) =>
       _runWithLoading(_ErrorContext.content, () async {
         final int requestVersion = ++_searchRequestVersion;
+        _rememberQuery(query);
         final List<BookSummary> results = await _dataSource.search(query);
         if (requestVersion != _searchRequestVersion) {
           return;
@@ -457,6 +494,43 @@ class AppStateController extends ChangeNotifier {
         );
       });
 
+  /// Promotes [query] to the front of the recent list and persists it.
+  void _rememberQuery(String query) {
+    _searchHistory = mergedSearchHistory(_searchHistory, query);
+    _searchDraft = query.trim();
+    notifyListeners();
+    unawaited(_persistSearchHistory());
+  }
+
+  Future<void> _persistSearchHistory() async {
+    try {
+      await _searchHistoryStore.saveHistory(_searchHistory);
+    } on Object catch (error) {
+      _ignoreFailure(error);
+    }
+  }
+
+  /// Forgets every recent query.
+  void clearSearchHistory() {
+    if (_searchHistory.isEmpty) {
+      return;
+    }
+    _searchHistory = const <String>[];
+    notifyListeners();
+    unawaited(_persistSearchHistory());
+  }
+
+  /// Drops the answered query so Discover shows its lanes again.
+  ///
+  /// The unsubmitted draft goes with it: the results header's removable pill
+  /// and the field's clear action both mean "start over", not "edit this".
+  void clearSearch() {
+    _searchDraft = '';
+    _set(
+      _state.copyWith(searchQuery: '', searchResults: const <BookSummary>[]),
+    );
+  }
+
   /// Switches to the search tab, clearing any message.
   void showSearch() {
     _set(
@@ -468,8 +542,33 @@ class AppStateController extends ChangeNotifier {
     );
   }
 
+  /// Switches to the home shelf, clearing any message.
+  ///
+  /// Used by the zero-balance Funds state: watching is the only way to earn
+  /// points, and the shelf is where watching starts.
+  void showHome() {
+    _set(
+      _state.copyWith(
+        screen: AppScreen.home,
+        errorMessage: null,
+        messageType: null,
+      ),
+    );
+  }
+
+  /// Reports a message in the global bar, without touching any data.
+  void showMessage(String message, {bool isError = true}) {
+    _set(
+      _state.copyWith(
+        errorMessage: message,
+        messageType: isError ? UiMessageType.error : null,
+      ),
+    );
+  }
+
   /// Switches the content language and reloads the shelf for it.
   Future<void> setLanguage(AppLanguage language) async {
+    _searchDraft = '';
     _set(
       _state.copyWith(
         language: language,
@@ -602,62 +701,62 @@ class AppStateController extends ChangeNotifier {
       });
 
   /// Continues a drama from the account screen's watch-history card.
-  Future<void> openWatchRecord(WatchRecord record) =>
-      _runWithLoading(_ErrorContext.content, () async {
-        if (_state.session == null) {
-          _set(
-            _state.copyWith(
-              screen: AppScreen.account,
-              authPromptVisible: true,
-              isLoading: false,
-              errorMessage: null,
-            ),
-          );
-          return;
-        }
-        final int requestVersion = ++_playbackRequestVersion;
-        final BookSummary book = await _dataSource.loadBook(record.bookId);
-        if (!_isActivePlaybackRequest(requestVersion)) {
-          return;
-        }
-        final List<EpisodeSummary> episodes = await _dataSource.loadEpisodes(
-          book,
-        );
-        if (!_isActivePlaybackRequest(requestVersion)) {
-          return;
-        }
-        final EpisodeSummary? resumed = _resumeEpisodeForRecord(episodes, record);
-        final EpisodeSummary? episode = resumed ?? (episodes.isEmpty ? null : episodes.first);
-        if (episode == null) {
-          _set(
-            _state.copyWith(
-              screen: AppScreen.account,
-              selectedBook: book,
-              episodes: const <EpisodeSummary>[],
-              selectedEpisode: null,
-              currentVideoUrl: null,
-              playback: const PlaybackState(),
-              playerReturnScreen: AppScreen.account,
-              isLoading: false,
-              errorMessage: _copy.contentLoadFailed,
-              messageType: UiMessageType.error,
-            ),
-          );
-          return;
-        }
-        _set(
-          _state.copyWith(
-            selectedBook: book,
-            episodes: episodes,
-            selectedEpisode: null,
-            currentVideoUrl: null,
-            playback: const PlaybackState(),
-            playerReturnScreen: AppScreen.account,
-            isLoading: true,
-          ),
-        );
-        await _requestEpisodePlayback(book, episode, requestVersion);
-      });
+  Future<void> openWatchRecord(
+    WatchRecord record,
+  ) => _runWithLoading(_ErrorContext.content, () async {
+    if (_state.session == null) {
+      _set(
+        _state.copyWith(
+          screen: AppScreen.account,
+          authPromptVisible: true,
+          isLoading: false,
+          errorMessage: null,
+        ),
+      );
+      return;
+    }
+    final int requestVersion = ++_playbackRequestVersion;
+    final BookSummary book = await _dataSource.loadBook(record.bookId);
+    if (!_isActivePlaybackRequest(requestVersion)) {
+      return;
+    }
+    final List<EpisodeSummary> episodes = await _dataSource.loadEpisodes(book);
+    if (!_isActivePlaybackRequest(requestVersion)) {
+      return;
+    }
+    final EpisodeSummary? resumed = _resumeEpisodeForRecord(episodes, record);
+    final EpisodeSummary? episode =
+        resumed ?? (episodes.isEmpty ? null : episodes.first);
+    if (episode == null) {
+      _set(
+        _state.copyWith(
+          screen: AppScreen.account,
+          selectedBook: book,
+          episodes: const <EpisodeSummary>[],
+          selectedEpisode: null,
+          currentVideoUrl: null,
+          playback: const PlaybackState(),
+          playerReturnScreen: AppScreen.account,
+          isLoading: false,
+          errorMessage: _copy.contentLoadFailed,
+          messageType: UiMessageType.error,
+        ),
+      );
+      return;
+    }
+    _set(
+      _state.copyWith(
+        selectedBook: book,
+        episodes: episodes,
+        selectedEpisode: null,
+        currentVideoUrl: null,
+        playback: const PlaybackState(),
+        playerReturnScreen: AppScreen.account,
+        isLoading: true,
+      ),
+    );
+    await _requestEpisodePlayback(book, episode, requestVersion);
+  });
 
   /// Resolves the playable URL for one episode, gating VIP episodes behind the
   /// shared paywall.
@@ -719,7 +818,9 @@ class AppStateController extends ChangeNotifier {
       return;
     }
     final int initialPosition = snapshot?.positionSeconds ?? 0;
-    final int snapshotDuration = snapshot == null ? 0 : snapshot.durationSeconds;
+    final int snapshotDuration = snapshot == null
+        ? 0
+        : snapshot.durationSeconds;
     final int initialDuration = snapshotDuration > 0
         ? snapshotDuration
         : videoUrl.durationSeconds;
@@ -770,7 +871,9 @@ class AppStateController extends ChangeNotifier {
   }
 
   /// Loads like/favourite counters, falling back to zeros on failure.
-  Future<BookInteractionState> _loadInteractionSilently(BookSummary book) async {
+  Future<BookInteractionState> _loadInteractionSilently(
+    BookSummary book,
+  ) async {
     final SocialToggleResult? like = await _silently(
       () => _dataSource.loadLikeStatus(book),
     );
@@ -912,12 +1015,8 @@ class AppStateController extends ChangeNotifier {
       ),
     );
     try {
-      final WatchProgressReport progress = await _dataSource.reportWatchProgress(
-        book,
-        episode,
-        positionSeconds,
-        durationSeconds,
-      );
+      final WatchProgressReport progress = await _dataSource
+          .reportWatchProgress(book, episode, positionSeconds, durationSeconds);
       if (!_isActivePlaybackRequest(requestVersion)) {
         return;
       }
@@ -1200,8 +1299,7 @@ class AppStateController extends ChangeNotifier {
   Future<void> openWithdrawal() => _openAccountSection(AppScreen.withdrawal);
 
   /// Opens the VIP recharge tab.
-  Future<void> openVipRecharge() =>
-      _openAccountSection(AppScreen.vipRecharge);
+  Future<void> openVipRecharge() => _openAccountSection(AppScreen.vipRecharge);
 
   /// Shared entry point of the three funds screens.
   Future<void> _openAccountSection(AppScreen targetScreen) async {
@@ -1233,7 +1331,8 @@ class AppStateController extends ChangeNotifier {
     AppScreen targetScreen = AppScreen.account,
   ]) => _runWithLoading(
     _ErrorContext.account,
-    () => _loadAccountSnapshotForAuthenticatedUser(requestVersion, targetScreen),
+    () =>
+        _loadAccountSnapshotForAuthenticatedUser(requestVersion, targetScreen),
   );
 
   /// Loads every account-scoped resource in parallel.
@@ -1247,10 +1346,11 @@ class AppStateController extends ChangeNotifier {
     final Future<PointAccount> pointsFuture = _dataSource.loadPointAccount();
     final Future<List<RechargeOrderSummary>> ordersFuture = _dataSource
         .loadOrders();
-    final Future<WalletInfo?> walletFuture = _loadOptionalAccountData<WalletInfo?>(
-      null,
-      () => _dataSource.loadWallet(),
-    );
+    final Future<WalletInfo?> walletFuture =
+        _loadOptionalAccountData<WalletInfo?>(
+          null,
+          () => _dataSource.loadWallet(),
+        );
     final Future<List<VipOrder>> vipOrdersFuture =
         _loadOptionalAccountData<List<VipOrder>>(
           const <VipOrder>[],
@@ -1300,9 +1400,7 @@ class AppStateController extends ChangeNotifier {
         vipActive: points.vipActive,
         orders: orders,
         wallet: wallet,
-        vipUntil: points.vipActive
-            ? points.vipUntil ?? wallet?.vipUntil
-            : null,
+        vipUntil: points.vipActive ? points.vipUntil ?? wallet?.vipUntil : null,
         vipPriceUsdt: wallet?.vipPriceUsdt ?? _state.vipPriceUsdt,
         vipCollectionAddress:
             wallet?.vipCollectionAddress ?? _state.vipCollectionAddress,
@@ -1416,33 +1514,30 @@ class AppStateController extends ChangeNotifier {
       });
 
   /// Creates the single active VIP order and refreshes the payment state.
-  Future<void> createVipOrder() => _runAccountOperation(
-    AccountOperation.walletMutation,
-    () async {
-      _requireAuthenticatedAccount();
-      final int generation = _vipPaywallGeneration;
-      final VipOrder createdOrder = await _dataSource.createVipOrder();
-      if (generation != _vipPaywallGeneration) {
-        return;
-      }
-      _set(_state.copyWith(latestVipOrder: createdOrder));
-      final bool refreshed = await _refreshVipPaymentState(
-        autoResume: true,
-        generation: generation,
-        waitForInFlight: true,
-      );
-      if (refreshed) {
-        _set(
-          _state.copyWith(
-            isLoading: false,
-            errorMessage: _copy.vipOrderCreatedMessage,
-            messageType: UiMessageType.success,
-          ),
+  Future<void> createVipOrder() =>
+      _runAccountOperation(AccountOperation.walletMutation, () async {
+        _requireAuthenticatedAccount();
+        final int generation = _vipPaywallGeneration;
+        final VipOrder createdOrder = await _dataSource.createVipOrder();
+        if (generation != _vipPaywallGeneration) {
+          return;
+        }
+        _set(_state.copyWith(latestVipOrder: createdOrder));
+        final bool refreshed = await _refreshVipPaymentState(
+          autoResume: true,
+          generation: generation,
+          waitForInFlight: true,
         );
-      }
-    },
-    showGlobalLoading: false,
-  );
+        if (refreshed) {
+          _set(
+            _state.copyWith(
+              isLoading: false,
+              errorMessage: _copy.vipOrderCreatedMessage,
+              messageType: UiMessageType.success,
+            ),
+          );
+        }
+      }, showGlobalLoading: false);
 
   /// Polls the VIP payment state (paywall "refresh" action).
   Future<void> refreshLatestVipOrder() =>
@@ -1562,7 +1657,9 @@ class AppStateController extends ChangeNotifier {
 
   /// Probes the backend health endpoint.
   Future<void> checkApiHealth() async {
-    _set(_state.copyWith(isLoading: true, errorMessage: null, messageType: null));
+    _set(
+      _state.copyWith(isLoading: true, errorMessage: null, messageType: null),
+    );
     try {
       final ApiHealthStatus status = await _dataSource.checkSystemHealth();
       _set(_state.copyWith(apiHealthStatus: status, isLoading: false));
@@ -1585,19 +1682,18 @@ class AppStateController extends ChangeNotifier {
 
   /// Signs out: clears the local session but keeps the remembered credentials
   /// and the language preference.
-  Future<void> logout() =>
-      _runWithLoading(_ErrorContext.account, () async {
-        await _dataSource.clearSession();
-        _set(
-          AppUiState(
-            apiBaseUrl: _dataSource.apiBaseUrl,
-            savedCredentials: _state.savedCredentials,
-            language: _state.language,
-          ),
-        );
-        _pendingVipEpisodeRequestVersion = null;
-        _vipPaywallGeneration++;
-      });
+  Future<void> logout() => _runWithLoading(_ErrorContext.account, () async {
+    await _dataSource.clearSession();
+    _set(
+      AppUiState(
+        apiBaseUrl: _dataSource.apiBaseUrl,
+        savedCredentials: _state.savedCredentials,
+        language: _state.language,
+      ),
+    );
+    _pendingVipEpisodeRequestVersion = null;
+    _vipPaywallGeneration++;
+  });
 
   // ---------------------------------------------------------------------------
   // Request plumbing
@@ -1608,7 +1704,9 @@ class AppStateController extends ChangeNotifier {
     _ErrorContext errorContext,
     Future<void> Function() block,
   ) async {
-    _set(_state.copyWith(isLoading: true, errorMessage: null, messageType: null));
+    _set(
+      _state.copyWith(isLoading: true, errorMessage: null, messageType: null),
+    );
     try {
       await block();
     } on Object catch (error) {
@@ -1683,9 +1781,7 @@ class AppStateController extends ChangeNotifier {
             ? null
             : _state.pendingVipEpisode,
         latestVipOrder: clearVipPaymentState ? null : _state.latestVipOrder,
-        vipOrders: clearVipPaymentState
-            ? const <VipOrder>[]
-            : _state.vipOrders,
+        vipOrders: clearVipPaymentState ? const <VipOrder>[] : _state.vipOrders,
       ),
     );
     if (clearVipPaymentState) {
@@ -2259,7 +2355,15 @@ Future<T?> _silently<T>(Future<T> Function() request) async {
 void _ignoreFailure(Object error) {}
 
 /// The error-context enum of the Kotlin controller.
-enum _ErrorContext { login, register, content, account, playback, social, diagnostic }
+enum _ErrorContext {
+  login,
+  register,
+  content,
+  account,
+  playback,
+  social,
+  diagnostic,
+}
 
 /// Every user-facing string the controller can emit.
 ///
@@ -2273,7 +2377,8 @@ class _ControllerCopy {
   const _ControllerCopy();
 
   /// Kotlin: `"内容暂时加载失败，可以稍后刷新。"` (6 call sites).
-  final String contentLoadFailed = 'Content failed to load. Try refreshing later.';
+  final String contentLoadFailed =
+      'Content failed to load. Try refreshing later.';
 
   /// Kotlin: `"积分状态暂时加载失败，播放不受影响。"` (player snapshot).
   final String rewardStatusLoadFailed =
