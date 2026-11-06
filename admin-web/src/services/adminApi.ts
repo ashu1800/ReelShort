@@ -180,6 +180,28 @@ export type SystemConfig = {
   updatedAt: string | null
 }
 
+// ReelShort 上游账号：密码只进不出，视图里只有脱敏邮箱与"设过没有"。
+// live=false 表示内容源这次没读回实时状态，会员相关字段一律按"未知"显示。
+export type ReelshortAccountView = {
+  emailMasked: string
+  configured: boolean
+  passwordSet: boolean
+  updatedAt: string | null
+  live: boolean
+  authenticated: boolean
+  vipKnown: boolean
+  vipActive: boolean | null
+  vipExpireAt: string | null
+  vipRenew: boolean | null
+  coins: number | null
+}
+
+export type ReelshortAccountSync = {
+  authenticated: boolean
+  emailMasked: string
+  message: string
+}
+
 export type VipOrderStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'EXPIRED'
 
 export type VipOrder = {
@@ -212,6 +234,12 @@ export type AdminDashboardSummary = {
     bookCount: number
     episodeCacheCount: number
     shelfCount: number
+  }
+  points: {
+    totalWatchRewardPoints: number
+    periodDays: number
+    averagePointsPerUserPerDay: string
+    averagePointsPerUserPerHour: string
   }
   auditLogs: {
     latest: AdminAuditLog[]
@@ -441,6 +469,28 @@ export async function updateSystemConfig(configKey: string, value: string) {
   const response = await http.post<ApiResponse<SystemConfig>>(
     `/system/configs/${configKey}`,
     { value },
+  )
+  return response.data.data
+}
+
+export async function fetchReelshortAccount() {
+  const response = await http.get<ApiResponse<ReelshortAccountView>>(
+    '/system/reelshort-account',
+  )
+  return response.data.data
+}
+
+export async function saveReelshortAccount(email: string, password: string) {
+  const response = await http.post<ApiResponse<ReelshortAccountSync>>(
+    '/system/reelshort-account',
+    { email, password },
+  )
+  return response.data.data
+}
+
+export async function testReelshortAccount() {
+  const response = await http.post<ApiResponse<ReelshortAccountSync>>(
+    '/system/reelshort-account/test',
   )
   return response.data.data
 }

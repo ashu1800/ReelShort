@@ -1,9 +1,14 @@
 import os
 import re
+import base64
+import gzip
+import zlib
 import hmac
 import json
+import hashlib
 import ipaddress
 import math
+import random
 import socket
 import threading
 import time
@@ -17,6 +22,13 @@ import requests
 from flask import Flask, jsonify, request
 from requests.adapters import HTTPAdapter
 from urllib3.connectionpool import HTTPSConnectionPool
+
+try:  # 只用于加密上游登录口令；缺依赖时降级为"不能登录"，不影响匿名抓取。
+    from Crypto.Cipher import AES as _AES
+    from Crypto.Util.Padding import pad as _aes_pad
+except ImportError:  # pragma: no cover - CI/生产都装 pycryptodome
+    _AES = None
+    _aes_pad = None
 
 
 DEFAULT_CATALOG_SEARCH_KEYWORDS = (
@@ -65,6 +77,153 @@ DIAGNOSTIC_VALUE_MAX_LENGTH = 200
 # P2-16：内部共享密钥。除 /health 外的所有端点都要求请求头 X-Content-Provider-Token。
 INTERNAL_TOKEN_HEADER = "X-Content-Provider-Token"
 INTERNAL_TOKEN_ENV = "CONTENT_PROVIDER_INTERNAL_TOKEN"
+
+# 上游登录态：ReelShort 只对前 1–12 集公开 video_url，锁集的 payload 里 video_url 为空。
+# 这里放浏览器里登录后复制的完整 Cookie 请求头（`a=1; b=2`），配置后随每个上游请求发出。
+# 留空表示匿名抓取（行为与配置前完全一致）。
+UPSTREAM_COOKIE_ENV = "REELSHORT_UPSTREAM_COOKIE"
+
+# 上游账号登录：H5 接口用邮箱+密码换 session，之后的请求带 session/uid + HMAC 签名。
+# 账号权益（会员）决定锁集能不能拿到 video_url；免费账号只能看到公开窗口。
+# 凭据只从环境变量读，绝不写进仓库或日志。
+UPSTREAM_EMAIL_ENV = "REELSHORT_UPSTREAM_EMAIL"
+UPSTREAM_PASSWORD_ENV = "REELSHORT_UPSTREAM_PASSWORD"
+# 签名密钥来自上游 H5 bundle（公开常量），上游轮换时用环境变量覆盖，避免改代码。
+UPSTREAM_API_SECRET_ENV = "REELSHORT_UPSTREAM_API_SECRET"
+UPSTREAM_CHANNEL_ENV = "REELSHORT_UPSTREAM_CHANNEL_ID"
+DEFAULT_UPSTREAM_API_SECRET = "zj8N6zKEdrK8d1MxwHSvExdgQ868q1yT"
+DEFAULT_UPSTREAM_CHANNEL = "WEB41001"
+UPSTREAM_CLIENT_VERSION = "2.4.00"
+UPSTREAM_API_VERSION = "1.0.4"
+UPSTREAM_LOGIN_PATH = "/api/video/user/userLogin"
+UPSTREAM_USER_INFO_PATH = "/api/video/user/getUserInfo"
+UPSTREAM_CHAPTER_LIST_PATH = "/api/video/book/getChapterList"
+UPSTREAM_CHAPTER_INFO_PATH = "/api/video/book/getChapterInfo"
+# 上游对失效/伪造 session 的统一返回码，触发重新登录。
+UPSTREAM_SESSION_EXPIRED_CODE = 103
+# 学分集列表单页上限（实测 42 集一页返回全部）。
+UPSTREAM_CHAPTER_PAGE_SIZE = 100
+# 登录口令加密：H5 端是 gzip → AES-128-CBC/PKCS7 → base64，key/iv 取自同一个 bundle。
+UPSTREAM_LOGIN_AES_KEY = "VvRSNGFynLBW7aCP"
+UPSTREAM_LOGIN_AES_IV = "gLn8sxqpzyNjehDP"
+# 邮箱密码登录固定参数（H5 端写死）：sid=4 / login_mode=2。
+UPSTREAM_LOGIN_SID = 4
+UPSTREAM_LOGIN_MODE_EMAIL_PASSWORD = 2
+# 后台下发的账号在这里留一份（0600）：内容源重启后不用等后端再推一次。
+UPSTREAM_ACCOUNT_FILE_ENV = "REELSHORT_ACCOUNT_FILE"
+DEFAULT_UPSTREAM_ACCOUNT_FILE = "/srv/reelshort/content-provider/.account.json"
+
+
+def _encrypt_login_password(password: str) -> str:
+    """复刻上游登录口令加密：utf8 → zlib → base64 → AES-128-CBC/PKCS7 → base64。
+
+    中间那一层容易被忽略：H5 端先把 deflate 结果转成 base64 **字符串** 再交给 AES，
+    而不是把压缩字节直接塞进去。密文与浏览器抓包逐字节一致（见测试向量）。
+    """
+    if _AES is None or _aes_pad is None:
+        return ""
+    inner = base64.b64encode(zlib.compress(password.encode("utf-8"))).decode("ascii")
+    cipher = _AES.new(UPSTREAM_LOGIN_AES_KEY.encode(), _AES.MODE_CBC, UPSTREAM_LOGIN_AES_IV.encode())
+    return base64.b64encode(cipher.encrypt(_aes_pad(inner.encode("ascii"), _AES.block_size))).decode("ascii")
+
+
+def _decrypt_api_response(text: str) -> dict | None:
+    """解密上游的加密响应：AES-128-CBC → base64 → zlib → JSON。
+
+    上游对部分响应（例如带会话校验失败、或 H5 端特有请求）会返回一段 base64 密文
+    而不是 JSON；不处理就会当成"上游返回非法 JSON"整体失败。
+    解不出来返回 None，调用方继续按错误处理。
+    """
+    if _AES is None or not text:
+        return None
+    candidate = text.strip()
+    if len(candidate) < 24 or len(candidate) % 4:
+        return None
+    try:
+        raw = base64.b64decode(candidate, validate=True)
+        if not raw or len(raw) % 16:
+            return None
+        plain = _AES.new(
+            UPSTREAM_LOGIN_AES_KEY.encode(), _AES.MODE_CBC, UPSTREAM_LOGIN_AES_IV.encode()
+        ).decrypt(raw)
+        pad = plain[-1]
+        if 1 <= pad <= 16:
+            plain = plain[:-pad]
+        payload = json.loads(zlib.decompress(base64.b64decode(plain)))
+    except (ValueError, TypeError, zlib.error, UnicodeDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+def _mask_email(email: str) -> str:
+    """后台展示用的脱敏邮箱：`operator@example.com` → `as***@163.com`。"""
+    address = (email or "").strip()
+    if "@" not in address:
+        return "" if not address else address[:2] + "***"
+    local, _, domain = address.partition("@")
+    prefix = local[:2] if len(local) > 2 else local[:1]
+    return f"{prefix}***@{domain}"
+
+
+def _epoch_to_iso(value) -> str | None:
+    """上游时间戳是秒级 epoch；0 或非法一律当"没有"，返回 UTC ISO-8601。"""
+    seconds = _as_int(value, 0)
+    if seconds <= 0:
+        return None
+    try:
+        moment = datetime.fromtimestamp(seconds, timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _unknown_vip() -> dict:
+    """没拿到会员信息时统一返回的骨架：全部 None，让后台显示"未知"而不是"非会员"。"""
+    return {
+        "known": False,
+        "coins": None,
+        "vipActive": None,
+        "vipStatus": None,
+        "vipExpireAt": None,
+        "vipRenew": None,
+        "adFreeExpireAt": None,
+    }
+
+
+def _api_sign(payload: dict, secret: str) -> str:
+    """复刻上游 H5 请求签名：键升序拼 `k=v`，用 HMAC-SHA256 出十六进制摘要。
+
+    空值与 `null` 不参与签名；对象/数组按紧凑 JSON 序列化后再参与，
+    与浏览器端 `Object.keys().sort()` + `JSON.stringify` 的行为一致。
+    """
+    parts: list[tuple[str, str]] = []
+    for name, value in payload.items():
+        if value is None:
+            continue
+        text = json.dumps(value, separators=(",", ":")) if isinstance(value, (dict, list)) else str(value)
+        if text in ("", "null"):
+            continue
+        parts.append((str(name), text))
+    parts.sort(key=lambda item: item[0])
+    joined = "&".join(f"{name}={value}" for name, value in parts)
+    return hmac.new(secret.encode(), joined.encode(), hashlib.sha256).hexdigest()
+
+
+def _parse_cookie_header(raw: str | None) -> dict[str, str]:
+    """把 `Cookie:` 请求头的值解析成字典；缺少等号的片段直接忽略。
+
+    换行必须拒绝：这个值来自环境变量，混入换行等于允许往上游请求里注入额外请求头。
+    """
+    cookies: dict[str, str] = {}
+    if not raw:
+        return cookies
+    if "\r" in raw or "\n" in raw:
+        raise ValueError(f"{UPSTREAM_COOKIE_ENV} must not contain line breaks")
+    for part in raw.split(";"):
+        name, separator, value = part.partition("=")
+        name = name.strip()
+        if not name or not separator:
+            continue
+        cookies[name] = value.strip()
+    return cookies
 
 
 def _as_int(value, default: int = 0) -> int:
@@ -178,10 +337,37 @@ class ReelShortClient:
         max_redirects: int = DEFAULT_MAX_REDIRECTS,
         resolver=None,
         monotonic=None,
+        cookies: dict[str, str] | None = None,
+        email: str | None = None,
+        password: str | None = None,
+        api_secret: str | None = None,
+        channel_id: str | None = None,
+        account_file: str | None = None,
     ):
         self.site_url = site_url.rstrip("/")
         self.site_id = site_id
         self.timeout_seconds = timeout_seconds
+        # 上游登录态 Cookie：为空时匿名请求，行为与未引入该能力前逐字一致。
+        self.cookies = dict(cookies or {})
+        # 上游账号：同时配了邮箱与密码才会尝试登录；缺一个就保持匿名。
+        self.email = (email or "").strip()
+        self.password = password or ""
+        self.account_file = account_file
+        # 后台改过的账号优先于环境变量：环境变量只是首次部署的引导值。
+        persisted = self._read_persisted_account()
+        if persisted is not None:
+            self.email, self.password = persisted
+        self.api_secret = api_secret or DEFAULT_UPSTREAM_API_SECRET
+        self.channel_id = channel_id or DEFAULT_UPSTREAM_CHANNEL
+        self.session_token = ""
+        self.uid = "0"
+        # 游客会话（session_token 非空）不等于登录成功，只有登录成功才置真。
+        self.logged_in = False
+        self._login_lock = threading.RLock()
+        # 每次登录都会带一个新的设备号；进程内保持不变，避免上游把会话和设备绑定判为异常。
+        self._device_id = "".join(
+            random.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(12)
+        ) + str(int(time.time() * 1000))
         # An empty build id means "discover it", not "pin the empty string".
         # `REELSHORT_NEXT_BUILD_ID=` in an env file yields `""`, and treating
         # that as a pin disables the 404-triggered build-id refresh: every shelf
@@ -225,7 +411,286 @@ class ReelShortClient:
             os.getenv("REELSHORT_NEXT_BUILD_ID") or None,
             max_response_bytes=max_response_bytes,
             max_redirects=max_redirects,
+            cookies=_parse_cookie_header(os.getenv(UPSTREAM_COOKIE_ENV)),
+            email=os.getenv(UPSTREAM_EMAIL_ENV),
+            password=os.getenv(UPSTREAM_PASSWORD_ENV),
+            api_secret=os.getenv(UPSTREAM_API_SECRET_ENV) or DEFAULT_UPSTREAM_API_SECRET,
+            channel_id=os.getenv(UPSTREAM_CHANNEL_ENV) or DEFAULT_UPSTREAM_CHANNEL,
+            account_file=os.getenv(UPSTREAM_ACCOUNT_FILE_ENV, DEFAULT_UPSTREAM_ACCOUNT_FILE),
         )
+
+    @property
+    def authenticated(self) -> bool:
+        return bool(self.cookies) or self.logged_in
+
+    @property
+    def account_configured(self) -> bool:
+        """配了邮箱和密码才算"能登录"；只配一个按未配置处理。"""
+        return bool(self.email and self.password)
+
+    def session_fingerprint(self) -> str:
+        """当前 session 的稳定短指纹（不泄露 token 内容）。"""
+        if not self.session_token:
+            return ""
+        return hashlib.sha256(self.session_token.encode("utf-8")).hexdigest()[:12]
+
+    def set_account(self, email: str, password: str) -> None:
+        """后台下发的账号：覆盖环境变量里的初始值，并作废当前登录态。
+
+        密码只留在进程内存（以及 0600 的本地副本）里，不落日志、不回显。
+        """
+        self.email = (email or "").strip()
+        self.password = password or ""
+        self.session_token = ""
+        self.uid = "0"
+        self.logged_in = False
+        self._write_persisted_account()
+
+    def _read_persisted_account(self):
+        """读取上次后台下发的账号；读不到（首次部署/无文件）返回 None。"""
+        if not self.account_file:
+            return None
+        try:
+            with open(self.account_file, encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, ValueError):
+            return None
+        email = str(payload.get("email") or "").strip()
+        password = payload.get("password")
+        if not email or not isinstance(password, str) or not password:
+            return None
+        return email, password
+
+    def _write_persisted_account(self) -> None:
+        if not self.account_file:
+            return
+        try:
+            directory = os.path.dirname(self.account_file)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            payload = json.dumps({"email": self.email, "password": self.password})
+            descriptor = os.open(self.account_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(payload)
+        except OSError as exception:
+            # 写不下去不影响本次登录，只是重启后要等后端再推一次。
+            self.diagnostics.record("upstream_account_file_write_failed", message=_truncate(str(exception), 120))
+
+    def account_status(self) -> dict:
+        """给后台看的登录态摘要（邮箱脱敏、session 只给指纹）。"""
+        return {
+            "configured": self.account_configured,
+            "emailMasked": _mask_email(self.email),
+            "authenticated": self.authenticated,
+            "loggedIn": self.logged_in,
+            "sessionFingerprint": self.session_fingerprint(),
+        }
+
+    def account_vip(self) -> dict:
+        """上游账号的会员状态与到期时间（一次 `getUserInfo`）。
+
+        后台最关心的两件事：现在是不是会员、会员到哪天到期。上游把这两项放在
+        `user_info.account.vip_status` / `vip_expire`（秒级时间戳）里，
+        免费账号两者都是 0。查不到时返回 `known=False`，不冒充"非会员"。
+        """
+        if not self.ensure_session():
+            return _unknown_vip()
+        try:
+            payload = self._api_call("POST", UPSTREAM_USER_INFO_PATH, body={"target_uid": self.uid})
+        except UpstreamError as exception:
+            self.diagnostics.record(
+                "upstream_user_info_failed",
+                status_code=exception.status_code,
+                message=_truncate(exception.message, 120),
+            )
+            return _unknown_vip()
+        account = _as_dict(_as_dict(_as_dict(payload.get("data")).get("user_info")).get("account"))
+        if not account:
+            return _unknown_vip()
+        expire_at = _epoch_to_iso(account.get("vip_expire"))
+        status = _as_int(account.get("vip_status"), 0)
+        # vip_status 是上游的即时判定；没有到期时间时以它为准，避免把长期会员显示成非会员。
+        active = _as_int(account.get("vip_expire"), 0) > time.time() if expire_at else status > 0
+        return {
+            "known": True,
+            "coins": _as_int(account.get("coins"), 0),
+            "vipActive": bool(active),
+            "vipStatus": status,
+            "vipExpireAt": expire_at,
+            "vipRenew": _as_int(account.get("is_vip_renew"), 0) > 0,
+            "adFreeExpireAt": _epoch_to_iso(account.get("ad_free_expiration_time")),
+        }
+
+    def _bootstrap_session(self) -> bool:
+        """建立匿名访客会话。
+
+        上游多数接口（包括登录、发验证码、查邮箱）都要求先带一个 session，
+        否则统一回 `101 ERROR`。浏览器的顺序也是先进站拿 guest session 再登录。
+        """
+        try:
+            payload = self._api_call(
+                "POST",
+                UPSTREAM_LOGIN_PATH,
+                body={"email": "", "password": "", "dev_model": "h5", "sid": 0},
+                auth=False,
+            )
+        except UpstreamError as exception:
+            self.diagnostics.record(
+                "upstream_guest_session_failed",
+                status_code=exception.status_code,
+                message=_truncate(exception.message, 120),
+            )
+            return False
+        data = _as_dict(payload.get("data"))
+        token = str(data.get("session") or "")
+        if not token:
+            return False
+        self.session_token = token
+        self.uid = str(_as_dict(data.get("user_info")).get("uid") or 0)
+        return True
+
+    def login(self) -> bool:
+        """用环境变量里的账号登录上游，成功后带上 session/uid。
+
+        先建匿名会话再登录（与浏览器一致）；登录失败不抛异常：
+        抓取继续按匿名窗口工作，只记一条诊断事件。
+        """
+        if not self.account_configured:
+            return False
+        with self._login_lock:
+            encrypted = _encrypt_login_password(self.password)
+            if not encrypted:
+                self.diagnostics.record("upstream_login_unsupported", reason="crypto library unavailable")
+                return False
+            if not self.session_token and not self._bootstrap_session():
+                self.diagnostics.record("upstream_login_skipped", reason="no guest session")
+                return False
+            body = {
+                "sid": UPSTREAM_LOGIN_SID,
+                "login_mode": UPSTREAM_LOGIN_MODE_EMAIL_PASSWORD,
+                "login_email": self.email,
+                "login_pass": encrypted,
+                "dev_model": "h5",
+            }
+            try:
+                payload = self._api_call("POST", UPSTREAM_LOGIN_PATH, body=body, auth=True)
+            except UpstreamError as exception:
+                self.diagnostics.record(
+                    "upstream_login_failed",
+                    email=_truncate(self.email, 40),
+                    message=_truncate(exception.message, 120),
+                )
+                return False
+            data = _as_dict(payload.get("data"))
+            token = str(data.get("session") or "")
+            user_info = _as_dict(data.get("user_info"))
+            user_type = _as_int(user_info.get("sid"))
+            if payload.get("code") != 0 or not token or user_type == 0:
+                # 上游对"口令不对/账号异常"也会回 code=0，但给的是游客身份（sid=0）。
+                # 这种会话不能算登录成功，否则会出现"以为登录了、锁集仍 404"的假象。
+                self.diagnostics.record(
+                    "upstream_login_rejected",
+                    email=_truncate(self.email, 40),
+                    code=_truncate(payload.get("code"), 32),
+                    message=_truncate(payload.get("msg"), 120),
+                    user_type=user_type,
+                )
+                return False
+            self.session_token = token
+            self.uid = str(user_info.get("uid") or 0)
+            self.logged_in = True
+            self.diagnostics.record(
+                "upstream_login_ok",
+                uid=self.uid,
+                session_fingerprint=self.session_fingerprint(),
+            )
+            return True
+
+    def ensure_session(self) -> bool:
+        """保证有可用的 session；没有就登录一次。匿名模式返回 False。"""
+        if not self.account_configured:
+            return False
+        if self.session_token:
+            return True
+        return self.login()
+
+    def chapters(self, book_id: str) -> dict:
+        """整季分集 + 每集当前是否解锁（`play_info` 非空即已解锁）。
+
+        免费账号也能调用：它对锁集返回的 `play_info` 是 null，
+        所以一次请求就能知道这本书的可播窗口，不必逐集探测。
+        """
+        self.ensure_session()
+        collected: list[dict] = []
+        chapter_count = 0
+        page = 1
+        while True:
+            payload = self._api_call(
+                "GET",
+                UPSTREAM_CHAPTER_LIST_PATH,
+                params={"book_id": book_id, "page": page, "page_size": UPSTREAM_CHAPTER_PAGE_SIZE},
+            )
+            data = _as_dict(payload.get("data"))
+            chapter_count = _as_int(data.get("chapter_count"), chapter_count)
+            page_items = _as_list(data.get("chapter_list"))
+            for item in page_items:
+                chapter = _as_dict(item)
+                episode = _as_int(chapter.get("serial_number"))
+                collected.append(
+                    {
+                        "episode": episode,
+                        "chapter_id": str(chapter.get("chapter_id") or ""),
+                        "duration": _as_int(chapter.get("duration")),
+                        "playable": bool(chapter.get("play_info")),
+                    }
+                )
+            if len(page_items) < UPSTREAM_CHAPTER_PAGE_SIZE or page >= 20:
+                break
+            page += 1
+        collected.sort(key=lambda item: item["episode"])
+        playable = [item["episode"] for item in collected if item["playable"]]
+        return {
+            "book_id": book_id,
+            "chapter_count": chapter_count or len(collected),
+            "authenticated": self.authenticated,
+            "playable_episodes": playable,
+            "locked_from": playable[-1] + 1 if playable else (1 if collected else None),
+            "chapters": collected,
+        }
+
+    def chapter_info(self, book_id: str, chapter_id: str) -> dict:
+        """单集详情（登录态下带上用户权益）：会员账号的锁集会在这里给出 video_url。"""
+        self.ensure_session()
+        payload = self._api_call(
+            "GET", UPSTREAM_CHAPTER_INFO_PATH, params={"book_id": book_id, "chapter_id": chapter_id}
+        )
+        return _as_dict(payload.get("data"))
+
+    def _unlocked_video_url(self, book_id: str, chapter_id: str) -> str:
+        """锁集兜底：用账号权益再问一次分集接口，拿不到就返回空串（保持 404 语义）。"""
+        if not self.account_configured:
+            return ""
+        try:
+            info = self.chapter_info(book_id, chapter_id)
+        except UpstreamError as exception:
+            self.diagnostics.record(
+                "chapter_info_unavailable",
+                book_id=book_id,
+                chapter_id=chapter_id,
+                status_code=exception.status_code,
+            )
+            return ""
+        url = str(info.get("video_url") or "")
+        if url:
+            self.diagnostics.record("video_unlocked_via_account", book_id=book_id, chapter_id=chapter_id)
+        return url
+
+    def cookie_fingerprint(self) -> str:
+        """配置的 Cookie 的稳定短指纹，用来核对"换的是哪一套"而不泄露内容。"""
+        if not self.cookies:
+            return ""
+        raw = "; ".join(f"{name}={value}" for name, value in self.cookies.items())
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
 
     def search(self, keywords: str, locale: str = DEFAULT_LOCALE):
         payload = self._get_locale_data("/search.json", locale=locale, params={"keywords": keywords})
@@ -300,13 +765,21 @@ class ReelShortClient:
             payload = self._episode_html_payload(slug)
         episode_data = _as_dict(_as_dict(payload).get("pageProps")).get("data")
         episode_data = _as_dict(episode_data)
-        if not episode_data.get("video_url"):
+        video_url = str(episode_data.get("video_url") or "")
+        if not video_url:
+            # 页面数据只反映匿名可见窗口；配了账号时再问一次分集接口，
+            # 会员权益下的锁集会在那里给出真正的 video_url。
+            video_url = self._unlocked_video_url(book_id, chapter_id)
+        if not video_url:
             self.diagnostics.record(
                 "video_url_missing",
                 book_id=book_id,
                 episode_num=episode_num,
                 filtered_title=filtered_title,
                 chapter_id=chapter_id,
+                # 区分"我们没登录"和"登录了但这集仍锁着"：后者说明登录态有效，
+                # 是账号权益不够，不是配置问题。
+                authenticated=self.authenticated,
             )
             raise UpstreamError(404, "upstream not found")
 
@@ -328,10 +801,36 @@ class ReelShortClient:
                 next_chapter = chapters[index + 1]
                 break
         return {
-            "video_url": episode_data.get("video_url", ""),
+            "video_url": video_url,
             "episode": _as_int(episode_data.get("serial_number"), episode_num) or episode_num,
             "duration": _as_int(episode_data.get("duration")),
             "next_episode": next_chapter,
+        }
+
+    def probe_episode(self, book_id: str, filtered_title: str, episode_num: int, locale: str = DEFAULT_LOCALE):
+        """探测某一集当前能不能取到播放地址，用来验证登录态 Cookie 是否还在生效。
+
+        不抛异常：探测失败本身就是结果的一部分（Cookie 过期、账号权益不足、上游抖动）。
+        """
+        try:
+            episodes = _as_list(self.episodes(book_id, filtered_title, locale).get("episodes"))
+        except UpstreamError as exception:
+            return {"episode": episode_num, "playable": False, "reason": f"episodes unavailable ({exception.status_code})"}
+        chapter = next(
+            (item for item in episodes if _as_int(_as_dict(item).get("episode")) == episode_num),
+            None,
+        )
+        if chapter is None:
+            return {"episode": episode_num, "playable": False, "reason": "episode not found upstream"}
+        chapter_id = str(_as_dict(chapter).get("chapter_id") or "")
+        try:
+            video = self.video(book_id, episode_num, filtered_title, chapter_id, locale)
+        except UpstreamError as exception:
+            return {"episode": episode_num, "playable": False, "reason": exception.message}
+        return {
+            "episode": episode_num,
+            "playable": bool(video.get("video_url")),
+            "duration": video.get("duration"),
         }
 
     def _movie_payload(self, book_id: str, filtered_title: str, locale: str = DEFAULT_LOCALE):
@@ -417,6 +916,65 @@ class ReelShortClient:
             raise UpstreamError(502, "upstream request failed")
         return response.text
 
+    def _api_common(self) -> dict:
+        """上游 H5 接口的公共参数：既参与签名，也逐项放进请求头。"""
+        return {
+            "apiVersion": UPSTREAM_API_VERSION,
+            "channelId": self.channel_id,
+            "clientVer": UPSTREAM_CLIENT_VERSION,
+            "devId": self._device_id,
+            "lang": DEFAULT_LOCALE,
+            "ts": int(time.time()),
+            "session": self.session_token,
+            "uid": self.uid,
+        }
+
+    def _api_call(self, method: str, path: str, params=None, body=None, auth: bool = True,
+            _retried: bool = False) -> dict:
+        """签名调用上游 H5 接口；session 过期时自动重登一次再重试。"""
+        common = self._api_common()
+        if not auth:
+            common["session"] = ""
+            common["uid"] = "0"
+        signed = {**(body or {}), **(params or {}), **common}
+        extra_headers = {name: str(value) for name, value in common.items()}
+        extra_headers["sign"] = _api_sign(signed, self.api_secret)
+        url = f"{self.site_url}{path}"
+        if method == "GET":
+            response = self._request(url, params=params, extra_headers=extra_headers)
+        else:
+            extra_headers["Content-Type"] = "application/json"
+            response = self._request(url, method="POST", json_body=body or {}, extra_headers=extra_headers)
+        if not response.ok:
+            self.diagnostics.record("upstream_api_http_error", path=path, status_code=response.status_code)
+            raise UpstreamError(502, "upstream request failed")
+        text = response.text or ""
+        payload = None
+        if text.lstrip().startswith("{"):
+            try:
+                payload = response.json()
+            except requests.JSONDecodeError:
+                payload = None
+        if not isinstance(payload, dict):
+            # 上游有时直接回一段 base64 密文（见 `_decrypt_api_response`）。
+            payload = _decrypt_api_response(text)
+        if not isinstance(payload, dict):
+            self.diagnostics.record("upstream_api_invalid_json", path=path, bytes=len(text))
+            raise UpstreamError(502, "upstream returned invalid json")
+        if (
+            payload.get("code") == UPSTREAM_SESSION_EXPIRED_CODE
+            and auth
+            and not _retried
+            and self.account_configured
+        ):
+            self.diagnostics.record("upstream_session_expired", path=path)
+            self.session_token = ""
+            self.uid = "0"
+            self.logged_in = False
+            if self.login():
+                return self._api_call(method, path, params=params, body=body, auth=auth, _retried=True)
+        return payload
+
     def _discover_build_id(self):
         response = self._request(f"{self.site_url}/{quote(self.site_id, safe='')}")
         match = re.search(r'"buildId":"([^"]+)"', response.text)
@@ -432,7 +990,7 @@ class ReelShortClient:
         self.build_id = match.group(1)
         return self.build_id
 
-    def _request(self, url: str, params=None):
+    def _request(self, url: str, params=None, *, method: str = "GET", json_body=None, extra_headers=None):
         # M11: _validate_url 现在返回 (pinned_url, original_hostname) 用于 DNS pinning
         pinned_url, _ = self._validate_url(url, "upstream_url_blocked", "upstream returned unsafe upstream URL")
         deadline = self.monotonic() + self.timeout_seconds
@@ -441,6 +999,11 @@ class ReelShortClient:
         current_params = params
         visited = {url}
         headers = {"Host": self._host_header(url), "User-Agent": UPSTREAM_USER_AGENT}
+        if extra_headers:
+            headers.update({name: str(value) for name, value in extra_headers.items()})
+        if self.cookies:
+            # 只在配置了登录态时发送，匿名请求的 Header 集合与之前完全一致。
+            headers["Cookie"] = "; ".join(f"{name}={value}" for name, value in self.cookies.items())
 
         for redirect_count in range(self.max_redirects + 1):
             remaining = self.timeout_seconds if redirect_count == 0 else deadline - self.monotonic()
@@ -451,7 +1014,9 @@ class ReelShortClient:
                 response = self._request_get(
                     current_url,
                     original_url=original_current_url,
+                    method=method,
                     params=current_params,
+                    json=json_body if redirect_count == 0 else None,
                     timeout=remaining,
                     allow_redirects=False,
                     stream=True,
@@ -463,6 +1028,12 @@ class ReelShortClient:
             if response.status_code not in REDIRECT_STATUS_CODES:
                 self._read_limited_response(response, deadline, current_url)
                 return response
+
+            if method != "GET":
+                # API 调用不接受重定向：跟随会丢掉 body，重发又可能重复提交。
+                self._close_response(response)
+                self.diagnostics.record("upstream_post_redirect", url=current_url)
+                raise UpstreamError(502, "upstream returned unexpected redirect")
 
             location = getattr(response, "headers", {}).get("Location")
             self._close_response(response)
@@ -494,16 +1065,16 @@ class ReelShortClient:
 
         raise UpstreamError(502, "upstream returned too many redirects")
 
-    def _request_get(self, pinned_url: str, original_url: str, **kwargs):
+    def _request_get(self, pinned_url: str, original_url: str, method: str = "GET", **kwargs):
         parsed = urlparse(original_url)
         if parsed.scheme != "https":
-            return requests.get(pinned_url, **kwargs)
+            return requests.request(method, pinned_url, **kwargs)
 
         session = requests.Session()
         session.trust_env = False
         session.mount("https://", _PinnedHTTPSAdapter(parsed.hostname))
         try:
-            response = session.get(pinned_url, **kwargs)
+            response = session.request(method, pinned_url, **kwargs)
             # Keep the session alive until response streaming has completed.
             response._reelshort_session = session
             return response
@@ -843,6 +1414,13 @@ def create_app(client=None, internal_token=None) -> Flask:
     app = Flask(__name__)
     reelshort_client = client or ReelShortClient.from_env()
     expected_token = internal_token if internal_token is not None else os.getenv(INTERNAL_TOKEN_ENV, "")
+    # 配了账号就绪前先登录一次：让"已配置"和"已登录"在启动后就是同一个状态，
+    # 而不是等到第一集锁集播放才懒加载。登录失败只记诊断，不影响匿名抓取。
+    if getattr(reelshort_client, "account_configured", False):
+        try:
+            reelshort_client.ensure_session()
+        except Exception:  # noqa: BLE001 - 启动期任何登录异常都不该拦住服务
+            pass
 
     @app.get("/health")
     def health():
@@ -936,6 +1514,70 @@ def create_app(client=None, internal_token=None) -> Flask:
         if not filtered_title:
             return jsonify({"error": "filtered_title is required"}), 400
         return jsonify(reelshort_client.episodes(book_id, filtered_title, locale))
+
+    @app.get("/api/v1/reelshort/session")
+    def session_status():
+        """上游登录态状态页：账号是否已登录、账号身份，以及（可选）指定集能不能播。
+
+        带 `account=1` 时先用环境变量里的账号登录一次（幂等），返回真实登录结果；
+        带 `book_id` + `filtered_title` + `episode_num` 时做一次真实探测，
+        用来确认账号权益是否已经能解锁锁集。
+        """
+        locale = request_locale()
+        if locale is None:
+            return locale_error()
+        login_attempt = None
+        if request.args.get("account", "").strip() in {"1", "true", "yes"}:
+            login_attempt = reelshort_client.login()
+        payload = {
+            "authenticated": reelshort_client.authenticated,
+            "accountConfigured": reelshort_client.account_configured,
+            "loginAttempt": login_attempt,
+            "sessionFingerprint": reelshort_client.session_fingerprint(),
+            "cookieFingerprint": reelshort_client.cookie_fingerprint(),
+        }
+        book_id = request.args.get("book_id", "").strip()
+        filtered_title = request.args.get("filtered_title", "").strip()
+        episode_num = request.args.get("episode_num", "").strip()
+        if book_id and filtered_title and episode_num.isdigit():
+            payload["probe"] = reelshort_client.probe_episode(book_id, filtered_title, int(episode_num), locale)
+        return jsonify(payload)
+
+    @app.post("/api/v1/reelshort/credentials")
+    def update_credentials():
+        """后台下发 ReelShort 账号（覆盖环境变量里的初始值）。
+
+        加号：后台改完账号立刻生效，不需要改文件、不用重启服务。
+        密码只存进程内存，响应里只回脱敏邮箱与登录结果。
+        """
+        payload = request.get_json(silent=True) or {}
+        email = str(payload.get("email") or "").strip()
+        password = payload.get("password")
+        if not email or not isinstance(password, str) or not password:
+            return jsonify({"error": "email and password are required"}), 400
+        reelshort_client.set_account(email, password)
+        authenticated = reelshort_client.ensure_session()
+        account = reelshort_client.account_status()
+        account["vip"] = reelshort_client.account_vip() if authenticated else _unknown_vip()
+        return jsonify({"authenticated": authenticated, "account": account})
+
+    @app.get("/api/v1/reelshort/account")
+    def account_summary():
+        """后台账号卡片：登录态 + 会员状态 + 会员到期时间。"""
+        payload = reelshort_client.account_status()
+        payload["vip"] = reelshort_client.account_vip()
+        return jsonify(payload)
+
+    @app.get("/api/v1/reelshort/chapters/<book_id>")
+    def chapters(book_id: str):
+        """整季分集 + 每集能否播放（`play_info` 为空即上游锁集）。
+
+        免费账号也能拿到可播窗口，后端据此做选集置灰，不必逐集探测。
+        """
+        locale = request_locale()
+        if locale is None:
+            return locale_error()
+        return jsonify(reelshort_client.chapters(book_id))
 
     @app.get("/api/v1/reelshort/video/<book_id>/<int:episode_num>")
     def video(book_id: str, episode_num: int):

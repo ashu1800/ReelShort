@@ -18,7 +18,9 @@ def resolve_test_hosts_to_public_address(monkeypatch):
     monkeypatch.setattr(
         ReelShortClient,
         "_request_get",
-        lambda self, pinned_url, original_url, **kwargs: app_module.requests.get(original_url, **kwargs),
+        lambda self, pinned_url, original_url, method="GET", json=None, **kwargs: app_module.requests.get(
+            original_url, **kwargs
+        ),
     )
 
 
@@ -107,6 +109,65 @@ class FakeReelShortClient:
                 "title": "Second Move",
                 "description": "The secret spreads.",
             },
+        }
+
+    authenticated = False
+
+    def cookie_fingerprint(self):
+        return ""
+
+    def probe_episode(self, book_id, filtered_title, episode_num, locale="en"):
+        self.calls.append(("probe", book_id, filtered_title, episode_num, locale))
+        return {"episode": episode_num, "playable": True, "duration": 120}
+
+    # 上游账号登录态：默认按"未配置账号"的匿名形态返回。
+    authenticated = False
+    account_configured = False
+
+    def login(self):
+        self.calls.append(("login",))
+        return False
+
+    def session_fingerprint(self):
+        return ""
+
+    def set_account(self, email, password):
+        self.calls.append(("set_account", email))
+        self.email = email
+
+    def ensure_session(self):
+        self.calls.append(("ensure_session",))
+        return False
+
+    def account_status(self):
+        return {
+            "configured": True,
+            "emailMasked": app_module._mask_email(getattr(self, "email", "")),
+            "authenticated": False,
+            "loggedIn": False,
+            "sessionFingerprint": "",
+        }
+
+    vip = app_module._unknown_vip()
+
+    def account_vip(self):
+        return dict(self.vip)
+
+    def cookie_fingerprint(self):
+        return ""
+
+    def chapters(self, book_id):
+        self.calls.append(("chapters", book_id))
+        return {
+            "book_id": book_id,
+            "chapter_count": 2,
+            "authenticated": False,
+            "playable_episodes": [1, 2],
+            "locked_from": 3,
+            "chapters": [
+                {"episode": 1, "chapter_id": "chapter-1", "duration": 120, "playable": True},
+                {"episode": 2, "chapter_id": "chapter-2", "duration": 120, "playable": True},
+            ],
         }
 
 
@@ -310,6 +371,124 @@ def test_video_requires_filtered_title_and_chapter_id(client, query, message):
 
     assert response.status_code == 400
     assert response.get_json() == {"error": message}
+
+
+def test_parse_cookie_header_ignores_malformed_parts():
+    assert app_module._parse_cookie_header(" a=1 ; broken; b=2; =3; c= ") == {
+        "a": "1",
+        "b": "2",
+        "c": "",
+    }
+
+
+def test_parse_cookie_header_rejects_line_breaks():
+    with pytest.raises(ValueError):
+        app_module._parse_cookie_header("a=1\r\nX-Injected: 1")
+
+
+def test_session_endpoint_reports_anonymous_state(client):
+    response = client.get("/api/v1/reelshort/session")
+
+    assert response.status_code == 200
+    # 假客户端的活动记录里没有任何探测调用。
+    assert response.get_json() == {
+        "authenticated": False,
+        "accountConfigured": False,
+        "loginAttempt": None,
+        "sessionFingerprint": "",
+        "cookieFingerprint": "",
+    }
+
+
+def test_session_endpoint_probes_the_requested_episode(client):
+    response = client.get(
+        "/api/v1/reelshort/session?book_id=book-1&filtered_title=love-story&episode_num=13"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["probe"] == {"episode": 13, "playable": True, "duration": 120}
+
+
+def test_reelshort_client_sends_configured_cookie_to_upstream(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        ok = True
+        headers = {"Content-Type": "application/json"}
+        text = ""
+
+        def json(self):
+            return {"pageProps": {"books": []}}
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        captured["headers"] = kwargs.get("headers")
+        return FakeResponse()
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    monkeypatch.setenv("REELSHORT_NEXT_BUILD_ID", "build-1")
+    monkeypatch.setenv("REELSHORT_UPSTREAM_COOKIE", "sessionid=abc; uid=42")
+
+    client = ReelShortClient.from_env()
+    client.search("love")
+
+    assert client.authenticated is True
+    assert client.cookie_fingerprint() != ""
+    assert captured["headers"]["Cookie"] == "sessionid=abc; uid=42"
+
+
+def test_reelshort_client_sends_no_cookie_when_not_configured(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        ok = True
+        headers = {"Content-Type": "application/json"}
+        text = ""
+
+        def json(self):
+            return {"pageProps": {"books": []}}
+
+    def fake_get(url, params=None, timeout=None, **kwargs):
+        captured["headers"] = kwargs.get("headers")
+        return FakeResponse()
+
+    monkeypatch.setattr("app.requests.get", fake_get)
+    monkeypatch.setenv("REELSHORT_NEXT_BUILD_ID", "build-1")
+    monkeypatch.delenv("REELSHORT_UPSTREAM_COOKIE", raising=False)
+
+    client = ReelShortClient.from_env()
+    client.search("love")
+
+    assert client.authenticated is False
+    assert "Cookie" not in captured["headers"]
+
+
+def test_video_url_missing_diagnostic_records_authenticated_flag(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        ok = True
+        headers = {"Content-Type": "application/json"}
+        text = ""
+
+        def json(self):
+            return {"pageProps": {"data": {"duration": 151, "video_url": None, "serial_number": 13}}}
+
+    monkeypatch.setattr("app.requests.get", lambda *args, **kwargs: FakeResponse())
+
+    client = ReelShortClient(
+        "https://site.example",
+        "id",
+        3,
+        build_id="build-1",
+        cookies={"sessionid": "abc"},
+    )
+    with pytest.raises(UpstreamError):
+        client.video("book-1", 13, "love-story", "chapter-13")
+
+    event = client.diagnostics.snapshot()["recent_events"][0]
+    assert event["event_type"] == "video_url_missing"
+    assert event["context"]["authenticated"] is True
 
 
 def test_reelshort_client_builds_search_data_url(monkeypatch):
@@ -1658,6 +1837,10 @@ def test_pinned_https_transport_uses_original_hostname_for_tls(monkeypatch):
             captured["adapter"] = adapter
 
         def get(self, url, **kwargs):
+            return self.request("GET", url, **kwargs)
+
+        def request(self, method, url, **kwargs):
+            captured["method"] = method
             captured["url"] = url
             captured["headers"] = kwargs["headers"]
             return FakeResponse()
@@ -2235,3 +2418,399 @@ def test_run_app_allows_loopback_host_without_internal_token(monkeypatch):
     app_module.run_app()
 
     assert captured == {"host": "127.0.0.1", "port": 5000}
+
+
+# ---------------------------------------------------------------------------
+# 上游账号登录（邮箱 + 密码 → session），以及会员解锁锁集后的兜底路径
+# ---------------------------------------------------------------------------
+
+
+class _StubResponse:
+    def __init__(self, payload, status_code=200):
+        self._payload = payload
+        self.status_code = status_code
+        self.ok = status_code < 400
+        self.headers = {"Content-Type": "application/json"}
+
+    @property
+    def text(self):
+        return json.dumps(self._payload)
+
+    def json(self):
+        return self._payload
+
+
+def _stub_client_requests(client, payloads):
+    """把 `_request` 换成按顺序出队的假响应，并记录每次调用的形状。"""
+    calls = []
+
+    def fake_request(url, params=None, *, method="GET", json_body=None, extra_headers=None):
+        calls.append(
+            {
+                "url": url,
+                "method": method,
+                "params": params,
+                "body": json_body,
+                "headers": extra_headers or {},
+            }
+        )
+        return _StubResponse(payloads.pop(0))
+
+    client._request = fake_request
+    return calls
+
+
+def _login_client(**kwargs):
+    return ReelShortClient("https://site.example", "id", 3, email="user@example.test", password="secret", **kwargs)
+
+
+def test_api_signature_sorts_keys_and_drops_empty_values():
+    """签名规则：键升序、空值剔除、HMAC-SHA256。
+
+    该规则已用真实浏览器抓包（同一组参数 → 同一个 sign）核对过，
+    这里用标准库从第一性原理重算，避免"自己验证自己"。
+    """
+    import hashlib
+    import hmac
+
+    signature = app_module._api_sign({"b": 2, "a": "x", "c": None, "d": ""}, "secret")
+    expected = hmac.new(b"secret", b"a=x&b=2", hashlib.sha256).hexdigest()
+    assert signature == expected
+
+
+GUEST_PAYLOAD = {"code": 0, "data": {"session": "g" * 32, "user_info": {"uid": 42, "sid": 0}}}
+
+
+def test_login_posts_credentials_and_keeps_session():
+    client = _login_client()
+    calls = _stub_client_requests(
+        client,
+        [
+            GUEST_PAYLOAD,
+            {"code": 0, "data": {"session": "s" * 32, "user_info": {"uid": 1852465306, "sid": 4}}},
+        ],
+    )
+
+    assert client.login() is True
+    assert client.session_token == "s" * 32
+    assert client.uid == "1852465306"
+    assert client.authenticated is True
+
+    # 第一次是匿名会话引导，第二次才是真正的登录。
+    assert calls[0]["headers"]["session"] == ""
+    call = calls[1]
+    assert call["method"] == "POST"
+    assert call["url"].endswith("/api/video/user/userLogin")
+    # 登录请求要带上前一步拿到的 guest session（浏览器同样如此）。
+    assert call["headers"]["session"] == "g" * 32
+    assert call["headers"]["uid"] == "42"
+    body = call["body"]
+    assert body["sid"] == 4 and body["login_mode"] == 2
+    assert body["login_email"] == "user@example.test"
+    assert body["dev_model"] == "h5"
+    # 口令是加密串，原文绝不能出现在请求里。
+    assert body["login_pass"] != "secret"
+    assert len(body["login_pass"]) > 20 and "password" not in body
+    # 签名覆盖公共参数。
+    assert len(call["headers"]["sign"]) == 64
+
+
+def test_login_password_uses_zlib_base64_then_aes():
+    """链路是 utf8 → zlib → base64 字符串 → AES-128-CBC/PKCS7 → base64。
+
+    该链路已用真实浏览器抓包逐字节核对过（同一口令 → 同一密文）；
+    这里的固定值只用于锁住实现，防止有人把中间那层 base64 或压缩方式改掉。
+    """
+    import base64
+    import zlib
+
+    from Crypto.Cipher import AES
+
+    encoded = app_module._encrypt_login_password("correct-horse-battery")
+    assert encoded == "nNZw4cdwCforMVfA8NOcm1cJ6N+7CMnFyPiYpsPgvs9qAq3XCVOalmQ82E/tToHm"
+
+    decipher = AES.new(
+        app_module.UPSTREAM_LOGIN_AES_KEY.encode(),
+        AES.MODE_CBC,
+        app_module.UPSTREAM_LOGIN_AES_IV.encode(),
+    )
+    padded = decipher.decrypt(base64.b64decode(encoded))
+    inner = padded[: -padded[-1]].decode("ascii")
+    assert zlib.decompress(base64.b64decode(inner)).decode("utf-8") == "correct-horse-battery"
+
+
+def test_login_rejects_guest_session_from_wrong_password():
+    """上游对错误口令也返回 code=0，但发的是游客身份（sid=0），不能当成登录成功。"""
+    client = _login_client()
+    _stub_client_requests(
+        client,
+        [GUEST_PAYLOAD, {"code": 0, "data": {"session": "", "user_info": []}}],
+    )
+
+    assert client.login() is False
+    # 失败的登录不会把游客会话当成登录态。
+    assert client.logged_in is False
+    assert client.authenticated is False
+
+
+def test_login_is_skipped_without_credentials():
+    client = ReelShortClient("https://site.example", "id", 3)
+    calls = _stub_client_requests(client, [])
+
+    assert client.login() is False
+    assert client.account_configured is False
+    assert calls == []
+
+
+def test_expired_session_triggers_one_relogin_and_retries():
+    client = _login_client()
+    client.session_token = "old-session"
+    calls = _stub_client_requests(
+        client,
+        [
+            {"code": 103, "msg": "checkSession error"},
+            GUEST_PAYLOAD,
+            {"code": 0, "data": {"session": "n" * 32, "user_info": {"uid": 7, "sid": 4}}},
+            {"code": 0, "data": {"chapter_list": []}},
+        ],
+    )
+
+    payload = client._api_call("GET", "/api/video/book/getChapterList", params={"book_id": "book-1"})
+
+    assert payload["code"] == 0
+    assert client.session_token == "n" * 32
+    assert [call["url"].rsplit("/", 1)[-1] for call in calls] == [
+        "getChapterList",
+        "userLogin",
+        "userLogin",
+        "getChapterList",
+    ]
+
+
+def test_chapters_reports_the_locked_window_from_play_info():
+    client = ReelShortClient("https://site.example", "id", 3)
+    chapters = [
+        {
+            "serial_number": episode,
+            "chapter_id": f"chapter-{episode}",
+            "duration": 100,
+            "play_info": "encrypted" if episode <= 12 else None,
+        }
+        for episode in range(1, 17)
+    ]
+    _stub_client_requests(client, [{"code": 0, "data": {"chapter_count": 16, "chapter_list": chapters}}])
+
+    result = client.chapters("book-1")
+
+    assert result["chapter_count"] == 16
+    assert result["playable_episodes"] == list(range(1, 13))
+    assert result["locked_from"] == 13
+    assert result["chapters"][12] == {
+        "episode": 13,
+        "chapter_id": "chapter-13",
+        "duration": 100,
+        "playable": False,
+    }
+
+
+def test_video_falls_back_to_account_api_for_a_locked_episode():
+    client = _login_client()
+    client.session_token = "s" * 32
+    requested = []
+
+    def fake_request(url, params=None, *, method="GET", json_body=None, extra_headers=None):
+        requested.append(url)
+        assert url.endswith("/api/video/book/getChapterInfo")
+        return _StubResponse({"code": 0, "data": {"video_url": "https://cdn.example/ep13.m3u8", "duration": 151}})
+
+    client._request = fake_request
+    client._get_locale_data = lambda *args, **kwargs: {"pageProps": {"data": {"video_url": "", "duration": 151}}}
+    client.episodes = lambda *args, **kwargs: {"episodes": []}
+
+    video = client.video("book-1", 13, "love-story", "chapter-13", "en")
+
+    assert video["video_url"] == "https://cdn.example/ep13.m3u8"
+    assert video["duration"] == 151
+    assert requested
+
+def test_decrypt_api_response_handles_encrypted_bodies():
+    """上游偶尔用密文回包：AES → base64 → zlib → JSON，解不出来要返回 None。"""
+    import base64
+    import zlib
+
+    from Crypto.Cipher import AES
+    from Crypto.Util.Padding import pad
+
+    payload = {"code": 101, "msg": "ERROR", "data": {}}
+    inner = base64.b64encode(zlib.compress(json.dumps(payload).encode("utf-8"))).decode("ascii")
+    cipher = AES.new(
+        app_module.UPSTREAM_LOGIN_AES_KEY.encode(),
+        AES.MODE_CBC,
+        app_module.UPSTREAM_LOGIN_AES_IV.encode(),
+    )
+    body = base64.b64encode(cipher.encrypt(pad(inner.encode("ascii"), 16))).decode("ascii")
+
+    assert app_module._decrypt_api_response(body) == payload
+    assert app_module._decrypt_api_response("not encrypted at all") is None
+    assert app_module._decrypt_api_response("") is None
+
+# ---------------------------------------------------------------------------
+# 后台下发 ReelShort 账号（不再写死到代码/环境变量）
+# ---------------------------------------------------------------------------
+
+
+def test_credentials_endpoint_requires_email_and_password(client):
+    response = client.post("/api/v1/reelshort/credentials", json={"email": "a@b.c"})
+    assert response.status_code == 400
+    response = client.post("/api/v1/reelshort/credentials", json={"email": "", "password": "x"})
+    assert response.status_code == 400
+
+
+def test_credentials_endpoint_applies_account_and_reports_status(client):
+    response = client.post(
+        "/api/v1/reelshort/credentials",
+        json={"email": "operator@example.com", "password": "secret"},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["authenticated"] is False
+    assert body["account"]["emailMasked"] == "op***@example.com"
+    assert body["account"]["configured"] is True
+    # 密码绝不出现在响应里
+    assert "secret" not in response.get_data(as_text=True)
+
+
+def test_client_set_account_resets_session_and_masks_email():
+    client = ReelShortClient("https://site.example", "id", 3)
+    client.session_token = "old-session"
+    client.uid = "42"
+    client.logged_in = True
+
+    client.set_account("  operator@example.com  ", "secret")
+
+    assert client.email == "operator@example.com"
+    assert client.session_token == ""
+    assert client.uid == "0"
+    assert client.logged_in is False
+    assert client.account_status()["emailMasked"] == "op***@example.com"
+    assert client.account_status()["configured"] is True
+
+
+def test_mask_email_handles_short_and_missing_domains():
+    assert app_module._mask_email("ab@x.io") == "a***@x.io"
+    assert app_module._mask_email("") == ""
+    assert app_module._mask_email("not-an-email") == "no***"
+
+def test_account_is_persisted_for_restarts(tmp_path):
+    import os
+
+    path = str(tmp_path / "account.json")
+    client = ReelShortClient("https://site.example", "id", 3, account_file=path)
+    client.set_account("operator@example.com", "secret")
+
+    assert os.path.exists(path)
+    if os.name == "posix":
+        assert oct(os.stat(path).st_mode & 0o777) == "0o600"
+
+    reloaded = ReelShortClient("https://site.example", "id", 3, account_file=path)
+    assert reloaded.email == "operator@example.com"
+    assert reloaded.password == "secret"
+    assert reloaded.account_configured is True
+
+
+def test_persisted_account_wins_over_environment(tmp_path):
+    path = str(tmp_path / "account.json")
+    ReelShortClient("https://site.example", "id", 3, account_file=path).set_account("admin@example.com", "fromdb")
+
+    client = ReelShortClient("https://site.example", "id", 3,
+                             email="env@example.com", password="fromenv", account_file=path)
+
+    assert client.email == "admin@example.com"
+    assert client.password == "fromdb"
+
+
+def test_epoch_to_iso_normalizes_upstream_timestamps():
+    assert app_module._epoch_to_iso(0) is None
+    assert app_module._epoch_to_iso(None) is None
+    assert app_module._epoch_to_iso("not-a-number") is None
+    assert app_module._epoch_to_iso(1794556799) == "2026-11-13T07:59:59Z"
+    # 毫秒级时间戳会被当成越界，按"没有"处理而不是崩掉
+    assert app_module._epoch_to_iso(1794556799000) is None
+
+
+def test_account_vip_reports_expiry_and_status(monkeypatch):
+    client = ReelShortClient("https://site.example", "id", 3)
+    client.email = "vip@example.com"
+    client.password = "secret"
+    client.session_token = "session-token"
+    client.uid = "42"
+
+    monkeypatch.setattr(
+        client,
+        "_api_call",
+        lambda method, path, body=None, auth=True: {
+            "code": 0,
+            "data": {
+                "user_info": {
+                    "account": {
+                        "coins": 120,
+                        "vip_status": 1,
+                        "vip_expire": 1794556799,
+                        "is_vip_renew": 1,
+                        "ad_free_expiration_time": 0,
+                    }
+                }
+            },
+        },
+    )
+
+    vip = client.account_vip()
+
+    assert vip["known"] is True
+    assert vip["vipActive"] is True
+    assert vip["vipExpireAt"] == "2026-11-13T07:59:59Z"
+    assert vip["vipRenew"] is True
+    assert vip["coins"] == 120
+    assert vip["adFreeExpireAt"] is None
+
+
+def test_account_vip_marks_free_account_as_inactive(monkeypatch):
+    client = ReelShortClient("https://site.example", "id", 3)
+    client.email = "free@example.com"
+    client.password = "secret"
+    client.session_token = "session-token"
+    client.uid = "42"
+
+    monkeypatch.setattr(
+        client,
+        "_api_call",
+        lambda method, path, body=None, auth=True: {"code": 0, "data": {"user_info": {"account": {"vip_status": 0, "vip_expire": 0}}}},
+    )
+
+    vip = client.account_vip()
+
+    assert vip["known"] is True
+    assert vip["vipActive"] is False
+    assert vip["vipExpireAt"] is None
+
+
+def test_account_vip_stays_unknown_when_not_logged_in():
+    client = ReelShortClient("https://site.example", "id", 3)
+
+    vip = client.account_vip()
+
+    assert vip["known"] is False
+    assert vip["vipActive"] is None
+
+
+def test_account_endpoint_exposes_vip_status(client):
+    response = client.get(
+        "/api/v1/reelshort/account",
+        headers={"X-Content-Provider-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["configured"] is True
+    assert "vip" in payload
+    assert payload["vip"]["known"] is False

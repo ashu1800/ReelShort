@@ -11,6 +11,12 @@ import {
 } from '@element-plus/icons-vue'
 import { fetchSystemConfigs, updateSystemConfig } from '../services/adminApi'
 import type { SystemConfig } from '../services/adminApi'
+import {
+  fetchReelshortAccount,
+  saveReelshortAccount,
+  testReelshortAccount,
+} from '../services/adminApi'
+import type { ReelshortAccountView } from '../services/adminApi'
 import { configDisplayName, configDisplayDescription } from './systemConfigLabels'
 
 const loading = ref(false)
@@ -202,6 +208,113 @@ function resetDraft(config: SystemConfig) {
   draftValues[config.key] = config.value
 }
 
+// ---- ReelShort 上游账号 ----
+// 账号存后端数据库，保存即推给内容源；密码只进不出，表单留空表示不修改。
+const account = ref<ReelshortAccountView>({
+  emailMasked: '',
+  configured: false,
+  passwordSet: false,
+  updatedAt: null,
+  live: false,
+  authenticated: false,
+  vipKnown: false,
+  vipActive: null,
+  vipExpireAt: null,
+  vipRenew: null,
+  coins: null,
+})
+const accountForm = reactive({ email: '', password: '' })
+const accountSaving = ref(false)
+const accountTesting = ref(false)
+const accountRefreshing = ref(false)
+const accountStatus = ref<{ authenticated: boolean; message: string } | null>(null)
+
+async function loadAccount() {
+  try {
+    account.value = await fetchReelshortAccount()
+  } catch {
+    // 账号卡片失败不影响整页配置表
+  }
+}
+
+async function refreshAccount() {
+  accountRefreshing.value = true
+  try {
+    await loadAccount()
+  } finally {
+    accountRefreshing.value = false
+  }
+}
+
+// 会员状态三态：内容源没回话 / 已登录但查不到 / 明确的会员或非会员。
+const vipLabel = computed(() => {
+  if (!account.value.live || !account.value.vipKnown) return '会员未知'
+  return account.value.vipActive ? 'VIP 会员' : '非会员'
+})
+
+const vipTagType = computed(() => {
+  if (!account.value.live || !account.value.vipKnown) return 'warning'
+  return account.value.vipActive ? 'success' : 'info'
+})
+
+const vipExpiryLabel = computed(() => {
+  const expiry = account.value.vipExpireAt
+  if (!account.value.vipActive || !expiry) return '-'
+  const moment = new Date(expiry)
+  if (isNaN(moment.getTime())) return expiry
+  const days = Math.ceil((moment.getTime() - Date.now()) / 86_400_000)
+  return `${formatDateTime(expiry).slice(0, 10)}（${days > 0 ? `剩 ${days} 天` : '已过期'}）`
+})
+
+const renewLabel = computed(() => {
+  if (account.value.vipRenew === null) return '-'
+  return account.value.vipRenew ? '自动续费' : '不自动续费'
+})
+
+const coinsLabel = computed(() =>
+  account.value.coins === null ? '-' : String(account.value.coins),
+)
+
+function applyAccountResult(result: { authenticated: boolean; message: string }) {
+  accountStatus.value = { authenticated: result.authenticated, message: result.message }
+  if (result.authenticated) {
+    ElMessage.success(result.message)
+  } else {
+    ElMessage.warning(result.message)
+  }
+}
+
+async function submitAccount() {
+  if (!accountForm.email.trim()) {
+    ElMessage.warning('请填写 ReelShort 账号邮箱')
+    return
+  }
+  accountSaving.value = true
+  try {
+    const result = await saveReelshortAccount(accountForm.email.trim(), accountForm.password)
+    accountForm.password = ''
+    await loadAccount()
+    applyAccountResult(result)
+  } catch {
+    ElMessage.error('保存失败：请检查邮箱格式与密码长度（6–64 位）')
+  } finally {
+    accountSaving.value = false
+  }
+}
+
+async function retryAccountLogin() {
+  accountTesting.value = true
+  try {
+    applyAccountResult(await testReelshortAccount())
+    // 重新登录后会员状态可能变了（比如刚买了会员），顺手刷新一次
+    await loadAccount()
+  } catch {
+    ElMessage.error('测试失败：内容源暂不可达')
+  } finally {
+    accountTesting.value = false
+  }
+}
+
 function formatDateTime(val: string | null) {
   if (!val) return '-'
   try {
@@ -219,7 +332,10 @@ function formatDateTime(val: string | null) {
   }
 }
 
-onMounted(loadConfigs)
+onMounted(() => {
+  void loadConfigs()
+  void loadAccount()
+})
 </script>
 
 <template>
@@ -278,12 +394,102 @@ onMounted(loadConfigs)
       </div>
     </div>
 
+    <!-- ReelShort 上游账号：存后端库，保存即同步内容源，密码只进不出 -->
+    <el-card shadow="never" class="table-card">
+      <template #header>
+        <div class="account-header">
+          <span class="account-title">ReelShort 上游账号</span>
+          <el-tag v-if="account.configured" size="small" type="success" effect="light">
+            已配置 · {{ account.emailMasked }}
+          </el-tag>
+          <el-tag v-else size="small" type="info" effect="light">未配置</el-tag>
+          <el-tag
+            v-if="account.configured"
+            size="small"
+            effect="plain"
+            :type="account.authenticated ? 'success' : 'info'"
+          >
+            {{ account.live ? (account.authenticated ? '已登录' : '未登录') : '登录态未知' }}
+          </el-tag>
+          <el-tag v-if="account.configured" size="small" effect="plain" :type="vipTagType">
+            {{ vipLabel }}
+          </el-tag>
+          <el-tag
+            v-if="accountStatus"
+            size="small"
+            effect="plain"
+            :type="accountStatus.authenticated ? 'success' : 'warning'"
+          >
+            {{ accountStatus.authenticated ? '同步成功' : '同步失败' }}
+          </el-tag>
+          <el-button
+            v-if="account.configured"
+            text
+            size="small"
+            :loading="accountRefreshing"
+            @click="refreshAccount"
+          >
+            刷新状态
+          </el-button>
+        </div>
+      </template>
+
+      <div v-if="account.configured" class="account-stats">
+        <div class="account-stat">
+          <span class="account-stat-label">会员到期</span>
+          <span class="account-stat-value">{{ vipExpiryLabel }}</span>
+        </div>
+        <div class="account-stat">
+          <span class="account-stat-label">续费</span>
+          <span class="account-stat-value">{{ renewLabel }}</span>
+        </div>
+        <div class="account-stat">
+          <span class="account-stat-label">金币余额</span>
+          <span class="account-stat-value">{{ coinsLabel }}</span>
+        </div>
+        <div class="account-stat">
+          <span class="account-stat-label">最近更新</span>
+          <span class="account-stat-value">{{ formatDateTime(account.updatedAt) }}</span>
+        </div>
+      </div>
+
+      <el-form label-width="88px" class="account-form" @submit.prevent>
+        <el-form-item label="账号邮箱">
+          <el-input v-model="accountForm.email" placeholder="登录 reelshort.com 用的邮箱" clearable />
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input
+            v-model="accountForm.password"
+            type="password"
+            show-password
+            :placeholder="account.passwordSet ? '已保存；留空表示不修改' : '请输入 ReelShort 登录密码'"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="accountSaving" @click="submitAccount">
+            保存并同步
+          </el-button>
+          <el-button
+            :disabled="!account.configured"
+            :loading="accountTesting"
+            @click="retryAccountLogin"
+          >
+            测试登录
+          </el-button>
+          <span class="account-hint">
+            密码只保存在服务端且不会回显；保存后立即推给内容源并尝试登录，不需要改配置文件或重启服务。
+            <template v-if="accountStatus">最近一次：{{ accountStatus.message }}</template>
+          </span>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <!-- 表格与分类过滤器卡片 -->
     <el-card shadow="never" class="table-card">
       <div class="table-filter-bar">
         <el-input
           v-model="searchQuery"
-          placeholder="搜索配置项名称 / 键名 / 说明..."
+          placeholder="搜索配置项名称 / 说明..."
           :prefix-icon="Search"
           clearable
           class="search-input"
@@ -301,7 +507,7 @@ onMounted(loadConfigs)
 
       <!-- 配置表格 -->
       <el-table v-loading="loading" :data="filteredConfigs" border stripe class="custom-table">
-        <el-table-column label="配置项与键名" min-width="240">
+        <el-table-column label="配置项名称" min-width="240">
           <template #default="{ row }">
             <div class="config-name-cell">
               <div class="name-row">
@@ -316,7 +522,6 @@ onMounted(loadConfigs)
                   <el-icon><Lock /></el-icon> 资金敏感
                 </el-tag>
               </div>
-              <span class="mono key-text">{{ row.key }}</span>
             </div>
           </template>
         </el-table-column>
@@ -532,11 +737,6 @@ onMounted(loadConfigs)
   border-radius: 4px;
 }
 
-.key-text {
-  font-size: 11px;
-  color: #64748b;
-}
-
 .is-dirty-input :deep(.el-input__wrapper) {
   border-color: #f59e0b;
   box-shadow: 0 0 0 1px #f59e0b inset;
@@ -565,5 +765,57 @@ onMounted(loadConfigs)
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+
+.account-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.account-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.account-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+}
+
+.account-stat-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.account-stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.account-title {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.account-form {
+  max-width: 720px;
+}
+
+.account-hint {
+  margin-left: 12px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
 }
 </style>

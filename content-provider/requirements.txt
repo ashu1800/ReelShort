@@ -3,3 +3,5 @@ flask-restx==1.3.2
 requests==2.32.5
 pytest==9.0.2
 gunicorn==23.0.0
+# 上游登录口令加密（zlib → base64 → AES-128-CBC/PKCS7 → base64）
+pycryptodome==4.3.0

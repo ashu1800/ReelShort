@@ -1,10 +1,12 @@
 package com.reelshort.backend.content;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -13,9 +15,10 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.reelshort.backend.content.account.ReelshortAccountGateway;
 
 @Component
-public class FlaskContentProvider implements ContentProvider {
+public class FlaskContentProvider implements ContentProvider, ReelshortAccountGateway {
 
 	/** P2-16：content-provider 的内部共享密钥请求头。 */
 	static final String INTERNAL_TOKEN_HEADER = "X-Content-Provider-Token";
@@ -134,6 +137,60 @@ public class FlaskContentProvider implements ContentProvider {
 		}
 	}
 
+	@Override
+	public ReelshortAccountPushResult updateAccount(String email, String password) {
+		AccountPushResponse response = post(AccountPushResponse.class, "/api/v1/reelshort/credentials",
+				Map.of("email", email, "password", password));
+		AccountPayload account = response.account();
+		return new ReelshortAccountPushResult(response.authenticated(),
+				account == null ? "" : account.emailMasked());
+	}
+
+	@Override
+	public Optional<LiveStatus> liveStatus() {
+		try {
+			AccountSummary summary = get(AccountSummary.class,
+					uri("/api/v1/reelshort/account").toUriString());
+			AccountVip vip = summary.vip();
+			boolean known = vip != null && vip.known();
+			return Optional.of(new LiveStatus(summary.authenticated(), nullToEmpty(summary.emailMasked()), known,
+					known && Boolean.TRUE.equals(vip.vipActive()), known ? vip.vipExpireAt() : null,
+					known && Boolean.TRUE.equals(vip.vipRenew()), vip == null ? null : vip.coins()));
+		}
+		catch (ContentProviderException exception) {
+			// 内容源不可达或还没配账号：让后台显示"未知"，不要当成"非会员"。
+			return Optional.empty();
+		}
+	}
+
+	private static String nullToEmpty(String value) {
+		return value == null ? "" : value;
+	}
+
+	private <T> T post(Class<T> responseType, String path, Object body) {
+		try {
+			T response = restClient.post()
+					.uri(uri(path).toUriString())
+					.contentType(MediaType.APPLICATION_JSON)
+					.body(body)
+					.retrieve()
+					.body(responseType);
+			if (response == null) {
+				throw new ContentProviderException(502, "content provider returned empty response");
+			}
+			return response;
+		}
+		catch (RestClientResponseException exception) {
+			throw new ContentProviderException(502, "content provider rejected the request", exception);
+		}
+		catch (ResourceAccessException exception) {
+			throw new ContentProviderException(503, "content provider unavailable", exception);
+		}
+		catch (RestClientException exception) {
+			throw new ContentProviderException(503, "content provider request failed", exception);
+		}
+	}
+
 	private UriComponentsBuilder uri(String path) {
 		return UriComponentsBuilder.fromUriString(baseUrl).path(path);
 	}
@@ -187,5 +244,17 @@ public class FlaskContentProvider implements ContentProvider {
 			return new ContentVideo(videoUrl, episode, duration,
 					nextEpisode == null ? null : nextEpisode.toContentEpisode());
 		}
+	}
+
+	private record AccountPushResponse(boolean authenticated, AccountPayload account) {
+	}
+
+	private record AccountPayload(String emailMasked, boolean configured, boolean authenticated) {
+	}
+
+	private record AccountSummary(String emailMasked, boolean configured, boolean authenticated, AccountVip vip) {
+	}
+
+	private record AccountVip(boolean known, Integer coins, Boolean vipActive, String vipExpireAt, Boolean vipRenew) {
 	}
 }

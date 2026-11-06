@@ -15,6 +15,70 @@ Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProv
 - `REELSHORT_CATALOG_MAX_PAGES_PER_KEYWORD`：每个关键词最多抓取搜索页数，默认 `3`，硬上限 `5`；设为 `0` 可关闭搜索扩容。
 - `REELSHORT_CATALOG_MAX_BOOKS`：首页推荐扩容后的最大短剧数，默认 `500`，硬上限 `500`。
 - `REELSHORT_CATALOG_REQUEST_WORKERS`：片库扩展搜索请求并发数，默认 `8`，硬上限 `16`；设为 `1` 可改为串行。
+- `REELSHORT_UPSTREAM_COOKIE`：可选。ReelShort **登录态** Cookie 请求头的完整值（浏览器登录后复制，形如 `a=1; b=2`）。未配置时按匿名抓取，Header 集合与引入该能力前完全一致；配置后每个上游请求都会带上它。值中不允许出现换行（会被当作请求头注入直接拒绝）。
+
+## 上游登录态（解锁锁集）
+
+上游只对每部剧前 **1–12 集**公开 `video_url`；第 13 集起，分集页 payload 里 `video_url` 为 `null`（`duration` 仍然有），内容源据此返回 404。配置一个已登录的 ReelShort 账号后，播放地址是否解锁取决于**账号权益**（免费账号仍然只有公开窗口）。
+
+### 方式一：账号密码自动登录（推荐）
+
+内容源会用邮箱+密码调用上游 H5 登录接口换取 `session`，之后的请求自动带上 `session`/`uid` 与 HMAC 签名；`session` 过期（上游返回 `code=103`）时会自动重登一次。
+
+```bash
+REELSHORT_UPSTREAM_EMAIL='you@example.com'
+REELSHORT_UPSTREAM_PASSWORD='********'
+# 可选：上游轮换签名密钥/渠道号时覆盖，默认值已内置并对着线上 bundle 核对过
+# REELSHORT_UPSTREAM_API_SECRET='...'
+# REELSHORT_UPSTREAM_CHANNEL_ID='WEB41001'
+```
+
+凭据只从环境变量读，不会落库、不会写日志（诊断事件里邮箱会被截断，session 只记 12 位指纹）。
+
+链路与浏览器一致：**先建匿名访客会话 → 提交加密口令登录**。细节：
+
+- 公共参数 `apiVersion=1.0.4 / channelId=WEB41001 / clientVer=2.4.00 / devId / lang=en / ts / session / uid` 进请求头，同时用 `HMAC-SHA256` 生成 `sign`（键升序拼 `k=v`，密钥内置）；
+- 口令加密是 `utf8 → zlib → base64 → AES-128-CBC/PKCS7 → base64`，与浏览器抓包逐字节一致；
+- 上游部分响应直接返回 base64 密文，内容源会自动 `AES → base64 → zlib → JSON` 解开；
+- `session` 过期（上游返回 `code=103`）自动重登一次；登录失败不会抛异常，也不会把游客会话当成登录态。
+
+登录成功后，锁集在 `video()` 里会走兜底：分集页没有 `video_url` 时再问一次上游分集接口（`getChapterInfo`，带账号权益），拿到地址就用，仍然拿不到就维持 404 与 `video_url_missing` 诊断。
+
+验证（`account=1` 会先登录一次，幂等）：
+
+```http
+GET /api/v1/reelshort/session?account=1&book_id=<bookId>&filtered_title=<slug>&episode_num=13
+X-Content-Provider-Token: <内部密钥>
+```
+
+返回里 `accountConfigured` 表示账号已配置、`loginAttempt` 是本次登录结果、`sessionFingerprint` 是当前 session 的 12 位短指纹（不泄露 token）、`probe.playable` 表示该集现在能不能取到地址。
+
+**注意**：登录成功 ≠ 锁集解锁。上游的播放地址由**账号权益**决定：免费账号登录后仍然只能看公开窗口（例如 1–12 集），开通会员后同一套凭据无需改动即可拿到锁集地址。用 `video_url_missing` 事件里的 `authenticated=true` 可以区分"没登录"和"登录了但权益不够"。
+
+### 可播窗口查询（免费账号也能用）
+
+上游分集列表里每集带 `play_info`：**非空 = 已解锁，`null` = 锁集**。免费账号也能拿到这个标记，所以一次请求就能知道整季的可播范围，不必逐集探测：
+
+```http
+GET /api/v1/reelshort/chapters/<bookId>
+X-Content-Provider-Token: <内部密钥>
+```
+
+返回 `chapter_count`、`playable_episodes`（可播集数数组）、`locked_from`（第一集锁集）与逐集 `{episode, chapter_id, duration, playable}`。后端可用它把选集面板置灰、跳过自动下一集，而不是让用户点进去才 404。
+
+### 方式二：手工 Cookie（备用）
+
+1. 浏览器登录 `https://www.reelshort.com`；
+2. DevTools → Network → 任选一个站点请求 → Request Headers → 复制整行 `Cookie:` 的值；
+3. 写入内容源环境文件（不要提交到仓库）：
+
+```bash
+REELSHORT_UPSTREAM_COOKIE='sessionid=...; ...'
+```
+
+4. 重启服务后用上面的 `/session` 端点验证。
+
+**过期处理**：账号密码方式会自动重登；Cookie 方式失效后需要手工替换。`/diagnostics` 里 `video_url_missing` 事件的 `context.authenticated` 表示当时有没有登录态：`true` 说明"我们有登录态但上游仍没给地址"，是账号权益不够（例如免费账号），不是配置没生效。
 
 首页推荐扩容会限制最多 50 个关键词和最多 200 次上游搜索请求。服务会先按配置生成确定性的关键词和分页计划，关键词之间可并发，单个关键词内部按页顺序请求，遇到空页或失败即停止该关键词后续分页。
 
