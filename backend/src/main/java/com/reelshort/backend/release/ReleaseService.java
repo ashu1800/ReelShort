@@ -49,6 +49,14 @@ public class ReleaseService {
 		return releaseRepository.findTopByOrderByVersionCodeDescPublishedAtDesc().map(this::toManifest);
 	}
 
+	/**
+	 * Latest release entity, used by the website download endpoint which streams the APK itself
+	 * instead of handing out a pre-signed COS URL.
+	 */
+	public Optional<AppRelease> latestRelease() {
+		return releaseRepository.findTopByOrderByVersionCodeDescPublishedAtDesc();
+	}
+
 	private UpdateManifestResponse toManifest(AppRelease release) {
 		return new UpdateManifestResponse(release.versionName(), release.versionCode(), release.title(),
 				release.releaseNotes(), release.publishedAt().format(ISO_UTC),

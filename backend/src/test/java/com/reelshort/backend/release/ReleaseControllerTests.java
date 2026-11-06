@@ -1,9 +1,11 @@
 package com.reelshort.backend.release;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -37,6 +39,9 @@ class ReleaseControllerTests {
 
 	@MockitoBean
 	private ReleaseService releaseService;
+
+	@MockitoBean
+	private CosPresignService cosPresignService;
 
 	@MockitoBean
 	private AccessTokenRepository accessTokenRepository;
@@ -88,6 +93,31 @@ class ReleaseControllerTests {
 		when(releaseService.latestManifest()).thenReturn(Optional.empty());
 
 		mockMvc.perform(get("/api/app/release/latest"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.message").value("no release available"));
+	}
+
+	@Test
+	void downloadRedirectsToFreshCosUrlAndIsNotCached() throws Exception {
+		AppRelease release = AppRelease.create("0.9.11", 53, "releases/android/ShortLink-v0.9.11.apk",
+				"releases/android/ShortLink-v0.9.11.apk.sha256", 4L, 65L,
+				"1111111111111111111111111111111111111111111111111111111111111111", "ShortLink v0.9.11", "",
+				false, 1L);
+		when(releaseService.latestRelease()).thenReturn(Optional.of(release));
+		when(cosPresignService.presignDownload("releases/android/ShortLink-v0.9.11.apk"))
+				.thenReturn("https://cos.example.com/signed-apk?q-signature=abc");
+
+		mockMvc.perform(get("/api/app/release/latest/apk"))
+				.andExpect(status().isFound())
+				.andExpect(header().string("Location", "https://cos.example.com/signed-apk?q-signature=abc"))
+				.andExpect(header().string("Cache-Control", containsString("no-store")));
+	}
+
+	@Test
+	void downloadReturns404WhenNoRelease() throws Exception {
+		when(releaseService.latestRelease()).thenReturn(Optional.empty());
+
+		mockMvc.perform(get("/api/app/release/latest/apk"))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.message").value("no release available"));
 	}
