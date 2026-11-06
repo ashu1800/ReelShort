@@ -56,6 +56,10 @@ class AdminDashboardControllerTests {
 				.andExpect(jsonPath("$.data.users.total").isNumber())
 				.andExpect(jsonPath("$.data.vipOrders.total").isNumber())
 				.andExpect(jsonPath("$.data.content.bookCount").isNumber())
+				.andExpect(jsonPath("$.data.points.periodDays").value(30))
+				.andExpect(jsonPath("$.data.points.totalWatchRewardPoints").isNumber())
+				.andExpect(jsonPath("$.data.points.averagePointsPerUserPerDay").isString())
+				.andExpect(jsonPath("$.data.points.averagePointsPerUserPerHour").isString())
 				.andExpect(jsonPath("$.data.auditLogs.latest").isArray());
 	}
 

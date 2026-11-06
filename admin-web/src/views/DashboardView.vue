@@ -152,7 +152,7 @@ onMounted(loadDashboard)
 
     <el-alert v-if="error" :title="error" show-icon type="error" />
 
-    <!-- 第一分区：对称型业务 KPI Hero 矩阵 (3 组经典业务领域) -->
+    <!-- 第一分区：对称型业务 KPI Hero 矩阵 (4 组核心业务领域) -->
     <div class="kpi-grid">
       <!-- 1. 用户大盘 -->
       <div class="kpi-card kpi-user" @click="navigateTo('/users')">
@@ -206,7 +206,33 @@ onMounted(loadDashboard)
         </div>
       </div>
 
-      <!-- 3. 流媒体内容资产 -->
+      <!-- 3. 积分获取效率 -->
+      <div class="kpi-card kpi-points" @click="navigateTo('/users')">
+        <div class="kpi-watermark">
+          <el-icon><Coin /></el-icon>
+        </div>
+        <div class="kpi-header">
+          <div class="kpi-category">积分获取效率 · 近 {{ summary?.points?.periodDays ?? 30 }} 天</div>
+          <el-icon class="kpi-arrow"><ArrowRight /></el-icon>
+        </div>
+        <div class="kpi-main">
+          <div class="kpi-number mono">{{ summary?.points?.averagePointsPerUserPerDay ?? '0' }}</div>
+          <div class="kpi-unit">人均每日观看奖励积分（全部注册用户）</div>
+        </div>
+        <div class="kpi-footer">
+          <div class="kpi-sub-item">
+            <span class="sub-label">人均每小时:</span>
+            <span class="sub-val mono">{{ summary?.points?.averagePointsPerUserPerHour ?? '0' }}</span>
+          </div>
+          <div class="kpi-divider"></div>
+          <div class="kpi-sub-item">
+            <span class="sub-label">30天奖励:</span>
+            <span class="sub-val mono">{{ (summary?.points?.totalWatchRewardPoints ?? 0).toLocaleString() }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 流媒体内容资产 -->
       <div class="kpi-card kpi-content" @click="navigateTo('/content-cache')">
         <div class="kpi-watermark">
           <el-icon><Film /></el-icon>
@@ -479,14 +505,20 @@ onMounted(loadDashboard)
   }
 }
 
-/* KPI 卡片网格 (3列自适应) */
+/* KPI 卡片网格 (4列自适应) */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1280px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
   .kpi-grid {
     grid-template-columns: 1fr;
   }
@@ -610,6 +642,11 @@ onMounted(loadDashboard)
 .kpi-vip {
   border-top: 4px solid #f59e0b;
   background: linear-gradient(180deg, rgba(254, 243, 199, 0.4) 0%, #ffffff 100%);
+}
+
+.kpi-points {
+  border-top: 4px solid #10b981;
+  background: linear-gradient(180deg, rgba(236, 253, 245, 0.5) 0%, #ffffff 100%);
 }
 
 .kpi-content {

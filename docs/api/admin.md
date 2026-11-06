@@ -130,13 +130,19 @@ Authorization: Bearer <admin-token>
     "episodeCacheCount": 80,
     "shelfCount": 3
   },
+  "points": {
+    "totalWatchRewardPoints": 123456,
+    "periodDays": 30,
+    "averagePointsPerUserPerDay": "3.42",
+    "averagePointsPerUserPerHour": "0.1425"
+  },
   "auditLogs": {
     "latest": []
   }
 }
 ```
 
-字段说明：`users.total` / `users.disabled` 为账号总数与禁用数；`vipOrders.total` 为 VIP 订单数，`vipOrders.totalUsdt` 为已确认订单应付 USDT 合计（字符串，去掉尾随零）；`content` 为内容缓存计数；`auditLogs.latest` 为最近审计记录。
+字段说明：`users.total` / `users.disabled` 为账号总数与禁用数；`vipOrders.total` 为 VIP 订单数，`vipOrders.totalUsdt` 为已确认订单应付 USDT 合计（字符串，去掉尾随零）；`content` 为内容缓存计数；`points` 为近 30 天观看奖励（`WATCH_REWARD`，不含后台手动调整）按全部注册用户摊平后的人均每日 / 每小时获取量，`totalWatchRewardPoints` 为区间内观看奖励合计；`auditLogs.latest` 为最近审计记录。
 
 ## `GET /api/admin/users`
 

@@ -33,6 +33,7 @@ import type {
   WithdrawalRequest,
   WithdrawalStatus,
 } from '../services/adminApi'
+import UserPointsChart from '../components/UserPointsChart.vue'
 
 const loading = ref(false)
 const error = ref('')
@@ -957,6 +958,11 @@ onMounted(loadUsers)
                   </template>
                 </el-table-column>
               </el-table>
+            </el-tab-pane>
+
+            <!-- 积分获取图表 Tab -->
+            <el-tab-pane label="积分获取图表">
+              <UserPointsChart :records="pointRecords" />
             </el-tab-pane>
 
             <!-- 积分流水 Tab -->
