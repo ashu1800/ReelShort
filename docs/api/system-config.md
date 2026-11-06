@@ -12,7 +12,7 @@ Authorization: Bearer <admin-token>
 
 | Key | 默认值 | 规则 | 说明 |
 | --- | --- | --- | --- |
-| `points.watch.seconds-per-point` | `60` | 整数，`1..86400` | 完成视频后每获得 1 积分所需秒数。 |
+| `points.watch.seconds-per-point` | `60` | 整数，`1..86400` | 观看奖励的初始速率：刚开始观看时每多少秒获得 1 积分；实际速率随当天累计播放时长递减。 |
 | `points.daily-earned.maximum` | `1000` | 整数，`0..1000000` | 每账号每日自动获取积分上限，`0` 表示不限制。 |
 | `points.daily-earned.fluctuation-percent` | `35` | 整数，`0..100` | 每账号每日随机向下浮动百分比的上限。 |
 | `points.fair-mode.enabled` | `0` | 整数，`0..1` | 公平模式开关（`1` 开启）；开启后观看奖励按十分位累计。可随时切换，不破坏既有余额。 |

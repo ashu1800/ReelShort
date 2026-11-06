@@ -115,13 +115,13 @@ public class PointsService {
 	}
 
 	public int estimatedWatchRewardPoints(UUID userId, int authoritativeDurationSeconds) {
-		int requestedTenths = rewardTenths(authoritativeDurationSeconds);
+		int secondsPerPoint = systemConfigService.intValue(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT);
 		int dailyEarnedMaximum = systemConfigService.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM);
 		int fluctuationMaximum = systemConfigService
 				.intValue(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT);
 		return userActionLocks.withUserLock(userId,
-				() -> pointAwardTransaction.estimatedWatchRewardPoints(userId, requestedTenths, dailyEarnedMaximum,
-						fluctuationMaximum));
+				() -> pointAwardTransaction.estimatedWatchRewardPoints(userId, authoritativeDurationSeconds, secondsPerPoint,
+						dailyEarnedMaximum, fluctuationMaximum));
 	}
 
 	private int rewardTenths(int authoritativeDurationSeconds) {

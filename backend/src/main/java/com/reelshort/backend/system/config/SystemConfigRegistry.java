@@ -30,7 +30,7 @@ public class SystemConfigRegistry {
 
 	private final List<SystemConfigDefinition> definitions = List.of(
 			new SystemConfigDefinition(POINTS_WATCH_SECONDS_PER_POINT, "60",
-					"Completed video seconds required for one watch reward point.",
+					"Initial completed video seconds per watch reward point; the rate decays with cumulative watch time.",
 					ValueType.INTEGER, 1, 86_400, Set.of()),
 			new SystemConfigDefinition(POINTS_DAILY_EARNED_MAXIMUM, "1000",
 					"Maximum automatically earned points per account per day. Zero disables the limit.",

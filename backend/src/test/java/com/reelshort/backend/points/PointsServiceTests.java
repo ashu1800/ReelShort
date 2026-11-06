@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -105,10 +106,10 @@ class PointsServiceTests {
 
 	@Test
 	void dailyFluctuationCreatesStableEffectiveLimitForUserAndDay() {
-		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
 		UUID userId = UUID.randomUUID();
 
-		WatchRewardResult reward = pointsService.awardWatchProgress(userId, "daily-random-book", 1, 100, 1000);
+		WatchRewardResult reward = pointsService.awardWatchProgress(userId, "daily-random-book", 1, 100, 86_400);
 		DailyEarningQuotaResponse quota = pointsService.dailyEarningQuota(userId);
 
 		assertThat(quota.fluctuationPercent()).isBetween(0, 35);
@@ -121,21 +122,21 @@ class PointsServiceTests {
 
 	@Test
 	void dailyRuleConfigurationChangesApplyOnNextServerDay() {
-		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
 		UUID firstUser = UUID.randomUUID();
 		UUID secondUser = UUID.randomUUID();
 
-		assertThat(pointsService.awardWatchProgress(firstUser, "rule-book-1", 1, 100, 1000).awardedPoints())
+		assertThat(pointsService.awardWatchProgress(firstUser, "rule-book-1", 1, 100, 86_400).awardedPoints())
 				.isEqualTo(1000);
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "500");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "35");
 
-		assertThat(pointsService.awardWatchProgress(secondUser, "rule-book-2", 1, 100, 1000).awardedPoints())
+		assertThat(pointsService.awardWatchProgress(secondUser, "rule-book-2", 1, 100, 86_400).awardedPoints())
 				.isEqualTo(1000);
 		mutableClock.setInstant(Instant.parse("2026-07-14T00:01:00Z"));
-		assertThat(pointsService.awardWatchProgress(secondUser, "rule-book-3", 1, 100, 1000).awardedPoints())
+		assertThat(pointsService.awardWatchProgress(secondUser, "rule-book-3", 1, 100, 86_400).awardedPoints())
 				.isBetween(325, 500);
 	}
 
@@ -179,6 +180,17 @@ class PointsServiceTests {
 	}
 
 	@Test
+	void dailyQuotaUsesShanghaiCalendarDay() {
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
+		mutableClock.setInstant(Instant.parse("2026-07-13T16:30:00Z")); // 2026-07-14 00:30 Asia/Shanghai
+		UUID userId = UUID.randomUUID();
+
+		pointsService.awardWatchProgress(userId, "shanghai-day-book", 1, 100, 60);
+
+		assertThat(pointsService.dailyEarningQuota(userId).earningDate()).isEqualTo(LocalDate.parse("2026-07-14"));
+	}
+
+	@Test
 	void watchRewardCreatesTransactionsAndBalance() {
 		UUID userId = UUID.randomUUID();
 
@@ -194,23 +206,27 @@ class PointsServiceTests {
 
 	@Test
 	void watchRewardsAreCappedByDailyEarnedMaximumAndOnlyCreditRemainingPoints() {
-		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "1");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
 		UUID userId = UUID.randomUUID();
 
-		WatchRewardResult reward = pointsService.awardWatchProgress(userId, "book-daily-cap", 1, 100, 600);
-		WatchRewardResult laterReward = pointsService.awardWatchProgress(userId, "book-daily-cap-2", 1, 100, 600);
+		WatchRewardResult reward = pointsService.awardWatchProgress(userId, "book-daily-cap", 1, 100, 60_000);
+		WatchRewardResult laterReward = pointsService.awardWatchProgress(userId, "book-daily-cap-2", 1, 100, 60_000);
+		WatchRewardResult capped = pointsService.awardWatchProgress(userId, "book-daily-cap-3", 1, 100, 60);
 
 		assertThat(reward.awardedStages()).isEmpty();
-		assertThat(reward.awardedPoints()).isEqualTo(600);
+		assertThat(reward.awardedPoints()).isBetween(800, 850);
 		assertThat(laterReward.awardedStages()).isEmpty();
-		assertThat(laterReward.awardedPoints()).isEqualTo(400);
-		assertThat(laterReward.rewardStatus()).isEqualTo(WatchRewardStatus.AWARDED_PARTIAL);
+		assertThat(laterReward.awardedPoints()).isEqualTo(1000 - reward.awardedPoints());
+		assertThat(laterReward.rewardStatus()).isEqualTo(WatchRewardStatus.AWARDED);
+		assertThat(capped.awardedPoints()).isZero();
+		assertThat(capped.rewardStatus()).isEqualTo(WatchRewardStatus.DAILY_LIMIT_REACHED);
 		assertThat(pointsService.account(userId).balance()).isEqualTo(1000);
 		assertThat(pointsService.records(userId))
 				.extracting(PointTransactionResponse::amount)
-				.containsExactlyInAnyOrder(600, 400);
+				.containsExactlyInAnyOrder(reward.awardedPoints(), laterReward.awardedPoints());
 	}
 
 	@Test
@@ -232,18 +248,19 @@ class PointsServiceTests {
 
 	@Test
 	void dailyEarnedMaximumResetsOnNextServerDay() {
-		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
 		UUID userId = UUID.randomUUID();
 
-		WatchRewardResult today = pointsService.awardWatchProgress(userId, "book-reset-today", 1, 100, 200);
+		WatchRewardResult today = pointsService.awardWatchProgress(userId, "book-reset-today", 1, 100, 3_600);
 		mutableClock.setInstant(Instant.parse("2026-07-14T00:01:00Z"));
-		WatchRewardResult tomorrow = pointsService.awardWatchProgress(userId, "book-reset-tomorrow", 1, 100, 200);
+		WatchRewardResult tomorrow = pointsService.awardWatchProgress(userId, "book-reset-tomorrow", 1, 100, 3_600);
 
-		assertThat(today.awardedPoints()).isEqualTo(200);
-		assertThat(tomorrow.awardedPoints()).isEqualTo(200);
-		assertThat(pointsService.account(userId).balance()).isEqualTo(400);
+		assertThat(today.awardedPoints()).isPositive();
+		assertThat(tomorrow.awardedPoints()).isPositive();
+		assertThat(pointsService.account(userId).balance())
+				.isEqualTo(today.awardedPoints() + tomorrow.awardedPoints());
 	}
 
 	@Test
@@ -511,18 +528,19 @@ class PointsServiceTests {
 
 	@Test
 	void userEstimatedRewardIncludesRemainingDailyLimit() {
-		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "1");
+		systemConfigService.update(SystemConfigRegistry.POINTS_WATCH_SECONDS_PER_POINT, "60");
+		systemConfigService.update(SystemConfigRegistry.POINTS_FAIR_MODE_ENABLED, "1");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_MAXIMUM, "1000");
 		systemConfigService.update(SystemConfigRegistry.POINTS_DAILY_EARNED_FLUCTUATION_PERCENT, "0");
 		UUID userId = UUID.randomUUID();
-		pointsService.awardWatchProgress(userId, "estimate-limit-book", 1, 100, 999);
+		pointsService.awardWatchProgress(userId, "estimate-limit-book", 1, 100, 60_000);
 
-		int estimated = pointsService.estimatedWatchRewardPoints(userId, 10);
-		WatchRewardResult awarded = pointsService.awardWatchProgress(userId, "estimate-limit-book", 2, 100, 10);
+		int estimated = pointsService.estimatedWatchRewardPoints(userId, 60_000);
+		WatchRewardResult awarded = pointsService.awardWatchProgress(userId, "estimate-limit-book", 2, 100, 60_000);
 
-		assertThat(estimated).isEqualTo(1);
+		assertThat(estimated).isEqualTo(182);
 		assertThat(awarded.awardedPoints()).isEqualTo(estimated);
-		assertThat(awarded.rewardStatus()).isEqualTo(WatchRewardStatus.AWARDED_PARTIAL);
+		assertThat(awarded.rewardStatus()).isEqualTo(WatchRewardStatus.AWARDED);
 	}
 
 	@Test

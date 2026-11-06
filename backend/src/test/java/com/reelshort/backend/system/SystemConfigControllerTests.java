@@ -198,7 +198,7 @@ class SystemConfigControllerTests {
 		updateConfig(adminToken, "points.daily-earned.maximum", "250")
 				.andExpect(status().isOk());
 
-		assertThat(pointsService.awardWatchProgress(java.util.UUID.randomUUID(), "admin-snapshot-book", 1, 100, 1000)
+		assertThat(pointsService.awardWatchProgress(java.util.UUID.randomUUID(), "admin-snapshot-book", 1, 100, 86_400)
 				.awardedPoints()).isEqualTo(1000);
 	}
 

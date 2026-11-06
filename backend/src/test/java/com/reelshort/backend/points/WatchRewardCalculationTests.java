@@ -24,6 +24,25 @@ class WatchRewardCalculationTests {
 	}
 
 	@Test
+	void progressiveRateDecaysAndFillsDailyLimitExactlyAtTwentyFourHours() {
+		// 初始速率 1 分/60 秒，按累计播放时长递减，24 小时刚好用完 1000 分。
+		assertThat(WatchRewardCalculation.progressivePointsTenths(1000, 0, 86_400, 60)).isEqualTo(10_000);
+		assertThat(WatchRewardCalculation.progressivePointsTenths(650, 0, 86_400, 60)).isEqualTo(6_500);
+		// 同样配置下，后一小时拿到的积分应少于前一小时。
+		int firstHour = WatchRewardCalculation.progressivePointsTenths(1000, 0, 3_600, 60);
+		int secondHour = WatchRewardCalculation.progressivePointsTenths(1000, 3_600, 3_600, 60);
+		assertThat(firstHour).isBetween(580, 610);
+		assertThat(secondHour).isLessThan(firstHour);
+		// 18 小时不能提前拿满，最后 6 小时仍按递减速度持续产生积分。
+		assertThat(WatchRewardCalculation.progressivePointsTenths(1000, 0, 18 * 3_600, 60))
+				.isBetween(8_500, 9_000);
+		assertThat(WatchRewardCalculation.progressivePointsTenths(650, 0, 18 * 3_600, 60))
+				.isBetween(6_000, 6_500);
+		// 已经播满 24 小时后，不再产生新的积分。
+		assertThat(WatchRewardCalculation.progressivePointsTenths(1000, 86_400, 3_600, 60)).isZero();
+	}
+
+	@Test
 	void fairModeReturnsTenthsWithOneDecimalPrecision() {
 		// 60 秒 / 60 秒每分 = 1.0 分 → 10 个十分位
 		assertThat(WatchRewardCalculation.pointsForDurationTenths(60, 60)).isEqualTo(10);

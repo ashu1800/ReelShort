@@ -682,7 +682,7 @@ class InternalOperationsControllerTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data.awardedStages").isEmpty())
 				.andExpect(jsonPath("$.data.awardedPoints").value(1))
-				.andExpect(jsonPath("$.data.rewardStatus").value("AWARDED_PARTIAL"))
+				.andExpect(jsonPath("$.data.rewardStatus").value("AWARDED"))
 				.andExpect(jsonPath("$.data.balance").value(1));
 	}
 

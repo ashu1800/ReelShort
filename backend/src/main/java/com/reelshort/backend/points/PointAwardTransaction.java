@@ -1,9 +1,10 @@
 package com.reelshort.backend.points;
 
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.security.SecureRandom;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
@@ -20,6 +21,7 @@ import com.reelshort.backend.system.config.SystemConfigService;
 @Service
 class PointAwardTransaction {
 	private static final Semaphore DAILY_RULE_CREATION_GATE = new Semaphore(1);
+	private static final ZoneId EARNING_ZONE = ZoneId.of("Asia/Shanghai");
 
 	private final PointAccountRepository pointAccountRepository;
 	private final PointTransactionRepository pointTransactionRepository;
@@ -67,14 +69,22 @@ class PointAwardTransaction {
 		// 统一以"十分位"单位计算奖励：公平模式按秒精确（带小数），普通模式取整后 ×10。
 		// balance 永远存真实整数，小数部分由 PointAccount.fractionalPart 累积。
 		boolean fairMode = isFairMode();
-		int requestedTenths = fairMode
-				? WatchRewardCalculation.pointsForDurationTenths(authoritativeDurationSeconds, secondsPerPoint)
-				: WatchRewardCalculation.pointsForDuration(authoritativeDurationSeconds, secondsPerPoint)
-						* WatchRewardCalculation.FAIR_MODE_SCALE;
-		// 每日上限配置值是真实整数分（如 1000）。
 		OffsetDateTime now = OffsetDateTime.now(clock);
-		int grantedTenths = allocateDailyPointsTenths(userId, requestedTenths, dailyEarnedMaximum,
-				fluctuationMaximumPercent, now);
+		DailyEarningRule rule = dailyRule(currentEarningDate(), dailyEarnedMaximum, fluctuationMaximumPercent);
+		int requestedTenths;
+		int grantedTenths;
+		if (rule.baseMaximum() <= 0) {
+			requestedTenths = requestedTenths(authoritativeDurationSeconds, secondsPerPoint, fairMode);
+			grantedTenths = requestedTenths;
+		}
+		else {
+			DailyEarningQuota quota = dailyQuota(userId, rule, now);
+			quota.initializeWatchedSecondsIfNeeded(secondsPerPoint);
+			requestedTenths = progressiveRequestedTenths(quota, authoritativeDurationSeconds, secondsPerPoint, fairMode);
+			grantedTenths = quota.allocateTenths(requestedTenths, now);
+			quota.recordWatchedSeconds(authoritativeDurationSeconds, now);
+			dailyEarningQuotaRepository.save(quota);
+		}
 
 		PointAccount account = accountEntity(userId);
 		int awardedDisplayPoints;
@@ -103,7 +113,7 @@ class PointAwardTransaction {
 	@Transactional
 	public DailyEarningQuotaResponse dailyEarningQuota(UUID userId, int dailyEarnedMaximum,
 			int fluctuationMaximumPercent) {
-		LocalDate today = LocalDate.now(clock);
+		LocalDate today = currentEarningDate();
 		DailyEarningRule rule = dailyRule(today, dailyEarnedMaximum, fluctuationMaximumPercent);
 		if (rule.baseMaximum() <= 0) {
 			return DailyEarningQuotaResponse.unlimited(today);
@@ -113,13 +123,19 @@ class PointAwardTransaction {
 	}
 
 	@Transactional
-	public int estimatedWatchRewardPoints(UUID userId, int requestedTenths, int dailyEarnedMaximum,
-			int fluctuationMaximumPercent) {
-		DailyEarningRule rule = dailyRule(LocalDate.now(clock), dailyEarnedMaximum, fluctuationMaximumPercent);
-		int grantedTenths = requestedTenths;
-		if (rule.baseMaximum() > 0) {
+	public int estimatedWatchRewardPoints(UUID userId, int authoritativeDurationSeconds, int secondsPerPoint,
+			int dailyEarnedMaximum, int fluctuationMaximumPercent) {
+		boolean fairMode = isFairMode();
+		DailyEarningRule rule = dailyRule(currentEarningDate(), dailyEarnedMaximum, fluctuationMaximumPercent);
+		int grantedTenths;
+		if (rule.baseMaximum() <= 0) {
+			grantedTenths = requestedTenths(authoritativeDurationSeconds, secondsPerPoint, fairMode);
+		}
+		else {
 			DailyEarningQuota quota = dailyQuota(userId, rule, OffsetDateTime.now(clock));
-			grantedTenths = quota.previewAllocationTenths(requestedTenths);
+			quota.initializeWatchedSecondsIfNeeded(secondsPerPoint);
+			grantedTenths = quota.previewAllocationTenths(
+					progressiveRequestedTenths(quota, authoritativeDurationSeconds, secondsPerPoint, fairMode));
 		}
 		PointAccount account = accountEntity(userId);
 		return (account.fractionalPart() + grantedTenths) / WatchRewardCalculation.FAIR_MODE_SCALE;
@@ -127,19 +143,29 @@ class PointAwardTransaction {
 
 	@Transactional
 	public void snapshotDailyEarningRule(int dailyEarnedMaximum, int fluctuationMaximumPercent) {
-		dailyRule(LocalDate.now(clock), dailyEarnedMaximum, fluctuationMaximumPercent);
+		dailyRule(currentEarningDate(), dailyEarnedMaximum, fluctuationMaximumPercent);
 	}
 
-	private int allocateDailyPointsTenths(UUID userId, int requestedTenths, int dailyEarnedMaximum,
-			int fluctuationMaximumPercent, OffsetDateTime now) {
-		DailyEarningRule rule = dailyRule(LocalDate.now(clock), dailyEarnedMaximum, fluctuationMaximumPercent);
-		if (rule.baseMaximum() <= 0) {
-			return requestedTenths;
+	private int requestedTenths(int durationSeconds, int secondsPerPoint, boolean fairMode) {
+		return fairMode
+				? WatchRewardCalculation.pointsForDurationTenths(durationSeconds, secondsPerPoint)
+				: WatchRewardCalculation.pointsForDuration(durationSeconds, secondsPerPoint)
+						* WatchRewardCalculation.FAIR_MODE_SCALE;
+	}
+
+	private int progressiveRequestedTenths(DailyEarningQuota quota, int durationSeconds, int secondsPerPoint,
+			boolean fairMode) {
+		int requested = WatchRewardCalculation.progressivePointsTenths(quota.effectiveMaximum(),
+				quota.watchedSeconds(), durationSeconds, secondsPerPoint);
+		if (!fairMode) {
+			requested = Math.max(10, (requested / WatchRewardCalculation.FAIR_MODE_SCALE)
+					* WatchRewardCalculation.FAIR_MODE_SCALE);
 		}
-		DailyEarningQuota quota = dailyQuota(userId, rule, now);
-		int granted = quota.allocateTenths(requestedTenths, now);
-		dailyEarningQuotaRepository.save(quota);
-		return granted;
+		return requested;
+	}
+
+	private LocalDate currentEarningDate() {
+		return LocalDate.now(clock.withZone(EARNING_ZONE));
 	}
 
 	private DailyEarningRule dailyRule(LocalDate date, int baseMaximum, int fluctuationMaximumPercent) {

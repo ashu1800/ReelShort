@@ -38,6 +38,10 @@ class DailyEarningQuota {
 	@Column(name = "fractional_earned", nullable = false)
 	private int fractionalEarned;
 
+	// 当日累计观看时长（秒），用于递减奖励速率；旧数据由迁移/懒初始化补齐。
+	@Column(name = "watched_seconds", nullable = false)
+	private int watchedSeconds;
+
 	@Column(name = "created_at", nullable = false)
 	private OffsetDateTime createdAt;
 
@@ -56,6 +60,7 @@ class DailyEarningQuota {
 		this.effectiveMaximum = effectiveMaximum;
 		this.earnedPoints = 0;
 		this.fractionalEarned = 0;
+		this.watchedSeconds = 0;
 		this.createdAt = now;
 		this.updatedAt = now;
 	}
@@ -91,6 +96,30 @@ class DailyEarningQuota {
 			return 0;
 		}
 		return (int) Math.min((long) requestedTenths, remaining);
+	}
+
+	/**
+	 * 旧额度行没有 watched_seconds：按已到账积分反推一个接近的观看时长，
+	 * 避免升级当天把历史进度当成 0 造成重复发放。
+	 */
+	void initializeWatchedSecondsIfNeeded(int secondsPerPoint) {
+		if (watchedSeconds > 0 || (earnedPoints == 0 && fractionalEarned == 0)) {
+			return;
+		}
+		double earned = earnedPoints + fractionalEarned / (double) WatchRewardCalculation.FAIR_MODE_SCALE;
+		watchedSeconds = (int) Math.min(86_400L, Math.round(earned * secondsPerPoint));
+	}
+
+	void recordWatchedSeconds(int durationSeconds, OffsetDateTime now) {
+		if (durationSeconds <= 0) {
+			return;
+		}
+		watchedSeconds = (int) Math.min(Integer.MAX_VALUE, (long) watchedSeconds + durationSeconds);
+		this.updatedAt = now;
+	}
+
+	int watchedSeconds() {
+		return watchedSeconds;
 	}
 
 	int remainingPoints() {
