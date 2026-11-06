@@ -68,8 +68,9 @@ test('withdrawal operations can copy wallet addresses without changing payout fl
 test('system config exposes direct USDT rate without legacy currency conversion', () => {
   assert.match(configLabelsSource, /withdraw\.usdt-per-50-points/)
   assert.match(configLabelsSource, /提现 · 每50积分USDT/)
-  assert.doesNotMatch(configLabelsSource, /withdraw\.cny-per-point|withdraw\.cny-per-usd|withdraw\.minimum-usd/)
-  assert.doesNotMatch(configViewSource, /withdraw\.cny-per-point|withdraw\.cny-per-usd|withdraw\.minimum-usd/)
+  const legacyWithdrawalKey = /withdraw\.(?:cny-per-point|cny-per-usd|minimum-usd)(?![\w-])/
+  assert.doesNotMatch(configLabelsSource, legacyWithdrawalKey)
+  assert.doesNotMatch(configViewSource, legacyWithdrawalKey)
 })
 
 test('user VIP operations only submit an expiry timestamp or an empty cancel request', () => {
