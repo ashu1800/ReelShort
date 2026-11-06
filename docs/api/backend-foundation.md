@@ -51,7 +51,7 @@
 
 ### `GET /api/app/home/recommend?locale={locale}`
 
-通过内容缓存服务获取推荐货架。内容源调用成功后写入 PostgreSQL 缓存；内容源不可用且缓存存在时返回最后一次可用缓存。
+通过内容缓存服务获取推荐货架。内容源调用成功后写入 PostgreSQL 缓存；内容源不可用且缓存存在时返回最后一次可用缓存。每次请求返回前都会随机打乱货架顺序。
 
 ### `GET /api/app/content/shelves/{shelfType}?locale={locale}`
 

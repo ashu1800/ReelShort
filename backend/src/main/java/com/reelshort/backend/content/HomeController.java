@@ -1,6 +1,9 @@
 package com.reelshort.backend.content;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,8 +30,11 @@ public class HomeController {
 	public ApiResponse<List<ContentBook>> recommend(@RequestParam(required = false) String locale,
 			CurrentUser currentUser, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		return ApiResponse.success(contentCacheService.getShelf(ContentShelfType.RECOMMEND, parseLocale(locale)),
-				requestId);
+		// 首页每次刷新都从同一份货架缓存中取数，但返回顺序随机，避免用户长期看到固定排序。
+		List<ContentBook> books = new ArrayList<>(
+				contentCacheService.getShelf(ContentShelfType.RECOMMEND, parseLocale(locale)));
+		Collections.shuffle(books, ThreadLocalRandom.current());
+		return ApiResponse.success(books, requestId);
 	}
 
 	private ContentLocale parseLocale(String locale) {

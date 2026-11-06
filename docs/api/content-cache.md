@@ -20,11 +20,11 @@
 
 ### `GET /api/app/home/recommend?locale={locale}`
 
-返回推荐货架内容。后端优先读取 PostgreSQL 货架缓存；缓存不存在时才调用 Flask 内容源并写入 `content_shelf_cache` 和 `content_book_cache`。后台刷新接口负责主动更新片库元数据。
+返回推荐货架内容。后端优先读取 PostgreSQL 货架缓存；缓存不存在时才调用 Flask 内容源并写入 `content_shelf_cache` 和 `content_book_cache`。后台刷新接口负责主动更新片库元数据。每次请求返回前都会随机打乱货架顺序，管理端查看货架时仍保持缓存原始顺序。
 
 ### `GET /api/app/content/shelves/{shelfType}?locale={locale}`
 
-返回指定货架内容。`shelfType` 必须是 `recommend`、`new-release` 或 `drama-dub`。读取策略与首页推荐一致：缓存优先，缺失时才拉取内容源。
+返回指定货架内容。`shelfType` 必须是 `recommend`、`new-release` 或 `drama-dub`。读取策略与首页推荐一致：缓存优先，缺失时才拉取内容源；与首页不同，此接口保持缓存原始顺序。
 
 ### `GET /api/app/content/books/{bookId}?locale={locale}`
 

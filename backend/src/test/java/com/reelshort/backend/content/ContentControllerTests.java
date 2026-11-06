@@ -1,5 +1,6 @@
 package com.reelshort.backend.content;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -9,8 +10,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +26,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.auth.AccessTokenRepository;
 import com.reelshort.backend.auth.AppUserPrincipal;
 import com.reelshort.backend.auth.TokenHasher;
@@ -228,6 +235,31 @@ class ContentControllerTests {
 		mockMvc.perform(get("/api/app/home/recommend").param("locale", "en"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data[0].title").value("Home Pick"));
+	}
+
+	@Test
+	void homeRecommendShufflesShelfOrderAcrossRequests() throws Exception {
+		List<ContentBook> books = IntStream.range(0, 8)
+				.mapToObj(index -> new ContentBook("book-" + index, "Book " + index, "book-" + index,
+						"https://example.com/" + index + ".jpg", "description", 1))
+				.toList();
+		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(books);
+
+		Set<List<String>> orders = new HashSet<>();
+		ObjectMapper objectMapper = new ObjectMapper();
+		for (int request = 0; request < 6; request++) {
+			String body = mockMvc.perform(get("/api/app/home/recommend"))
+					.andExpect(status().isOk())
+					.andExpect(jsonPath("$.data", hasSize(8)))
+					.andReturn().getResponse().getContentAsString();
+			List<String> bookIds = new ArrayList<>();
+			for (JsonNode book : objectMapper.readTree(body).path("data")) {
+				bookIds.add(book.path("bookId").asText());
+			}
+			orders.add(bookIds);
+		}
+
+		assertThat(orders).hasSizeGreaterThan(1);
 	}
 
 	@Test
