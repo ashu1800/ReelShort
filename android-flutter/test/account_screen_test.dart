@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
+import 'package:shortlink/core/formatting/app_strings.dart';
 import 'package:shortlink/core/formatting/app_ui_copy.dart';
 import 'package:shortlink/core/formatting/navigation_contract.dart';
 import 'package:shortlink/core/formatting/update_ui_format.dart';
@@ -250,6 +251,8 @@ List<String> semanticsTexts(WidgetTester tester) {
   walk(root);
   return texts;
 }
+
+final AppStrings _copy = strings(AppLanguage.defaultLanguage);
 
 void main() {
   testWidgets('the logged-in Me page uses one title role and two section cards', (
@@ -746,6 +749,30 @@ void main() {
     expect(find.text(updateCopy.versionTitle), findsOneWidget);
     expect(find.text(updateCopy.checkForUpdates), findsOneWidget);
     expect(find.text('--'), findsOneWidget);
+
+    // The version row wraps its `AppListRow` in a stateful widget, so it has to
+    // carry the card markers itself: without them the card inset it a second
+    // time (leading plate and "Check" sat 16 dp inwards) and skipped the
+    // hairline above it.
+    Rect rowOf(Finder inside) => tester.getRect(
+      find.ancestor(of: inside, matching: find.byType(AppListRow)),
+    );
+    final Rect versionRow = rowOf(find.text(updateCopy.versionTitle));
+    final Rect supportRow = rowOf(find.text(_copy.accountContactSupportTitle));
+    expect(
+      <double>[versionRow.left, versionRow.width],
+      <double>[supportRow.left, supportRow.width],
+      reason: 'the version row spans the card like every other row',
+    );
+    final Finder settingsCard = find.ancestor(
+      of: find.text(_copy.accountContactSupportTitle),
+      matching: find.byType(AppSectionCard),
+    );
+    expect(
+      find.descendant(of: settingsCard, matching: find.byType(Divider)),
+      findsNWidgets(3),
+      reason: 'four rows: wallet, bank card, support, version',
+    );
   });
 
   testWidgets('signing out clears the session after confirmation', (WidgetTester tester) async {

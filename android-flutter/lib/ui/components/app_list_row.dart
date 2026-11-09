@@ -135,10 +135,12 @@ class AppListRow extends StatelessWidget
     final String effectiveLabel =
         semanticLabel ??
         (subtitle == null || subtitle!.isEmpty ? title : '$title, $subtitle');
-    final Color titleColor = enabled ? colors.textPrimary : colors.onDisabled;
-    final Color subtitleColor = enabled
-        ? colors.textSecondary
-        : colors.onDisabled;
+    // A row without an action is *information*, not a disabled control: the
+    // support mailbox and the version row used to render their whole row in
+    // `onDisabled`, which read as "unavailable" next to the tappable rows above
+    // them. Only the control inside `trailing` shows its own disabled state.
+    final Color titleColor = colors.textPrimary;
+    final Color subtitleColor = colors.textSecondary;
 
     // An action label keeps its own width while the ambient scale is close to
     // reading size; past [trailingIntrinsicMaxTextScale] the shared split is the
@@ -173,7 +175,7 @@ class AppListRow extends StatelessWidget
                   SizedBox(width: spacing.space4),
                 ] else if (leadingIcon != null) ...<Widget>[
                   ExcludeSemantics(
-                    child: _LeadingPlate(icon: leadingIcon!, enabled: enabled),
+                    child: _LeadingPlate(icon: leadingIcon!),
                   ),
                   SizedBox(width: spacing.space4),
                 ],
@@ -223,8 +225,16 @@ class AppListRow extends StatelessWidget
                     )
                   else
                     // Flexible so a long value (a version, a date) shrinks or
-                    // wraps instead of overflowing the row at large text scales.
-                    Flexible(child: trailing!),
+                    // wraps instead of overflowing the row at large text scales,
+                    // and right-aligned inside its half: a short action ("Check")
+                    // used to sit in the middle of the row with a dead gap
+                    // before the trailing edge.
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: trailing!,
+                      ),
+                    ),
                 ],
                 if (showChevron) ...<Widget>[
                   SizedBox(width: spacing.space2),
@@ -232,7 +242,7 @@ class AppListRow extends StatelessWidget
                     child: Icon(
                       Icons.chevron_right,
                       size: icons.lg,
-                      color: enabled ? colors.textSecondary : colors.onDisabled,
+                      color: colors.textSecondary,
                     ),
                   ),
                 ],
@@ -290,10 +300,9 @@ class AppListRow extends StatelessWidget
 
 /// The tinted plate behind a leading icon.
 class _LeadingPlate extends StatelessWidget {
-  const _LeadingPlate({required this.icon, required this.enabled});
+  const _LeadingPlate({required this.icon});
 
   final IconData icon;
-  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -306,14 +315,10 @@ class _LeadingPlate extends StatelessWidget {
       width: spacing.space10,
       height: spacing.space10,
       decoration: BoxDecoration(
-        color: enabled ? colors.premiumSurface : colors.surfaceDisabled,
+        color: colors.premiumSurface,
         borderRadius: shapes.controlRadius,
       ),
-      child: Icon(
-        icon,
-        size: icons.md,
-        color: enabled ? colors.accentPrimary : colors.onDisabled,
-      ),
+      child: Icon(icon, size: icons.md, color: colors.accentPrimary),
     );
   }
 }

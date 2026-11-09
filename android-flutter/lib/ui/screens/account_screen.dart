@@ -41,6 +41,7 @@ import '../components/app_confirm_dialog.dart';
 import '../components/app_list_row.dart';
 import '../components/app_loading.dart';
 import '../components/app_membership_chip.dart';
+import '../components/app_panel.dart';
 import '../components/app_section.dart';
 import '../components/app_text_field.dart';
 import '../components/poster_card.dart';
@@ -589,7 +590,13 @@ class _SettingsSection extends StatelessWidget {
 
 /// The version row: `versionTitle` + `versionName (versionCode)`, trailing a
 /// manual check that is disabled while a manual check is in flight.
-class _VersionRow extends StatefulWidget {
+///
+/// It wraps an [AppListRow] in a stateful widget, so it has to carry the card
+/// markers itself: without them `AppSectionCard` treated it as a block, inset it
+/// a second time (its leading plate and its "Check" control sat 16 dp inwards
+/// from every other row) and skipped the hairline above it.
+class _VersionRow extends StatefulWidget
+    implements AppListSectionRow, AppSelfInsetRow {
   const _VersionRow({required this.state});
 
   final AppUiState state;

@@ -1637,6 +1637,50 @@ void main() {
     );
   });
 
+  testWidgets('a read-only row keeps its contrast and aligns its value to the '
+      'trailing edge', (WidgetTester tester) async {
+    // Regression for the Me-page settings card: a row without `onTap` (support
+    // mailbox, app version) rendered title, subtitle and leading plate in
+    // `onDisabled`, so information read as "unavailable"; and a short non-flex
+    // trailing ("Check") sat in the middle of the row because the shared half
+    // slot left-aligned its child.
+    await tester.pumpWidget(
+      host(
+        AppSectionCard(
+          children: <Widget>[
+            AppListRow(
+              title: 'App version',
+              subtitle: '0.9.13 (55)',
+              leadingIcon: Icons.system_update_outlined,
+              divider: false,
+              trailing: TextButton(
+                onPressed: () {},
+                child: const Text('Check'),
+              ),
+            ),
+          ],
+        ),
+        width: 360,
+      ),
+    );
+    await tester.pump();
+
+    final Text title = tester.widget<Text>(find.text('App version'));
+    expect(title.style?.color, AppColors.light.textPrimary);
+    final Text subtitle = tester.widget<Text>(find.text('0.9.13 (55)'));
+    expect(subtitle.style?.color, AppColors.light.textSecondary);
+
+    // Flush with the card's inner trailing edge, not floating mid-row.
+    final Rect card = tester.getRect(find.byType(AppPanel));
+    final Rect button = tester.getRect(find.byType(TextButton));
+    expect(
+      button.right,
+      moreOrLessEquals(
+        card.right - AppShapes.light.strokeHairline - AppSpacing.standard.space4,
+      ),
+    );
+  });
+
   testWidgets('AppStatusPill maps every tone to an accent, a glyph and a word', (
     WidgetTester tester,
   ) async {
