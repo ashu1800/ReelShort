@@ -337,6 +337,50 @@ void main() {
     expect(dataSource.callsTo('submitWithdrawal'), 1);
     final RecordedCall call = dataSource.lastCallTo('submitWithdrawal')!;
     expect(call.arguments['pointAmount'], 5000);
+    // 每次提交都带幂等键，服务端超时重试才能复用同一笔申请
+    expect(call.arguments['idempotencyKey'], contains('ashu180:5000:'));
+  });
+
+  testWidgets('a retried submit reuses the idempotency key of the failed one', (
+    WidgetTester tester,
+  ) async {
+    final FakeAppDataSource dataSource = FakeAppDataSource()
+      ..session = const AuthSession(
+        username: 'ashu180',
+        token: 'token-1',
+        tokenType: 'Bearer',
+      )
+      ..withdrawalSummary = _summary
+      ..wallet = const WalletInfo(
+        network: 'ERC20',
+        walletAddress: _wallet,
+        updatedAt: null,
+      );
+    final AppStateController controller = AppStateController(
+      dataSource: dataSource,
+    );
+    addTearDown(controller.dispose);
+    await controller.restoreSession();
+    dataSource.failWith('submitWithdrawal', StateError('socket closed'));
+
+    await controller.submitWithdrawal(5000);
+    await controller.submitWithdrawal(5000);
+
+    final List<RecordedCall> calls = dataSource.calls.where(
+      (RecordedCall call) => call.method == 'submitWithdrawal',
+    ).toList();
+    expect(calls, hasLength(2));
+    expect(
+      calls[0].arguments['idempotencyKey'],
+      calls[1].arguments['idempotencyKey'],
+    );
+
+    // 金额变了就得换新键，否则会命中上一笔申请的旧记录
+    await controller.submitWithdrawal(6000);
+    expect(
+      dataSource.lastCallTo('submitWithdrawal')!.arguments['idempotencyKey'],
+      isNot(calls[0].arguments['idempotencyKey']),
+    );
   });
 
   testWidgets('the history maps each status to its pill and tone', (

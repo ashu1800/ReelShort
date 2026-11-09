@@ -415,11 +415,17 @@ class HttpReelShortApiClient implements ReelShortApiClient {
   }
 
   @override
-  Future<WithdrawalRecord> submitWithdrawal(int pointAmount) async {
+  Future<WithdrawalRecord> submitWithdrawal(
+    int pointAmount, {
+    String? idempotencyKey,
+  }) async {
     final Object? data = await _postJson(
       '/withdrawals',
       WithdrawalCreateRequestDto(pointAmount: pointAmount).toJson(),
       authenticated: true,
+      headers: idempotencyKey == null
+          ? const <String, String>{}
+          : <String, String>{'Idempotency-Key': idempotencyKey},
     );
     return WithdrawalDto.fromJson(
       asJsonObject(data, 'withdrawal'),
@@ -537,6 +543,7 @@ class HttpReelShortApiClient implements ReelShortApiClient {
     Uri url, {
     String? body,
     bool authenticated = false,
+    Map<String, String> headers = const <String, String>{},
   }) {
     final http.Request request = http.Request(method, url);
     if (body != null) {
@@ -544,6 +551,7 @@ class HttpReelShortApiClient implements ReelShortApiClient {
       request.bodyBytes = utf8.encode(body);
     }
     request.headers['Accept'] = 'application/json';
+    request.headers.addAll(headers);
     return (request, authenticated);
   }
 
@@ -659,12 +667,14 @@ class HttpReelShortApiClient implements ReelShortApiClient {
     String path,
     Map<String, dynamic> body, {
     bool authenticated = false,
+    Map<String, String> headers = const <String, String>{},
   }) => _send(
     _request(
       'POST',
       _stringUri(path),
       body: jsonEncode(body),
       authenticated: authenticated,
+      headers: headers,
     ),
   );
 

@@ -1,6 +1,7 @@
 package com.reelshort.backend.order;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,6 +32,13 @@ public interface VipOrderRepository extends JpaRepository<VipOrder, UUID> {
 
 	boolean existsByTxHash(String txHash);
 
+	List<VipOrder> findByStatusAndExpiresAtAfterOrderByCreatedAtAsc(String status, OffsetDateTime cutoff);
+
+	/** 已过付款期（含宽限）但仍为 PENDING 的订单 ID，供下单/定时任务逐行加锁过期。 */
+	@Query("SELECT o.id FROM VipOrder o WHERE o.status = 'PENDING' AND o.expiresAt IS NOT NULL"
+			+ " AND o.expiresAt < :cutoff")
+	List<UUID> findExpiredPendingIds(@Param("cutoff") OffsetDateTime cutoff);
+
 	@Query(value = "SELECT id FROM vip_order_allocation_lock WHERE id = 1 FOR UPDATE", nativeQuery = true)
 	Integer lockAllocation();
 
@@ -40,11 +48,4 @@ public interface VipOrderRepository extends JpaRepository<VipOrder, UUID> {
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT o FROM VipOrder o WHERE o.id = :id")
 	Optional<VipOrder> findByIdForUpdate(@Param("id") UUID id);
-
-	/**
-	 * M4: 悲观锁读取所有 PENDING 订单（expireOverdueOrders 用），防止并发过期与确认。
-	 */
-	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("SELECT o FROM VipOrder o WHERE o.status = 'PENDING' ORDER BY o.createdAt ASC")
-	List<VipOrder> findPendingForUpdate();
 }

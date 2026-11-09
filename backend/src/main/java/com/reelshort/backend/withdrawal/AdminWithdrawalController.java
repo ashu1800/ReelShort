@@ -23,6 +23,7 @@ import com.reelshort.backend.system.web.RequestIdFilter;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
 
 @RestController
 @RequestMapping("/api/admin/withdrawals")
@@ -77,10 +78,16 @@ public class AdminWithdrawalController {
 	@PostMapping("/{withdrawalId}/manual-confirm")
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
 	public ApiResponse<WithdrawalResponse> manualConfirm(CurrentAdmin currentAdmin,
-			@PathVariable UUID withdrawalId, HttpServletRequest request) {
-		return ApiResponse.success(withdrawalService.manualConfirm(withdrawalId, currentAdmin.username()),
+			@PathVariable UUID withdrawalId,
+			@RequestBody(required = false) @Valid ManualConfirmRequest confirmRequest,
+			HttpServletRequest request) {
+		String txHash = confirmRequest == null ? null : confirmRequest.txHash();
+		return ApiResponse.success(
+				withdrawalService.manualConfirm(withdrawalId, txHash, currentAdmin.username()),
 				requestId(request));
 	}
+
+	/** 链上交易哈希只做留痕（不签名、不广播、不核验）。 */
 
 	@PostMapping("/{withdrawalId}/reject")
 	@RequireAdminPermission(AdminPermissions.WITHDRAWAL_WRITE)
@@ -130,5 +137,9 @@ public class AdminWithdrawalController {
 		catch (DateTimeParseException exception) {
 			throw new AdminException(400, "custom withdrawal stats dates must use yyyy-MM-dd");
 		}
+	}
+
+	/** 可选：管理员粘贴外部钱包的实际交易哈希，仅用于留痕对账（不核验链上）。 */
+	public record ManualConfirmRequest(@Pattern(regexp = "(?i)[0-9a-f]{64}") String txHash) {
 	}
 }

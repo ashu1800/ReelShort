@@ -75,6 +75,10 @@ public class WithdrawalRequest {
 	@Column(name = "idempotency_key", length = 128)
 	private String idempotencyKey;
 
+	/** PENDING 哨兵列：仅 PENDING 时为 'PENDING'，配合唯一约束保证每用户最多一笔在途申请。 */
+	@Column(name = "pending_slot", length = 24)
+	private String pendingSlot;
+
 	protected WithdrawalRequest() {
 	}
 
@@ -96,6 +100,7 @@ public class WithdrawalRequest {
 		this.walletAddress = walletAddress;
 		this.idempotencyKey = idempotencyKey;
 		this.status = WithdrawalStatus.PENDING;
+		this.pendingSlot = "PENDING";
 		this.createdAt = createdAt;
 	}
 
@@ -119,11 +124,16 @@ public class WithdrawalRequest {
 		return idempotencyKey;
 	}
 
+	public String pendingSlot() {
+		return pendingSlot;
+	}
+
 	public void approve(String txHash, String note, String reviewedBy) {
 		if (status != WithdrawalStatus.PENDING) {
 			throw new IllegalStateException("withdrawal is not pending");
 		}
 		this.status = WithdrawalStatus.APPROVED;
+		this.pendingSlot = null;
 		this.txHash = txHash == null ? null : txHash.trim().toLowerCase(java.util.Locale.ROOT);
 		this.adminNote = note;
 		this.reviewedBy = reviewedBy;
@@ -135,6 +145,7 @@ public class WithdrawalRequest {
 			throw new IllegalStateException("withdrawal is not pending");
 		}
 		this.status = WithdrawalStatus.REJECTED;
+		this.pendingSlot = null;
 		this.adminNote = reason;
 		this.reviewedBy = reviewedBy;
 		this.reviewedAt = OffsetDateTime.now();

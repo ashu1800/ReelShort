@@ -3,6 +3,7 @@ package com.reelshort.backend.order;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,6 +40,7 @@ public class VipOrderService {
 	private final TronClient tronClient;
 	private final TransactionTemplate transactionTemplate;
 	private final Duration confirmationGrace;
+	private final Duration expiredRecoveryWindow;
 	private final AdminAuditService adminAuditService;
 	private final VipEntitlementService entitlementService;
 
@@ -47,6 +49,7 @@ public class VipOrderService {
 			SystemConfigService systemConfigService, TronProperties tronProperties, TronClient tronClient,
 			PlatformTransactionManager transactionManager, AdminAuditService adminAuditService,
 			@Value("${reelshort.vip.confirmation-grace:10m}") Duration confirmationGrace,
+			@Value("${reelshort.vip.expired-recovery-window:24h}") Duration expiredRecoveryWindow,
 			VipEntitlementService entitlementService) {
 		this.vipOrderRepository = vipOrderRepository;
 		this.userAccountRepository = userAccountRepository;
@@ -58,7 +61,12 @@ public class VipOrderService {
 				|| confirmationGrace.compareTo(Duration.ofDays(1)) > 0) {
 			throw new IllegalArgumentException("reelshort.vip.confirmation-grace must be between 0 and 24h");
 		}
+		if (expiredRecoveryWindow == null || expiredRecoveryWindow.isNegative()
+				|| expiredRecoveryWindow.compareTo(Duration.ofDays(7)) > 0) {
+			throw new IllegalArgumentException("reelshort.vip.expired-recovery-window must be between 0 and 7d");
+		}
 		this.confirmationGrace = confirmationGrace;
+		this.expiredRecoveryWindow = expiredRecoveryWindow;
 		this.adminAuditService = adminAuditService;
 		this.entitlementService = entitlementService;
 	}
@@ -72,6 +80,7 @@ public class VipOrderService {
 		this.tronClient = null;
 		this.transactionTemplate = null;
 		this.confirmationGrace = Duration.ofMinutes(10);
+		this.expiredRecoveryWindow = Duration.ofHours(24);
 		this.adminAuditService = null;
 		this.entitlementService = new VipEntitlementService(userAccountRepository);
 	}
@@ -96,14 +105,10 @@ public class VipOrderService {
 
 	private VipOrder createOnce(UUID userId) {
 		vipOrderRepository.lockAllocation();
-		List<VipOrder> pending = vipOrderRepository.findPendingForUpdate();
-		for (VipOrder order : pending) {
-			if (order.isExpired(confirmationGrace)) {
-				order.expire();
-				vipOrderRepository.save(order);
-				recordSystemAudit("VIP_ORDER_EXPIRED", order, "status=EXPIRED");
-			}
-		}
+		expireOverdueOrdersLocked();
+		// 下单串行化由 allocation lock 保证，金额槽位互斥还有数据库唯一约束兜底，
+		// 所以这里只读 PENDING 列表即可，不必锁住所有在途订单行。
+		List<VipOrder> pending = vipOrderRepository.findByStatusOrderByCreatedAtAsc("PENDING");
 		UserAccount user = userAccountRepository.findByIdForUpdate(userId)
 				.orElseThrow(() -> new AdminException(404, "user not found"));
 		if (user.status() != UserStatus.ACTIVE) {
@@ -166,18 +171,43 @@ public class VipOrderService {
 		return vipOrderRepository.findByStatusOrderByCreatedAtAsc("PENDING");
 	}
 
+	/**
+	 * 过期但仍可能因为扫描中断（内容源/节点故障）而漏确认的订单，供定时扫描补偿。
+	 * 只回看 {@code reelshort.vip.expired-recovery-window}（默认 24h）以内的订单，避免无限回扫。
+	 */
+	@Transactional(readOnly = true)
+	public List<VipOrder> recoverableExpiredOrders() {
+		return vipOrderRepository.findByStatusAndExpiresAtAfterOrderByCreatedAtAsc("EXPIRED",
+				OffsetDateTime.now().minus(expiredRecoveryWindow));
+	}
+
+	/** 付款容忍窗口：付款时间不超过 {@code expiresAt + confirmationGrace} 即视为按时付款。 */
+	Duration confirmationGrace() {
+		return confirmationGrace;
+	}
+
 	@Transactional
 	public int expireOverdueOrders() {
 		vipOrderRepository.lockAllocation();
-		List<VipOrder> pending = vipOrderRepository.findPendingForUpdate();
+		return expireOverdueOrdersLocked();
+	}
+
+	/**
+	 * 只锁真正要过期的订单行（先无锁查出候选 ID 再逐行加锁复核），
+	 * 避免把全部 PENDING 订单一并锁住、让下单与其它用户的在途支付互相阻塞。
+	 */
+	private int expireOverdueOrdersLocked() {
+		OffsetDateTime cutoff = OffsetDateTime.now().minus(confirmationGrace);
 		int expired = 0;
-		for (VipOrder order : pending) {
-			if (order.isExpired(confirmationGrace)) {
-				order.expire();
-				vipOrderRepository.save(order);
-				recordSystemAudit("VIP_ORDER_EXPIRED", order, "status=EXPIRED");
-				expired++;
+		for (UUID candidateId : vipOrderRepository.findExpiredPendingIds(cutoff)) {
+			VipOrder order = vipOrderRepository.findByIdForUpdate(candidateId).orElse(null);
+			if (order == null || !order.isExpired(confirmationGrace)) {
+				continue;
 			}
+			order.expire();
+			vipOrderRepository.save(order);
+			recordSystemAudit("VIP_ORDER_EXPIRED", order, "status=EXPIRED");
+			expired++;
 		}
 		return expired;
 	}
@@ -204,6 +234,15 @@ public class VipOrderService {
 	}
 
 	/**
+	 * 自动补单：订单已过期，但扫描发现用户在有效期内已付款且确认数达标。
+	 * 与管理员人工补单走同一套复核，只是触发方是定时扫描，避免用户付了款却只能等客服。
+	 */
+	@Transactional
+	public VipOrder autoRecover(UUID orderId, IncomingTransfer transfer) {
+		return confirmTransfer(orderId, transfer, "auto-confirm", true);
+	}
+
+	/**
 	 * @param allowExpired 仅管理员人工路径为 true：允许对 EXPIRED 订单做"链上已核验的过期后补单"，
 	 *                     避免用户在有效期内已付款却因确认延迟而既拿不到 VIP 也无法退款。
 	 */
@@ -223,8 +262,10 @@ public class VipOrderService {
 			throw new AdminException(409, "transaction has already been consumed");
 		}
 		if (!(recoveringExpired
-				? VipPaymentMatcher.matchesLatePayment(order, transfer, tronProperties.getRequiredConfirmations())
-				: VipPaymentMatcher.matches(order, transfer, tronProperties.getRequiredConfirmations()))) {
+				? VipPaymentMatcher.matchesLatePayment(order, transfer, tronProperties.getRequiredConfirmations(),
+						confirmationGrace)
+				: VipPaymentMatcher.matches(order, transfer, tronProperties.getRequiredConfirmations(),
+						confirmationGrace))) {
 			throw new AdminException(409, "transaction does not match this VIP order");
 		}
 		if (recoveringExpired) {
@@ -236,14 +277,23 @@ public class VipOrderService {
 		}
 		entitlementService.grantMonth(order.userId());
 		VipOrder saved = vipOrderRepository.save(order);
-		if ("auto-confirm".equals(confirmedBy)) {
+		boolean automated = "auto-confirm".equals(confirmedBy);
+		if (recoveringExpired) {
+			if (automated) {
+				recordSystemAudit("VIP_ORDER_RECOVERED_AFTER_EXPIRY", saved,
+						"status=CONFIRMED, txHash=" + saved.txHash());
+			}
+			else if (adminAuditService != null) {
+				adminAuditService.record(confirmedBy, "VIP_ORDER_RECOVERED_AFTER_EXPIRY", "VIP_ORDER", saved.id(),
+						"status=CONFIRMED, confirmedBy=" + saved.confirmedBy() + ", txHash=" + saved.txHash());
+			}
+		}
+		else if (automated) {
 			recordSystemAudit("VIP_ORDER_AUTO_CONFIRMED", saved,
 					"status=CONFIRMED, txHash=" + saved.txHash());
 		}
 		else if (adminAuditService != null) {
-			adminAuditService.record(confirmedBy,
-					recoveringExpired ? "VIP_ORDER_RECOVERED_AFTER_EXPIRY" : "VIP_ORDER_CONFIRM_VERIFIED",
-					"VIP_ORDER", saved.id(),
+			adminAuditService.record(confirmedBy, "VIP_ORDER_CONFIRM_VERIFIED", "VIP_ORDER", saved.id(),
 					"status=CONFIRMED, confirmedBy=" + saved.confirmedBy() + ", txHash=" + saved.txHash());
 		}
 		return saved;

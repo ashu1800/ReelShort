@@ -18,6 +18,10 @@ public interface WithdrawalRequestRepository extends JpaRepository<WithdrawalReq
 
 	Optional<WithdrawalRequest> findByIdempotencyKey(String idempotencyKey);
 
+	Optional<WithdrawalRequest> findByTxHash(String txHash);
+
+	List<WithdrawalRequest> findByStatusAndCreatedAtBefore(WithdrawalStatus status, OffsetDateTime cutoff);
+
 	boolean existsByUserIdAndStatus(UUID userId, WithdrawalStatus status);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)

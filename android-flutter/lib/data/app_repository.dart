@@ -176,8 +176,8 @@ class AppRepository implements AppDataSource {
       apiClient.getWithdrawals();
 
   @override
-  Future<WithdrawalRecord> submitWithdrawal(int pointAmount) =>
-      apiClient.submitWithdrawal(pointAmount);
+  Future<WithdrawalRecord> submitWithdrawal(int pointAmount, {String? idempotencyKey}) =>
+      apiClient.submitWithdrawal(pointAmount, idempotencyKey: idempotencyKey);
 
   @override
   Future<SocialToggleResult> toggleLike(BookSummary book) =>

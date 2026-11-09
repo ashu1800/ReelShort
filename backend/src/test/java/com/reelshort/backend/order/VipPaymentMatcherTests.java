@@ -3,6 +3,7 @@ package com.reelshort.backend.order;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -64,6 +65,27 @@ class VipPaymentMatcherTests {
 		assertThat(VipPaymentMatcher.matchesLatePayment(expired,
 				transfer(expired, ADDRESS, CONTRACT, expired.payableAmount(),
 						expired.createdAt().plusSeconds(10), 19, true), 20)).isFalse();
+	}
+
+	@Test
+	void acceptanceGraceExtendsThePaymentWindowPastTheDisplayedExpiry() {
+		Duration grace = Duration.ofMinutes(10);
+		VipOrder pending = order();
+		IncomingTransfer paidDuringGrace = transfer(pending, ADDRESS, CONTRACT, pending.payableAmount(),
+				pending.expiresAt().plusSeconds(60), 20, true);
+
+		// 倒计时已归零但订单还在宽限期内：按时付款仍可自动确认
+		assertThat(VipPaymentMatcher.matches(pending, paidDuringGrace, 20, grace)).isTrue();
+		// 无宽限时保持原来的严格窗口（3 参重载语义不变）
+		assertThat(VipPaymentMatcher.matches(pending, paidDuringGrace, 20)).isFalse();
+		// 越过宽限期仍不付款则无效
+		assertThat(VipPaymentMatcher.matches(pending,
+				transfer(pending, ADDRESS, CONTRACT, pending.payableAmount(),
+						pending.expiresAt().plus(grace).plusNanos(1), 20, true), 20, grace)).isFalse();
+
+		VipOrder expired = order();
+		expired.expire();
+		assertThat(VipPaymentMatcher.matchesLatePayment(expired, paidDuringGrace, 20, grace)).isTrue();
 	}
 
 	private VipOrder order() {

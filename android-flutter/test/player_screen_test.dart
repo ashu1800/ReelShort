@@ -96,14 +96,20 @@ Future<AppStateController> _pumpPlayer(
   addTearDown(tester.view.reset);
 
   final List<EpisodeSummary> list = episodes ?? _episodes(3);
-  final FakeAppDataSource source = dataSource ?? FakeAppDataSource()
-    ..episodes = list
-    ..comments = comments
-    ..pointAccount = PointAccount(
-      balance: 100,
-      records: const <PointRecord>[],
-      vipActive: vip,
-    );
+  // 注意：`dataSource ?? FakeAppDataSource()..x = y` 里的级联绑定到整个 `??` 表达式，
+  // 会把调用方传入的 fixture 也覆盖成默认值（曾静默清空 comments，使
+  // 「drawer 打开后重试」的用例永远拿到空列表）。默认 fixture 只在自建数据源时写入。
+  final FakeAppDataSource source = dataSource ?? FakeAppDataSource();
+  if (dataSource == null) {
+    source
+      ..episodes = list
+      ..comments = comments
+      ..pointAccount = PointAccount(
+        balance: 100,
+        records: const <PointRecord>[],
+        vipActive: vip,
+      );
+  }
   final AppStateController controller = AppStateController(
     dataSource: source,
   );

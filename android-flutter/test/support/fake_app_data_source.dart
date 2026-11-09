@@ -370,10 +370,13 @@ class FakeAppDataSource implements AppDataSource {
       _invoke('loadWithdrawals', () => withdrawals);
 
   @override
-  Future<WithdrawalRecord> submitWithdrawal(int pointAmount) => _invoke(
+  Future<WithdrawalRecord> submitWithdrawal(
+    int pointAmount, {
+    String? idempotencyKey,
+  }) => _invoke(
     'submitWithdrawal',
     () => withdrawalRecord,
-    <String, Object?>{'pointAmount': pointAmount},
+    <String, Object?>{'pointAmount': pointAmount, 'idempotencyKey': idempotencyKey},
   );
 
   @override

@@ -77,7 +77,9 @@ abstract interface class AppDataSource {
 
   Future<List<WithdrawalRecord>> loadWithdrawals();
 
-  Future<WithdrawalRecord> submitWithdrawal(int pointAmount);
+  /// 提交提现申请。[idempotencyKey] 用于超时重试时复用同一笔申请（服务端支持
+  /// `Idempotency-Key` 请求头）。
+  Future<WithdrawalRecord> submitWithdrawal(int pointAmount, {String? idempotencyKey});
 
   Future<SocialToggleResult> toggleLike(BookSummary book);
 

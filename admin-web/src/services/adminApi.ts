@@ -507,8 +507,12 @@ export async function fetchWithdrawalStats(range: WithdrawalStatsRange, customRa
 	return response.data.data
 }
 
-export async function manualConfirmWithdrawal(withdrawalId: string) {
-	const response = await http.post<ApiResponse<WithdrawalRequest>>(`/withdrawals/${withdrawalId}/manual-confirm`)
+export async function manualConfirmWithdrawal(withdrawalId: string, txHash?: string) {
+	const body = txHash && txHash.trim() ? { txHash: txHash.trim() } : undefined
+	const response = await http.post<ApiResponse<WithdrawalRequest>>(
+		`/withdrawals/${withdrawalId}/manual-confirm`,
+		body,
+	)
 	return response.data.data
 }
 

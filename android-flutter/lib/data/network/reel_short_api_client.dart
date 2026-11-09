@@ -81,7 +81,7 @@ abstract interface class ReelShortApiClient {
 
   Future<List<WithdrawalRecord>> getWithdrawals();
 
-  Future<WithdrawalRecord> submitWithdrawal(int pointAmount);
+  Future<WithdrawalRecord> submitWithdrawal(int pointAmount, {String? idempotencyKey});
 
   Future<SocialToggleResult> toggleLike(String bookId);
 

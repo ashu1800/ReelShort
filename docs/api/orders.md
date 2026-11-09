@@ -50,6 +50,18 @@ Authorization: Bearer <app-token>
 
 > VIP 订单不属于本文档范围：后台的 `GET /api/admin/vip/orders`、人工确认与拒绝见 `docs/api/admin.md`。
 
+## VIP TRC20 订单的收款匹配窗口
+
+`VipPaymentMatcher` 只有在下列条件全部成立时才把一笔链上转账算作某个 VIP 订单的付款：订单快照网络为 `TRC20`、收款地址与 USDT 合约**逐字符相等**、金额等于订单 `payableAmount`、转账成功且确认数达到 `reelshort.tron.required-confirmations`（默认 20）、付款区块时间落在
+
+```
+[createdAt, expiresAt + reelshort.vip.confirmation-grace]    // 默认宽限 10 分钟
+```
+
+宽限期的含义：页面倒计时归零后订单仍是 `PENDING`，这 10 分钟内到达的**按时**付款照常自动确认（旧实现把这个窗口锁死在 `expiresAt`，倒计时与链上落块有秒级偏差时只能等人工补单）。
+
+订单在 `expiresAt + grace` 之后转 `EXPIRED` 并释放金额槽位。定时扫描（`reelshort.vip.auto-confirm-interval`，默认 120 秒）在同一轮里还会回看 `reelshort.vip.expired-recovery-window`（默认 24 小时）内已 `EXPIRED` 的订单——这是为了补偿扫描中断（TronGrid 故障、分页硬上限）导致按时付款没被及时确认的情况，命中后按 `VIP_ORDER_RECOVERED_AFTER_EXPIRY` 自动补单，规则与人工补单完全一致。同一金额同时命中 `PENDING` 与 `EXPIRED` 订单时优先确认 `PENDING`。
+
 ## 状态范围
 
 当前枚举预留：

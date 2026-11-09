@@ -83,6 +83,9 @@ class AppStateController extends ChangeNotifier {
   int _vipPaywallGeneration = 0;
   int _accountRequestVersion = 0;
   int _favoritesRequestVersion = 0;
+  // 同一笔提现申请的重试要复用同一幂等键，成功后清空。
+  String? _withdrawalIdempotencyKey;
+  int? _withdrawalIdempotencyAmount;
   final _AsyncMutex _accountOperationMutex = _AsyncMutex();
   final _AsyncMutex _vipPaymentRefreshMutex = _AsyncMutex();
 
@@ -287,6 +290,9 @@ class AppStateController extends ChangeNotifier {
   /// the watch history), then an in-place account refresh when the user was on
   /// an account screen, then returning home and reloading the shelf.
   Future<void> _openHomeAfterAuthentication(AuthSession session) async {
+    // 换了一个登录态：之前未完成的提现幂等键失效
+    _withdrawalIdempotencyKey = null;
+    _withdrawalIdempotencyAmount = null;
     final EpisodeSummary? pendingVipEpisode = _state.pendingVipEpisode;
     if (pendingVipEpisode != null) {
       // The guest branch decided on the documented default. Now that the
@@ -1598,15 +1604,34 @@ class AppStateController extends ChangeNotifier {
   }
 
   /// Submits a withdrawal request, then reloads the snapshot.
+  ///
+  /// 同一金额的重试复用同一 `Idempotency-Key`，所以网络超时后再点一次会拿回同一笔申请，
+  /// 而不是被 "withdrawal already pending" 拦住。
   Future<void> submitWithdrawal(int pointAmount) =>
       _runAccountOperation(AccountOperation.withdrawal, () async {
         _requireAuthenticatedAccount();
-        await _dataSource.submitWithdrawal(pointAmount);
+        if (_withdrawalIdempotencyKey == null ||
+            _withdrawalIdempotencyAmount != pointAmount) {
+          _withdrawalIdempotencyKey = _newWithdrawalIdempotencyKey(pointAmount);
+          _withdrawalIdempotencyAmount = pointAmount;
+        }
+        await _dataSource.submitWithdrawal(
+          pointAmount,
+          idempotencyKey: _withdrawalIdempotencyKey,
+        );
+        _withdrawalIdempotencyKey = null;
+        _withdrawalIdempotencyAmount = null;
         await _reloadAccountSnapshotAfterAction(
           _copy.withdrawalSubmittedMessage,
           withdrawalSubmitted: true,
         );
       });
+
+  /// 幂等键只需在服务端唯一（≤128 字符），带上账号与金额便于排查。
+  String _newWithdrawalIdempotencyKey(int pointAmount) {
+    final String username = _state.session?.username ?? 'guest';
+    return '$username:$pointAmount:${DateTime.now().microsecondsSinceEpoch}';
+  }
 
   /// Changes the password, which invalidates the local session and the saved
   /// credentials (the backend revokes every token).
@@ -1641,6 +1666,8 @@ class AppStateController extends ChangeNotifier {
         );
         _pendingVipEpisodeRequestVersion = null;
         _vipPaywallGeneration++;
+        _withdrawalIdempotencyKey = null;
+        _withdrawalIdempotencyAmount = null;
       });
 
   // ---------------------------------------------------------------------------
@@ -1712,6 +1739,8 @@ class AppStateController extends ChangeNotifier {
   /// and the language preference.
   Future<void> logout() => _runWithLoading(_ErrorContext.account, () async {
     await _dataSource.clearSession();
+    _withdrawalIdempotencyKey = null;
+    _withdrawalIdempotencyAmount = null;
     _set(
       AppUiState(
         apiBaseUrl: _dataSource.apiBaseUrl,

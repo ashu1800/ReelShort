@@ -35,6 +35,8 @@ const statsError = ref('')
 const statsRange = ref<WithdrawalStatsRange>('TODAY')
 const customStatsDates = ref<[string, string] | null>(null)
 const confirmDialogVisible = ref(false)
+// 可选：外部钱包的实际交易哈希，仅留痕对账（不核验链上）
+const confirmTxHash = ref('')
 const confirmingWithdrawal = ref<WithdrawalRequest | null>(null)
 const confirmError = ref('')
 
@@ -180,6 +182,7 @@ function openManualConfirm(row: WithdrawalRequest) {
   }
   confirmingWithdrawal.value = row
   confirmError.value = ''
+  confirmTxHash.value = ''
   confirmDialogVisible.value = true
 }
 
@@ -206,7 +209,7 @@ async function confirmExternalPayout() {
   operationLoading.value = true
   confirmError.value = ''
   try {
-    await manualConfirmWithdrawal(confirmingWithdrawal.value.id)
+    await manualConfirmWithdrawal(confirmingWithdrawal.value.id, confirmTxHash.value)
     ElMessage.success('已确认外部打款，冻结积分已扣除')
     confirmDialogVisible.value = false
     confirmingWithdrawal.value = null
@@ -222,6 +225,7 @@ function closeConfirmDialog() {
   confirmDialogVisible.value = false
   confirmingWithdrawal.value = null
   confirmError.value = ''
+  confirmTxHash.value = ''
 }
 
 async function reject(row: WithdrawalRequest) {
@@ -578,6 +582,18 @@ onMounted(() => {
               </el-button>
             </div>
           </div>
+        </div>
+
+        <div class="txhash-input-wrap">
+          <span class="payout-label">链上交易哈希（选填，仅留痕）:</span>
+          <el-input
+            v-model="confirmTxHash"
+            class="mono"
+            clearable
+            maxlength="66"
+            placeholder="粘贴外部钱包那笔 ERC20 转账的 TX Hash"
+            size="small"
+          />
         </div>
 
         <el-alert
@@ -959,6 +975,13 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.txhash-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
 }
 
 .payout-row {

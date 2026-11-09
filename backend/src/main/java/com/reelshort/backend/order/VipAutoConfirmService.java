@@ -1,6 +1,8 @@
 package com.reelshort.backend.order;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -35,12 +37,20 @@ public class VipAutoConfirmService {
 	@Scheduled(fixedDelayString = "${reelshort.vip.auto-confirm-interval:120000}", initialDelay = 30_000)
 	public void autoConfirmPendingOrders() {
 		vipOrderService.expireOverdueOrders();
-		List<VipOrder> pending = vipOrderService.pendingOrders();
-		Map<ReceiptSnapshot, List<VipOrder>> groups = pending.stream()
+		// PENDING 先于 EXPIRED，同一个金额如果同时能匹配两类订单，优先确认仍可支付的订单。
+		List<VipOrder> scannable = new ArrayList<>(vipOrderService.pendingOrders());
+		scannable.addAll(vipOrderService.recoverableExpiredOrders());
+		Map<ReceiptSnapshot, List<VipOrder>> groups = scannable.stream()
 				.filter(order -> order.receivingWalletAddress() != null && order.tokenContractAddress() != null)
 				.collect(Collectors.groupingBy(order -> new ReceiptSnapshot(
 						order.receivingWalletAddress(), order.tokenContractAddress())));
 		groups.forEach(this::pollSnapshot);
+	}
+
+	/** 付款容忍窗口；单元测试里的 mock 未打桩时回退为 0。 */
+	private Duration acceptanceGrace() {
+		Duration configured = vipOrderService.confirmationGrace();
+		return configured == null ? Duration.ZERO : configured;
 	}
 
 	private void pollSnapshot(ReceiptSnapshot snapshot, List<VipOrder> orders) {
@@ -82,9 +92,20 @@ public class VipAutoConfirmService {
 	}
 
 	private CandidateOutcome processCandidate(List<VipOrder> orders, TronClient.IncomingTransfer transfer) {
-		VipOrder matched = orders.stream()
-				.filter(order -> VipPaymentMatcher.matches(order, transfer, 0))
-				.findFirst().orElse(null);
+		Duration grace = acceptanceGrace();
+		List<VipOrder> pendingMatches = orders.stream()
+				.filter(order -> "PENDING".equals(order.status()))
+				.filter(order -> VipPaymentMatcher.matches(order, transfer, 0, grace))
+				.toList();
+		List<VipOrder> expiredMatches = pendingMatches.isEmpty()
+				? orders.stream()
+						.filter(order -> VipPaymentMatcher.matchesLatePayment(order, transfer, 0, grace))
+						.toList()
+				: List.of();
+		boolean recovering = pendingMatches.isEmpty();
+		VipOrder matched = pendingMatches.isEmpty()
+				? (expiredMatches.isEmpty() ? null : expiredMatches.get(0))
+				: pendingMatches.get(0);
 		if (matched == null) {
 			return CandidateOutcome.IRRELEVANT;
 		}
@@ -98,11 +119,18 @@ public class VipAutoConfirmService {
 		if (verified.verification() != TronClient.ReceiptVerification.CONFIRMED) {
 			return CandidateOutcome.DEFER;
 		}
-		if (!VipPaymentMatcher.matches(matched, verified, tronProperties.getRequiredConfirmations())) {
+		if (!(recovering
+				? VipPaymentMatcher.matchesLatePayment(matched, verified, tronProperties.getRequiredConfirmations(), grace)
+				: VipPaymentMatcher.matches(matched, verified, tronProperties.getRequiredConfirmations(), grace))) {
 			return CandidateOutcome.DEFER;
 		}
 		try {
-			vipOrderService.autoConfirm(matched.id(), verified);
+			if (recovering) {
+				vipOrderService.autoRecover(matched.id(), verified);
+			}
+			else {
+				vipOrderService.autoConfirm(matched.id(), verified);
+			}
 		}
 		catch (AdminException businessRejection) {
 			log.warn("VIP transfer rejected for order {}: {}", matched.orderNo(), businessRejection.getMessage());

@@ -16,7 +16,9 @@ test('manual withdrawal confirmation sends no second-factor data', () => {
 
   assert.ok(match, 'manual confirmation API must exist')
   assert.match(match[0], /\/withdrawals\/\$\{withdrawalId\}\/manual-confirm/)
-  assert.doesNotMatch(match[0], /totpCode|PrivateKey|txHash|batch/i)
+  // 唯一允许的请求字段是可选的外部交易哈希（留痕用，不签名、不广播、不核验）
+  assert.match(match[0], /\{ txHash: txHash\.trim\(\) \}/)
+  assert.doesNotMatch(match[0], /totpCode|PrivateKey|privateKey|batch/i)
 })
 
 test('withdrawal page removes all automatic signing and batch payout controls', () => {
@@ -33,6 +35,8 @@ test('withdrawal page removes all automatic signing and batch payout controls', 
   }
   assert.match(viewSource, /确认已外部打款/)
   assert.match(viewSource, /manualConfirmWithdrawal/)
+  // 交易哈希只能作为选填留痕字段出现在确认弹窗里
+  assert.match(viewSource, /链上交易哈希（选填，仅留痕）\s*:/)
   assert.doesNotMatch(viewSource, /totpCode|totpEnabled|2FA 验证码/)
 })
 

@@ -42,9 +42,10 @@ Idempotency-Key: <客户端生成的唯一字符串，最长 128>
 
 - 后端按当前配置计算手续费和 2 位 USDT 金额，保存 `usdt_per_50_points` 快照并冻结用户提交的全部积分。
 - 只有当前绑定 ERC20 钱包的用户可以创建申请；历史非 ERC20 钱包必须重新绑定 ERC20 后再次申请。
-- **同一用户同时只允许一笔 `PENDING`**：已存在待处理申请时返回 `409 withdrawal already pending`。
+- **同一用户同时只允许一笔 `PENDING`**：已存在待处理申请时返回 `409 withdrawal already pending`；该约束由 V34 的 `withdrawal_requests (user_id, pending_slot)` 唯一索引在数据库层兜底，不再只靠应用层单机锁。
 - 带 `Idempotency-Key` 时，同一用户重复提交同一键直接返回首次创建的申请，不会二次冻结；该键已被其他用户使用时返回 `409 idempotency key is already used`；键超过 128 字符返回 `400`。
-- 当前 Android 客户端未发送 `Idempotency-Key`，重复提交保护由"单笔 `PENDING`"约束承担。
+- Android（Flutter）客户端会对同一金额的重试复用同一 `Idempotency-Key`（成功后清空、换金额或换登录态时重建），因此超时重试拿回的是同一笔申请而不是 409。
+- **超时自动拒绝**：超过 `REELSHORT_WITHDRAWAL_PENDING_TIMEOUT`（默认 `72h`）仍未被审核的申请由 `WithdrawalExpiryService` 自动拒绝并释放冻结积分（`reviewed_by=system`，审计 `WITHDRAWAL_EXPIRED`），避免一笔没人处理的申请永久冻住余额并挡住后续申请。
 
 ### 钱包写操作
 
@@ -60,7 +61,15 @@ Idempotency-Key: <客户端生成的唯一字符串，最长 128>
 
 ### `POST /api/admin/withdrawals/{id}/manual-confirm`
 
-要求 `WITHDRAWAL_WRITE`。该接口没有请求体；管理员须已完成后台登录，不要求再次输入验证码。
+要求 `WITHDRAWAL_WRITE`。管理员须已完成后台登录，不要求再次输入验证码。
+
+可选请求体（留痕用，不核验链上）：
+
+```json
+{ "txHash": "<64 位十六进制，外部钱包那笔 ERC20 转账的 TX Hash>" }
+```
+
+`txHash` 不传即保持原行为；传了会做 64 位十六进制校验，写入 `withdrawal_requests.tx_hash`（已落在另一笔提现上时返回 `409 transaction hash is already recorded on another withdrawal`）。后台确认弹窗提供该输入框，`adminNote` 保持固定文案。
 
 仅可确认 `PENDING` 的 ERC20 申请；重复确认幂等。成功后在**同一事务**内：
 
@@ -69,7 +78,7 @@ Idempotency-Key: <客户端生成的唯一字符串，最长 128>
 3. 将申请标记为 `APPROVED`；
 4. 写入 `WITHDRAWAL_MANUAL_CONFIRMED` 审计记录。
 
-管理员必须在调用前完成外部钱包转账；该接口不接收或校验交易哈希，不签名、不广播、不核验链上交易。
+管理员必须在调用前完成外部钱包转账；该接口不签名、不广播、不核验链上交易，`txHash` 只作为事后对账依据。
 
 存在 `SIGNING`/`PREPARED`/`BROADCASTED` 的 `ACTIVE` attempt 时返回 `409 automatic payout attempt is still active`，需要先作废该 attempt。
 
@@ -114,6 +123,8 @@ GET /api/admin/withdrawals/stats?range=CUSTOM&fromDate=2026-09-01&toDate=2026-09
 ## 数据迁移
 
 V27 将历史 `PENDING` 的非 ERC20 提现标记为 `REJECTED` 并释放对应冻结积分；历史已处理记录保持只读，不删除。
+
+V34 新增 `withdrawal_requests.pending_slot` 哨兵列与 `(user_id, pending_slot)` 唯一约束（`H2` 不支持部分索引，故沿用 `vip_orders` 的手法），并为历史重复 `PENDING` 做一次性善后：保留最早一笔，其余标记 `REJECTED`（`reviewed_by=system`）并按仍 `PENDING` 的申请重算这些用户的 `frozen_points`。
 
 V28 新增可空 `usdt_per_50_points` 快照列，只供新申请写入；历史提现的 `usdt_amount`、旧比例和旧人民币快照不回填、不重算。
 

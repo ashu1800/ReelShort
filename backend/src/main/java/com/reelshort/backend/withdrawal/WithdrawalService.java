@@ -2,6 +2,8 @@ package com.reelshort.backend.withdrawal;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,6 +16,7 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +54,7 @@ public class WithdrawalService {
 	private final TronProperties tronProperties;
 	private final BscProperties bscProperties;
 	private final AdminAuditService adminAuditService;
+	private final Duration pendingTimeout;
 	private final ReentrantLock payoutExecutionLock = new ReentrantLock();
 
 	public WithdrawalService(WithdrawalRequestRepository withdrawalRequestRepository,
@@ -63,7 +67,8 @@ public class WithdrawalService {
 			PayoutAttemptReconciler payoutAttemptReconciler,
 			WithdrawalPayoutAttemptRepository payoutAttemptRepository,
 			EthereumProperties ethereumProperties, TronProperties tronProperties, BscProperties bscProperties,
-			AdminAuditService adminAuditService) {
+			AdminAuditService adminAuditService,
+			@Value("${reelshort.withdrawal.pending-timeout:72h}") Duration pendingTimeout) {
 		this.withdrawalRequestRepository = withdrawalRequestRepository;
 		this.userWalletRepository = userWalletRepository;
 		this.pointAccountRepository = pointAccountRepository;
@@ -79,6 +84,11 @@ public class WithdrawalService {
 		this.tronProperties = tronProperties;
 		this.bscProperties = bscProperties;
 		this.adminAuditService = adminAuditService;
+		if (pendingTimeout == null || pendingTimeout.compareTo(Duration.ofHours(1)) < 0
+				|| pendingTimeout.compareTo(Duration.ofDays(30)) > 0) {
+			throw new IllegalArgumentException("reelshort.withdrawal.pending-timeout must be between 1h and 30d");
+		}
+		this.pendingTimeout = pendingTimeout;
 	}
 
 	/**
@@ -265,10 +275,31 @@ public class WithdrawalService {
 
 	@Transactional
 	public WithdrawalResponse manualConfirm(UUID withdrawalId, String adminUsername) {
-		return withPayoutExecutionLock(() -> manualConfirmLocked(withdrawalId, adminUsername));
+		return manualConfirm(withdrawalId, null, adminUsername);
 	}
 
-	private WithdrawalResponse manualConfirmLocked(UUID withdrawalId, String adminUsername) {
+	/**
+	 * 管理员在外部钱包打完款后单笔确认。可选传入链上交易哈希作为留痕依据（不核验链上、不签名、不广播），
+	 * 否则事后无法把这笔提现与链上转账对上。
+	 */
+	@Transactional
+	public WithdrawalResponse manualConfirm(UUID withdrawalId, String txHash, String adminUsername) {
+		String normalizedTxHash = normalizePayoutTxHash(txHash);
+		return withPayoutExecutionLock(() -> manualConfirmLocked(withdrawalId, normalizedTxHash, adminUsername));
+	}
+
+	private String normalizePayoutTxHash(String txHash) {
+		if (txHash == null || txHash.isBlank()) {
+			return null;
+		}
+		String normalized = txHash.trim().toLowerCase(java.util.Locale.ROOT);
+		if (!normalized.matches("[0-9a-f]{64}")) {
+			throw new AdminException(400, "payout transaction hash must be 64 hex characters");
+		}
+		return normalized;
+	}
+
+	private WithdrawalResponse manualConfirmLocked(UUID withdrawalId, String txHash, String adminUsername) {
 		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
 		if (!"ERC20".equals(request.network())) {
 			throw new AdminException(409, "only ERC20 withdrawals can be manually confirmed");
@@ -278,6 +309,13 @@ public class WithdrawalService {
 		}
 		if (request.status() != WithdrawalStatus.PENDING) {
 			throw new AdminException(409, "withdrawal is not pending");
+		}
+		if (txHash != null) {
+			withdrawalRequestRepository.findByTxHash(txHash).ifPresent(existing -> {
+				if (!existing.id().equals(withdrawalId)) {
+					throw new AdminException(409, "transaction hash is already recorded on another withdrawal");
+				}
+			});
 		}
 		WithdrawalPayoutAttempt active = payoutAttemptRepository
 				.findByWithdrawalRequestIdAndActiveSlot(request.id(), "ACTIVE").orElse(null);
@@ -297,11 +335,11 @@ public class WithdrawalService {
 			// PointTransaction.withdrawal 自带幂等键 withdrawal:<id>，重复确认不会写入第二条。
 			pointTransactionRepository.save(PointTransaction.withdrawal(request.userId(),
 					request.totalDeductedPoints(), account.balance(), request.id().toString()));
-			request.approve(null, "manual external ERC20 payout confirmed", adminUsername);
+			request.approve(txHash, "manual external ERC20 payout confirmed", adminUsername);
 			return adminResponse(withdrawalRequestRepository.save(request), active);
 		});
 		recordAuditSafely(adminUsername, "WITHDRAWAL_MANUAL_CONFIRMED", withdrawalId,
-				payoutAuditSummary(request, "MANUAL_CONFIRMED", null));
+				payoutAuditSummary(request, "MANUAL_CONFIRMED", txHash));
 		return response;
 	}
 
@@ -375,32 +413,9 @@ public class WithdrawalService {
 		WithdrawalRequest request = null;
 		try {
 			request = withdrawalForUpdate(withdrawalId);
-			WithdrawalRequest lockedRequest = request;
-			WithdrawalResponse response = userActionLocks.withUserLock(lockedRequest.userId(), () -> {
-				if (lockedRequest.status() != WithdrawalStatus.PENDING) {
-					throw new AdminException(400, "withdrawal is not pending");
-				}
-				if (payoutAttemptRepository.findByWithdrawalRequestIdAndActiveSlot(withdrawalId, "ACTIVE").isPresent()) {
-					throw new AdminException(409, "withdrawal payout is active");
-				}
-				PointAccount account = accountEntityForUpdate(lockedRequest.userId());
-				try {
-					account.releaseFrozen(lockedRequest.totalDeductedPoints());
-				}
-				catch (IllegalStateException exception) {
-					throw new AdminException(400, exception.getMessage());
-				}
-				pointAccountRepository.save(account);
-				try {
-					lockedRequest.reject(reason.trim(), adminUsername);
-				}
-				catch (IllegalStateException exception) {
-					throw new AdminException(400, exception.getMessage());
-				}
-				return adminResponse(withdrawalRequestRepository.save(lockedRequest));
-			});
+			WithdrawalResponse response = rejectLocked(request, reason, adminUsername);
 			recordAuditSafely(adminUsername, "WITHDRAWAL_REJECTED", withdrawalId,
-					payoutAuditSummary(lockedRequest, WithdrawalStatus.REJECTED.name(), lockedRequest.txHash()));
+					payoutAuditSummary(request, WithdrawalStatus.REJECTED.name(), request.txHash()));
 			return response;
 		}
 		catch (RuntimeException exception) {
@@ -410,6 +425,55 @@ public class WithdrawalService {
 			recordAuditSafely(adminUsername, "WITHDRAWAL_REJECT_FAILED", withdrawalId, summary);
 			throw exception;
 		}
+	}
+
+	/** 已超过 `reelshort.withdrawal.pending-timeout` 仍未审核的申请（不包含已进入打款流程的）。 */
+	@Transactional(readOnly = true)
+	public List<UUID> stalePendingWithdrawalIds() {
+		return withdrawalRequestRepository
+				.findByStatusAndCreatedAtBefore(WithdrawalStatus.PENDING, OffsetDateTime.now().minus(pendingTimeout))
+				.stream().map(WithdrawalRequest::id).toList();
+	}
+
+	/**
+	 * 超时自动拒绝：释放冻结积分并写审计，避免一笔没人处理的申请永久冻住用户余额并挡住后续申请。
+	 * 已进入打款流程（ACTIVE attempt）的申请会被 {@link #rejectLocked} 拒绝，不会误释资金。
+	 */
+	@Transactional
+	public WithdrawalResponse expireStale(UUID withdrawalId) {
+		WithdrawalRequest request = withdrawalForUpdate(withdrawalId);
+		WithdrawalResponse response = rejectLocked(request, "auto rejected: no review within " + pendingTimeout,
+				"system");
+		recordAuditSafely("system", "WITHDRAWAL_EXPIRED", withdrawalId,
+				payoutAuditSummary(request, WithdrawalStatus.REJECTED.name(), request.txHash()));
+		return response;
+	}
+
+	private WithdrawalResponse rejectLocked(WithdrawalRequest lockedRequest, String reason, String reviewedBy) {
+		UUID withdrawalId = lockedRequest.id();
+		return userActionLocks.withUserLock(lockedRequest.userId(), () -> {
+			if (lockedRequest.status() != WithdrawalStatus.PENDING) {
+				throw new AdminException(400, "withdrawal is not pending");
+			}
+			if (payoutAttemptRepository.findByWithdrawalRequestIdAndActiveSlot(withdrawalId, "ACTIVE").isPresent()) {
+				throw new AdminException(409, "withdrawal payout is active");
+			}
+			PointAccount account = accountEntityForUpdate(lockedRequest.userId());
+			try {
+				account.releaseFrozen(lockedRequest.totalDeductedPoints());
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(400, exception.getMessage());
+			}
+			pointAccountRepository.save(account);
+			try {
+				lockedRequest.reject(reason.trim(), reviewedBy);
+			}
+			catch (IllegalStateException exception) {
+				throw new AdminException(400, exception.getMessage());
+			}
+			return adminResponse(withdrawalRequestRepository.save(lockedRequest));
+		});
 	}
 
 	/**

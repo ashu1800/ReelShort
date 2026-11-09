@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -42,14 +43,14 @@ class VipOrderServiceTests {
 		when(configs.intValue(SystemConfigRegistry.VIP_ORDER_TIMEOUT_MINUTES)).thenReturn(20);
 		when(configs.stringValue(SystemConfigRegistry.VIP_COLLECTION_ADDRESS))
 				.thenReturn("TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE");
-		when(orders.findPendingForUpdate()).thenReturn(List.of());
+		when(orders.findByStatusOrderByCreatedAtAsc("PENDING")).thenReturn(List.of());
 		when(orders.save(any(VipOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
 	}
 
 	@Test
 	void createReturnsExistingUnexpiredPendingOrderForSameUser() {
 		VipOrder existing = VipOrder.create(user.id(), "VIP-existing", new BigDecimal("15"), 1, 20);
-		when(orders.findPendingForUpdate()).thenReturn(List.of(existing));
+		when(orders.findByStatusOrderByCreatedAtAsc("PENDING")).thenReturn(List.of(existing));
 
 		VipOrder result = service.create(user.id());
 
@@ -95,7 +96,7 @@ class VipOrderServiceTests {
 	void allocationSkipsPayableAmountUsedByOrderCreatedAtAnotherBasePrice() {
 		VipOrder oldPriceOrder = VipOrder.create(UUID.randomUUID(), "VIP-old-price", new BigDecimal("14.99"),
 				2, 20, "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");
-		when(orders.findPendingForUpdate()).thenReturn(List.of(oldPriceOrder));
+		when(orders.findByStatusOrderByCreatedAtAsc("PENDING")).thenReturn(List.of(oldPriceOrder));
 
 		VipOrder created = service.create(user.id());
 
@@ -118,13 +119,27 @@ class VipOrderServiceTests {
 	}
 
 	@Test
-	void creationLocksOrdersBeforeUserToMatchConfirmationLockOrder() {
+	void creationTakesAllocationLockBeforeTheUserRow() {
 		service.create(user.id());
 
 		InOrder locks = inOrder(orders, users);
 		locks.verify(orders).lockAllocation();
-		locks.verify(orders).findPendingForUpdate();
+		locks.verify(orders).findByStatusOrderByCreatedAtAsc("PENDING");
 		locks.verify(users).findByIdForUpdate(user.id());
+	}
+
+	@Test
+	void creationLocksOnlyTheOverdueCandidatesInsteadOfEveryPendingOrder() {
+		VipOrder stillLive = VipOrder.create(user.id(), "VIP-not-yet-due", new BigDecimal("15"), 1, 20,
+				"TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");
+		when(orders.findExpiredPendingIds(any())).thenReturn(List.of(stillLive.id()));
+		when(orders.findByIdForUpdate(stillLive.id())).thenReturn(Optional.of(stillLive));
+
+		service.create(user.id());
+
+		// 无锁查出候选后只对它们逐行加锁复核，且未到期的候选不会被误过期
+		verify(orders).findByIdForUpdate(stillLive.id());
+		assertThat(stillLive.status()).isEqualTo("PENDING");
 	}
 
 	@Test
@@ -134,14 +149,14 @@ class VipOrderServiceTests {
 						new BigDecimal("15"), suffix, 20, "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
 						"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"))
 				.toList();
-		when(orders.findPendingForUpdate()).thenReturn(occupied);
+		when(orders.findByStatusOrderByCreatedAtAsc("PENDING")).thenReturn(occupied);
 
 		assertThatThrownBy(() -> service.create(user.id()))
 				.isInstanceOf(AdminException.class)
 				.hasMessageContaining("too many pending VIP orders");
 
 		VipOrder own = VipOrder.create(user.id(), "VIP-own", new BigDecimal("15"), 1, 20);
-		when(orders.findPendingForUpdate()).thenReturn(List.of(own));
+		when(orders.findByStatusOrderByCreatedAtAsc("PENDING")).thenReturn(List.of(own));
 		assertThat(IntStream.range(0, 100).mapToObj(index -> service.create(user.id())).distinct())
 				.containsExactly(own);
 	}

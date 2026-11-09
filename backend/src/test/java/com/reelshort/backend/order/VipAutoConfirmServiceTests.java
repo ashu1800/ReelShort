@@ -165,4 +165,60 @@ class VipAutoConfirmServiceTests {
 		verify(orders, never()).autoConfirm(order.id(), failed);
 		verify(orders).recordTerminalReceiptFailure(order.id(), failed.txHash());
 	}
+
+	@Test
+	void expiredOrderIsAutoRecoveredWhenTheScanMissedTheOnTimePayment() {
+		VipOrderService orders = mock(VipOrderService.class);
+		TronClient tron = mock(TronClient.class);
+		TronProperties properties = new TronProperties();
+		VipTransferScanCursorService cursors = mock(VipTransferScanCursorService.class);
+		VipAutoConfirmService service = new VipAutoConfirmService(orders, tron, properties, cursors);
+		VipOrder expired = VipOrder.create(UUID.randomUUID(), "VIP-missed", new BigDecimal("15"), 1, 20,
+				ADDRESS, CONTRACT);
+		expired.expire();
+		TronClient.IncomingTransfer paidOnTime = new TronClient.IncomingTransfer("f".repeat(64),
+				expired.payableAmount(), ADDRESS, CONTRACT, expired.createdAt().plusSeconds(5),
+				properties.getRequiredConfirmations(), true);
+		when(orders.pendingOrders()).thenReturn(List.of());
+		when(orders.recoverableExpiredOrders()).thenReturn(List.of(expired));
+		when(cursors.start(ADDRESS, CONTRACT, expired.createdAt()))
+				.thenReturn(new VipTransferScanCursorService.State(UUID.randomUUID(), null));
+		when(tron.fetchIncomingUsdtTransferPage(ADDRESS, CONTRACT, 200, null))
+				.thenReturn(new TronClient.IncomingTransferPage(List.of(paidOnTime), null));
+		when(tron.verifyIncomingTransfer(paidOnTime)).thenReturn(paidOnTime);
+
+		service.autoConfirmPendingOrders();
+
+		verify(orders).autoRecover(expired.id(), paidOnTime);
+		verify(orders, never()).autoConfirm(expired.id(), paidOnTime);
+	}
+
+	@Test
+	void pendingOrderWinsTheAmountSlotOverAnExpiredOrder() {
+		VipOrderService orders = mock(VipOrderService.class);
+		TronClient tron = mock(TronClient.class);
+		TronProperties properties = new TronProperties();
+		VipTransferScanCursorService cursors = mock(VipTransferScanCursorService.class);
+		VipAutoConfirmService service = new VipAutoConfirmService(orders, tron, properties, cursors);
+		VipOrder expired = VipOrder.create(UUID.randomUUID(), "VIP-stale", new BigDecimal("15"), 1, 20,
+				ADDRESS, CONTRACT);
+		expired.expire();
+		VipOrder pending = VipOrder.create(UUID.randomUUID(), "VIP-live", new BigDecimal("15"), 1, 20,
+				ADDRESS, CONTRACT);
+		TronClient.IncomingTransfer transfer = new TronClient.IncomingTransfer("g".repeat(64),
+				pending.payableAmount(), ADDRESS, CONTRACT, pending.createdAt().plusSeconds(5),
+				properties.getRequiredConfirmations(), true);
+		when(orders.pendingOrders()).thenReturn(List.of(pending));
+		when(orders.recoverableExpiredOrders()).thenReturn(List.of(expired));
+		when(cursors.start(ADDRESS, CONTRACT, expired.createdAt()))
+				.thenReturn(new VipTransferScanCursorService.State(UUID.randomUUID(), null));
+		when(tron.fetchIncomingUsdtTransferPage(ADDRESS, CONTRACT, 200, null))
+				.thenReturn(new TronClient.IncomingTransferPage(List.of(transfer), null));
+		when(tron.verifyIncomingTransfer(transfer)).thenReturn(transfer);
+
+		service.autoConfirmPendingOrders();
+
+		verify(orders).autoConfirm(pending.id(), transfer);
+		verify(orders, never()).autoRecover(expired.id(), transfer);
+	}
 }
