@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
 import '../../theme/app_shapes.dart';
+import 'app_panel.dart';
 
 /// Vertical padding inside a ledger row.
 const EdgeInsets _rowPadding = EdgeInsets.symmetric(vertical: 12);
@@ -33,7 +34,7 @@ const double _stackFontScale = 1.6;
 /// to the trailing edge when the row is wide enough. Layout is responsive from
 /// 320 px to 1440 px: the value never truncates a figure, it wraps to its own
 /// line instead.
-class AppLedgerRow extends StatelessWidget {
+class AppLedgerRow extends StatelessWidget implements AppListSectionRow {
   /// Creates a ledger row.
   const AppLedgerRow({
     required this.label,

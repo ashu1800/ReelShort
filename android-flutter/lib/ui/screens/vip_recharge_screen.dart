@@ -352,12 +352,15 @@ class _PendingOrderState extends State<_PendingOrder> {
           label: widget.copy.vipPayOrderNo,
           value: widget.order.orderNo,
           valueColor: colors.textPrimary,
+          // The card draws the hairline between two consecutive rows.
+          divider: false,
         ),
         AppLedgerRow(
           label: AppUiCopy.vipValidity,
           value: widget.order.expiresAt == null
               ? '--'
               : dateOnlyLabel(widget.order.expiresAt),
+          divider: false,
         ),
         AppListRow(
           title: widget.copy.vipPayAddress,

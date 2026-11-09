@@ -142,7 +142,7 @@ class AppSectionHeader extends StatelessWidget {
 }
 
 /// A panel that groups one section: optional header, hairline separators
-/// between children and none after the last one.
+/// between consecutive rows and none anywhere else.
 class AppSectionCard extends StatelessWidget {
   /// Creates a section card.
   const AppSectionCard({
@@ -151,7 +151,6 @@ class AppSectionCard extends StatelessWidget {
     this.actionLabel,
     this.onAction,
     this.trailing,
-    this.padding,
     super.key,
   });
 
@@ -170,15 +169,13 @@ class AppSectionCard extends StatelessWidget {
   /// Optional trailing widget of the header.
   final Widget? trailing;
 
-  /// Overrides the panel padding (defaults to zero so rows own their padding).
-  final EdgeInsetsGeometry? padding;
-
   @override
   Widget build(BuildContext context) {
     final AppColors colors = Theme.of(context).extension<AppColors>()!;
     final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
     final AppSpacing spacing = appSpacingOf(context);
     final List<Widget> body = <Widget>[];
+    bool previousWasRow = false;
 
     if (title != null) {
       body.add(
@@ -200,8 +197,12 @@ class AppSectionCard extends StatelessWidget {
     }
 
     for (int i = 0; i < children.length; i++) {
-      body.add(children[i]);
-      if (i != children.length - 1) {
+      final Widget child = children[i];
+      final bool isRow = child is AppListSectionRow;
+      // A hairline separates two consecutive rows. A block of copy or a form is
+      // one unit, so a rule above it would cut it off from the row it belongs
+      // to - and a hero figure never wants a line drawn through its card.
+      if (i != 0 && isRow && previousWasRow) {
         body.add(
           Padding(
             padding: EdgeInsets.only(left: spacing.listDividerInset),
@@ -213,10 +214,30 @@ class AppSectionCard extends StatelessWidget {
           ),
         );
       }
+      previousWasRow = isRow;
+      // Exactly one inner content edge: a row paints its own [AppSpacing.panelPadding]
+      // inset (and its own vertical rhythm), so the card leaves it untouched.
+      // Everything else (an amount block, copy, a form, a button) is inset here,
+      // and the first/last child also carries the card's vertical breathing
+      // room - otherwise a figure or a field used to draw straight under the
+      // card's own border.
+      body.add(
+        child is AppSelfInsetRow
+            ? child
+            : Padding(
+                padding: EdgeInsets.fromLTRB(
+                  spacing.panelPadding,
+                  i == 0 ? spacing.space3 : 0,
+                  spacing.panelPadding,
+                  i == children.length - 1 ? spacing.space3 : 0,
+                ),
+                child: child,
+              ),
+      );
     }
-
     return AppPanel(
-      padding: padding ?? EdgeInsets.symmetric(vertical: spacing.space1),
+      // Every inner edge belongs to the children above.
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,

@@ -36,6 +36,7 @@ import '../../ui/components/app_amount_block.dart';
 import '../../ui/components/app_button.dart';
 import '../../ui/components/app_empty_state.dart';
 import '../../ui/components/app_loading.dart';
+import '../../ui/components/app_panel.dart';
 import '../../ui/components/app_section.dart';
 import '../../ui/components/app_status_pill.dart';
 import '../../ui/components/app_text_field.dart';
@@ -134,10 +135,7 @@ class _AvailableHeader extends StatelessWidget {
     if (summary == null) {
       // Neutral plate while the snapshot is unknown - never a zero balance.
       return AppSectionCard(
-        children: <Widget>[
-          const AppSkeletonText(lines: 2),
-          SizedBox(height: spacing.space2),
-        ],
+        children: <Widget>[const AppSkeletonText(lines: 2)],
       );
     }
 
@@ -155,13 +153,17 @@ class _AvailableHeader extends StatelessWidget {
           unit: copy.listPointsLabel,
           size: AppAmountSize.large,
         ),
-        if (lines.isNotEmpty)
+        if (lines.isNotEmpty) ...<Widget>[
+          // The summary belongs to the figure, so it sits inside the same block
+          // rather than reading as the first line of the next section.
+          SizedBox(height: spacing.space2),
           Text(
             lines.first,
             style: roles.caption.copyWith(
               color: Theme.of(context).extension<AppColors>()!.textSecondary,
             ),
           ),
+        ],
       ],
     );
   }
@@ -183,9 +185,11 @@ class _WithdrawalFormSection extends StatelessWidget {
 ///
 /// Step one is the amount form; step two restates the amount and the
 /// conversion lines before dispatching
-/// [AppStateController.submitWithdrawal]. The conversion lines, the fee ceil
-/// and the truncated USDT estimate all come from the shared
-/// [withdrawalConversionLines] formatter, exactly as in the Kotlin screen.
+/// [AppStateController.submitWithdrawal]. The conversion lines - the gross
+/// USDT, the fee taken out of it and the amount that is actually paid - all
+/// come from the shared [withdrawalConversionLines] formatter. The fee is money,
+/// not points: the submitted points are deducted in full and never twice (the
+/// Kotlin reference app still carries the retired point-fee wording).
 class _WithdrawalForm extends StatefulWidget {
   const _WithdrawalForm({required this.copy});
 
@@ -331,8 +335,6 @@ class _AmountStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final AppColors colors = Theme.of(context).extension<AppColors>()!;
-    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
     final AppSpacing spacing = appSpacingOf(context);
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final WithdrawalSummary? summary = state.withdrawalSummary;
@@ -374,34 +376,17 @@ class _AmountStep extends StatelessWidget {
           inputFormatters: <TextInputFormatter>[
             FilteringTextInputFormatter.digitsOnly,
           ],
+          // The suffix lands in a fixed 48 x 48 box that centres its child, so
+          // the chip is built to fit that box: an inset-carrying pill was laid
+          // out wider than the slot, overflowed the field's own rounded edge and
+          // rendered as a stray tinted circle hanging off the control.
           suffix: (summary != null && summary.availablePoints > 0)
-              ? Padding(
-                  padding: EdgeInsets.only(right: spacing.space1),
-                  child: InkWell(
-                    onTap: () {
-                      final String maxStr = summary.availablePoints.toString();
-                      controller.text = maxStr;
-                      onChanged(maxStr);
-                    },
-                    borderRadius: BorderRadius.circular(shapes.radiusPill),
-                    child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: spacing.space2,
-                        vertical: spacing.space1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.premiumSurface,
-                        borderRadius: BorderRadius.circular(shapes.radiusPill),
-                      ),
-                      child: Text(
-                        'Max',
-                        style: roles.caption.copyWith(
-                          color: colors.accentPrimary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
+              ? _MaxChip(
+                  onTap: () {
+                    final String maxStr = summary.availablePoints.toString();
+                    controller.text = maxStr;
+                    onChanged(maxStr);
+                  },
                 )
               : null,
           onChanged: onChanged,
@@ -576,7 +561,12 @@ class _WithdrawalHistorySection extends StatelessWidget {
 /// The status colour is derived from the label's semantics ("Pending",
 /// "Completed", "Rejected"), never from the raw status string, so an
 /// `APPROVED` record takes the success accent - the deliberate G16/D11 fix.
-class _WithdrawalHistoryRow extends StatelessWidget {
+///
+/// The row paints its own horizontal inset: the card leaves a self-inset child
+/// at full width, so that inset is the only thing keeping the amount off the
+/// card's border.
+class _WithdrawalHistoryRow extends StatelessWidget
+    implements AppListSectionRow, AppSelfInsetRow {
   const _WithdrawalHistoryRow({required this.record, required this.copy});
 
   final WithdrawalRecord record;
@@ -608,46 +598,123 @@ class _WithdrawalHistoryRow extends StatelessWidget {
       _ => (Icons.info_outline, AppStatusTone.neutral),
     };
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                '${record.pointAmount} pts · ${record.usdtAmount} USDT',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: typography.numeric,
+    // The row paints its own inset: the card leaves a self-inset child at full
+    // width, so this is the only thing keeping the amount off the border.
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: spacing.panelPadding,
+        vertical: spacing.space3,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  '${record.pointAmount} pts · ${record.usdtAmount} USDT',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: typography.numeric,
+                ),
               ),
-            ),
-            SizedBox(width: spacing.space2),
-            // Flexed so the status pill's label ellipsises at large text scales
-            // instead of overflowing the row.
-            Flexible(
-              child: AppStatusPill(
-                tone: status.$2,
-                icon: status.$1,
-                label: statusLabel,
+              SizedBox(width: spacing.space2),
+              // Flexed so the status pill's label ellipsises at large text
+              // scales instead of overflowing the row.
+              Flexible(
+                child: AppStatusPill(
+                  tone: status.$2,
+                  icon: status.$1,
+                  label: statusLabel,
+                ),
               ),
-            ),
-          ],
-        ),
-        SizedBox(height: spacing.space1),
-        Text(
-          '${record.network} · ${record.walletAddress} · ${record.createdAt}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: typography.caption.copyWith(color: colors.textSecondary),
-        ),
-        if (detail != null)
+            ],
+          ),
+          SizedBox(height: spacing.space1),
           Text(
-            detail,
+            '${record.network} · ${record.walletAddress} · ${record.createdAt}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: typography.caption.copyWith(color: colors.textSecondary),
           ),
-        SizedBox(height: spacing.space2),
-      ],
+          if (detail != null) ...<Widget>[
+            SizedBox(height: spacing.space1),
+            Text(
+              detail,
+              style: typography.caption.copyWith(color: colors.textSecondary),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
 
+/// Extent of the amount field's suffix slot, in logical pixels.
+///
+/// Material reserves a 48 x 48 box for a suffix and centres its child in it, so
+/// the chip is built to that box: a wider pill was laid out past the slot and
+/// spilled over the field's own rounded edge.
+const double _maxChipSlotExtent = 48;
+
+/// The "Max" chip that fills the amount field with the available balance.
+class _MaxChip extends StatelessWidget {
+  const _MaxChip({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final AppColors colors = Theme.of(context).extension<AppColors>()!;
+    final AppShapes shapes = Theme.of(context).extension<AppShapes>()!;
+    final AppSpacing spacing = appSpacingOf(context);
+    final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
+
+    return Semantics(
+      container: true,
+      button: true,
+      label: AppUiCopy.withdrawalMaxAction,
+      // The action belongs to this node: `excludeSemantics` replaces the
+      // descendant semantics, so the ink's own action would be dropped.
+      onTap: onTap,
+      excludeSemantics: true,
+      child: SizedBox(
+        width: _maxChipSlotExtent,
+        height: _maxChipSlotExtent,
+        // The ink fills the slot, so the whole 48 x 48 box is the touch target
+        // and the capsule only paints inside it. A fixed slot cannot grow with
+        // the ambient text scale, so the capsule scales down instead of spilling
+        // out of the field at 3.2x; the label is announced by the node above,
+        // not by the painted glyphs.
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(shapes.radiusPill),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: spacing.space2,
+                  vertical: spacing.space1,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.premiumSurface,
+                  borderRadius: BorderRadius.circular(shapes.radiusPill),
+                ),
+                child: Text(
+                  AppUiCopy.withdrawalMaxAction,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: roles.caption.copyWith(
+                    color: colors.accentPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -25,6 +25,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_shapes.dart';
 import '../../theme/app_spacing.dart';
+import 'app_panel.dart';
 
 /// Text scale above which a labelled [AppListRow.trailing] action gives up its
 /// intrinsic width and shares the row with the title column.
@@ -34,7 +35,8 @@ import '../../theme/app_spacing.dart';
 const double trailingIntrinsicMaxTextScale = 1.6;
 
 /// One row of a settings/entry list.
-class AppListRow extends StatelessWidget {
+class AppListRow extends StatelessWidget
+    implements AppListSectionRow, AppSelfInsetRow {
   /// Creates a list row.
   const AppListRow({
     required this.title,

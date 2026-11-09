@@ -112,3 +112,26 @@ class _AppPanelState extends State<AppPanel> {
     );
   }
 }
+
+/// Contract for a card child that is one *row* of a list.
+///
+/// `AppSectionCard` draws a hairline between two consecutive rows and nowhere
+/// else: a block of copy or a form is one unit, so a rule above it would cut it
+/// off from the row it belongs to. Rows implement this marker; arbitrary
+/// content does not.
+///
+/// A marker rather than a `bool` because the card receives `Widget`s: a
+/// call-site flag has to be repeated correctly at every call site, and
+/// type-sniffing concrete widgets would make the layout depend on which
+/// component a screen happened to pick.
+abstract interface class AppListSectionRow {}
+
+/// Contract for a card child that paints its own horizontal inset.
+///
+/// The card keeps exactly one inner content edge: a child implementing this
+/// paints its own [AppSpacing.panelPadding] inset and is therefore laid out
+/// untouched, while every other child is wrapped in that inset by the card.
+///
+/// Before this split neither side was inset at all, so a field, a button or a
+/// hero figure sitting in a card drew straight under the card's own border.
+abstract interface class AppSelfInsetRow {}

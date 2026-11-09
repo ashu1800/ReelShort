@@ -118,6 +118,9 @@ abstract final class AppUiCopy {
   /// Withdrawal: empty title of the withdrawal record list.
   static const String withdrawalRecordsEmptyTitle = 'No withdrawals yet';
 
+  /// Withdrawal: label of the chip that fills the amount with the balance.
+  static const String withdrawalMaxAction = 'Max';
+
   /// Account: section heading of the shortcut entries.
   static const String accountShortcutsSection = 'Shortcuts';
 

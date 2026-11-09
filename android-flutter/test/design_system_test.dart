@@ -2019,6 +2019,65 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('a section card insets its blocks and rules only between rows', (
+    WidgetTester tester,
+  ) async {
+    // Regression for the withdrawal/points cards: the card painted no inner
+    // content edge, so a figure, a field or a button drew straight under the
+    // card's own border, and a hairline cut through a block that belongs
+    // together (a figure and its caption, a pill and its field).
+    final double inset =
+        AppSpacing.standard.panelPadding + AppShapes.light.strokeHairline;
+    final double verticalInset =
+        AppSpacing.standard.space3 + AppShapes.light.strokeHairline;
+    await tester.pumpWidget(
+      host(
+        const AppSectionCard(
+          children: <Widget>[
+            Text('Available'),
+            Text('746 pts'),
+            AppListRow(
+              title: 'Points',
+              trailing: Text('1,234'),
+              divider: false,
+            ),
+            AppListRow(title: 'Orders', trailing: Text('3'), divider: false),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final Rect card = tester.getRect(find.byType(AppPanel));
+    final Rect block = tester.getRect(find.text('Available'));
+    expect(block.left, card.left + inset);
+    expect(block.top, card.top + verticalInset);
+
+    // One hairline, between the two rows: not between the two blocks of copy,
+    // and none after the last row.
+    expect(find.byType(Divider), findsOneWidget);
+    final Rect divider = tester.getRect(find.byType(Divider));
+    final Rect firstRow = tester.getRect(find.text('Points'));
+    final Rect lastRow = tester.getRect(find.text('Orders'));
+    expect(divider.top, greaterThan(firstRow.bottom));
+    expect(divider.top, lessThan(lastRow.top));
+    expect(
+      divider.left,
+      card.left +
+          AppShapes.light.strokeHairline +
+          AppSpacing.standard.listDividerInset,
+    );
+
+    // A row paints its own inset, so the card does not add a second one: the
+    // text sits one row inset in, not two.
+    expect(
+      tester.getRect(find.text('Points')).left,
+      card.left +
+          AppShapes.light.strokeHairline +
+          AppSpacing.standard.space4,
+    );
+  });
+
   testWidgets('segmented control marks the selection with a checkmark', (
     WidgetTester tester,
   ) async {

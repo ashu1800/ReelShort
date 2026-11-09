@@ -215,6 +215,22 @@ the keyboard with its own resize. `pageBottomInset` is reserved inside the
 scroll view, which is what keeps a section heading from ending up half-hidden
 behind the navigation bar.
 
+### 4.2 Section cards
+
+`AppSectionCard` keeps exactly **one** inner content edge, and the card itself
+carries no padding:
+
+| Child | Inner edge |
+| --- | --- |
+| `AppListRow` / `AppLedgerRow` / any `AppSelfInsetRow` | The row paints its own `panelPadding` horizontally and `space3` vertically; the card leaves it untouched |
+| Anything else (an amount block, copy, a form, a button) | `panelPadding` horizontally; `space3` on the first and last child only, so a stacked block is not double-spaced |
+
+A hairline is drawn **only between two consecutive rows** — never between a
+block and the copy that belongs to it, and never after the last row. Before this
+split the card painted no inner edge at all, so a figure, a field or a button
+drew straight under the card's own border (the withdrawal and points cards on a
+360 dp device).
+
 ---
 
 ## 5. The Episode Spine and the episode sheet
