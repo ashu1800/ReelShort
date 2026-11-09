@@ -348,25 +348,26 @@ List<String> withdrawalConversionLines(
         '${minimumUsdt.toUiDecimal()} USDT',
   ];
   if (pointAmount > 0) {
-    // Long arithmetic so a large amount cannot overflow, as in the Kotlin source.
-    final int fee = summary.feePercent > 0
-        ? ((pointAmount * summary.feePercent) + 99) ~/ 100
-        : 0;
-    final int withdrawable = pointAmount - fee;
     final _Decimal? usdtPerPoint = _Decimal.tryParsePositive(
       summary.usdtPerPoint,
     );
-    final _Decimal? usdtAmount = usdtPerPoint?.multiply(
-      _Decimal.fromInt(withdrawable),
-    ).setScale(2, _Rounding.down);
-    if (usdtAmount != null) {
-      lines.add('Estimated ${usdtAmount.toUiDecimal()} USDT');
-    }
-    if (fee > 0) {
-      lines.add(
-        'Fee: ${summary.feePercent}% ($fee pts) · You receive: $withdrawable pts '
-        '· Total deduct: $pointAmount pts',
-      );
+    // The whole submitted amount converts to USDT; the fee comes off that money
+    // and never off the points, so the two lines below always add up.
+    final _Decimal? gross = usdtPerPoint
+        ?.multiply(_Decimal.fromInt(pointAmount))
+        .setScale(2, _Rounding.down);
+    if (gross != null) {
+      final _Decimal payout = gross
+          .multiply(_Decimal.fromInt(100 - summary.feePercent))
+          .divide(100);
+      lines.add('Estimated ${gross.toUiDecimal()} USDT');
+      if (summary.feePercent > 0) {
+        final _Decimal fee = gross.subtract(payout);
+        lines.add(
+          'Fee: ${summary.feePercent}% (${fee.toUiDecimal()} USDT) · '
+          'You receive: ${payout.toUiDecimal()} USDT',
+        );
+      }
     }
   }
   return lines;
@@ -544,6 +545,18 @@ class _Decimal implements Comparable<_Decimal> {
 
   _Decimal multiply(_Decimal other) =>
       _Decimal(unscaled * other.unscaled, scale + other.scale);
+
+  /// Difference of two values at the same scale; money is always at 2.
+  _Decimal subtract(_Decimal other) {
+    assert(scale == other.scale, 'subtract needs a common scale');
+    return _Decimal(unscaled - other.unscaled, scale);
+  }
+
+  /// Divides by an integer, truncating the remainder and keeping the scale.
+  _Decimal divide(int divisor) {
+    assert(divisor != 0, 'division by zero');
+    return _Decimal(unscaled ~/ divisor, scale);
+  }
 
   _Decimal setScale(int newScale, _Rounding rounding) {
     if (newScale >= scale) {

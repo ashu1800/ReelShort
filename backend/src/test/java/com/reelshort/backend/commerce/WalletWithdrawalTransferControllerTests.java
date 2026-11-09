@@ -57,7 +57,11 @@ class WalletWithdrawalTransferControllerTests {
 				.andExpect(jsonPath("$.data.balance").value(0))
 				.andExpect(jsonPath("$.data.frozenPoints").value(0))
 				.andExpect(jsonPath("$.data.availablePoints").value(0))
-				.andExpect(jsonPath("$.data.walletAddress").doesNotExist());
+				.andExpect(jsonPath("$.data.walletAddress").doesNotExist())
+				// 最低提现门槛作用在折算总额上：3572 积分 = 10.00 USDT（10% 手续���后到账 9.00）。
+				.andExpect(jsonPath("$.data.minimumPoints").value(3572))
+				.andExpect(jsonPath("$.data.minimumUsdt").value("10"))
+				.andExpect(jsonPath("$.data.feePercent").value(10));
 	}
 
 	@Test
@@ -380,9 +384,9 @@ class WalletWithdrawalTransferControllerTests {
 							}
 							"""))
 					.andExpect(status().isOk())
-				// pointAmount=101, fee=ceil(101*10/100)=11, withdrawable=90
-				// usdt = 90 * 6.22955556 / 50 = 11.213200008 → down to 11.21
-				.andExpect(jsonPath("$.data.usdtAmount").value("11.21"))
+				// pointAmount=101 折算 101 * 6.22955556 / 50 = 12.5837… → 12.58 USDT
+				// 手续费 10% 从 USDT 里扣：12.58 * 0.9 = 11.322 → down 到 11.32（不多扣积分）
+				.andExpect(jsonPath("$.data.usdtAmount").value("11.32"))
 					.andExpect(jsonPath("$.data.usdtPer50Points").value("6.22955556"));
 
 			org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(

@@ -1,7 +1,6 @@
 package com.reelshort.backend.withdrawal;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -171,17 +170,11 @@ public class WithdrawalService {
 			}
 			int feePercent = systemConfigService.intValue(SystemConfigRegistry.WITHDRAW_FEE_PERCENT);
 			WithdrawalConversion conversion = conversion(feePercent);
-			// 需求2: pointAmount 是用户输入的扣除总额。手续费从中扣除，不再额外扣。
-			// 例如输入 1000、手续费 10%，则扣减 1000，实际提取 900。
+			// 手续费从到账 USDT 中扣，不再从积分里多扣：扣减/冻结的就是用户输入的全额。
+			// 例如输入 4000 积分、10%，折算 11.20 USDT，实付 10.08 USDT。
 			int minimum = conversion.minimumPoints();
 			if (pointAmount < minimum) {
 				throw new AdminException(400, "withdrawal amount below minimum");
-			}
-			int feeAmount = conversion.feeAmount(pointAmount);
-			// M1: 防止 feePercent 配置过高导致 withdrawable <= 0（用户全额被扣手续费）
-			int withdrawable = conversion.withdrawablePoints(pointAmount);
-			if (withdrawable <= 0) {
-				throw new AdminException(400, "fee percentage too high, no withdrawable points remain");
 			}
 			UserWallet wallet = userWalletRepository.findByUserId(userId)
 					.orElseThrow(() -> new AdminException(400, "wallet required"));
@@ -189,7 +182,7 @@ public class WithdrawalService {
 				throw new AdminException(400, "only ERC20 withdrawals are supported");
 			}
 			PointAccount account = accountEntityForUpdate(userId);
-			// 扣减总额 = pointAmount（手续费含在其中）
+			// 扣减总额 = pointAmount（手续费在 USDT 侧，不从积分里扣）
 			if (!account.canUseAvailable(pointAmount)) {
 				throw new AdminException(400, "insufficient available point balance");
 			}
@@ -200,7 +193,7 @@ public class WithdrawalService {
 				throw new AdminException(400, exception.getMessage());
 			}
 			pointAccountRepository.save(account);
-			WithdrawalRequest request = WithdrawalRequest.create(userId, pointAmount, feeAmount, conversion,
+			WithdrawalRequest request = WithdrawalRequest.create(userId, pointAmount, conversion,
 					wallet.network(), wallet.walletAddress(), key);
 			return WithdrawalResponse.from(withdrawalRequestRepository.save(request));
 		});

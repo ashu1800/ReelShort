@@ -90,6 +90,7 @@ python tool/port_app_ui_state.py  # -> lib/state/app_ui_state.dart + test/state/
 | D12 | 冗余的 `meta` 依赖 | 无 | `pubspec.yaml` 引入 `meta` 以支持生成文件里的 `@immutable` | 生成代码需要；`meta` 由 Flutter SDK 固定版本，不引入额外传递依赖 |
 | D13 | Gradle 依赖源 | `google()` / `mavenCentral()` | 阿里云镜像优先，上游仓库兜底 | 本机 `maven.google.com` 不稳定；保留上游兜底使其他网络环境同样可用 |
 | D14 | CI 打包 | `ci.yml` 只跑 Android JVM 单测 | 新增 `android-flutter` job：`pub get` / `analyze` / `test`，**不打包** | 打包任务会校验钉死的正式证书，缺 `ANDROID_SIGNING_*` 时故意失败；CI 不持有签名密钥 |
+| D15 | 提现手续费 | 从**积分**里扣：`Fee: 10% (N pts) · You receive: M pts · Total deduct: N+M pts` | 从**到账 USDT** 里扣：提交积分全额折算，手续费按 USDT 收取（`Fee: 10% (1.12 USDT) · You receive: 10.08 USDT`） | 业务规则调整（提现 10 USDT 到账 9 USDT，不再多扣积分）；Kotlin 维护版保留旧文案与旧算式，Flutter 是发布目标 |
 
 ---
 

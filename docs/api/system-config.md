@@ -18,7 +18,7 @@ Authorization: Bearer <admin-token>
 | `points.fair-mode.enabled` | `0` | 整数，`0..1` | 公平模式开关（`1` 开启）；开启后观看奖励按十分位累计。可随时切换，不破坏既有余额。 |
 | `withdraw.usdt-per-50-points` | `0.14` | 正数，最多 8 位小数，最大 `100` | 每 50 积分对应的 USDT 金额。 |
 | `withdraw.minimum-usdt` | `10` | 正数，最多 8 位小数 | 单笔提现最低到账 USDT。 |
-| `withdraw.fee-percent` | `10` | 整数，`0..100` | 从用户提交积分中扣除的提现手续费百分比。 |
+| `withdraw.fee-percent` | `10` | 整数，`0..100` | 从提现折算总额（USDT）中扣除的手续费百分比；积分按提交全额扣减，不再额外扣手续费积分。 |
 | `vip.price-usdt` | `15` | 正数，最多 8 位小数 | VIP 月费 USDT 价格。 |
 | `vip.free-episodes` | `7` | 整数，`1..100` | 非 VIP 免费可看的集数。该值同时随 `GET /api/app/points/account` 的 `freeEpisodes` 字段下发给 App，客户端据此绘制锁集边界。 |
 | `vip.collection-address` | 空 | 允许为空；非空必须是合法 TRON 地址（Base58Check） | VIP 收款地址。为空表示未配置/未开启链上 VIP 支付；保存非法地址返回 `400`。 |

@@ -25,7 +25,8 @@ import com.reelshort.backend.wallet.UserWalletRepository;
  * <p>打款执行能力默认关闭，所以自动打款路径（{@code WithdrawalPayoutIntegrationTests}）不会覆盖
  * 「提交/确认/拒绝」本身；本测试直接走 {@link WithdrawalService}，锁住三件事：
  * 提交只冻结不扣款、人工确认只扣一次且写负数 WITHDRAWAL 流水、拒绝只解冻不扣款。
- * 默认换算：每 50 积分 0.14 USDT、最低 10 USDT、手续费 10%，所以 4000 积分兑换 10.08 USDT。
+ * 默认换算：每 50 积分 0.14 USDT、最低 10 USDT、手续费 10%。4000 积分折算 11.20 USDT，
+ * 手续费从 USDT 里扣，所以到账 10.08 USDT（扣减积分仍是 4000）。
  */
 @SpringBootTest
 class WithdrawalServiceFlowTests {
@@ -71,6 +72,22 @@ class WithdrawalServiceFlowTests {
 		assertThat(stored.frozenPoints()).isEqualTo(POINTS);
 		assertThat(stored.availablePoints()).isEqualTo(1000);
 		assertThat(pointTransactionRepository.countByUserId(userId)).isZero();
+	}
+
+	@Test
+	void theDynamicMinimumIsReachedByTheTenUsdtGrossAmount() {
+		// 10 USDT 折算总额 = 3572 积分（3572 * 0.14 / 50 = 10.00），少于 1 分即低于门槛。
+		assertThatThrownBy(() -> withdrawalService.create(userId, 3571))
+				.isInstanceOf(AdminException.class)
+				.hasMessageContaining("below minimum");
+		// 3571 被拒时不能冻结任何积分，用户还能继续提交。
+		assertThat(pointAccountRepository.findByUserId(userId).orElseThrow().frozenPoints()).isZero();
+
+		WithdrawalResponse response = withdrawalService.create(userId, 3572);
+		assertThat(response.pointAmount()).isEqualTo(3572);
+		// 手续费从 USDT 里扣：10.00 - 10% = 9.00，扣减积分仍是 3572。
+		assertThat(response.usdtAmount()).isEqualTo("9");
+		assertThat(pointAccountRepository.findByUserId(userId).orElseThrow().frozenPoints()).isEqualTo(3572);
 	}
 
 	@Test

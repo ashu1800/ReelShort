@@ -10,9 +10,11 @@
 
 - `withdraw.usdt-per-50-points=0.14`，即 50 积分 = 0.14 USDT。
 - `withdraw.minimum-usdt=10`。
-- `withdraw.fee-percent=10`，手续费积分从用户提交的提现积分中扣除。
+- `withdraw.fee-percent=10`，手续费从**到账 USDT** 中扣除，不从积分里多扣。
 
-手续费积分为 `ceil(pointAmount * feePercent / 100)`，实际可提现积分为 `pointAmount - feePoints`。到账金额为 `可提现积分 * usdtPer50Points / 50`，始终向下截断到 2 位小数，不四舍五入。实际到账必须至少达到 `withdraw.minimum-usdt`；默认配置下最低到账为 `10 USDT`，最低提现积分为 3969 积分。
+折算总额为 `pointAmount * usdtPer50Points / 50`（向下截断到 2 位小数），手续费为 `折算总额 * feePercent / 100`，实际到账为 `折算总额 - 手续费`（同样向下截断，两者相加永远等于折算总额）。扣减的积分始终等于用户提交的 `pointAmount`：例如 10% 手续费下折算 10.00 USDT 的积分实际到账 9.00 USDT，积分只扣一次。
+
+`withdraw.minimum-usdt` 作用在**折算总额**上（即"提现 10 USDT、到账 9 USDT"），默认配置下最低提现积分为 3572 积分（折算 10.00 USDT → 到账 9.00 USDT）。
 
 ## App 接口
 

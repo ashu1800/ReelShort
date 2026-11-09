@@ -25,6 +25,10 @@ public class WithdrawalRequest {
 	@Column(name = "point_amount", nullable = false)
 	private int pointAmount;
 
+	/**
+	 * 历史快照列：旧规则从积分中扣的手续费积分。手续费改为按到账 USDT 收取后新申请固定写 0，
+	 * 列保留只为历史记录与迁移兼容。
+	 */
 	@Column(name = "fee_amount", nullable = false)
 	private int feeAmount;
 
@@ -104,16 +108,16 @@ public class WithdrawalRequest {
 		this.createdAt = createdAt;
 	}
 
-	public static WithdrawalRequest create(UUID userId, int pointAmount, int feeAmount,
-			WithdrawalConversion conversion, String network, String walletAddress) {
-		return create(userId, pointAmount, feeAmount, conversion, network, walletAddress, null);
+	public static WithdrawalRequest create(UUID userId, int pointAmount, WithdrawalConversion conversion,
+			String network, String walletAddress) {
+		return create(userId, pointAmount, conversion, network, walletAddress, null);
 	}
 
-	public static WithdrawalRequest create(UUID userId, int pointAmount, int feeAmount,
-			WithdrawalConversion conversion, String network, String walletAddress, String idempotencyKey) {
+	public static WithdrawalRequest create(UUID userId, int pointAmount, WithdrawalConversion conversion,
+			String network, String walletAddress, String idempotencyKey) {
 		// L4: 用 HALF_UP 而非 UNNECESSARY，避免配置小数过多时抛 ArithmeticException
 		BigDecimal normalizedRate = conversion.usdtPerPoint().setScale(8, RoundingMode.HALF_UP);
-		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, feeAmount,
+		return new WithdrawalRequest(UUID.randomUUID(), userId, pointAmount, 0,
 				conversion.usdtAmount(pointAmount), normalizedRate,
 				conversion.usdtPer50Points().setScale(8, RoundingMode.HALF_UP), null, null, null,
 				network, walletAddress, idempotencyKey,
@@ -163,23 +167,17 @@ public class WithdrawalRequest {
 		return pointAmount;
 	}
 
+	/**
+	 * 历史手续费积分的快照列。手续费改为按到账 USDT 收取后，新申请固定写 0；
+	 * 扣减积分永远是 {@link #totalDeductedPoints()}，不再从中扣除手续费。
+	 */
 	public int feeAmount() {
 		return feeAmount;
 	}
 
-	/**
-	 * 需求2: 用户输入的总额即为扣减总额（手续费从总额中扣除，不再额外扣）。
-	 * 例如用户提现 1000 积分，手续费 10%，则扣减 1000 积分，实际提取 900。
-	 */
+	/** 扣减总额 = 用户输入的积分全额（手续费在 USDT 侧扣除，不额外多扣积分）。 */
 	public int totalDeductedPoints() {
 		return pointAmount;
-	}
-
-	/**
-	 * 实际可提取积分 = 扣减总额 - 手续费。USDT 按此值换算。
-	 */
-	public int withdrawablePoints() {
-		return pointAmount - feeAmount;
 	}
 
 	public BigDecimal usdtAmount() {

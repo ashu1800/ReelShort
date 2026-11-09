@@ -25,12 +25,12 @@ export const systemConfigLabels: Record<string, { name: string; description: str
     description: '提现时每 50 积分折合的 USDT 金额。',
   },
   'withdraw.minimum-usdt': {
-    name: '提现最低到账（USDT）',
-    description: '单笔提现实际到账的最低 USDT 金额，低于该金额无法提交提现。',
+    name: '提现最低金额（USDT）',
+    description: '单笔提现的折算总额下限（手续费从此金额中扣除），低于该金额无法提交提现。',
   },
   'withdraw.fee-percent': {
     name: '提现手续费（%）',
-    description: '提现时扣除的积分手续费百分比。',
+    description: '从提现折算总额（USDT）中扣除的手续费百分比，积分按提交全额扣减。',
   },
   'content.recommendation.strategy': {
     name: '推荐策略',

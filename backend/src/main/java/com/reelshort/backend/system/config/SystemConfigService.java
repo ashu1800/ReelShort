@@ -76,10 +76,8 @@ public class SystemConfigService {
 		if (feePercent >= 100) {
 			throw new AdminException(400, "withdrawal fee must be below 100 percent");
 		}
-		long pointAmount = Integer.MAX_VALUE;
-		long feeAmount = (pointAmount * feePercent + 99) / 100;
-		long withdrawablePoints = pointAmount - feeAmount;
-		BigDecimal maximumUsdt = rate.multiply(BigDecimal.valueOf(withdrawablePoints))
+		// 手续费按到账 USDT 收取，积分不会被多扣，所以上限金额就是全部积分折算后的总额。
+		BigDecimal maximumUsdt = rate.multiply(BigDecimal.valueOf(Integer.MAX_VALUE))
 				.divide(BigDecimal.valueOf(50), 2, RoundingMode.DOWN);
 		if (maximumUsdt.compareTo(MAX_WITHDRAWAL_USDT) > 0) {
 			throw new AdminException(400, "withdrawal conversion would overflow usdt amount");

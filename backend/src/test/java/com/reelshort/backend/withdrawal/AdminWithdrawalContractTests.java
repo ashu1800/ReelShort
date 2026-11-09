@@ -52,7 +52,7 @@ class AdminWithdrawalControllerTests {
 
 	@Test
 	void withdrawalResponseOnlyExposesActualFeeForConfirmedAttempt() {
-		WithdrawalRequest request = WithdrawalRequest.create(UUID.randomUUID(), 3600, 0,
+		WithdrawalRequest request = WithdrawalRequest.create(UUID.randomUUID(), 3600,
 				new WithdrawalConversion(new BigDecimal("0.14"), new BigDecimal("10"), 0),
 				"ERC20", "0x1111111111111111111111111111111111111111");
 		PreparedPayoutTransaction signed = new PreparedPayoutTransaction("ERC20",
@@ -85,7 +85,7 @@ class AdminWithdrawalControllerTests {
 
 	@Test
 	void voidAttemptReleasesActiveSlotForUnconfirmedAttempt() {
-		WithdrawalRequest request = WithdrawalRequest.create(UUID.randomUUID(), 3600, 0,
+		WithdrawalRequest request = WithdrawalRequest.create(UUID.randomUUID(), 3600,
 				new WithdrawalConversion(new BigDecimal("0.14"), new BigDecimal("10"), 0),
 				"ERC20", "0x1111111111111111111111111111111111111111");
 		WithdrawalPayoutAttempt attempt = WithdrawalPayoutAttempt.prepared(request.id(), 1,
@@ -102,7 +102,7 @@ class AdminWithdrawalControllerTests {
 
 	@Test
 	void voidAttemptRejectsManualReviewAttempt() {
-		WithdrawalRequest request = WithdrawalRequest.create(UUID.randomUUID(), 3600, 0,
+		WithdrawalRequest request = WithdrawalRequest.create(UUID.randomUUID(), 3600,
 				new WithdrawalConversion(new BigDecimal("0.14"), new BigDecimal("10"), 0),
 				"ERC20", "0x1111111111111111111111111111111111111111");
 		WithdrawalPayoutAttempt attempt = WithdrawalPayoutAttempt.prepared(request.id(), 1,

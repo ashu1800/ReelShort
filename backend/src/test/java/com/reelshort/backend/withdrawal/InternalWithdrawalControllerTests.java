@@ -48,13 +48,13 @@ class InternalWithdrawalControllerTests {
 	@Test
 	void thresholdsReturnsSnapshotWithSuperToken() throws Exception {
 		when(withdrawalService.thresholds()).thenReturn(new WithdrawalConversion.Snapshot(
-				3969, "0.14", "0.0028", "10", 10));
+				3572, "0.14", "0.0028", "10", 10));
 
 		mockMvc.perform(get("/api/internal/withdrawal/thresholds")
 				.header("X-Internal-Super-Token", TOKEN))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.code").value(0))
-				.andExpect(jsonPath("$.data.minimumPoints").value(3969))
+				.andExpect(jsonPath("$.data.minimumPoints").value(3572))
 				.andExpect(jsonPath("$.data.usdtPer50Points").value("0.14"))
 				.andExpect(jsonPath("$.data.usdtPerPoint").value("0.0028"))
 				.andExpect(jsonPath("$.data.minimumUsdt").value("10"));
