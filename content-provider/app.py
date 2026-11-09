@@ -1,7 +1,6 @@
 import os
 import re
 import base64
-import gzip
 import zlib
 import hmac
 import json
@@ -112,6 +111,8 @@ UPSTREAM_LOGIN_MODE_EMAIL_PASSWORD = 2
 # 后台下发的账号在这里留一份（0600）：内容源重启后不用等后端再推一次。
 UPSTREAM_ACCOUNT_FILE_ENV = "REELSHORT_ACCOUNT_FILE"
 DEFAULT_UPSTREAM_ACCOUNT_FILE = "/srv/reelshort/content-provider/.account.json"
+# 登录失败后冷却这么久再试：否则每次锁集请求都会重撞一轮上游登录（引导 + 登录，各 10s 超时）。
+UPSTREAM_LOGIN_RETRY_COOLDOWN_SECONDS = 60.0
 
 
 def _encrypt_login_password(password: str) -> str:
@@ -364,6 +365,10 @@ class ReelShortClient:
         # 游客会话（session_token 非空）不等于登录成功，只有登录成功才置真。
         self.logged_in = False
         self._login_lock = threading.RLock()
+        # 上次登录失败的时间点（monotonic）；冷却期内不再重试，避免请求排队等登录超时。
+        self._login_failed_at = 0.0
+        # 正在登录时不要再触发"session 过期就重登"的递归。
+        self._logging_in = False
         # 每次登录都会带一个新的设备号；进程内保持不变，避免上游把会话和设备绑定判为异常。
         self._device_id = "".join(
             random.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(12)
@@ -550,61 +555,81 @@ class ReelShortClient:
         return True
 
     def login(self) -> bool:
-        """用环境变量里的账号登录上游，成功后带上 session/uid。
+        """登录上游；失败后冷却一段时间，避免每个请求都重撞一次上游。
 
-        先建匿名会话再登录（与浏览器一致）；登录失败不抛异常：
-        抓取继续按匿名窗口工作，只记一条诊断事件。
+        失败不抛异常：抓取继续按匿名窗口工作，只记一条诊断事件。
         """
-        if not self.account_configured:
+        if not self.account_configured or self._login_blocked():
             return False
         with self._login_lock:
-            encrypted = _encrypt_login_password(self.password)
-            if not encrypted:
-                self.diagnostics.record("upstream_login_unsupported", reason="crypto library unavailable")
-                return False
-            if not self.session_token and not self._bootstrap_session():
-                self.diagnostics.record("upstream_login_skipped", reason="no guest session")
-                return False
-            body = {
-                "sid": UPSTREAM_LOGIN_SID,
-                "login_mode": UPSTREAM_LOGIN_MODE_EMAIL_PASSWORD,
-                "login_email": self.email,
-                "login_pass": encrypted,
-                "dev_model": "h5",
-            }
+            # 排队等锁期间可能已经有人登录成功，或已经把失败写进冷却。
+            # 只认"真的登录过"：游客 session 非空不代表账号登录成功。
+            if self.logged_in or self._login_blocked():
+                return self.logged_in
+            self._logging_in = True
             try:
-                payload = self._api_call("POST", UPSTREAM_LOGIN_PATH, body=body, auth=True)
-            except UpstreamError as exception:
-                self.diagnostics.record(
-                    "upstream_login_failed",
-                    email=_truncate(self.email, 40),
-                    message=_truncate(exception.message, 120),
-                )
-                return False
-            data = _as_dict(payload.get("data"))
-            token = str(data.get("session") or "")
-            user_info = _as_dict(data.get("user_info"))
-            user_type = _as_int(user_info.get("sid"))
-            if payload.get("code") != 0 or not token or user_type == 0:
-                # 上游对"口令不对/账号异常"也会回 code=0，但给的是游客身份（sid=0）。
-                # 这种会话不能算登录成功，否则会出现"以为登录了、锁集仍 404"的假象。
-                self.diagnostics.record(
-                    "upstream_login_rejected",
-                    email=_truncate(self.email, 40),
-                    code=_truncate(payload.get("code"), 32),
-                    message=_truncate(payload.get("msg"), 120),
-                    user_type=user_type,
-                )
-                return False
-            self.session_token = token
-            self.uid = str(user_info.get("uid") or 0)
-            self.logged_in = True
+                succeeded = self._login_attempt()
+            finally:
+                self._logging_in = False
+            self._login_failed_at = 0.0 if succeeded else self.monotonic()
+            return succeeded
+
+    def _login_blocked(self) -> bool:
+        """冷却期内不再重试，否则每次锁集请求都要排队付一轮登录超时。"""
+        if self._login_failed_at <= 0:
+            return False
+        return self.monotonic() - self._login_failed_at < UPSTREAM_LOGIN_RETRY_COOLDOWN_SECONDS
+
+    def _login_attempt(self) -> bool:
+        """真正跟上游换一次 session（调用方已持登录锁）。"""
+        # 先建匿名会话再登录（与浏览器一致）。
+        encrypted = _encrypt_login_password(self.password)
+        if not encrypted:
+            self.diagnostics.record("upstream_login_unsupported", reason="crypto library unavailable")
+            return False
+        if not self.session_token and not self._bootstrap_session():
+            self.diagnostics.record("upstream_login_skipped", reason="no guest session")
+            return False
+        body = {
+            "sid": UPSTREAM_LOGIN_SID,
+            "login_mode": UPSTREAM_LOGIN_MODE_EMAIL_PASSWORD,
+            "login_email": self.email,
+            "login_pass": encrypted,
+            "dev_model": "h5",
+        }
+        try:
+            payload = self._api_call("POST", UPSTREAM_LOGIN_PATH, body=body, auth=True)
+        except UpstreamError as exception:
             self.diagnostics.record(
-                "upstream_login_ok",
-                uid=self.uid,
-                session_fingerprint=self.session_fingerprint(),
+                "upstream_login_failed",
+                email=_truncate(self.email, 40),
+                message=_truncate(exception.message, 120),
             )
-            return True
+            return False
+        data = _as_dict(payload.get("data"))
+        token = str(data.get("session") or "")
+        user_info = _as_dict(data.get("user_info"))
+        user_type = _as_int(user_info.get("sid"))
+        if payload.get("code") != 0 or not token or user_type == 0:
+            # 上游对"口令不对/账号异常"也会回 code=0，但给的是游客身份（sid=0）。
+            # 这种会话不能算登录成功，否则会出现"以为登录了、锁集仍 404"的假象。
+            self.diagnostics.record(
+                "upstream_login_rejected",
+                email=_truncate(self.email, 40),
+                code=_truncate(payload.get("code"), 32),
+                message=_truncate(payload.get("msg"), 120),
+                user_type=user_type,
+            )
+            return False
+        self.session_token = token
+        self.uid = str(user_info.get("uid") or 0)
+        self.logged_in = True
+        self.diagnostics.record(
+            "upstream_login_ok",
+            uid=self.uid,
+            session_fingerprint=self.session_fingerprint(),
+        )
+        return True
 
     def ensure_session(self) -> bool:
         """保证有可用的 session；没有就登录一次。匿名模式返回 False。"""
@@ -649,12 +674,14 @@ class ReelShortClient:
             page += 1
         collected.sort(key=lambda item: item["episode"])
         playable = [item["episode"] for item in collected if item["playable"]]
+        # 第一集锁集：按集号顺序找第一个不可播的；整季全解锁时为 None。
+        locked_from = next((item["episode"] for item in collected if not item["playable"]), None)
         return {
             "book_id": book_id,
             "chapter_count": chapter_count or len(collected),
             "authenticated": self.authenticated,
             "playable_episodes": playable,
-            "locked_from": playable[-1] + 1 if playable else (1 if collected else None),
+            "locked_from": locked_from,
             "chapters": collected,
         }
 
@@ -966,6 +993,8 @@ class ReelShortClient:
             and auth
             and not _retried
             and self.account_configured
+            # 登录请求本身回 103 时不能再重登一次，否则 login → _api_call → login 无限递归。
+            and not self._logging_in
         ):
             self.diagnostics.record("upstream_session_expired", path=path)
             self.session_token = ""
@@ -1414,13 +1443,17 @@ def create_app(client=None, internal_token=None) -> Flask:
     app = Flask(__name__)
     reelshort_client = client or ReelShortClient.from_env()
     expected_token = internal_token if internal_token is not None else os.getenv(INTERNAL_TOKEN_ENV, "")
-    # 配了账号就绪前先登录一次：让"已配置"和"已登录"在启动后就是同一个状态，
-    # 而不是等到第一集锁集播放才懒加载。登录失败只记诊断，不影响匿名抓取。
+    # 配了账号就在启动时先登录一次：让"已配置"和"已登录"尽快是同一个状态。
+    # 放到后台线程：登录是两次上游请求（各 10s 超时），阻塞在 create_app 里会拖慢
+    # worker 启动，最坏撞上 gunicorn 的 -t 30 被判启动超时。失败只记诊断，不影响匿名抓取。
     if getattr(reelshort_client, "account_configured", False):
-        try:
-            reelshort_client.ensure_session()
-        except Exception:  # noqa: BLE001 - 启动期任何登录异常都不该拦住服务
-            pass
+        def _warm_up_session() -> None:
+            try:
+                reelshort_client.ensure_session()
+            except Exception:  # noqa: BLE001 - 启动期任何登录异常都不该拦住服务
+                pass
+
+        threading.Thread(target=_warm_up_session, daemon=True).start()
 
     @app.get("/health")
     def health():

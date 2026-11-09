@@ -126,7 +126,7 @@ docker network inspect infra_default --format '{{(index .IPAM.Config 0).Subnet}}
 
 - 所有服务均配置 `restart: unless-stopped`，并通过 `logging.options` 把容器日志限制为 `max-size=10m`、`max-file=3`（默认 `json-file` 驱动下每容器最多 30 MiB）。
 - `backend` 容器以非 root 账号 `reelshort` 运行，日志目录 `/app/logs`（`REELSHORT_LOG_FILE` 默认 `logs/backend.log`，相对 `WORKDIR /app`）。
-- `content-provider` 容器以 `nobody` 运行，由 gunicorn 承载（`-w 2 --threads 8 -t 30`），不再使用 Werkzeug 开发服务器。
+- `content-provider` 容器以 `nobody` 运行，由 gunicorn 承载（`-w 1 --threads 16 -t 30`），不再使用 Werkzeug 开发服务器。必须是**单 worker**：上游登录态只存在进程内存里，多 worker 会各存一份，后台下发的账号只会命中其中一个。
 - `admin-web` 容器仍以 nginx 镜像默认用户运行，尚未非 root 化。
 
 ## 网络边界

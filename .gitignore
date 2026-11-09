@@ -60,6 +60,9 @@ android-app/release-signing/signing-config.txt
 .env
 .env.*
 !.env.example
+# 内容源落盘的上游账号（明文密码）
+content-provider/.account.json
+*.account.json
 .zcode/
 .playwright-mcp/
 .worktrees/

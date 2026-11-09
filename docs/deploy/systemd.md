@@ -166,7 +166,8 @@ User=reelshort
 Group=reelshort
 WorkingDirectory=/srv/reelshort/content-provider
 EnvironmentFile=/etc/reelshort/content-provider.env
-ExecStart=/srv/reelshort/content-provider/.venv/bin/gunicorn -w 2 --threads 8 -t 30 \
+# 单 worker：上游登录态只在进程内存里，多 worker 会各存一份、永远读不到后台下发的账号。
+ExecStart=/srv/reelshort/content-provider/.venv/bin/gunicorn -w 1 --threads 16 -t 30 \
   -b 127.0.0.1:5000 --access-logfile - --error-logfile - app:create_app()
 Restart=always
 RestartSec=5

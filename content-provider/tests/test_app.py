@@ -2814,3 +2814,84 @@ def test_account_endpoint_exposes_vip_status(client):
     assert payload["configured"] is True
     assert "vip" in payload
     assert payload["vip"]["known"] is False
+
+
+def test_login_failure_backs_off_instead_of_hammering_upstream():
+    """登录失败后要冷却：否则每次锁集请求都会排队等一轮登录超时（引导 + 登录各 10s）。"""
+    now = [1000.0]
+    client = _login_client(monotonic=lambda: now[0])
+    client.session_token = "old-session"
+    calls = _stub_client_requests(
+        client,
+        [
+            {"code": 103, "msg": "checkSession error"},
+            GUEST_PAYLOAD,
+            {"code": 0, "data": {"session": "g" * 32, "user_info": {"uid": 0, "sid": 0}}},
+        ],
+    )
+
+    client._api_call("GET", "/api/video/book/getChapterList", params={"book_id": "book-1"})
+
+    # 过期 → 引导游客会话 → 登录被拒（上游对错口令回游客身份）。
+    assert len(calls) == 3
+    assert client.logged_in is False
+
+    # 冷却期内只重试业务请求，不再去撞上游登录。
+    second = _stub_client_requests(client, [{"code": 103, "msg": "checkSession error"}])
+    client._api_call("GET", "/api/video/book/getChapterList", params={"book_id": "book-1"})
+    assert len(second) == 1
+
+    # 冷却结束后才允许重新登录。
+    now[0] += app_module.UPSTREAM_LOGIN_RETRY_COOLDOWN_SECONDS + 1
+    third = _stub_client_requests(
+        client,
+        [
+            {"code": 103, "msg": "checkSession error"},
+            GUEST_PAYLOAD,
+            {"code": 0, "data": {"session": "n" * 32, "user_info": {"uid": 7, "sid": 4}}},
+            {"code": 0, "data": {"chapter_list": []}},
+        ],
+    )
+    payload = client._api_call("GET", "/api/video/book/getChapterList", params={"book_id": "book-1"})
+
+    assert payload["code"] == 0
+    assert client.logged_in is True
+    assert len(third) == 4
+
+
+def test_login_answer_that_asks_to_relogin_does_not_recurse():
+    """登录请求本身回 code=103 时不能再触发一次登录，否则 login → _api_call → login 递归。"""
+    client = _login_client()
+    calls = _stub_client_requests(
+        client,
+        [
+            GUEST_PAYLOAD,
+            {"code": 103, "msg": "checkSession error"},
+        ],
+    )
+
+    assert client.login() is False
+    assert len(calls) == 2
+    # 引导出来的游客会话还在，但没被当成登录成功。
+    assert client.logged_in is False
+
+
+def test_chapters_reports_first_locked_episode_even_when_unlock_is_patchy():
+    """locked_from 是"第一集锁集"，不能只看最后一集可播的位置。"""
+    client = ReelShortClient("https://site.example", "id", 3)
+    chapters = [
+        {
+            "serial_number": episode,
+            "chapter_id": f"chapter-{episode}",
+            "duration": 10,
+            "play_info": None if episode == 3 else "encrypted",
+        }
+        for episode in range(1, 6)
+    ]
+    _stub_client_requests(client, [{"code": 0, "data": {"chapter_count": 5, "chapter_list": chapters}}])
+
+    result = client.chapters("book-1")
+
+    assert result["playable_episodes"] == [1, 2, 4, 5]
+    assert result["locked_from"] == 3
+

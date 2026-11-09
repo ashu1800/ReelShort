@@ -2,6 +2,7 @@ package com.reelshort.backend.content;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
@@ -55,6 +56,31 @@ class FlaskContentProviderAccountTests {
 		assertThat(live.vipExpireAt()).isEqualTo("2026-11-13T07:59:59Z");
 		assertThat(live.vipRenew()).isTrue();
 		assertThat(live.coins()).isEqualTo(120);
+	}
+
+	/** 后台保存账号走 POST：嵌套的 account 对象必须能映射回来，否则"保存成功"会显示成空邮箱。 */
+	@Test
+	void updateAccountPushesCredentialsAndMapsTheNestedAccount() {
+		RestClient.Builder builder = providerBuilder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		FlaskContentProvider provider = new FlaskContentProvider(builder, "http://provider.local", "secret-token");
+
+		server.expect(requestTo("http://provider.local/api/v1/reelshort/credentials"))
+				.andExpect(method(HttpMethod.POST))
+				.andExpect(header(FlaskContentProvider.INTERNAL_TOKEN_HEADER, "secret-token"))
+				.andExpect(jsonPath("$.email").value("operator@example.com"))
+				.andExpect(jsonPath("$.password").value("Secret123"))
+				.andRespond(withSuccess("""
+						{"authenticated":true,
+						 "account":{"configured":true,"emailMasked":"op***@example.com","authenticated":true,
+						            "loggedIn":true,"sessionFingerprint":"2fd75321b43f"}}
+						""", MediaType.APPLICATION_JSON));
+
+		ReelshortAccountGateway.ReelshortAccountPushResult result = provider.updateAccount("operator@example.com",
+				"Secret123");
+
+		assertThat(result.authenticated()).isTrue();
+		assertThat(result.emailMasked()).isEqualTo("op***@example.com");
 	}
 
 	@Test

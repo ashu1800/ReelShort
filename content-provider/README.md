@@ -16,6 +16,7 @@ Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProv
 - `REELSHORT_CATALOG_MAX_BOOKS`：首页推荐扩容后的最大短剧数，默认 `500`，硬上限 `500`。
 - `REELSHORT_CATALOG_REQUEST_WORKERS`：片库扩展搜索请求并发数，默认 `8`，硬上限 `16`；设为 `1` 可改为串行。
 - `REELSHORT_UPSTREAM_COOKIE`：可选。ReelShort **登录态** Cookie 请求头的完整值（浏览器登录后复制，形如 `a=1; b=2`）。未配置时按匿名抓取，Header 集合与引入该能力前完全一致；配置后每个上游请求都会带上它。值中不允许出现换行（会被当作请求头注入直接拒绝）。
+- `REELSHORT_ACCOUNT_FILE`：可选。后台下发账号的落盘位置，默认 `/srv/reelshort/content-provider/.account.json`（权限 `0600`）；容器镜像里是 `/app/data/.account.json`，由 Compose 卷 `content-provider-account` 承载。
 
 ## 上游登录态（解锁锁集）
 
@@ -33,7 +34,18 @@ REELSHORT_UPSTREAM_PASSWORD='********'
 # REELSHORT_UPSTREAM_CHANNEL_ID='WEB41001'
 ```
 
-凭据只从环境变量读，不会落库、不会写日志（诊断事件里邮箱会被截断，session 只记 12 位指纹）。
+凭据**不是只从环境变量读**：后台「系统配置 → ReelShort 上游账号」保存后会通过 `POST /api/v1/reelshort/credentials` 下发给本服务，并覆盖环境变量里的初始值（环境变量只是首次部署的引导值）。保存路径有三处，都按明文凭据对待：
+
+- Spring Boot `system_configs` 表的两行（`content.reelshort.email` / `content.reelshort.password`）；后台接口只回脱敏邮箱，通用配置接口既不列出也不允许改这两行；
+- 本服务进程内存（`ReelShortClient`），不写日志（诊断事件里邮箱截断到 40 字符，session 只记 12 位指纹）；
+- 本机文件 `REELSHORT_ACCOUNT_FILE`（`0600`），用于内容源重启后自恢复。
+
+所以数据库转储（`infra/backups/`）和这个文件都等同账号密码文件：不要提交仓库、不要外发，备份按凭据加密保存。
+
+另外两条部署约束：
+
+- **必须是单 worker**（`gunicorn -w 1 --threads 16`）：`session`/`uid` 只存在进程内存里，多 worker 会各存一份，后台下发的账号只会命中其中一个，另一个永远读到旧账号。
+- 登录失败（口令错、上游抖动）后 **60 秒内不再重试**，锁集请求按匿名窗口继续，不会每个请求都排队等一轮登录超时（`UPSTREAM_LOGIN_RETRY_COOLDOWN_SECONDS`）。
 
 链路与浏览器一致：**先建匿名访客会话 → 提交加密口令登录**。细节：
 
