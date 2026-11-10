@@ -119,7 +119,8 @@ Write-Host @"
    - 同步 /srv/reelshort/backend/app/BOOT-INF/lib（或重传 app.jar 后重新展开）
 
 4) 内容源变更
-   - 只上传 content-provider/app.py（约 42 KB）后 systemctl restart reelshort-content-provider
+   - 上传 content-provider/ 下改动到的文件：app.py、fetcher.py、upstreams/（缺一个就会 ModuleNotFoundError）
+   - 再 systemctl restart reelshort-content-provider
 
 回滚：
    - 应用代码：ln -sfn /srv/reelshort/backend/releases/<上一个版本>/classes /srv/reelshort/backend/classes && systemctl restart reelshort-backend
