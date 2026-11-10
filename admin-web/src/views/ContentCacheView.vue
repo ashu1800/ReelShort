@@ -141,6 +141,16 @@ const currentActiveProbe = computed<EpisodeProbeState | null>(() => {
   return probeMap[selectedEpisode.value.episode] || null
 })
 
+// <video> 自己能拿到 URL 却播不了：Chrome 不支持 m3u8（TwistyTV 的 rs_ 片源就是 HLS），
+// 或编码不被支持。上游地址没有扩展名，只能靠元素报错来判断。
+const videoElementError = ref(false)
+watch(
+  () => currentActiveProbe.value?.videoUrl,
+  () => {
+    videoElementError.value = false
+  },
+)
+
 // 错误详情弹窗
 const errorDetailVisible = ref(false)
 const currentErrorText = ref('')
@@ -774,12 +784,22 @@ onMounted(async () => {
                   :key="currentActiveProbe.videoUrl"
                   :src="currentActiveProbe.videoUrl"
                   controls
+                  muted
                   playsinline
                   autoplay
+                  preload="metadata"
                   class="studio-video-element"
+                  @loadeddata="videoElementError = false"
+                  @error="videoElementError = true"
                 >
                   您的浏览器不支持 HTML5 视频播放。
                 </video>
+                <div v-if="videoElementError" class="video-playback-hint">
+                  <el-icon><WarningFilled /></el-icon>
+                  <span>浏览器无法直接解码这条流（多为 HLS/m3u8 或特殊编码），可以</span>
+                  <a :href="currentActiveProbe.videoUrl" target="_blank" rel="noreferrer">在新窗口打开</a>
+                  <span>或用播放器验证。</span>
+                </div>
               </template>
               <template v-else>
                 <div class="video-placeholder idle-glow">
@@ -1532,6 +1552,28 @@ onMounted(async () => {
   height: 100%;
   object-fit: contain;
   background: #000000;
+}
+
+.video-playback-hint {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 56px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(24, 24, 32, 0.92);
+  color: #f5c451;
+  font-size: 12px;
+  line-height: 1.5;
+  flex-wrap: wrap;
+}
+
+.video-playback-hint a {
+  color: #7ab8ff;
+  text-decoration: underline;
 }
 
 .video-placeholder {
