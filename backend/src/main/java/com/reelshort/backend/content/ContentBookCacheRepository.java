@@ -16,6 +16,17 @@ public interface ContentBookCacheRepository extends JpaRepository<ContentBookCac
 	Optional<ContentBookCache> findFirstByLocaleAndChapterCountGreaterThanOrderByUpdatedAtDesc(ContentLocale locale,
 			int chapterCount);
 
+	List<ContentBookCache> findByLocaleAndBookIdIn(ContentLocale locale, java.util.Collection<String> bookIds);
+
+	/**
+	 * 简介补抓队列：TwistyTV 的 /browse 卡片没有简介，只能按本翻详情页。
+	 *
+	 * <p>`descriptionCheckedAt` 为空的才会进来——NetShort(`ns_`) 的书上游根本没有简介，
+	 * 不记"已尝试"的话每轮都会把这批永远补不到的书重翻一遍。
+	 */
+	List<ContentBookCache> findByLocaleAndDescriptionAndDescriptionCheckedAtIsNull(ContentLocale locale,
+			String description, Pageable pageable);
+
 	/**
 	 * 运营观看任务的候选池：该用户**没有任何观看记录**的英文短剧。
 	 * 用 not exists 子查询排除已看过的剧（命中 uk_watch_records_user_book_episode 的 user_id+book_id 前缀），

@@ -67,6 +67,21 @@ public class ContentCacheWriter {
 		return contentBookCacheRepository.save(cache).toContentBook();
 	}
 
+	/**
+	 * 记下"这本书已经尝试补过简介，上游没有"。
+	 *
+	 * <p>TwistyTV 的 NetShort(`ns_`) 书目在详情页里没有 description 字段，不记这一笔
+	 * 补抓任务会每轮把这批书重翻一次（纯打上游）。
+	 */
+	@Transactional
+	public void markDescriptionChecked(String bookId, ContentLocale locale) {
+		String key = ContentBookCache.key(bookId, locale);
+		contentBookCacheRepository.findById(key).ifPresent(cache -> {
+			cache.markDescriptionChecked();
+			contentBookCacheRepository.save(cache);
+		});
+	}
+
 	@Transactional
 	public void saveShelf(ContentShelfType shelfType, ContentLocale locale, List<ContentBook> books) {
 		String booksJson = writeBooks(books);

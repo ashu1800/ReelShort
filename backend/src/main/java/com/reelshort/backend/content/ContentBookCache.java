@@ -46,6 +46,10 @@ public class ContentBookCache {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	/** 简介补抓尝试时间：上游没有简介的书不需要每轮重翻（见 V35 迁移）。 */
+	@Column(name = "description_checked_at")
+	private OffsetDateTime descriptionCheckedAt;
+
 	protected ContentBookCache() {
 	}
 
@@ -123,6 +127,14 @@ public class ContentBookCache {
 
 	public OffsetDateTime updatedAt() {
 		return updatedAt;
+	}
+
+	public void markDescriptionChecked() {
+		this.descriptionCheckedAt = OffsetDateTime.now();
+	}
+
+	public OffsetDateTime descriptionCheckedAt() {
+		return descriptionCheckedAt;
 	}
 
 	public ContentBook toContentBook() {

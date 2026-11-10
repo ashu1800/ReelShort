@@ -11,6 +11,9 @@ public class ContentRefreshProperties {
 	private boolean enabled = true;
 	private List<String> shelves = new ArrayList<>(List.of(ContentShelfType.RECOMMEND.apiValue()));
 	private List<String> locales = new ArrayList<>(List.of(ContentLocale.ENGLISH.apiValue()));
+	private boolean descriptionBackfillEnabled = true;
+	private int descriptionBackfillLimit = 150;
+	private java.time.Duration descriptionBackfillPause = java.time.Duration.ofMillis(1400);
 
 	public boolean isEnabled() {
 		return enabled;
@@ -26,6 +29,30 @@ public class ContentRefreshProperties {
 
 	public void setShelves(List<String> shelves) {
 		this.shelves = shelves;
+	}
+
+	public boolean isDescriptionBackfillEnabled() {
+		return descriptionBackfillEnabled;
+	}
+
+	public void setDescriptionBackfillEnabled(boolean descriptionBackfillEnabled) {
+		this.descriptionBackfillEnabled = descriptionBackfillEnabled;
+	}
+
+	public int getDescriptionBackfillLimit() {
+		return descriptionBackfillLimit;
+	}
+
+	public void setDescriptionBackfillLimit(int descriptionBackfillLimit) {
+		this.descriptionBackfillLimit = descriptionBackfillLimit;
+	}
+
+	public java.time.Duration getDescriptionBackfillPause() {
+		return descriptionBackfillPause;
+	}
+
+	public void setDescriptionBackfillPause(java.time.Duration descriptionBackfillPause) {
+		this.descriptionBackfillPause = descriptionBackfillPause;
 	}
 
 	public List<String> getLocales() {

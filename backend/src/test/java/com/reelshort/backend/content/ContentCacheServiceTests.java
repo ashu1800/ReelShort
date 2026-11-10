@@ -694,6 +694,66 @@ class ContentCacheServiceTests {
 		verify(contentProvider, times(1)).getEpisodesDetail("book-blurb", "blurb", ContentLocale.ENGLISH);
 	}
 
+	@Test
+	void backfillSkipsBooksWhoseUpstreamHasNoDescription() {
+		// NetShort(ns_) 的书目在详情页里根本没有 description 字段：补一次没拿到就记下来，
+		// 否则每 10 分钟把同一批永远补不到的书重翻一遍（150 本 × 144 次/天）。
+		ContentBook blank = new ContentBook("book-blank", "Blank", "blank", "https://example.com/blank.jpg", "", 0);
+		ContentBook rich = new ContentBook("book-rich", "Rich", "rich", "https://example.com/rich.jpg", "Already there.",
+				12);
+		contentCacheWriter.saveBook(blank, ContentLocale.ENGLISH);
+		contentCacheWriter.saveBook(rich, ContentLocale.ENGLISH);
+		when(contentProvider.getEpisodesDetail("book-blank", "blank", ContentLocale.ENGLISH))
+				.thenReturn(new ContentEpisodesDetail(
+						Optional.of(new ContentBook("book-blank", "Blank", "blank", "", "", 0)),
+						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
+
+		int filled = contentCacheService.backfillMissingDescriptions(ContentLocale.ENGLISH, 10, Duration.ZERO);
+
+		assertThat(filled).isZero();
+		// 已经有简介的行根本不该进队列。
+		verify(contentProvider, times(0)).getEpisodesDetail("book-rich", "rich", ContentLocale.ENGLISH);
+
+		contentCacheService.backfillMissingDescriptions(ContentLocale.ENGLISH, 10, Duration.ZERO);
+		verify(contentProvider, times(1)).getEpisodesDetail("book-blank", "blank", ContentLocale.ENGLISH);
+	}
+
+	@Test
+	void backfillRetriesBooksWhoseUpstreamCallFailed() {
+		ContentBook blank = new ContentBook("book-retry", "Retry", "retry", "", "", 0);
+		contentCacheWriter.saveBook(blank, ContentLocale.ENGLISH);
+		when(contentProvider.getEpisodesDetail("book-retry", "retry", ContentLocale.ENGLISH))
+				.thenThrow(new ContentProviderException(502, "upstream down"));
+
+		assertThat(contentCacheService.backfillMissingDescriptions(ContentLocale.ENGLISH, 10, Duration.ZERO))
+				.isZero();
+		// 上游抖动不能当"没有简介"钉死：下一轮要再试。
+		contentCacheService.backfillMissingDescriptions(ContentLocale.ENGLISH, 10, Duration.ZERO);
+		verify(contentProvider, times(2)).getEpisodesDetail("book-retry", "retry", ContentLocale.ENGLISH);
+	}
+
+	@Test
+	void adminShelfViewFillsBlankDescriptionsFromTheBookCache() {
+		ContentBook shelfBook = new ContentBook("book-shelf", "Shelf", "shelf", "https://example.com/s.jpg", "", 0);
+		when(contentProvider.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH))
+				.thenReturn(List.of(shelfBook));
+		when(contentProvider.getEpisodesDetail("book-shelf", "shelf", ContentLocale.ENGLISH))
+				.thenReturn(new ContentEpisodesDetail(
+						Optional.of(new ContentBook("book-shelf", "Shelf", "shelf", "https://example.com/s.jpg",
+								"Filled later.", 24)),
+						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
+		contentCacheService.refreshShelf(ContentShelfType.RECOMMEND);
+
+		// 货架快照写的是空简介；补抓写的是书目缓存。后台读货架要合并两者。
+		contentCacheService.refreshBookIfDescriptionMissing("book-shelf", "shelf", ContentLocale.ENGLISH);
+
+		List<ContentBook> merged = contentCacheService.getShelfWithCachedDescriptions(ContentShelfType.RECOMMEND,
+				ContentLocale.ENGLISH);
+		assertThat(merged).hasSize(1);
+		assertThat(merged.get(0).description()).isEqualTo("Filled later.");
+		assertThat(merged.get(0).chapterCount()).isEqualTo(24);
+	}
+
 	private ContentBook book(String bookId, String title) {
 		return new ContentBook(bookId, title, title.toLowerCase(), "https://example.com/" + bookId + ".jpg", "", 10);
 	}

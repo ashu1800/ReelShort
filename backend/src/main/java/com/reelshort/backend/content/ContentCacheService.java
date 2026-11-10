@@ -2,10 +2,16 @@ package com.reelshort.backend.content;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +29,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 @Service
 public class ContentCacheService {
+
+	private static final Logger LOG = LoggerFactory.getLogger(ContentCacheService.class);
 
 	/** P2-7：固定条带锁数量，替代按客户端可控 bookId/chapterId 无界增长的锁表。 */
 	private static final int VIDEO_CACHE_LOCK_STRIPES = 64;
@@ -190,6 +198,78 @@ public class ContentCacheService {
 	}
 
 	/**
+	 * 货架书目 + 用书目缓存里已补到的简介填空。
+	 *
+	 * <p>货架快照是"抓取那一刻"的 JSON，简介补抓（定时任务/打开详情页）写的是
+	 * `content_book_cache`；后台内容管理要立刻看到补好的简介，所以读货架时做一次合并。
+	 * 只查这批 bookId，单条 SQL，不影响 App 的读路径。
+	 */
+	public List<ContentBook> getShelfWithCachedDescriptions(ContentShelfType shelfType, ContentLocale locale) {
+		List<ContentBook> books = getShelf(shelfType, locale);
+		if (books.isEmpty()) {
+			return books;
+		}
+		Map<String, ContentBookCache> cached = contentBookCacheRepository
+				.findByLocaleAndBookIdIn(locale, books.stream().map(ContentBook::bookId).toList())
+				.stream()
+				.collect(Collectors.toMap(ContentBookCache::bookId, cache -> cache, (left, right) -> left));
+		return books.stream().map(book -> {
+			ContentBookCache row = cached.get(book.bookId());
+			if (row == null) {
+				return book;
+			}
+			String description = book.description() == null || book.description().isBlank()
+					? row.description()
+					: book.description();
+			int chapterCount = Math.max(book.chapterCount(), row.chapterCount());
+			if (Objects.equals(description, book.description()) && chapterCount == book.chapterCount()) {
+				return book;
+			}
+			return new ContentBook(book.bookId(), book.title(), book.filteredTitle(), book.coverUrl(), description,
+					chapterCount);
+		}).toList();
+	}
+
+	/**
+	 * 给简介为空的书目回内容源补简介（按批跑，供定时任务调用）。
+	 *
+	 * <p>TwistyTV 的 `/browse` 列表卡片不带简介，货架又主要来自 `/browse`，所以缓存行天然
+	 * 是空简介。详情页本来就有 `description`，这里按批补：一批几条、每条之间留间隔，
+	 * 不会因为"把 600 本书一次翻完"把上游打进风控。
+	 *
+	 * @return 本次实际补到的数量（失败的单本跳过，不影响整批）
+	 */
+	public int backfillMissingDescriptions(ContentLocale locale, int limit, Duration interval) {
+		if (limit <= 0) {
+			return 0;
+		}
+		List<ContentBookCache> candidates = contentBookCacheRepository
+				.findByLocaleAndDescriptionAndDescriptionCheckedAtIsNull(locale, "", PageRequest.of(0, limit));
+		int filled = 0;
+		for (ContentBookCache candidate : candidates) {
+			try {
+				ContentBook refreshed = refreshBookIfDescriptionMissing(candidate.bookId(), candidate.filteredTitle(),
+						locale);
+				if (refreshed != null && refreshed.description() != null && !refreshed.description().isBlank()) {
+					filled++;
+				}
+			}
+			catch (RuntimeException exception) {
+				// 单本失败（上游 404/502）不影响后面的书，下一轮会再试。
+				LOG.debug("Description backfill skipped {}: {}", candidate.bookId(), exception.getMessage());
+			}
+			try {
+				Thread.sleep(interval.toMillis());
+			}
+			catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				break;
+			}
+		}
+		return filled;
+	}
+
+	/**
 	 * 分集已有缓存、但书目行的简介还是空的时候，回内容源补一次简介。
 	 *
 	 * <p>TwistyTV 的 `/browse` 列表卡片不带简介（`/genre`、`/search`、详情页才有），而货架
@@ -204,8 +284,17 @@ public class ContentCacheService {
 			return cached;
 		}
 		ContentEpisodesDetail detail = contentProvider.getEpisodesDetail(bookId, filteredTitle, locale);
-		detail.book().ifPresent(book -> writer().saveBook(book, locale));
-		return detail.book().orElse(cached);
+		ContentBook fetched = detail.book().orElse(null);
+		boolean hasDescription = fetched != null && fetched.description() != null
+				&& !fetched.description().isBlank();
+		if (fetched != null) {
+			writer().saveBook(fetched, locale);
+		}
+		if (!hasDescription) {
+			// 上游确实没有简介（NetShort 的书目就是这样）：记下来，别每轮重翻同一批。
+			writer().markDescriptionChecked(bookId, locale);
+		}
+		return fetched != null ? fetched : cached;
 	}
 
 	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId) {

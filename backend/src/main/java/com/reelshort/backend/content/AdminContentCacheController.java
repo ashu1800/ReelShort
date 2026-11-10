@@ -45,7 +45,7 @@ public class AdminContentCacheController {
 			@RequestParam(required = false) String locale, HttpServletRequest request) {
 		ContentShelfType resolvedShelfType = ContentShelfType.fromApiValue(shelfType);
 		ContentLocale resolvedLocale = parseLocale(locale);
-		List<ContentBook> books = contentCacheService.getShelf(resolvedShelfType, resolvedLocale);
+		List<ContentBook> books = contentCacheService.getShelfWithCachedDescriptions(resolvedShelfType, resolvedLocale);
 		return ApiResponse.success(books, requestId(request));
 	}
 

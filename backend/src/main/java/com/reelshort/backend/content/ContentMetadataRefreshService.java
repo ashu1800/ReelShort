@@ -25,6 +25,25 @@ public class ContentMetadataRefreshService {
 		this.properties = properties;
 	}
 
+	/**
+	 * 简介补抓：TwistyTV 的 `/browse` 卡片没有简介，货架里那些书只能按本翻详情页补。
+	 * 每次跑一小批并留间隔，跑完一轮就停（队列为空时是空查询，成本可忽略）。
+	 */
+	@Scheduled(
+			initialDelayString = "${reelshort.content.description-backfill.initial-delay:2m}",
+			fixedDelayString = "${reelshort.content.description-backfill.interval:10m}")
+	public void backfillMissingDescriptions() {
+		if (!properties.isDescriptionBackfillEnabled()) {
+			return;
+		}
+		int limit = properties.getDescriptionBackfillLimit();
+		int filled = contentCacheService.backfillMissingDescriptions(
+				ContentLocale.ENGLISH, limit, properties.getDescriptionBackfillPause());
+		if (filled > 0) {
+			log.info("Backfilled {} book descriptions (limit {})", filled, limit);
+		}
+	}
+
 	@Scheduled(
 			initialDelayString = "${reelshort.content.refresh.initial-delay:5m}",
 			fixedDelayString = "${reelshort.content.refresh.interval:6h}")
