@@ -1,5 +1,5 @@
 {
-  "source": "android-app/app/src/main/java/com/reelshort/app/ui/format/AppStrings.kt",
+  "source": "android-flutter/tool/contract/AppStrings.kt",
   "field_count": 190,
   "fields": {
     "homeTab": "Home",

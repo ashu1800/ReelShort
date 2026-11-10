@@ -1,5 +1,5 @@
 {
-  "source": "android-app/app-core/src/main/kotlin/com/reelshort/app/state/AppUiState.kt",
+  "source": "android-flutter/tool/contract/AppUiState.kt",
   "enum_count": 4,
   "field_count": 47,
   "enums": {

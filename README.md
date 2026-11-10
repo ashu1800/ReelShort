@@ -8,7 +8,7 @@ ReelShort 是一个可单机部署的开源聚合播放平台，包含 Android �
 
 - `backend`：Spring Boot 模块化单体后端，提供 App 业务接口与后台管理接口。
 - `admin-web`：Vue 3 + Element Plus 后台管理网站，包含控制台、用户运营、提现管理、VIP 订单、内容缓存、系统配置、运行诊断、异常告警、系统日志和审计日志视图。
-- `android-app`：Kotlin + Jetpack Compose Android 客户端（用户可见品牌 `ShortLink`），含纯 Kotlin `app-core` 模块。
+- `android-flutter/tool/contract`：已退役 Kotlin 客户端仅存的冻结契约源（`AppStrings.kt`/`AppUiState.kt`），供 Dart 生成器与 golden 使用。
 - `content-provider`：Flask 内容源适配服务，仅供后端同机内部调用。
 - `infra`：单机部署、备份恢复和基础设施配置。
 - `docs`：接口、部署、计划文档。

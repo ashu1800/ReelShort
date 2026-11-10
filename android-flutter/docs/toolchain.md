@@ -1,6 +1,6 @@
 # ShortLink Flutter 工具链
 
-本文件说明 `android-flutter/` 的构建环境、常用命令与已知约束。应用本身是 `android-app` 的 Flutter 重构版，功能对齐但不是 UI 复刻。
+本文件说明 `android-flutter/` 的构建环境、常用命令与已知约束。应用本身是原 Kotlin 版客户端的 Flutter 重构版，功能对齐但不是 UI 复刻。
 
 ## 版本矩阵
 
@@ -15,7 +15,7 @@
 | Kotlin (Gradle 插件) | `2.4.0` | 仅用于宿主 `MainActivity`，业务逻辑全在 Dart |
 | Android SDK Platform | `android-36` | `compileSdk = 36` |
 | Android Build-Tools | `36.0.0` | |
-| `minSdk` / `targetSdk` | `26` / `35` | 与 `android-app` 一致 |
+| `minSdk` / `targetSdk` | `26` / `35` | 与原 Kotlin 版一致 |
 | `applicationId` | `com.reelshort.app` | 与已发布应用一致，可覆盖升级 |
 | versionName / versionCode | `0.9.10` / `52` | 由 `pubspec.yaml` 的 `version:` 决定 |
 
@@ -58,7 +58,7 @@ python tool/port_app_ui_state.py
 
 - 后端 `GET /api/app/release/latest`（游客可访问）返回版本清单与 COS 预签名下载地址。
 - 打包需要一个 versionCode 高于线上 `0.9.8 (50)` 的 APK：`pubspec.yaml` 已设为 `0.9.10+52`。
-- 正式 APK 必须使用 `android-app/release-signing/shortlink-release.jks` 的原正式证书签名，详见 [signing.md](signing.md)。
+- 正式 APK 必须使用 `release-signing/shortlink-release.jks` 的原正式证书签名，详见 [signing.md](signing.md)。
 
 ## 环境约束与已知问题
 
@@ -95,8 +95,9 @@ adb -s emulator-5554 logcat -d -t 200
 `apksigner verify --print-certs` 输出的证书 SHA-256 必须等于
 `c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9`。
 
-## 与 `android-app` 的关系
+## 与已退役 Kotlin 版的关系
 
-- `android-app/` 是**只读参考实现**，承载功能契约与既有测试；本次重构不修改它。
-- 逻辑层（网络、模型、存储边界、状态机、格式化契约）按 Kotlin 逐行对齐移植；表现层（`ui/`）完全重写。
+- Kotlin 客户端（原 `android-app/`）已于 2026-11-10 整体删除；仓库不再包含该工程。
+- 仅保留两份**冻结契约源**在 `tool/contract/`：`AppStrings.kt` 与 `AppUiState.kt`，由 `tool/port_app_strings.py`、`tool/port_app_ui_state.py` 读取并生成 Dart 侧 `app_strings.dart`/`app_ui_state.dart` 与 golden。改文案/状态契约现在直接改这两份冻结源，再重跑生成器。
+- 逻辑层（网络、模型、存储边界、状态机、格式化契约）仍按 Kotlin 逐行对齐移植；表现层（`ui/`）完全重写。
 - 无法 1:1 对齐的差异统一记录在 [parity-matrix.md](parity-matrix.md)。

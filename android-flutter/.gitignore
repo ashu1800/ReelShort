@@ -43,7 +43,7 @@ app.*.map.json
 .widget_preview/
 
 # ---------------------------------------------------------------------------
-# Release signing (mirrors the policy of android-app/.gitignore).
+# Release signing.
 #
 # The Flutter client is signed with the same official ShortLink certificate as
 # the Kotlin client, so every signing input and generated keystore stays out of

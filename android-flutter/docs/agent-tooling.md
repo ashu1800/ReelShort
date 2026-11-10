@@ -42,10 +42,10 @@ adb shell uiautomator dump /sdcard/ui.xml; adb pull /sdcard/ui.xml .
 ```
 
 构建 debug APK 需要正式签名环境变量（Gradle 打包前 fail-closed 校验钉死证书）。
-本地值在 gitignored 的 `android-app/release-signing/signing-config.txt`：
+本地值在 gitignored 的 `release-signing/signing-config.txt`（相对 `android-flutter/`）：
 
 ```powershell
-$signingDir = "..\android-app\release-signing"
+$signingDir = "..\android-flutter\release-signing"
 Get-Content "$signingDir\signing-config.txt" | ForEach-Object {
     if ($_ -match '^\s*(ANDROID_SIGNING_[A-Z_]+)\s*=\s*(.+)$') {
         Set-Item -Path "env:$($Matches[1])" -Value $Matches[2].Trim('"').Trim("'")

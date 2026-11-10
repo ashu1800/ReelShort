@@ -45,16 +45,10 @@ venv/
 content-provider/.venv/
 
 # Android
-android-app/.gradle/
-android-app/build/
-android-app/**/build/
-android-app/local.properties
-android-app/.idea/
 *.jks
 *.keystore
 *.p12
 *.signing.properties
-android-app/release-signing/signing-config.txt
 
 # Environment
 .env

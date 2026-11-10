@@ -29,11 +29,11 @@ App 启动
 
 线上 Release APK 统一使用恢复后的原正式 keystore：
 
-- 主文件：`android-app/release-signing/shortlink-release.jks`
-- 本地配置：`android-app/release-signing/signing-config.txt`
+- 主文件：`android-flutter/release-signing/shortlink-release.jks`
+- 本地配置：`android-flutter/release-signing/signing-config.txt`
 - 桌面备份：`C:\Users\Ashu\Desktop\ShortLink-Release-Signing-Backup`
 - 证书 SHA-256：`c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9`
-- 详细入口：`android-app/SIGNING.md`
+- 详细入口：`android-flutter/docs/signing.md`
 
 发布脚本会从本地忽略配置加载 `ANDROID_SIGNING_*` 并构建经过压缩和资源收缩的 Release 变体。项目的 Debug 与 Release 变体均使用同一正式 keystore；`Debug` 仅表示可调试属性，不使用 Debug 证书。文件缺失或证书不匹配时任何 APK/AAB 打包和发布都会失败；签名材料和密码禁止提交 Git 或输出到日志。
 

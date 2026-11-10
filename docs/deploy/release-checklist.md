@@ -39,18 +39,18 @@ powershell -ExecutionPolicy Bypass -File scripts/tests/verify-release-baseline-t
 Android UI 或播放器体验改动完成后，建议在完成 debug APK 编译后执行模拟器截图验收：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/android-ui-smoke.ps1
+powershell -ExecutionPolicy Bypass -File scripts/android-ui-review.ps1
 ```
 
-该脚本会安装 debug APK、启动 App、以默认 English UI 文案做 smoke 断言，采集首页、Me 页、继续观看区域以及播放器或登录面板的截图和 UI dump，产物默认输出到 `artifacts/android-ui-smoke/<timestamp>`。
+该脚本安装 `android-flutter/build/app/outputs/flutter-apk/app-debug.apk` 并采集关键界面截图。
 
 脚本默认执行：
 
 - `python -m pytest content-provider`
 - `backend\gradlew.bat test --no-daemon`
 - `npm ci`（仅 `admin-web/node_modules` 不存在时）、`npm run build` 和 `npm run test:contracts`
-- `android-app\gradlew.bat :app-core:test :app:testDebugUnitTest --no-daemon`
-- `android-app\gradlew.bat :app:assembleDebug --no-daemon`（需要 `ANDROID_SIGNING_*`）
+- `flutter analyze` + `flutter test`（在 `android-flutter` 下）
+- `flutter build apk --debug`（在 `android-flutter` 下，需要 `ANDROID_SIGNING_*`）
 - `infra/scripts/verify-backup-scripts.ps1` 静态校验
 - `scripts/tests/` 下的发布脚本与基线脚本回归测试
 - `git diff --check`、`git diff --cached --check`
@@ -123,7 +123,7 @@ Android 代码变更必须在模拟器完成手动验收，不能只依赖单元
 - 发布使用本地脚本 `python scripts/publish-android.py`，详细前置准备和参数见 `docs/deploy/publish-android.md`。
 - 脚本完成签名构建、`aapt` 的包名 / versionName / versionCode 校验，以及 SHA-256 与文件大小的计算和核对后，上传 APK 和 `.sha256` 到腾讯 COS（并回核 COS 对象大小），再 POST 发布元数据到后端 `POST /api/internal/release/publish`。发布阶段不再校验 APK 签名，签名约束由 Gradle 打包前的钉死证书门禁承担。
 - 后端在 `app_releases` 表 upsert 发布记录，App 清单只从 `https://shortlink.hjj888.cc/api/app/release/latest` 获取并直接返回 COS 预签名下载 URL；旧版 `/api/app/update/latest` 与 `/downloads/android/` 兼容链路已删除。
-- 线上 Release APK 必须使用 `android-app/release-signing/shortlink-release.jks` 的固定正式证书；换机器时迁移同一 keystore 和本地配置，禁止重新生成。COS 密钥、签名密码和超级 Token 只在 gitignored 本地文件或部署环境变量中，禁止写入仓库或日志。
+- 线上 Release APK 必须使用 `android-flutter/release-signing/shortlink-release.jks` 的固定正式证书；换机器时迁移同一 keystore 和本地配置，禁止重新生成。COS 密钥、签名密码和超级 Token 只在 gitignored 本地文件或部署环境变量中，禁止写入仓库或日志。
 
 发布后执行：
 

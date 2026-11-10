@@ -1,6 +1,6 @@
 # AppStateController parity audit
 
-Port of `android-app/app-core/src/main/kotlin/com/reelshort/app/state/AppStateController.kt`
+Port of the retired Kotlin `app-core` `AppStateController.kt` (source tree removed 2026-11-10)
 (1678 lines) to `android-flutter/lib/state/app_state_controller.dart`.
 
 - Kotlin `state.value` → `_state`; `mutableState.update { it.copy(...) }` →

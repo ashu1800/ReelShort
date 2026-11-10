@@ -17,10 +17,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-KOTLIN_SOURCE = (
-    REPO_ROOT
-    / "android-app/app-core/src/main/kotlin/com/reelshort/app/state/AppUiState.kt"
-)
+KOTLIN_SOURCE = REPO_ROOT / "android-flutter" / "tool" / "contract" / "AppUiState.kt"
 DART_OUTPUT = REPO_ROOT / "android-flutter/lib/state/app_ui_state.dart"
 GOLDEN_OUTPUT = REPO_ROOT / "android-flutter/test/state/app_ui_state_golden.json"
 
@@ -233,7 +230,7 @@ def main() -> int:
     dart = f"""// GENERATED FILE - DO NOT EDIT BY HAND.
 //
 // Produced by tool/port_app_ui_state.py from
-// android-app/app-core/src/main/kotlin/com/reelshort/app/state/AppUiState.kt
+// tool/contract/AppUiState.kt (frozen from the retired Kotlin app)
 // Regenerate with: python tool/port_app_ui_state.py
 //
 // Field names, types and defaults are a 1:1 port of the Kotlin state class.

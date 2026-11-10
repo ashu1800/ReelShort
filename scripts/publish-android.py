@@ -13,7 +13,7 @@ Interactive script that:
      which stores the record and serves short-lived COS pre-signed URLs to the App.
 
 发布阶段不再校验 APK 签名：正式签名由 Gradle 打包前的钉死证书校验保证
-(见 android-app/SIGNING.md)，自动更新链路的完整性依据是清单里的
+(见 android-flutter/docs/signing.md)，自动更新链路的完整性依据是清单里的
 apkSha256/sizeBytes 与下载后的 SHA-256、文件大小比对。
 
 Configuration is read from a local .env file in the repo root (gitignored) or from
@@ -44,12 +44,11 @@ except ImportError:  # pragma: no cover - dependency bootstrapped below
     CosS3Client = None
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ANDROID_DIR = REPO_ROOT / "android-app"
 FLUTTER_DIR = REPO_ROOT / "android-flutter"
 OBJECT_KEY_PREFIX = "releases/android"
 PACKAGE_NAME = "com.reelshort.app"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
-RELEASE_SIGNING_DIR = ANDROID_DIR / "release-signing"
+RELEASE_SIGNING_DIR = FLUTTER_DIR / "release-signing"
 RELEASE_SIGNING_CONFIG = RELEASE_SIGNING_DIR / "signing-config.txt"
 RELEASE_KEYSTORE = RELEASE_SIGNING_DIR / "shortlink-release.jks"
 # App 侧 ReleaseDownloader/OkHttpReleaseDownloader 对 .sha256 旁路文件的解析约束：
@@ -73,9 +72,7 @@ def main() -> int:
         config = load_config()
         version_name, version_code, release_notes = resolve_inputs(args, config)
         preflight_release(config, version_name, version_code)
-        apk_path = build_apk(version_name, version_code,
-                             config.get("REELSHORT_COS_BUCKET", ""), config.get("REELSHORT_COS_REGION", ""),
-                             source=args.source)
+        apk_path = build_apk(version_name, version_code)
         verify_apk_metadata(apk_path, version_name, version_code)
         sha256_hex, apk_size, sha256_path, sha256_size = compute_artifacts(
             apk_path, apk_object_key(version_name))
@@ -107,9 +104,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mandatory", action="store_true", help="Mark the release as mandatory.")
     parser.add_argument("--minimum-version-code", type=int, default=1,
                         help="Minimum app version code that may install this update (default 1).")
-    parser.add_argument("--source", choices=("flutter", "kotlin"), default="flutter",
-                        help="Which app tree to build. The Flutter app is the release target since "
-                             "the Kotlin app entered maintenance (default: flutter).")
     return parser.parse_args()
 
 
@@ -228,8 +222,7 @@ def preflight_release(config: dict, version_name: str, version_code: int) -> Non
               f"re-publishing v{version_name} overwrites that release's object keys.")
 
 
-def build_apk(version_name: str, version_code: int, cos_bucket: str = "", cos_region: str = "",
-              source: str = "flutter") -> Path:
+def build_apk(version_name: str, version_code: int) -> Path:
     print(f"\n=== Building ShortLink v{version_name} ({version_code}) ===")
     required_signing = [
         "ANDROID_SIGNING_STORE_FILE",
@@ -243,35 +236,17 @@ def build_apk(version_name: str, version_code: int, cos_bucket: str = "", cos_re
             "Release signing is not configured. Missing: " + ", ".join(missing_signing) +
             f". Restore {RELEASE_SIGNING_CONFIG} or set the signing environment variables."
         )
-    if source == "flutter":
-        cmd = [
-            find_flutter_bin(),
-            "build", "apk", "--release",
-            f"--build-name={version_name}",
-            f"--build-number={version_code}",
-        ]
-        print(f"$ {' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=str(FLUTTER_DIR))
-        if result.returncode != 0:
-            raise PublishError("Flutter release build failed.")
-        apk = FLUTTER_DIR / "build" / "app" / "outputs" / "flutter-apk" / "app-release.apk"
-    else:
-        gradlew = str(ANDROID_DIR / ("gradlew.bat" if os.name == "nt" else "gradlew"))
-        cmd = [
-            gradlew, ":app:assembleRelease",
-            f"-PappVersionName={version_name}",
-            f"-PappVersionCode={version_code}",
-        ]
-        # 把 .env 里的 COS 桶/地域传给 App 构建：App 只接受该桶的精确下载域名，避免两处配置漂移。
-        if cos_bucket:
-            cmd.append(f"-PreelshortCosBucket={cos_bucket}")
-        if cos_region:
-            cmd.append(f"-PreelshortCosRegion={cos_region}")
-        print(f"$ {' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=str(ANDROID_DIR))
-        if result.returncode != 0:
-            raise PublishError("Gradle release build failed.")
-        apk = ANDROID_DIR / "app" / "build" / "outputs" / "apk" / "release" / "app-release.apk"
+    cmd = [
+        find_flutter_bin(),
+        "build", "apk", "--release",
+        f"--build-name={version_name}",
+        f"--build-number={version_code}",
+    ]
+    print(f"$ {' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=str(FLUTTER_DIR))
+    if result.returncode != 0:
+        raise PublishError("Flutter release build failed.")
+    apk = FLUTTER_DIR / "build" / "app" / "outputs" / "flutter-apk" / "app-release.apk"
     if not apk.exists():
         raise PublishError(f"Expected APK not found at {apk}.")
     print(f"Built APK: {apk}")

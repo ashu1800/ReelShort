@@ -1,6 +1,6 @@
 # ShortLink Flutter 签名与发布
 
-Flutter 重构版**沿用 `android-app` 的正式签名身份**，不使用 Debug 证书。这样线上已安装的 Kotlin 版应用可以被 Flutter 版原地覆盖升级。
+Flutter 客户端**沿用原 Kotlin 版的正式签名身份**（该客户端已退役删除，签名身份保留），不使用 Debug 证书。这样线上已安装的旧版应用可以被新版本原地覆盖升级。
 
 ## 固定身份
 
@@ -8,8 +8,8 @@ Flutter 重构版**沿用 `android-app` 的正式签名身份**，不使用 Debu
 | --- | --- |
 | 包名 / `applicationId` / `namespace` | `com.reelshort.app` |
 | 正式证书 SHA-256 | `c1a149d5352c5c313d8d7d995470da31a3bd298281abba914e559747bb45c2f9` |
-| Keystore | `android-app/release-signing/shortlink-release.jks` |
-| Keystore 本地配置 | `android-app/release-signing/signing-config.txt`（gitignored） |
+| Keystore | `android-flutter/release-signing/shortlink-release.jks` |
+| Keystore 本地配置 | `android-flutter/release-signing/signing-config.txt`（gitignored） |
 
 Keystore 与本地配置都已被 `.gitignore` 忽略，**不得**提交、打印、截图或粘贴到任何对话与日志中。Flutter 侧的 `.gitignore` 额外忽略了 `android/key.properties`、`android/local.properties`、`*.jks`、`*.keystore`、`*.p12`。
 
@@ -32,12 +32,12 @@ Keystore 与本地配置都已被 `.gitignore` 忽略，**不得**提交、打�
 
 ```powershell
 $cfg = @{}
-Get-Content 'D:\Sync\AICoding\ReelShort\android-app\release-signing\signing-config.txt' | ForEach-Object {
+Get-Content 'D:\Sync\AICoding\ReelShort\android-flutter\release-signing\signing-config.txt' | ForEach-Object {
   if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
     $cfg[$matches[1]] = $matches[2].Trim().Trim('"').Trim("'")
   }
 }
-$env:ANDROID_SIGNING_STORE_FILE    = 'D:\Sync\AICoding\ReelShort\android-app\release-signing\shortlink-release.jks'
+$env:ANDROID_SIGNING_STORE_FILE    = 'D:\Sync\AICoding\ReelShort\android-flutter\release-signing\shortlink-release.jks'
 $env:ANDROID_SIGNING_STORE_PASSWORD = $cfg['ANDROID_SIGNING_STORE_PASSWORD']
 $env:ANDROID_SIGNING_KEY_ALIAS      = $cfg['ANDROID_SIGNING_KEY_ALIAS']
 $env:ANDROID_SIGNING_KEY_PASSWORD   = $cfg['ANDROID_SIGNING_KEY_PASSWORD']
@@ -116,5 +116,5 @@ Set-Location android-flutter\android
 ## 相关文档
 
 - 构建环境与命令：[toolchain.md](toolchain.md)
-- Kotlin 版发布流程与脚本：`android-app/SIGNING.md`、`docs/deploy/publish-android.md`
-- 与 Kotlin 版的差异清单：[parity-matrix.md](parity-matrix.md)
+- 发布流程与脚本：`docs/deploy/publish-android.md`
+- 与原 Kotlin 版的差异清单：[parity-matrix.md](parity-matrix.md)

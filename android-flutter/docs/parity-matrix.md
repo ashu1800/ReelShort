@@ -1,11 +1,11 @@
-# 功能对齐矩阵（Kotlin `android-app` → Flutter `android-flutter`）
+# 功能对齐矩阵（已退役 Kotlin 客户端 → Flutter `android-flutter`）
 
 本文档是「功能百分百重构」的审计凭据：**哪些按 1:1 移植、哪些被刻意重写、哪些原有缺陷被保留、哪些偏差是刻意的**。
 
 对齐口径：
 
 - **逻辑层 1:1**：网络契约、数据模型、存储边界、状态机、格式化与业务规则按 Kotlin 逐行移植，行为必须一致（含边界值与错误分支）。
-- **表现层重写**：`android-app/app/src/main/java/com/reelshort/app/ui/**` 的布局与交互**不复刻**，按全新设计系统重做（见 [design-system.md](design-system.md)）。因此「像素级一致」不在验收范围内，「行为一致」在。
+- **表现层重写**：原 Kotlin 版 `ui/**` 的布局与交互**不复刻**，按全新设计系统重做（见 [design-system.md](design-system.md)）。因此「像素级一致」不在验收范围内，「行为一致」在。
 - 表现层重写时**不得改变**任何业务规则。规则清单见下文第 4 节。
 - 任何无法 1:1 对齐之处必须出现在本文档，不允许静默偏离。
 

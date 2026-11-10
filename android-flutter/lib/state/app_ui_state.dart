@@ -1,7 +1,7 @@
 // GENERATED FILE - DO NOT EDIT BY HAND.
 //
 // Produced by tool/port_app_ui_state.py from
-// android-app/app-core/src/main/kotlin/com/reelshort/app/state/AppUiState.kt
+// tool/contract/AppUiState.kt (frozen from the retired Kotlin app)
 // Regenerate with: python tool/port_app_ui_state.py
 //
 // Field names, types and defaults are a 1:1 port of the Kotlin state class.

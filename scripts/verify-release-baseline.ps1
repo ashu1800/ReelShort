@@ -17,10 +17,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$androidDir = Join-Path $repoRoot "android-app"
+$androidDir = Join-Path $repoRoot "android-flutter"
 $backendDir = Join-Path $repoRoot "backend"
 $adminWebDir = Join-Path $repoRoot "admin-web"
-$apkPath = Join-Path $androidDir "app\build\outputs\apk\debug\app-debug.apk"
+$apkPath = Join-Path $androidDir "build\app\outputs\flutter-apk\app-debug.apk"
 $failures = New-Object System.Collections.Generic.List[string]
 
 function Invoke-Step {
@@ -141,10 +141,11 @@ if (-not $SkipAdminWeb -and -not $SkipAdminWebContracts) {
 }
 
 if (-not $SkipAndroid) {
-    Invoke-Step "Android unit tests" {
+    Invoke-Step "Android analyze and tests" {
         Push-Location $androidDir
         try {
-            Invoke-Native ".\gradlew.bat" @(":app-core:test", ":app:testDebugUnitTest", "--no-daemon")
+            Invoke-Native "flutter" @("analyze")
+            Invoke-Native "flutter" @("test")
         } finally {
             Pop-Location
         }
@@ -154,7 +155,7 @@ if (-not $SkipAndroid) {
         Invoke-Step "Android debug APK packaging (requires ANDROID_SIGNING_*)" {
             Push-Location $androidDir
             try {
-                Invoke-Native ".\gradlew.bat" @(":app:assembleDebug", "--no-daemon")
+                Invoke-Native "flutter" @("build", "apk", "--debug")
             } finally {
                 Pop-Location
             }

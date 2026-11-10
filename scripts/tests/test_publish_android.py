@@ -256,10 +256,12 @@ class PublishAndroidTests(unittest.TestCase):
         发布脚本不再校验签名，正式签名完全由 Gradle 打包前的钉死证书门禁保证：
         这里继续锁定该门禁不被移除或换成 Debug 证书。
         """
-        gradle_file = Path(__file__).resolve().parents[2] / "android-app" / "app" / "build.gradle.kts"
+        gradle_file = (
+            Path(__file__).resolve().parents[2] / "android-flutter" / "android" / "app" / "build.gradle.kts"
+        )
         gradle = gradle_file.read_text(encoding="utf-8")
 
-        self.assertIn('environmentVariable("ANDROID_SIGNING_STORE_FILE")', gradle)
+        self.assertIn('System.getenv("ANDROID_SIGNING_STORE_FILE")', gradle)
         self.assertIn('create("official")', gradle)
         self.assertEqual(2, gradle.count('signingConfig = signingConfigs.getByName("official")'))
         self.assertIn(PINNED_RELEASE_CERT_SHA256, gradle)
@@ -294,10 +296,10 @@ class PublishAndroidTests(unittest.TestCase):
                 self.assertEqual("key-secret", os.environ["ANDROID_SIGNING_KEY_PASSWORD"])
 
     def test_local_signing_config_is_gitignored(self):
-        gitignore_path = Path(__file__).resolve().parents[2] / ".gitignore"
+        gitignore_path = Path(__file__).resolve().parents[2] / "android-flutter" / ".gitignore"
 
         self.assertIn(
-            "android-app/release-signing/signing-config.txt",
+            "release-signing/signing-config.txt",
             gitignore_path.read_text(encoding="utf-8").splitlines(),
         )
 

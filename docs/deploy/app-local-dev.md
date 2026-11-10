@@ -66,7 +66,7 @@ powershell -ExecutionPolicy Bypass -File infra/scripts/start-app-local-dev.ps1 -
 
 脚本会执行：
 
-- 写入被 Git 忽略的 `android-app/local.properties`。
+- 写入被 Git 忽略的 `android-flutter/android/local.properties`（Flutter 工具链自行生成）。
 - 检查内容源和后端端口是否空闲。
 - 启动 `content-provider`。
 - 等待 `content-provider` `/health` 返回 `UP`。

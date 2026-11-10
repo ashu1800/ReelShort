@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Generate the Dart port of android-app's AppStrings.kt.
+"""Generate the Dart port of the frozen AppStrings.kt contract.
 
-The Flutter rewrite must preserve the exact English copy of the Kotlin app
-(190 fields) without hand-transcribing it. This script reads the Kotlin source
-of truth and emits:
+The Flutter rewrite must preserve the exact English copy of the retired Kotlin
+app (190 fields) without hand-transcribing it. This script reads the frozen
+contract source of truth and emits:
 
   * lib/core/formatting/app_strings.dart   -- the Dart port
   * test/core/app_strings_golden.json      -- a golden snapshot of every field
                                               value, used by the contract test
                                               to prove cross-language parity
 
-Re-run whenever android-app/app/src/main/java/com/reelshort/app/ui/format/AppStrings.kt
-changes. Run from the android-flutter directory:
+Re-run whenever tool/contract/AppStrings.kt changes. Run from the android-flutter
+directory:
 
     python tool/port_app_strings.py
 """
@@ -24,20 +24,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-KOTLIN_SOURCE = (
-    REPO_ROOT
-    / "android-app"
-    / "app"
-    / "src"
-    / "main"
-    / "java"
-    / "com"
-    / "reelshort"
-    / "app"
-    / "ui"
-    / "format"
-    / "AppStrings.kt"
-)
+KOTLIN_SOURCE = REPO_ROOT / "android-flutter" / "tool" / "contract" / "AppStrings.kt"
 DART_OUTPUT = REPO_ROOT / "android-flutter" / "lib" / "core" / "formatting" / "app_strings.dart"
 GOLDEN_OUTPUT = REPO_ROOT / "android-flutter" / "test" / "core" / "app_strings_golden.json"
 
@@ -148,13 +135,13 @@ def build_dart(fields: list[str], pairs: dict[str, str], groups) -> str:
 
     return f'''// GENERATED FILE - DO NOT EDIT BY HAND.
 //
-// Source of truth: android-app/app/src/main/java/com/reelshort/app/ui/format/AppStrings.kt
+// Source of truth: tool/contract/AppStrings.kt (frozen from the retired Kotlin app)
 // Regenerate with: python tool/port_app_strings.py
 //
-// The Flutter rewrite keeps every user-visible English string of the Kotlin app
-// in one place, exactly like the original. test/core/generated_contract_test.dart
-// compares every value below against test/core/app_strings_golden.json, which the
-// same generator snapshots straight from the Kotlin source.
+// The Flutter app keeps every user-visible English string in one place, exactly
+// like the original Kotlin app. test/core/generated_contract_test.dart compares
+// every value below against test/core/app_strings_golden.json, which the same
+// generator snapshots straight from the contract source.
 
 import 'package:meta/meta.dart';
 

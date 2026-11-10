@@ -58,10 +58,7 @@ void main() {
       final Map<String, Object?> fields = _stringFields(golden);
       expect(golden['field_count'], fields.length);
       expect(fields, isNotEmpty);
-      expect(
-        golden['source'],
-        'android-app/app/src/main/java/com/reelshort/app/ui/format/AppStrings.kt',
-      );
+      expect(golden['source'], 'android-flutter/tool/contract/AppStrings.kt');
     });
 
     test('every generated field matches the golden verbatim', () {
@@ -139,10 +136,7 @@ void main() {
           (golden['enums']! as Map<Object?, Object?>).cast<String, Object?>();
       expect(golden['field_count'], fields.length);
       expect(golden['enum_count'], enums.length);
-      expect(
-        golden['source'],
-        'android-app/app-core/src/main/kotlin/com/reelshort/app/state/AppUiState.kt',
-      );
+      expect(golden['source'], 'android-flutter/tool/contract/AppUiState.kt');
     });
 
     test('every generated enum keeps its Kotlin member order', () {

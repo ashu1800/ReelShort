@@ -1,12 +1,12 @@
 // GENERATED FILE - DO NOT EDIT BY HAND.
 //
-// Source of truth: android-app/app/src/main/java/com/reelshort/app/ui/format/AppStrings.kt
+// Source of truth: tool/contract/AppStrings.kt (frozen from the retired Kotlin app)
 // Regenerate with: python tool/port_app_strings.py
 //
-// The Flutter rewrite keeps every user-visible English string of the Kotlin app
-// in one place, exactly like the original. test/core/generated_contract_test.dart
-// compares every value below against test/core/app_strings_golden.json, which the
-// same generator snapshots straight from the Kotlin source.
+// The Flutter app keeps every user-visible English string in one place, exactly
+// like the original Kotlin app. test/core/generated_contract_test.dart compares
+// every value below against test/core/app_strings_golden.json, which the same
+// generator snapshots straight from the contract source.
 
 import 'package:meta/meta.dart';
 

@@ -55,8 +55,8 @@ function Wait-Health {
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $contentProviderDir = Join-Path $repoRoot "content-provider"
 $backendDir = Join-Path $repoRoot "backend"
-$androidDir = Join-Path $repoRoot "android-app"
-$apkPath = Join-Path $androidDir "app\build\outputs\apk\debug\app-debug.apk"
+$androidDir = Join-Path $repoRoot "android-flutter"
+$apkPath = Join-Path $androidDir "build\app\outputs\flutter-apk\app-debug.apk"
 $logDir = Join-Path $repoRoot "backend\build\app-local-dev"
 $contentProviderStdout = Join-Path $logDir "content-provider.out.log"
 $contentProviderStderr = Join-Path $logDir "content-provider.err.log"
@@ -76,7 +76,6 @@ Remove-Item -LiteralPath $contentProviderStdout,$contentProviderStderr,$backendS
 
 $env:ANDROID_HOME = $AndroidSdk
 $env:ANDROID_SDK_ROOT = $AndroidSdk
-Set-Content -LiteralPath (Join-Path $androidDir "local.properties") -Value ("sdk.dir=" + ($AndroidSdk -replace "\\", "/")) -Encoding ASCII
 
 $contentProvider = $null
 $backend = $null
@@ -100,7 +99,7 @@ try {
 
     Push-Location $androidDir
     try {
-        .\gradlew.bat :app:assembleDebug --no-daemon "-PreelshortApiBaseUrl=http://10.0.2.2:$BackendPort/api/app"
+        flutter build apk --debug
     } finally {
         Pop-Location
     }
