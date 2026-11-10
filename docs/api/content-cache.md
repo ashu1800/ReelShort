@@ -10,6 +10,22 @@
 | `new-release` | `/api/v1/reelshort/newrelease` | 新剧。 |
 | `drama-dub` | `/api/v1/reelshort/dramadub` | 配音分类。 |
 
+## 内容上游与切换
+
+内容源同时适配两个短视频上游，Spring Boot 按系统配置 **`content.upstream`** 逐请求下发
+请求头 `X-Content-Upstream`（值 `TWISTYTV` / `REELSHORT`，小写后作为上游名）。
+
+| 配置值 | 上游名 | 说明 |
+| --- | --- | --- |
+| `TWISTYTV`（默认） | `twistytv` | 聚合站 twistytv.com，索引 NetShort / ReelShort / DramaBox，无账号体系与付费墙。 |
+| `REELSHORT` | `reelshort` | 官方站，锁集依赖已登录账号权益（见 `content-provider/README.md`）。 |
+
+- 内容源按 `X-Content-Upstream` 路由；未知值返回 `400 unknown upstream`，**不做静默回退**。缺省（无该头）等同 `reelshort`，只为兼容旧客户端。
+- `GET /diagnostics` 返回 `upstreams.{twistytv,reelshort}` 各自快照；顶层 `diagnostics` 跟随 `X-Content-Upstream` 指向**当前上游**（后端诊断页与告警只读该字段），并回显 `active_upstream`。后端 `ContentProviderRuntimeDependencyChecker` 会带上当前上游头。
+- 切换后后端立即清空 `content_shelf_cache`（货架行）并在后台线程按 `REELSHORT_CONTENT_REFRESH_SHELVES` 重抓；不清的话用户会继续看到旧上游片单，直到 6 小时后的定时刷新。
+- `content_book_cache` / `content_episode_cache` / `content_video_cache` **不清**：两套上游的 `bookId` 形态天然不同（TwistyTV 为 `ns_`/`rs_`/`db_` 前缀，ReelShort 为纯数字），键空间不重叠，切回去历史数据仍然有效。
+- `vip.free-episodes` 门禁与上游无关：切到 TwistyTV 后非 VIP 仍只能看前 N 集，奖励规则同样按服务端时长计算。
+
 ## App API
 
 以下 App 内容接口都保留可选 `locale` 参数以求兼容，但**当前只支持英文单语 `en`**：任何传入值都会被解析为 `en`，缓存也只保存一套英文元数据。观看记录、收藏、点赞和评论按 `bookId` 关联，不按语言拆分。

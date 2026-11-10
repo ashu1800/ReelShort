@@ -1,6 +1,7 @@
 package com.reelshort.backend.system.config;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -20,6 +21,9 @@ public class SystemConfigRegistry {
 	public static final String POINTS_DAILY_EARNED_FLUCTUATION_PERCENT = "points.daily-earned.fluctuation-percent";
 	public static final String POINTS_FAIR_MODE_ENABLED = "points.fair-mode.enabled";
 	public static final String CONTENT_RECOMMENDATION_STRATEGY = "content.recommendation.strategy";
+	public static final String CONTENT_UPSTREAM = "content.upstream";
+	/** 默认上游：TwistyTV。ReelShort 保留为备选，后台可随时切回。 */
+	public static final String DEFAULT_CONTENT_UPSTREAM = "twistytv";
 	public static final String WITHDRAW_USDT_PER_50_POINTS = "withdraw.usdt-per-50-points";
 	public static final String WITHDRAW_MINIMUM_USDT = "withdraw.minimum-usdt";
 	public static final String WITHDRAW_FEE_PERCENT = "withdraw.fee-percent";
@@ -58,7 +62,11 @@ public class SystemConfigRegistry {
 			new SystemConfigDefinition(VIP_ORDER_TIMEOUT_MINUTES, "20",
 					"VIP order payment timeout in minutes.", ValueType.INTEGER, 1, 10_000, Set.of()),
 			new SystemConfigDefinition(CONTENT_RECOMMENDATION_STRATEGY, "LATEST", "Default content recommendation strategy.",
-					ValueType.ENUM, 0, 0, Set.of("LATEST", "POPULAR")));
+					ValueType.ENUM, 0, 0, Set.of("LATEST", "POPULAR")),
+			// 默认值从常量推导：配置行缺失时用定义里的默认，存储值为空时用常量，两处必须是同一个值。
+			new SystemConfigDefinition(CONTENT_UPSTREAM, DEFAULT_CONTENT_UPSTREAM.toUpperCase(Locale.ROOT),
+					"Active short-drama upstream. TWISTYTV is the default; REELSHORT is the fallback.",
+					ValueType.ENUM, 0, 0, Set.of("TWISTYTV", "REELSHORT")));
 
 	private final Map<String, SystemConfigDefinition> definitionsByKey = definitions.stream()
 			.collect(Collectors.toUnmodifiableMap(SystemConfigDefinition::key, Function.identity()));

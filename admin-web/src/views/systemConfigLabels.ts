@@ -36,6 +36,11 @@ export const systemConfigLabels: Record<string, { name: string; description: str
     name: '推荐策略',
     description: '默认内容推荐策略（最新 / 热门）。',
   },
+  'content.upstream': {
+    name: '内容上游',
+    description:
+      '当前抓取的短视频上游。TwistyTV 为默认；ReelShort 保留为备选。切换后立即清空货架缓存并重新抓取，App 首页与搜索会换成新上游内容。',
+  },
   'vip.price-usdt': {
     name: 'VIP 月费（USDT）',
     description: 'VIP 月度订阅价格（USDT）。',

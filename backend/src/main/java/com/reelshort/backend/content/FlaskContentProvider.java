@@ -1,11 +1,14 @@
 package com.reelshort.backend.content;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
@@ -16,6 +19,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.reelshort.backend.content.account.ReelshortAccountGateway;
+import com.reelshort.backend.system.config.SystemConfigChangedEvent;
+import com.reelshort.backend.system.config.SystemConfigRegistry;
+import com.reelshort.backend.system.config.SystemConfigService;
 
 @Component
 public class FlaskContentProvider implements ContentProvider, ReelshortAccountGateway {
@@ -23,28 +29,76 @@ public class FlaskContentProvider implements ContentProvider, ReelshortAccountGa
 	/** P2-16：content-provider 的内部共享密钥请求头。 */
 	static final String INTERNAL_TOKEN_HEADER = "X-Content-Provider-Token";
 
+	/** 上游选择头：内容源按它决定去抓 ReelShort 还是 TwistyTV。 */
+	static final String UPSTREAM_HEADER = "X-Content-Upstream";
+
 	private final RestClient restClient;
 	private final String baseUrl;
+	private final Supplier<String> upstreamSupplier;
+	private volatile String cachedUpstream;
 
 	@Autowired
 	public FlaskContentProvider(RestClient.Builder restClientBuilder,
 			@Value("${reelshort.content-provider.base-url:http://127.0.0.1:5000}") String baseUrl,
 			@Value("${reelshort.content-provider.internal-token:${CONTENT_PROVIDER_INTERNAL_TOKEN:}}")
-			String internalToken) {
+			String internalToken, SystemConfigService systemConfigService) {
+		this(restClientBuilder, baseUrl, internalToken,
+				() -> systemConfigService.stringValue(SystemConfigRegistry.CONTENT_UPSTREAM));
+	}
+
+	public FlaskContentProvider(RestClient.Builder restClientBuilder, String baseUrl, String internalToken) {
+		this(restClientBuilder, baseUrl, internalToken,
+				() -> SystemConfigRegistry.DEFAULT_CONTENT_UPSTREAM);
+	}
+
+	private FlaskContentProvider(RestClient.Builder restClientBuilder, String baseUrl, String internalToken,
+			Supplier<String> upstreamSupplier) {
 		// 内部 Token 未配置时不发送该请求头，保持本地开发可用；生产由部署环境注入。
 		this.restClient = internalToken == null || internalToken.isBlank()
 				? restClientBuilder.build()
 				: restClientBuilder.defaultHeader(INTERNAL_TOKEN_HEADER, internalToken).build();
 		this.baseUrl = trimTrailingSlash(baseUrl);
+		this.upstreamSupplier = upstreamSupplier;
 	}
 
 	static FlaskContentProvider fromRestClient(RestClient restClient, String baseUrl) {
-		return new FlaskContentProvider(restClient, baseUrl);
+		return new FlaskContentProvider(restClient, baseUrl, () -> SystemConfigRegistry.DEFAULT_CONTENT_UPSTREAM);
 	}
 
-	private FlaskContentProvider(RestClient restClient, String baseUrl) {
+	FlaskContentProvider(RestClient restClient, String baseUrl, Supplier<String> upstreamSupplier) {
 		this.restClient = restClient;
 		this.baseUrl = trimTrailingSlash(baseUrl);
+		this.upstreamSupplier = upstreamSupplier;
+	}
+
+	/**
+	 * 系统配置里存的是枚举（TWISTYTV / REELSHORT），内容源按小写名路由。
+	 *
+	 * <p>缓存住当前值：这个值一年最多改两次，却挡在整条内容读路径前面；每次请求都做一次
+	 * system_configs 主键查询只是把数据库往返加在首页、搜索、分集和播放上。切换时由
+	 * {@link #onConfigChanged} 立即刷新，不需要 TTL，也不会读到过期值。
+	 */
+	private String upstream() {
+		String cached = cachedUpstream;
+		if (cached != null) {
+			return cached;
+		}
+		String resolved = normalizeUpstream(upstreamSupplier.get());
+		cachedUpstream = resolved;
+		return resolved;
+	}
+
+	@EventListener
+	public void onConfigChanged(SystemConfigChangedEvent event) {
+		if (SystemConfigRegistry.CONTENT_UPSTREAM.equals(event.key())) {
+			cachedUpstream = normalizeUpstream(event.value());
+		}
+	}
+
+	private static String normalizeUpstream(String configured) {
+		return configured == null || configured.isBlank()
+				? SystemConfigRegistry.DEFAULT_CONTENT_UPSTREAM
+				: configured.trim().toLowerCase(Locale.ROOT);
 	}
 
 	@Override
@@ -115,6 +169,7 @@ public class FlaskContentProvider implements ContentProvider, ReelshortAccountGa
 		try {
 			T response = restClient.get()
 					.uri(url)
+					.header(UPSTREAM_HEADER, upstream())
 					.retrieve()
 					.body(responseType);
 			if (response == null) {

@@ -2,6 +2,29 @@
 
 Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProvider` 统一调用，App 和后台不能直接访问本服务。
 
+## 内容上游与切换
+
+本服务同时适配两个上游，按 **请求头 `X-Content-Upstream`** 选择（缺省 `reelshort`，只为向后兼容；后端正常都会带）：
+
+| 上游 | 名称 | 说明 |
+| --- | --- | --- |
+| TwistyTV | `twistytv` | **默认**。聚合站，索引 NetShort / ReelShort / DramaBox 三家；无账号体系、无付费墙。 |
+| ReelShort | `reelshort` | **备选**。官方站，锁集需要已登录账号权益，见下文。 |
+
+切换入口是后台系统配置 `content.upstream`（`TWISTYTV` / `REELSHORT`），不需要改环境变量或重启；后端会立即清空货架缓存并重抓。书目/分集缓存按 `bookId` 天然隔离（TwistyTV 是 `ns_`/`rs_`/`db_` 前缀，ReelShort 是纯数字），互不覆盖。
+
+`/diagnostics` 按上游分别返回快照（`upstreams.twistytv` / `upstreams.reelshort`，另给 `active_upstream`），顶层 `diagnostics` 跟随请求头 `X-Content-Upstream` 指向的当前上游——后端的诊断页与告警只读顶层字段，固定成 reelshort 会让默认上游的故障事件彻底不可见。
+
+`/api/v1/reelshort/{session,credentials,account,chapters}` 是 **ReelShort 专属**端点，永远打到 ReelShort 客户端——切到 TwistyTV 之后仍要能管理备用账号。
+
+### TwistyTV 抓取要点
+
+- 站点是 Next.js App Router：列表走 SSR HTML（`<a class="show-card" href="/watch/ID">`），详情与分集在 `/watch/ID` 的 RSC flight payload（`self.__next_f.push([1,"…"])`）里，解析时先拼分片再 `json.raw_decode`。
+- 播放地址：DramaBox / ReelShort 的 `streamUrl` 在 payload 里就是直链；**NetShort 恒为空**，要再请求 `GET /api/stream?series=&episode=&provider=`，且必须带 `Origin: https://twistytv.com`（缺了返回 400）。
+- **时长**上游不给，自己探：MP4 读 Range 里的 `moov/mvhd`（DramaBox/NetShort 实测 faststart，头 128 KB 内就有）；ReelShort 的 `streamUrl` 其实是 **m3u8**（URL 无扩展名，只能按内容嗅探），改为解析主播放列表的首个变体并累加 `#EXTINF` 分段。拿不到时返回 0 并记 `twistytv_duration_unknown`，播放不阻断，但那一集不产生奖励。
+- 货架映射：`recommend` ← 首页全部 row + `/browse` 前 N 页；`new-release` ← 首页 “New releases” 行；`drama-dub` ← `/genre/dubbed`。
+- 进程内缓存：watch 页解析结果（默认 600s）与每集时长（6h）。因此**仍然必须单 worker**（`gunicorn -w 1`）。
+
 ## 环境变量
 
 - `REELSHORT_SITE_URL`：ReelShort 站点根地址，默认 `https://www.reelshort.com`。
@@ -16,6 +39,11 @@ Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProv
 - `REELSHORT_CATALOG_MAX_BOOKS`：首页推荐扩容后的最大短剧数，默认 `500`，硬上限 `500`。
 - `REELSHORT_CATALOG_REQUEST_WORKERS`：片库扩展搜索请求并发数，默认 `8`，硬上限 `16`；设为 `1` 可改为串行。
 - `REELSHORT_UPSTREAM_COOKIE`：可选。ReelShort **登录态** Cookie 请求头的完整值（浏览器登录后复制，形如 `a=1; b=2`）。未配置时按匿名抓取，Header 集合与引入该能力前完全一致；配置后每个上游请求都会带上它。值中不允许出现换行（会被当作请求头注入直接拒绝）。
+- `TWISTYTV_SITE_URL`：TwistyTV 站点根地址，默认 `https://twistytv.com`。
+- `TWISTYTV_REQUEST_TIMEOUT_SECONDS`：TwistyTV 请求超时，默认 `15`。
+- `TWISTYTV_MAX_RESPONSE_BYTES`：TwistyTV 单次响应上限，默认 `4194304`（4 MiB）；列表页本身有 200-330 KB。
+- `TWISTYTV_PAGE_CACHE_SECONDS`：watch 页解析结果缓存时长，默认 `600`。
+- `TWISTYTV_MAX_SHELF_PAGES`：`recommend` 货架合并 `/browse` 的页数上限，默认 `3`。
 - `REELSHORT_ACCOUNT_FILE`：可选。后台下发账号的落盘位置，默认 `/srv/reelshort/content-provider/.account.json`（权限 `0600`）；容器镜像里是 `/app/data/.account.json`，由 Compose 卷 `content-provider-account` 承载。
 
 ## 上游登录态（解锁锁集）

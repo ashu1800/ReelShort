@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound;
@@ -295,6 +296,42 @@ class FlaskContentProviderTests {
 				.isInstanceOf(ContentProviderException.class)
 				.extracting("statusCode")
 				.isEqualTo(404);
+		server.verify();
+	}
+
+	@Test
+	void requestsTwistytvByDefault() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/recommend?locale=en"))
+				.andExpect(method(GET))
+				.andExpect(header(FlaskContentProvider.UPSTREAM_HEADER, "twistytv"))
+				.andRespond(withSuccess("""
+						{ "books": [] }
+						""", MediaType.APPLICATION_JSON));
+
+		provider.getShelf(ContentShelfType.RECOMMEND);
+
+		server.verify();
+	}
+
+	@Test
+	void upstreamHeaderFollowsTheConfiguredEnum() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = new FlaskContentProvider(builder.build(), "http://content-provider:5000",
+				() -> "REELSHORT");
+
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/recommend?locale=en"))
+				.andExpect(header(FlaskContentProvider.UPSTREAM_HEADER, "reelshort"))
+				.andRespond(withSuccess("""
+						{ "books": [] }
+						""", MediaType.APPLICATION_JSON));
+
+		provider.getShelf(ContentShelfType.RECOMMEND);
+
 		server.verify();
 	}
 

@@ -348,7 +348,7 @@ curl -sS http://127.0.0.1:8080/actuator/health        # {"status":"UP"}
 |---|---|---|---|
 | 后端 Java/配置/Flyway 迁移 | `releases/classes-<版本>` + 重指符号链接 | **约 1.4 MB** | 重启 backend |
 | 后台前端 | `admin-web/dist` | **约 1.4 MB** | 不需要 |
-| 内容源 Python | `content-provider/app.py` | **约 42 KB** | 重启 content-provider |
+| 内容源 Python | `content-provider/` 下**改动到的文件**：`app.py`、`fetcher.py`、`upstreams/`（含 `__init__.py` 与各上游模块） | 约 42–80 KB | 重启 content-provider |
 | systemd / Nginx / 环境文件 | 对应配置文件 | KB 级 | 按需 reload/restart |
 | 依赖版本变更（少见） | `app/BOOT-INF/lib` 中变化的 jar（或重传 app.jar 后重新展开） | 几 MB 起 | 重启 backend |
 

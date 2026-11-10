@@ -58,6 +58,13 @@ services:
       REELSHORT_CATALOG_REQUEST_WORKERS: ${REELSHORT_CATALOG_REQUEST_WORKERS:-8}
       # 后台下发的上游账号落盘位置（0600）：镜像里已建好属主，挂卷后跨 recreate 也不丢。
       REELSHORT_ACCOUNT_FILE: ${REELSHORT_ACCOUNT_FILE:-/app/data/.account.json}
+      # TwistyTV 是默认上游（后台 content.upstream 可切回 reelshort）；它没有账号体系，
+      # 只有站点地址、超时与页数上限。整页约 200-330 KB，响应上限按 MB 给。
+      TWISTYTV_SITE_URL: ${TWISTYTV_SITE_URL:-https://twistytv.com}
+      TWISTYTV_REQUEST_TIMEOUT_SECONDS: ${TWISTYTV_REQUEST_TIMEOUT_SECONDS:-15}
+      TWISTYTV_MAX_RESPONSE_BYTES: ${TWISTYTV_MAX_RESPONSE_BYTES:-4194304}
+      TWISTYTV_PAGE_CACHE_SECONDS: ${TWISTYTV_PAGE_CACHE_SECONDS:-600}
+      TWISTYTV_MAX_SHELF_PAGES: ${TWISTYTV_MAX_SHELF_PAGES:-3}
     volumes:
       - content-provider-account:/app/data
     expose:

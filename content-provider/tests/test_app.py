@@ -6,6 +6,7 @@ import pytest
 import time
 
 import app as app_module
+import fetcher as fetcher_module
 from app import INTERNAL_TOKEN_ENV, INTERNAL_TOKEN_HEADER, ReelShortClient, UpstreamError, create_app
 
 
@@ -195,14 +196,18 @@ def test_diagnostics_returns_empty_snapshot_for_fake_client(client):
     response = client.get("/diagnostics")
 
     assert response.status_code == 200
+    empty = {
+        "total_events": 0,
+        "counters": {},
+        "recent_events": [],
+    }
     assert response.get_json() == {
         "service": "reelshort-content-provider",
         "status": "UP",
-        "diagnostics": {
-            "total_events": 0,
-            "counters": {},
-            "recent_events": [],
-        },
+        # 上游选择：逐上游快照 + 顶层字段跟随当前上游（无请求头时是 reelshort）。
+        "active_upstream": "reelshort",
+        "upstreams": {"reelshort": empty},
+        "diagnostics": empty,
     }
 
 
@@ -1867,7 +1872,7 @@ def test_pinned_https_transport_uses_original_hostname_for_tls(monkeypatch):
 
 
 def test_pinned_https_adapter_configures_requests_232_connection_pool():
-    adapter = app_module._PinnedHTTPSAdapter("site.example")
+    adapter = fetcher_module._PinnedHTTPSAdapter("site.example")
     prepared = app_module.requests.Request("GET", "https://93.184.216.34/data.json").prepare()
 
     pool = adapter.get_connection_with_tls_context(prepared, True, proxies={})

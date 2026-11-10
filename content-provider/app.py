@@ -5,22 +5,30 @@ import zlib
 import hmac
 import json
 import hashlib
-import ipaddress
-import math
 import random
-import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import Counter, deque
 from datetime import datetime, timezone
 from html import unescape
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import quote, urlparse
 
 import requests
 from flask import Flask, jsonify, request
-from requests.adapters import HTTPAdapter
-from urllib3.connectionpool import HTTPSConnectionPool
+
+from fetcher import (
+    DEFAULT_MAX_REDIRECTS,
+    DEFAULT_MAX_RESPONSE_BYTES,
+    DIAGNOSTIC_VALUE_MAX_LENGTH,
+    HardenedFetcher,
+    ProviderDiagnostics,
+    UpstreamError,
+    _as_dict,
+    _as_int,
+    _as_list,
+    _truncate,
+)
+from upstreams.twistytv import TwistytvClient
 
 try:  # 只用于加密上游登录口令；缺依赖时降级为"不能登录"，不影响匿名抓取。
     from Crypto.Cipher import AES as _AES
@@ -61,21 +69,14 @@ MAX_CATALOG_KEYWORDS = 50
 MAX_CATALOG_PAGES_PER_KEYWORD = 5
 MAX_CATALOG_REQUESTS = 200
 MAX_CATALOG_REQUEST_WORKERS = 16
-DEFAULT_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
-DEFAULT_MAX_REDIRECTS = 3
-RESPONSE_CHUNK_SIZE = 64 * 1024
-REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
-UPSTREAM_USER_AGENT = "ShortLinkContentProvider/1.0"
-
-# P3-21：只允许 HTTP/HTTPS 默认端口出网，避免被上游重定向驱动到任意公网 IP:端口。
-ALLOWED_UPSTREAM_PORTS = {"http": 80, "https": 443}
-
-# P2-16：诊断 context 中的外部输入（搜索关键词、URL）统一截断，避免诊断数据被撑爆。
-DIAGNOSTIC_VALUE_MAX_LENGTH = 200
 
 # P2-16：内部共享密钥。除 /health 外的所有端点都要求请求头 X-Content-Provider-Token。
 INTERNAL_TOKEN_HEADER = "X-Content-Provider-Token"
 INTERNAL_TOKEN_ENV = "CONTENT_PROVIDER_INTERNAL_TOKEN"
+
+# 上游选择：后端按系统配置 content.upstream 逐请求下发；缺省 reelshort 保持向旧行为兼容。
+UPSTREAM_HEADER = "X-Content-Upstream"
+DEFAULT_UPSTREAM = "reelshort"
 
 # 上游登录态：ReelShort 只对前 1–12 集公开 video_url，锁集的 payload 里 video_url 为空。
 # 这里放浏览器里登录后复制的完整 Cookie 请求头（`a=1; b=2`），配置后随每个上游请求发出。
@@ -227,106 +228,8 @@ def _parse_cookie_header(raw: str | None) -> dict[str, str]:
     return cookies
 
 
-def _as_int(value, default: int = 0) -> int:
-    """容错整数转换：上游字段类型异常时回落到默认值，而不是直接 500。"""
-    if isinstance(value, bool):
-        return default
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            return default
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(float(value.strip()))
-        except (TypeError, ValueError):
-            return default
-    return default
 
-
-def _as_list(value) -> list:
-    """容错列表转换：非 list/tuple 一律视为空列表。"""
-    if isinstance(value, (list, tuple)):
-        return list(value)
-    return []
-
-
-def _as_dict(value) -> dict:
-    """容错字典转换：非 dict 一律视为空字典。"""
-    return value if isinstance(value, dict) else {}
-
-
-def _truncate(value, max_length: int = DIAGNOSTIC_VALUE_MAX_LENGTH):
-    """诊断 context 值截断，保持事件可读且不携带超长外部输入。"""
-    if value is None:
-        return None
-    text = str(value)
-    return text if len(text) <= max_length else text[:max_length] + "..."
-
-
-
-class _PinnedHTTPSAdapter(HTTPAdapter):
-    """连接到已校验的 IP，但让 TLS 使用原始域名的 SNI 和证书校验。"""
-
-    def __init__(self, original_hostname: str):
-        super().__init__()
-        self.original_hostname = original_hostname
-
-    def get_connection(self, url, proxies=None):
-        pool = super().get_connection(url, proxies=proxies)
-        return self._configure_pool(pool)
-
-    def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
-        pool = super().get_connection_with_tls_context(request, verify, proxies=proxies, cert=cert)
-        return self._configure_pool(pool)
-
-    def _configure_pool(self, pool):
-        if isinstance(pool, HTTPSConnectionPool):
-            pool.assert_hostname = self.original_hostname
-            pool.conn_kw["server_hostname"] = self.original_hostname
-        return pool
-
-
-class UpstreamError(Exception):
-    def __init__(self, status_code: int, message: str):
-        super().__init__(message)
-        self.status_code = status_code
-        self.message = message
-
-
-class ProviderDiagnostics:
-    def __init__(self, max_events: int = 20):
-        self.max_events = max_events
-        self._events = deque(maxlen=max_events)
-        self._counters = Counter()
-        self._lock = threading.Lock()
-
-    def record(self, event_type: str, **context):
-        sanitized = {
-            key: _truncate(value) if isinstance(value, (str, bytes)) else value
-            for key, value in context.items()
-            if value not in (None, "")
-        }
-        event = {
-            "event_type": event_type,
-            "observed_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-            "context": sanitized,
-        }
-        with self._lock:
-            self._events.appendleft(event)
-            self._counters[event_type] += 1
-
-    def snapshot(self):
-        with self._lock:
-            return {
-                "total_events": sum(self._counters.values()),
-                "counters": dict(self._counters),
-                "recent_events": list(self._events),
-            }
-
-
-class ReelShortClient:
+class ReelShortClient(HardenedFetcher):
     def __init__(
         self,
         site_url: str,
@@ -345,9 +248,17 @@ class ReelShortClient:
         channel_id: str | None = None,
         account_file: str | None = None,
     ):
+        # HTTP 加固层（DNS pinning / 字节上限 / 超时 / 重定向）由基类统一承担。
+        super().__init__(
+            timeout_seconds,
+            max_response_bytes=max_response_bytes,
+            max_redirects=max_redirects,
+            diagnostics=diagnostics,
+            resolver=resolver,
+            monotonic=monotonic,
+        )
         self.site_url = site_url.rstrip("/")
         self.site_id = site_id
-        self.timeout_seconds = timeout_seconds
         # 上游登录态 Cookie：为空时匿名请求，行为与未引入该能力前逐字一致。
         self.cookies = dict(cookies or {})
         # 上游账号：同时配了邮箱与密码才会尝试登录；缺一个就保持匿名。
@@ -380,17 +291,12 @@ class ReelShortClient:
         build_id = build_id or None
         self.build_id = build_id
         self.fixed_build_id = build_id is not None
-        self.diagnostics = diagnostics or ProviderDiagnostics()
-        self.max_response_bytes = max_response_bytes
-        self.max_redirects = max_redirects
-        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be finite and greater than zero")
-        if max_response_bytes <= 0:
-            raise ValueError("max_response_bytes must be greater than zero")
-        if max_redirects < 0:
-            raise ValueError("max_redirects must be zero or greater")
-        self.resolver = resolver or self._resolve_addresses
-        self.monotonic = monotonic or time.monotonic
+
+    def _default_headers(self) -> dict[str, str]:
+        # 只在配置了登录态时发送 Cookie，匿名请求的 Header 集合与之前完全一致。
+        if not self.cookies:
+            return {}
+        return {"Cookie": "; ".join(f"{name}={value}" for name, value in self.cookies.items())}
 
     @classmethod
     def from_env(cls):
@@ -1019,214 +925,6 @@ class ReelShortClient:
         self.build_id = match.group(1)
         return self.build_id
 
-    def _request(self, url: str, params=None, *, method: str = "GET", json_body=None, extra_headers=None):
-        # M11: _validate_url 现在返回 (pinned_url, original_hostname) 用于 DNS pinning
-        pinned_url, _ = self._validate_url(url, "upstream_url_blocked", "upstream returned unsafe upstream URL")
-        deadline = self.monotonic() + self.timeout_seconds
-        current_url = pinned_url
-        original_current_url = url
-        current_params = params
-        visited = {url}
-        headers = {"Host": self._host_header(url), "User-Agent": UPSTREAM_USER_AGENT}
-        if extra_headers:
-            headers.update({name: str(value) for name, value in extra_headers.items()})
-        if self.cookies:
-            # 只在配置了登录态时发送，匿名请求的 Header 集合与之前完全一致。
-            headers["Cookie"] = "; ".join(f"{name}={value}" for name, value in self.cookies.items())
-
-        for redirect_count in range(self.max_redirects + 1):
-            remaining = self.timeout_seconds if redirect_count == 0 else deadline - self.monotonic()
-            if remaining <= 0:
-                self.diagnostics.record("upstream_deadline_exceeded", url=current_url)
-                raise UpstreamError(502, "upstream request deadline exceeded")
-            try:
-                response = self._request_get(
-                    current_url,
-                    original_url=original_current_url,
-                    method=method,
-                    params=current_params,
-                    json=json_body if redirect_count == 0 else None,
-                    timeout=remaining,
-                    allow_redirects=False,
-                    stream=True,
-                    headers=headers,
-                )
-            except requests.RequestException as exception:
-                raise UpstreamError(502, "upstream request failed") from exception
-
-            if response.status_code not in REDIRECT_STATUS_CODES:
-                self._read_limited_response(response, deadline, current_url)
-                return response
-
-            if method != "GET":
-                # API 调用不接受重定向：跟随会丢掉 body，重发又可能重复提交。
-                self._close_response(response)
-                self.diagnostics.record("upstream_post_redirect", url=current_url)
-                raise UpstreamError(502, "upstream returned unexpected redirect")
-
-            location = getattr(response, "headers", {}).get("Location")
-            self._close_response(response)
-            if not location:
-                raise UpstreamError(502, "upstream redirect missing location")
-            if redirect_count >= self.max_redirects:
-                self.diagnostics.record("upstream_redirect_limit", url=current_url)
-                raise UpstreamError(502, "upstream returned too many redirects")
-
-            redirect_url = urljoin(original_current_url, location)
-            # M11: _validate_redirect_url 也返回 pinned URL（先做公网/端口校验，再做协议降级校验）
-            pinned_redirect, _ = self._validate_redirect_url(redirect_url)
-            # P3-21：禁止 https → http 降级，降级时记录诊断事件并拒绝。
-            if urlparse(original_current_url).scheme == "https" and urlparse(redirect_url).scheme == "http":
-                self.diagnostics.record(
-                    "upstream_downgrade_blocked",
-                    url=original_current_url,
-                    redirect_url=redirect_url,
-                )
-                raise UpstreamError(502, "upstream returned unsafe redirect")
-            if redirect_url in visited:
-                self.diagnostics.record("upstream_redirect_loop", url=redirect_url)
-                raise UpstreamError(502, "upstream redirect loop")
-            visited.add(redirect_url)
-            current_url = pinned_redirect
-            original_current_url = redirect_url
-            headers["Host"] = self._host_header(redirect_url)
-            current_params = None
-
-        raise UpstreamError(502, "upstream returned too many redirects")
-
-    def _request_get(self, pinned_url: str, original_url: str, method: str = "GET", **kwargs):
-        parsed = urlparse(original_url)
-        if parsed.scheme != "https":
-            return requests.request(method, pinned_url, **kwargs)
-
-        session = requests.Session()
-        session.trust_env = False
-        session.mount("https://", _PinnedHTTPSAdapter(parsed.hostname))
-        try:
-            response = session.request(method, pinned_url, **kwargs)
-            # Keep the session alive until response streaming has completed.
-            response._reelshort_session = session
-            return response
-        except Exception:
-            session.close()
-            raise
-
-    def _read_limited_response(self, response, deadline: float, url: str):
-        if not hasattr(response, "iter_content"):
-            return
-        content = bytearray()
-        deadline_expired = threading.Event()
-        remaining = deadline - self.monotonic()
-        if remaining <= 0:
-            self._close_response(response)
-            self.diagnostics.record("upstream_deadline_exceeded", url=url)
-            raise UpstreamError(502, "upstream request deadline exceeded")
-
-        def expire_response():
-            deadline_expired.set()
-            self._close_response(response)
-
-        watchdog = threading.Timer(remaining, expire_response)
-        watchdog.daemon = True
-        watchdog.start()
-        try:
-            for chunk in response.iter_content(chunk_size=RESPONSE_CHUNK_SIZE):
-                if deadline_expired.is_set() or self.monotonic() >= deadline:
-                    deadline_expired.set()
-                    break
-                if not chunk:
-                    continue
-                content.extend(chunk)
-                if len(content) > self.max_response_bytes:
-                    self.diagnostics.record(
-                        "upstream_response_too_large", url=url, max_bytes=self.max_response_bytes
-                    )
-                    raise UpstreamError(502, "upstream response too large")
-            watchdog.cancel()
-            if deadline_expired.is_set():
-                self.diagnostics.record("upstream_deadline_exceeded", url=url)
-                raise UpstreamError(502, "upstream request deadline exceeded")
-            response._content = bytes(content)
-            response._content_consumed = True
-        except requests.RequestException as exception:
-            if deadline_expired.is_set():
-                self.diagnostics.record("upstream_deadline_exceeded", url=url)
-                raise UpstreamError(502, "upstream request deadline exceeded") from exception
-            raise UpstreamError(502, "upstream request failed") from exception
-        finally:
-            watchdog.cancel()
-            self._close_response(response)
-
-    def _validate_redirect_url(self, url: str) -> tuple[str, str]:
-        return self._validate_and_pin_url(url, "upstream_redirect_blocked", "upstream returned unsafe redirect")
-
-    def _validate_url(self, url: str, event_type: str, message: str) -> tuple[str, str]:
-        # M11: 返回 pinning 后的 URL（用解析到的 IP 直连，避免 TOCTOU DNS rebinding）
-        return self._validate_and_pin_url(url, event_type, message)
-
-    @staticmethod
-    def _host_header(url: str) -> str:
-        parsed = urlparse(url)
-        hostname = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
-        if parsed.port is None:
-            return hostname
-        return f"{hostname}:{parsed.port}"
-
-    def _validate_and_pin_url(self, url: str, event_type: str, message: str) -> tuple[str, str]:
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            self.diagnostics.record(event_type, url=url)
-            raise UpstreamError(502, message)
-        try:
-            original_port = parsed.port
-        except ValueError:
-            self.diagnostics.record(event_type, url=url)
-            raise UpstreamError(502, message)
-        # P3-21：端口白名单，只允许 HTTP/HTTPS 默认端口，防止被上游重定向驱动到任意公网 IP:端口。
-        effective_port = original_port if original_port is not None else ALLOWED_UPSTREAM_PORTS[parsed.scheme]
-        if effective_port not in ALLOWED_UPSTREAM_PORTS.values():
-            self.diagnostics.record("upstream_port_blocked", url=url, port=effective_port)
-            raise UpstreamError(502, message)
-        try:
-            # M11: DNS pinning —— 解析后直接用 IP 连接，避免 requests 二次解析导致的 TOCTOU
-            addresses = self.resolver(parsed.hostname)
-            safe = addresses and all(ipaddress.ip_address(address).is_global for address in addresses)
-        except (OSError, ValueError):
-            safe = False
-        if not safe:
-            self.diagnostics.record(event_type, url=url)
-            raise UpstreamError(502, message)
-        # 用第一个公网 IP 替换 hostname 实现 pinning，保留原 Host header
-        pinned_ip = sorted(addresses)[0]
-        # M11: 统一用 _replace(netloc=...) 构造，正确处理 IPv4/IPv6/带端口场景
-        host_literal = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
-        if original_port:
-            netloc = f"{host_literal}:{original_port}"
-        else:
-            netloc = host_literal
-        pinned_url = parsed._replace(netloc=netloc).geturl()
-        original_host_literal = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
-        default_port = 443 if parsed.scheme == "https" else 80
-        host_header = (
-            original_host_literal
-            if original_port in {None, default_port}
-            else f"{original_host_literal}:{original_port}"
-        )
-        return pinned_url, host_header
-
-    @staticmethod
-    def _resolve_addresses(hostname: str):
-        return {item[4][0] for item in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)}
-
-    @staticmethod
-    def _close_response(response):
-        close = getattr(response, "close", None)
-        if close:
-            close()
-        session = getattr(response, "_reelshort_session", None)
-        if session is not None:
-            session.close()
-
     def _home_shelf_books(self, shelf_name: str, locale: str = DEFAULT_LOCALE):
         payload = self._get_locale_data(".json", locale=locale)
         page_props = _as_dict(payload.get("pageProps"))
@@ -1439,9 +1137,19 @@ class ReelShortClient:
         return value
 
 
-def create_app(client=None, internal_token=None) -> Flask:
+def create_app(client=None, internal_token=None, clients=None) -> Flask:
+    """构建内容源应用。
+
+    `clients` 是 {上游名: 客户端}；`client` 是旧签名（等价于只注册 reelshort 并把它
+    当成唯一上游），测试里大量使用，保留以免改动上百条用例。
+    """
     app = Flask(__name__)
-    reelshort_client = client or ReelShortClient.from_env()
+    if clients is None:
+        if client is not None:
+            clients = {"reelshort": client}
+        else:
+            clients = {"reelshort": ReelShortClient.from_env(), "twistytv": TwistytvClient.from_env()}
+    reelshort_client = clients.get("reelshort")
     expected_token = internal_token if internal_token is not None else os.getenv(INTERNAL_TOKEN_ENV, "")
     # 配了账号就在启动时先登录一次：让"已配置"和"已登录"尽快是同一个状态。
     # 放到后台线程：登录是两次上游请求（各 10s 超时），阻塞在 create_app 里会拖慢
@@ -1454,6 +1162,24 @@ def create_app(client=None, internal_token=None) -> Flask:
                 pass
 
         threading.Thread(target=_warm_up_session, daemon=True).start()
+
+    def _safe_active_client():
+        # 错误处理路径本身绝不能再抛：拿不到上游就当作"没有上游"。
+        try:
+            return active_client()
+        except Exception:  # noqa: BLE001
+            return None
+
+    def active_client():
+        """按请求头选上游；缺省 reelshort（旧后端不带该头时行为不变）。
+
+        未知上游直接 400，不做"猜测式"回退——静默换源会让线上内容莫名其妙变一批。
+        """
+        name = (request.headers.get(UPSTREAM_HEADER) or "").strip().lower() or DEFAULT_UPSTREAM
+        selected = clients.get(name)
+        if selected is None:
+            raise UpstreamError(400, "unknown upstream")
+        return selected
 
     @app.get("/health")
     def health():
@@ -1476,11 +1202,22 @@ def create_app(client=None, internal_token=None) -> Flask:
 
     @app.get("/diagnostics")
     def diagnostics():
-        snapshot = getattr(reelshort_client, "diagnostics", ProviderDiagnostics()).snapshot()
+        # 逐上游返回诊断快照：两个上游的失败模式完全不同，混在一起看不出是谁坏了。
+        upstreams = {
+            name: getattr(registered, "diagnostics", ProviderDiagnostics()).snapshot()
+            for name, registered in clients.items()
+        }
+        requested = (request.headers.get(UPSTREAM_HEADER) or "").strip().lower() or DEFAULT_UPSTREAM
+        if requested not in upstreams:
+            requested = DEFAULT_UPSTREAM if DEFAULT_UPSTREAM in upstreams else next(iter(upstreams), "")
         return jsonify({
             "status": "UP",
             "service": "reelshort-content-provider",
-            "diagnostics": snapshot,
+            "active_upstream": requested,
+            "upstreams": upstreams,
+            # 顶层字段跟随"当前上游"：后端诊断页和告警只读它，固定取 reelshort 会让
+            # 默认上游 TwistyTV 的故障事件完全不可见（告警统计的是一个闲置客户端）。
+            "diagnostics": upstreams.get(requested, ProviderDiagnostics().snapshot()),
         })
 
     @app.errorhandler(UpstreamError)
@@ -1490,7 +1227,7 @@ def create_app(client=None, internal_token=None) -> Flask:
     @app.errorhandler(Exception)
     def unexpected_error(error):
         # P2-16：未预期异常记录诊断事件并返回 502，而不是裸 500 栈。
-        diagnostics_recorder = getattr(reelshort_client, "diagnostics", None)
+        diagnostics_recorder = getattr(_safe_active_client(), "diagnostics", None)
         if diagnostics_recorder is not None:
             diagnostics_recorder.record(
                 "unexpected_error",
@@ -1518,13 +1255,13 @@ def create_app(client=None, internal_token=None) -> Flask:
         keywords = request.args.get("keywords", "").strip()
         if not keywords:
             return jsonify({"error": "keywords is required"}), 400
-        return jsonify({"results": reelshort_client.search(keywords, locale)})
+        return jsonify({"results": active_client().search(keywords, locale)})
 
     def shelf_response(shelf_name: str):
         locale = request_locale()
         if locale is None:
             return locale_error()
-        return jsonify({"books": reelshort_client.shelf(shelf_name, locale)})
+        return jsonify({"books": active_client().shelf(shelf_name, locale)})
 
     @app.get("/api/v1/reelshort/recommend")
     def recommend():
@@ -1546,7 +1283,7 @@ def create_app(client=None, internal_token=None) -> Flask:
         filtered_title = request.args.get("filtered_title", "").strip()
         if not filtered_title:
             return jsonify({"error": "filtered_title is required"}), 400
-        return jsonify(reelshort_client.episodes(book_id, filtered_title, locale))
+        return jsonify(active_client().episodes(book_id, filtered_title, locale))
 
     @app.get("/api/v1/reelshort/session")
     def session_status():
@@ -1623,7 +1360,7 @@ def create_app(client=None, internal_token=None) -> Flask:
         chapter_id = request.args.get("chapter_id", "").strip()
         if not chapter_id:
             return jsonify({"error": "chapter_id is required"}), 400
-        return jsonify(reelshort_client.video(book_id, episode_num, filtered_title, chapter_id, locale))
+        return jsonify(active_client().video(book_id, episode_num, filtered_title, chapter_id, locale))
 
     return app
 

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,29 +13,51 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import com.reelshort.backend.system.config.SystemConfigRegistry;
+import com.reelshort.backend.system.config.SystemConfigService;
+
 @Component
 public class ContentProviderRuntimeDependencyChecker implements RuntimeDependencyChecker {
 
 	/** P2-16：content-provider 的内部共享密钥请求头。 */
 	static final String INTERNAL_TOKEN_HEADER = "X-Content-Provider-Token";
 
+	/** 与 content 包的 FlaskContentProvider 同一个头；runtime 不反向依赖 content，故各留一份常量。 */
+	static final String UPSTREAM_HEADER = "X-Content-Upstream";
+
 	private final RestClient restClient;
 	private final String baseUrl;
+	private final Supplier<String> upstreamSupplier;
 	private volatile SystemRuntimeResponse.ContentProviderDiagnostics latestDiagnostics;
 
 	public ContentProviderRuntimeDependencyChecker(RestClient.Builder restClientBuilder, String baseUrl) {
-		this(restClientBuilder, baseUrl, "");
+		this(restClientBuilder, baseUrl, "", () -> SystemConfigRegistry.DEFAULT_CONTENT_UPSTREAM);
 	}
 
 	@Autowired
 	public ContentProviderRuntimeDependencyChecker(RestClient.Builder restClientBuilder,
 			@Value("${reelshort.content-provider.base-url:http://127.0.0.1:5000}") String baseUrl,
 			@Value("${reelshort.content-provider.internal-token:${CONTENT_PROVIDER_INTERNAL_TOKEN:}}")
-			String internalToken) {
+			String internalToken, SystemConfigService systemConfigService) {
+		this(restClientBuilder, baseUrl, internalToken,
+				() -> systemConfigService.stringValue(SystemConfigRegistry.CONTENT_UPSTREAM));
+	}
+
+	ContentProviderRuntimeDependencyChecker(RestClient.Builder restClientBuilder, String baseUrl,
+			String internalToken, Supplier<String> upstreamSupplier) {
 		this.restClient = internalToken == null || internalToken.isBlank()
 				? restClientBuilder.build()
 				: restClientBuilder.defaultHeader(INTERNAL_TOKEN_HEADER, internalToken).build();
 		this.baseUrl = trimTrailingSlash(baseUrl);
+		this.upstreamSupplier = upstreamSupplier;
+	}
+
+	/** 只诊断当前在用的上游：ReelShort 闲置时的空快照会把 TwistyTV 的真实故障藏起来。 */
+	private String upstream() {
+		String configured = upstreamSupplier.get();
+		return configured == null || configured.isBlank()
+				? SystemConfigRegistry.DEFAULT_CONTENT_UPSTREAM
+				: configured.trim().toLowerCase(java.util.Locale.ROOT);
 	}
 
 	@Override
@@ -65,6 +88,7 @@ public class ContentProviderRuntimeDependencyChecker implements RuntimeDependenc
 		try {
 			Map<?, ?> response = restClient.get()
 					.uri(baseUrl + "/diagnostics")
+					.header(UPSTREAM_HEADER, upstream())
 					.retrieve()
 					.body(Map.class);
 			Object diagnostics = response == null ? null : response.get("diagnostics");

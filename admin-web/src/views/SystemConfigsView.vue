@@ -45,8 +45,20 @@ function isPointsConfig(configKey: string): boolean {
   return configKey.startsWith('points.')
 }
 
+// 内容上游切换：值只能是后端 SystemConfigRegistry 里的枚举，不能让管理员手输。
+const UPSTREAM_CONFIG_KEY = 'content.upstream'
+const UPSTREAM_OPTIONS = [
+  { value: 'TWISTYTV', label: 'TwistyTV（默认）' },
+  { value: 'REELSHORT', label: 'ReelShort（备用）' },
+]
+
 function isContentConfig(configKey: string): boolean {
+  if (configKey === UPSTREAM_CONFIG_KEY) return true
   return configKey.startsWith('vip.') && !FUND_SENSITIVE_KEYS.includes(configKey)
+}
+
+function isUpstreamConfig(configKey: string): boolean {
+  return configKey === UPSTREAM_CONFIG_KEY
 }
 
 const fundSensitiveCount = computed(
@@ -172,6 +184,21 @@ async function confirmFundSensitiveChange(config: SystemConfig, newValue: string
   }
 }
 
+async function confirmUpstreamSwitch(config: SystemConfig, newValue: string): Promise<boolean> {
+  const label = (candidate: string) =>
+    UPSTREAM_OPTIONS.find((option) => option.value === candidate)?.label ?? candidate
+  try {
+    await ElMessageBox.confirm(
+      `切换后立即清空货架缓存并在后台重新抓取，App 首页、搜索和货架会换成新上游的内容。\n当前：${label(config.value)} → 切换为：${label(newValue)}`,
+      '确认切换内容上游',
+      { confirmButtonText: '确认切换', cancelButtonText: '取消', type: 'warning' },
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function saveConfig(config: SystemConfig) {
   const value = draftValues[config.key]?.trim()
   if (!value) {
@@ -186,6 +213,10 @@ async function saveConfig(config: SystemConfig) {
   }
   // W6a: 资金敏感配置保存前二次确认（普通配置保持原交互）
   if (isFundSensitiveConfig(config.key) && !(await confirmFundSensitiveChange(config, value))) {
+    return
+  }
+  // 切上游会立刻清空货架缓存并重抓，App 首页/搜索整批换内容——必须让管理员确认一次。
+  if (isUpstreamConfig(config.key) && !(await confirmUpstreamSwitch(config, value))) {
     return
   }
   savingKey.value = config.key
@@ -529,7 +560,21 @@ onMounted(() => {
         <el-table-column label="配置值" min-width="280">
           <template #default="{ row }">
             <div class="config-input-wrap">
+              <el-select
+                v-if="isUpstreamConfig(row.key)"
+                v-model="draftValues[row.key]"
+                class="upstream-select"
+                :class="{ 'is-dirty-input': draftValues[row.key] !== row.value }"
+              >
+                <el-option
+                  v-for="option in UPSTREAM_OPTIONS"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
               <el-input
+                v-else
                 v-model="draftValues[row.key]"
                 :class="{ 'is-dirty-input': draftValues[row.key] !== row.value }"
                 clearable

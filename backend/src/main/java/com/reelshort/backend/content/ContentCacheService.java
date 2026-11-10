@@ -7,6 +7,7 @@ import java.time.OffsetDateTime;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -209,6 +210,18 @@ public class ContentCacheService {
 		finally {
 			lock.unlock();
 		}
+	}
+
+	/**
+	 * 清空全部货架缓存。切换内容上游时调用：bookId 天然按上游隔离（TwistyTV 是
+	 * `ns_/`rs_/`db_` 前缀，ReelShort 是纯数字），只有货架是"当前上游的快照"，必须作废。
+	 *
+	 * <p>必须 REQUIRES_NEW：调用点是配置变更事件的 afterCommit 回调，那里原事务已经提交，
+	 * 用默认的 REQUIRED 会加入一个“再也不会提交”的事务，deleteAll() 的删除会被静默丢弃。
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void clearShelves() {
+		contentShelfCacheRepository.deleteAll();
 	}
 
 	@Transactional(readOnly = true)

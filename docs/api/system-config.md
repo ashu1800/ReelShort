@@ -24,6 +24,7 @@ Authorization: Bearer <admin-token>
 | `vip.collection-address` | 空 | 允许为空；非空必须是合法 TRON 地址（Base58Check） | VIP 收款地址。为空表示未配置/未开启链上 VIP 支付；保存非法地址返回 `400`。 |
 | `vip.order-timeout-minutes` | `20` | 整数，`1..10000` | VIP 订单支付超时分钟数。 |
 | `content.recommendation.strategy` | `LATEST` | `LATEST` / `POPULAR` | 首页推荐策略占位。 |
+| `content.upstream` | `TWISTYTV` | `TWISTYTV` / `REELSHORT` | 当前抓取的短视频上游。切换后立即清空货架缓存并后台重抓，详情见 `content-cache.md`「内容上游与切换」。 |
 
 ## `GET /api/admin/system/configs`
 

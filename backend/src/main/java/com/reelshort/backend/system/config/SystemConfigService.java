@@ -5,6 +5,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -19,10 +21,19 @@ public class SystemConfigService {
 
 	private final SystemConfigRepository systemConfigRepository;
 	private final SystemConfigRegistry systemConfigRegistry;
+	private final ApplicationEventPublisher eventPublisher;
 
 	public SystemConfigService(SystemConfigRepository systemConfigRepository, SystemConfigRegistry systemConfigRegistry) {
+		this(systemConfigRepository, systemConfigRegistry, event -> {
+		});
+	}
+
+	@Autowired
+	public SystemConfigService(SystemConfigRepository systemConfigRepository, SystemConfigRegistry systemConfigRegistry,
+			ApplicationEventPublisher eventPublisher) {
 		this.systemConfigRepository = systemConfigRepository;
 		this.systemConfigRegistry = systemConfigRegistry;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@Transactional(readOnly = true)
@@ -52,13 +63,36 @@ public class SystemConfigService {
 			validateWithdrawalCombination(key, validatedValue);
 			SystemConfig config = systemConfigRepository.findById(key)
 					.orElseGet(() -> SystemConfig.create(key, definition.defaultValue(), definition.description()));
+			// 值没变就不发事件：内容上游的监听者会清空货架并重抓一轮上游，重复保存不该付这个代价。
+			boolean changed = !validatedValue.equals(config.value());
 			config.update(validatedValue, definition.description());
-			return SystemConfigResponse.from(definition, systemConfigRepository.save(config));
+			SystemConfigResponse response = SystemConfigResponse.from(definition, systemConfigRepository.save(config));
+			if (changed) {
+				publishAfterCommit(key, validatedValue);
+			}
+			return response;
 		} finally {
 			if (releaseAfterMethod) {
 				CONFIG_UPDATE_LOCK.unlock();
 			}
 		}
+	}
+
+	/**
+	 * 配置变更事件在事务提交后再发：回滚的更新不该让内容缓存被清空、让上游被切走。
+	 */
+	private void publishAfterCommit(String key, String value) {
+		Runnable publish = () -> eventPublisher.publishEvent(new SystemConfigChangedEvent(key, value));
+		if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+			publish.run();
+			return;
+		}
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override
+			public void afterCommit() {
+				publish.run();
+			}
+		});
 	}
 
 	private void validateWithdrawalCombination(String changedKey, String changedValue) {
