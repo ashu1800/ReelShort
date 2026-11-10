@@ -189,6 +189,25 @@ public class ContentCacheService {
 				.orElseGet(() -> refreshEpisodes(bookId, filteredTitle, locale));
 	}
 
+	/**
+	 * 分集已有缓存、但书目行的简介还是空的时候，回内容源补一次简介。
+	 *
+	 * <p>TwistyTV 的 `/browse` 列表卡片不带简介（`/genre`、`/search`、详情页才有），而货架
+	 * 大部分来自 `/browse`，所以缓存行天然是空简介。用户点开一部剧时详情页本来就会拉到
+	 * `description`，这里把它落库：一本书只补一次（补完非空，后续命中缓存直接返回）。
+	 */
+	public ContentBook refreshBookIfDescriptionMissing(String bookId, String filteredTitle, ContentLocale locale) {
+		ContentBook cached = contentBookCacheRepository.findByBookIdAndLocale(bookId, locale)
+				.map(ContentBookCache::toContentBook)
+				.orElse(null);
+		if (cached != null && cached.description() != null && !cached.description().isBlank()) {
+			return cached;
+		}
+		ContentEpisodesDetail detail = contentProvider.getEpisodesDetail(bookId, filteredTitle, locale);
+		detail.book().ifPresent(book -> writer().saveBook(book, locale));
+		return detail.book().orElse(cached);
+	}
+
 	public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId) {
 		return getVideoUrl(bookId, episodeNum, filteredTitle, chapterId, ContentLocale.ENGLISH);
 	}
@@ -268,9 +287,11 @@ public class ContentCacheService {
 		try {
 			List<ContentBook> books = contentProvider.getShelf(shelfType, locale);
 			ContentCacheWriter writer = writer();
-			writer.saveBooks(books, locale);
-			writer.saveShelf(shelfType, locale, books);
-			return books;
+			// 用落库后的视图写货架快照：缓存行里的简介/集数比本次列表更全时以缓存为准，
+			// 否则把 /browse 抓来的空简介写进货架，前端就一直是"暂无简介"。
+			List<ContentBook> stored = writer.saveBooks(books, locale);
+			writer.saveShelf(shelfType, locale, stored);
+			return stored;
 		}
 		catch (ContentProviderException exception) {
 			writer().markShelfFailure(shelfType, locale, exception.getMessage());

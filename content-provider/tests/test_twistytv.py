@@ -302,7 +302,8 @@ def test_shelf_recommend_merges_home_rows_and_browse_pages():
 
 
 def test_search_uses_search_page_not_suggest():
-    client = RecordingFetcher({"/search?q=love": FakeResponse(200, CARD_HTML)})
+    # 缺简介的书会排队做后台补抓（见 _fill_counts），这里只关心搜索本身打了哪个地址。
+    client = RecordingFetcher({"/search?q=love": FakeResponse(200, CARD_HTML)}, episode_count_backfill=0)
 
     books = client.search("love")
 
@@ -327,9 +328,9 @@ NO_COUNT_CARD_HTML = """
 """
 
 
-def _watch_html(book_id: str, episode_count: int) -> str:
+def _watch_html(book_id: str, episode_count: int, description: str = "") -> str:
     payload = {
-        "show": _show(id=book_id, episodeCount=episode_count),
+        "show": _show(id=book_id, episodeCount=episode_count, description=description),
         "episodes": [_episode(number) for number in range(1, min(episode_count, 3) + 1)],
     }
     return _flight_html(payload)
@@ -742,6 +743,33 @@ def test_search_results_are_capped():
 
     assert len(books) == twistytv.SEARCH_RESULT_LIMIT
     assert client.diagnostics.snapshot()["counters"]["twistytv_search_truncated"] == 1
+
+
+def test_dedupe_merges_description_and_count_from_later_duplicates():
+    # /browse 的卡片没有简介和集数，首页/genre 的有；先到者赢会把它们整批抹空。
+    browse = {"book_id": "ns_1", "book_title": "A", "chapter_count": 0, "description": "", "book_pic": ""}
+    home = {"book_id": "ns_1", "book_title": "A", "chapter_count": 33, "description": "Real blurb.", "book_pic": "http://x/y.jpg"}
+
+    merged = twistytv.TwistytvClient._dedupe([dict(browse), dict(home)])
+
+    assert len(merged) == 1
+    assert merged[0]["chapter_count"] == 33
+    assert merged[0]["description"] == "Real blurb."
+    assert merged[0]["book_pic"] == "http://x/y.jpg"
+
+
+def test_shelf_backfills_missing_descriptions_from_the_watch_page():
+    client = RecordingFetcher(
+        {
+            "/genre/dubbed": FakeResponse(200, NO_COUNT_CARD_HTML),
+            "/watch/ns_2106": FakeResponse(200, _watch_html("ns_2106", 33, description="A widow builds an empire.")),
+        }
+    )
+
+    books = client.shelf("dramadub")
+
+    assert books[0]["description"] == "A widow builds an empire."
+    assert books[0]["chapter_count"] == 33
 
 
 def _mvhd_payload(timescale: int, duration: int, version: int = 0) -> bytes:

@@ -46,6 +46,9 @@ class ContentCacheServiceTests {
 	@Autowired
 	private ContentCacheProperties contentCacheProperties;
 
+	@Autowired
+	private ContentCacheWriter contentCacheWriter;
+
 	@MockitoBean
 	private ContentProvider contentProvider;
 
@@ -647,6 +650,48 @@ class ContentCacheServiceTests {
 		assertThatThrownBy(() -> contentCacheService.getBook("book-sparse"))
 				.isInstanceOf(ContentProviderException.class)
 				.hasMessage("content book not cached");
+	}
+
+	@Test
+	void savingABookFromAListingWithoutDescriptionKeepsTheEnrichedRow() {
+		// TwistyTV 的 /browse 卡片没有简介也没有集数：同一本书被 browse 再刷一遍时，
+		// 不能把已经补好的简介/集数覆盖成空。
+		ContentBook rich = new ContentBook("book-merge", "Merge", "merge", "https://example.com/merge.jpg",
+				"A widow builds an empire.", 33);
+		ContentBook sparse = new ContentBook("book-merge", "Merge", "merge", "", "", 0);
+
+		contentCacheWriter.saveBook(rich, ContentLocale.ENGLISH);
+		contentCacheWriter.saveBook(sparse, ContentLocale.ENGLISH);
+
+		ContentBook stored = contentCacheService.getBook("book-merge");
+		assertThat(stored.description()).isEqualTo("A widow builds an empire.");
+		assertThat(stored.chapterCount()).isEqualTo(33);
+		assertThat(stored.coverUrl()).isEqualTo("https://example.com/merge.jpg");
+
+		// 货架快照拿的是 saveBooks 的返回值：必须带上缓存里更全的简介，否则货架 JSON 又被写空。
+		List<ContentBook> shelfView = contentCacheWriter.saveBooks(List.of(sparse), ContentLocale.ENGLISH);
+		assertThat(shelfView).hasSize(1);
+		assertThat(shelfView.get(0).description()).isEqualTo("A widow builds an empire.");
+		assertThat(shelfView.get(0).chapterCount()).isEqualTo(33);
+	}
+
+	@Test
+	void refreshBookIfDescriptionMissingFetchesAndPersistsTheRealDescription() {
+		ContentBook stale = new ContentBook("book-blurb", "Blurb", "blurb", "", "", 0);
+		ContentBook fresh = new ContentBook("book-blurb", "Blurb", "blurb", "", "Real blurb.", 20);
+		contentCacheWriter.saveBook(stale, ContentLocale.ENGLISH);
+		when(contentProvider.getEpisodesDetail("book-blurb", "blurb", ContentLocale.ENGLISH))
+				.thenReturn(new ContentEpisodesDetail(Optional.of(fresh),
+						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
+
+		ContentBook refreshed = contentCacheService.refreshBookIfDescriptionMissing("book-blurb", "blurb",
+				ContentLocale.ENGLISH);
+
+		assertThat(refreshed.description()).isEqualTo("Real blurb.");
+		assertThat(contentCacheService.getBook("book-blurb").description()).isEqualTo("Real blurb.");
+		// 已有简介时不再打上游。
+		contentCacheService.refreshBookIfDescriptionMissing("book-blurb", "blurb", ContentLocale.ENGLISH);
+		verify(contentProvider, times(1)).getEpisodesDetail("book-blurb", "blurb", ContentLocale.ENGLISH);
 	}
 
 	private ContentBook book(String bookId, String title) {

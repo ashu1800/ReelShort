@@ -69,12 +69,27 @@ public class ContentBookCache {
 		return new ContentBookCache(book, locale, OffsetDateTime.now());
 	}
 
+	/**
+	 * 用新抓到的书目刷新缓存行。
+	 *
+	 * <p>同一本书会从不同来源进来：首页/分类页的卡片带简介和集数，`/browse` 列表页
+	 * 两者都没有。无条件覆盖会把已经补好的简介和集数抹成空，所以这里只允许"变丰富"：
+	 * 简介保留更长的那个，集数保留已知的正数，封面保留非空值。
+	 */
 	public void update(ContentBook book) {
 		this.title = book.title();
 		this.filteredTitle = book.filteredTitle();
-		this.coverUrl = book.coverUrl();
-		this.description = book.description();
-		this.chapterCount = book.chapterCount();
+		if (book.coverUrl() != null && !book.coverUrl().isBlank()) {
+			this.coverUrl = book.coverUrl();
+		}
+		String incoming = book.description() == null ? "" : book.description().trim();
+		String existing = this.description == null ? "" : this.description.trim();
+		if (!incoming.isEmpty() && incoming.length() >= existing.length()) {
+			this.description = book.description();
+		}
+		if (book.chapterCount() > 0) {
+			this.chapterCount = book.chapterCount();
+		}
 		this.updatedAt = OffsetDateTime.now();
 	}
 

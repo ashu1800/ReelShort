@@ -362,6 +362,11 @@ class TwistytvClient(HardenedFetcher):
             capacity=8192,
             monotonic=self.monotonic,
         )
+        # 简介：`/browse` 的卡片**没有** hover-desc（实测 60/60 为空），`/genre`、`/search`
+        # 只有一部分有；唯一权威来源是详情页的 `show.description`。和集数一起按轮补。
+        self._descriptions = _TtlCache(
+            episode_count_cache_seconds, capacity=8192, monotonic=self.monotonic
+        )
         # 搜索不在请求里现抓，缺的 ID 交给单个守护线程按序补，补完下次搜索就正确。
         self._warm_lock = threading.Lock()
         self._warm_queue: queue.Queue[str] = queue.Queue()
@@ -543,15 +548,28 @@ class TwistytvClient(HardenedFetcher):
 
     @staticmethod
     def _dedupe(books: list[dict]) -> list[dict]:
-        seen = set()
-        unique = []
+        """按 book_id 去重，并把后出现条目的简介/集数补到先出现的那条上。
+
+        同一本书会同时出现在首页（有简介）、genre（有简介）和 `/browse`（没有）里；
+        保留第一次出现能保持顺序，但不合并就永远是"先到者赢"，`/browse` 在前的批次
+        会把已有简介整批抹成空。
+        """
+        merged: dict[str, dict] = {}
         for book in books:
             book_id = book.get("book_id")
-            if not book_id or book_id in seen:
+            if not book_id:
                 continue
-            seen.add(book_id)
-            unique.append(book)
-        return unique
+            kept = merged.get(book_id)
+            if kept is None:
+                merged[book_id] = book
+                continue
+            if not kept.get("description") and book.get("description"):
+                kept["description"] = book["description"]
+            if not _as_int(kept.get("chapter_count")) and _as_int(book.get("chapter_count")):
+                kept["chapter_count"] = book["chapter_count"]
+            if not kept.get("book_pic") and book.get("book_pic"):
+                kept["book_pic"] = book["book_pic"]
+        return list(merged.values())
 
     # ------------------------------------------------------------- 集数补齐
 
@@ -567,15 +585,17 @@ class TwistytvClient(HardenedFetcher):
         """
         missing: list[str] = []
         for book in books:
-            if _as_int(book.get("chapter_count")) > 0:
-                continue
             book_id = str(book.get("book_id") or "")
             if not book_id:
                 continue
-            cached = _as_int(self._episode_counts.get(book_id))
-            if cached > 0:
-                book["chapter_count"] = cached
-            else:
+            if _as_int(book.get("chapter_count")) <= 0:
+                cached = _as_int(self._episode_counts.get(book_id))
+                if cached > 0:
+                    book["chapter_count"] = cached
+            cached_description = self._descriptions.get(book_id)
+            if not book.get("description") and cached_description:
+                book["description"] = cached_description
+            if _as_int(book.get("chapter_count")) <= 0 or not book.get("description"):
                 missing.append(book_id)
         if not missing:
             return
@@ -595,11 +615,15 @@ class TwistytvClient(HardenedFetcher):
         with ThreadPoolExecutor(max_workers=min(EPISODE_COUNT_PROBE_CONCURRENCY, len(missing))) as executor:
             counts = dict(zip(missing, executor.map(self._probe_count, missing)))
         for book in books:
-            if _as_int(book.get("chapter_count")) > 0:
-                continue
-            count = counts.get(str(book.get("book_id") or ""), 0)
-            if count > 0:
-                book["chapter_count"] = count
+            book_id = str(book.get("book_id") or "")
+            if _as_int(book.get("chapter_count")) <= 0:
+                count = counts.get(book_id, 0)
+                if count > 0:
+                    book["chapter_count"] = count
+            if not book.get("description"):
+                description = self._descriptions.get(book_id)
+                if description:
+                    book["description"] = description
 
     def _probe_count(self, book_id: str) -> int:
         """翻详情页取 `show.episodeCount`；失败返回 0，不写正缓存以免把抖动钉死一周。"""
@@ -613,6 +637,9 @@ class TwistytvClient(HardenedFetcher):
             self._episode_count_errors.put(book_id, 0)
             return 0
         show = _as_dict(payload.get("show"))
+        description = str(show.get("description") or "").strip()
+        if description:
+            self._descriptions.put(book_id, description)
         count = _as_int(show.get("episodeCount")) or len(_as_list(payload.get("episodes")))
         if count > 0:
             self._episode_counts.put(book_id, count)

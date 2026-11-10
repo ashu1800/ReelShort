@@ -1,5 +1,6 @@
 package com.reelshort.backend.content;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -39,15 +40,23 @@ public class ContentCacheWriter {
 		this.objectMapper = objectMapper;
 	}
 
+	/**
+	 * 批量 upsert 书目，并返回落库后的视图。
+	 *
+	 * <p>返回值不是入参的拷贝：缓存行会保留已有简介/集数（见 {@link ContentBookCache#update}），
+	 * 调用方拿这份视图去写货架快照，货架 JSON 才不会把之前补好的简介覆盖成空。
+	 */
 	@Transactional
-	public void saveBooks(List<ContentBook> books, ContentLocale locale) {
+	public List<ContentBook> saveBooks(List<ContentBook> books, ContentLocale locale) {
+		List<ContentBook> stored = new ArrayList<>(books.size());
 		for (ContentBook book : books) {
-			saveBook(book, locale);
+			stored.add(saveBook(book, locale));
 		}
+		return stored;
 	}
 
 	@Transactional
-	public void saveBook(ContentBook book, ContentLocale locale) {
+	public ContentBook saveBook(ContentBook book, ContentLocale locale) {
 		// 主键由 (bookId, locale) 确定性派生，按主键查一次即可做到幂等 upsert：
 		// 并发刷新同一部剧时不会因为同时插入而撞唯一约束。
 		String key = ContentBookCache.key(book.bookId(), locale);
@@ -55,7 +64,7 @@ public class ContentCacheWriter {
 				.orElseGet(() -> contentBookCacheRepository.findByBookIdAndLocale(book.bookId(), locale)
 						.orElseGet(() -> ContentBookCache.from(book, locale)));
 		cache.update(book);
-		contentBookCacheRepository.save(cache);
+		return contentBookCacheRepository.save(cache).toContentBook();
 	}
 
 	@Transactional

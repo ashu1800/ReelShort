@@ -1,3 +1,5 @@
+import axios from 'axios'
+
 import { http } from './http'
 
 export type ApiResponse<T> = {
@@ -384,6 +386,19 @@ export async function fetchContentCacheStatus() {
 
 export async function fetchShelfBooks(shelfType: string) {
   const response = await http.get<ApiResponse<ContentBook[]>>(`/content/cache/shelves/${shelfType}/books`)
+  return response.data.data
+}
+
+/**
+ * 单本书的公开详情（同源 `/api/app/content/books/{id}`）。
+ *
+ * 内容管理页里书目来自货架快照，简介经常为空（TwistyTV 的 /browse 卡片本来就没有）；
+ * 打开审片抽屉时后端会把详情页的简介补进缓存，这里再读一次拿到最新值。
+ */
+export async function fetchPublicBookDetail(bookId: string) {
+  // 走公开的 App 接口（/api/app/...），不能复用 admin 的 baseURL 与 Bearer 头。
+  const base = (import.meta.env.VITE_API_BASE_URL ?? '/api/admin').replace('/api/admin', '/api/app')
+  const response = await axios.get<ApiResponse<ContentBook>>(`${base}/content/books/${bookId}`)
   return response.data.data
 }
 

@@ -24,6 +24,7 @@ import {
   fetchContentCacheStatus,
   fetchShelfBooks,
   fetchBookEpisodes,
+  fetchPublicBookDetail,
   probeEpisodeVideo,
   refreshContentShelf,
 } from '../services/adminApi'
@@ -141,13 +142,44 @@ const currentActiveProbe = computed<EpisodeProbeState | null>(() => {
   return probeMap[selectedEpisode.value.episode] || null
 })
 
-// <video> 自己能拿到 URL 却播不了：Chrome 不支持 m3u8（TwistyTV 的 rs_ 片源就是 HLS），
-// 或编码不被支持。上游地址没有扩展名，只能靠元素报错来判断。
+// <video> 自己能拿到 URL 却播不了：Chrome 不支持 m3u8（TwistyTV 的 rs_ 片源就是 HLS）、
+// 编码不被支持，或者自动播放/网络被拦。上游地址没有扩展名，只能看元素状态。
 const videoElementError = ref(false)
+const videoStuck = ref(false)
+const videoState = ref('')
+let videoWatchdog: number | undefined
+
+function readVideoState(): string {
+  const el = document.querySelector<HTMLVideoElement>('.studio-video-element')
+  if (!el) return '播放器未挂载'
+  return [
+    `${el.videoWidth || 0}×${el.videoHeight || 0}`,
+    `readyState=${el.readyState}`,
+    `networkState=${el.networkState}`,
+    `currentTime=${el.currentTime.toFixed(1)}`,
+    el.error ? `error=${el.error.code}${el.error.message ? ` (${el.error.message})` : ''}` : 'error=none',
+  ].join(' · ')
+}
+
+function resetVideoState() {
+  videoElementError.value = false
+  videoStuck.value = false
+  videoState.value = ''
+  if (videoWatchdog !== undefined) window.clearTimeout(videoWatchdog)
+}
+
 watch(
   () => currentActiveProbe.value?.videoUrl,
-  () => {
-    videoElementError.value = false
+  (url) => {
+    resetVideoState()
+    if (!url) return
+    // 4 秒还没出画面就把元素状态摆出来，否则只能看到一片黑，分不清是编码、自动播放还是网络。
+    videoWatchdog = window.setTimeout(() => {
+      const el = document.querySelector<HTMLVideoElement>('.studio-video-element')
+      if (!el) return
+      videoState.value = readVideoState()
+      if (el.currentTime === 0) videoStuck.value = true
+    }, 4000)
   },
 )
 
@@ -248,6 +280,17 @@ async function openBookDetail(book: ContentBook) {
   try {
     const epList = await fetchBookEpisodes(book.bookId, book.filteredTitle)
     episodes.value = epList.sort((a, b) => a.episode - b.episode)
+    // 货架快照里的简介经常为空（/browse 卡片不带简介）。刚拉分集时后端已把详情页的
+    // 简介补进缓存，这里补读一次就能立刻显示，不必等下一轮货架刷新。
+    if (!selectedBook.value.description?.trim()) {
+      fetchPublicBookDetail(book.bookId)
+        .then((detail) => {
+          if (selectedBook.value?.bookId === detail.bookId) {
+            selectedBook.value = { ...selectedBook.value, ...detail }
+          }
+        })
+        .catch(() => undefined)
+    }
     if (episodes.value.length > 0) {
       // 默认选中第一集并直接自动探测
       selectedEpisode.value = episodes.value[0]
@@ -789,16 +832,20 @@ onMounted(async () => {
                   autoplay
                   preload="metadata"
                   class="studio-video-element"
-                  @loadeddata="videoElementError = false"
-                  @error="videoElementError = true"
+                  @loadeddata="videoElementError = false; videoStuck = false"
+                  @pause="videoStuck = false"
+                  @error="videoElementError = true; videoState = readVideoState()"
                 >
                   您的浏览器不支持 HTML5 视频播放。
                 </video>
-                <div v-if="videoElementError" class="video-playback-hint">
+                <div v-if="videoElementError || videoStuck" class="video-playback-hint">
                   <el-icon><WarningFilled /></el-icon>
-                  <span>浏览器无法直接解码这条流（多为 HLS/m3u8 或特殊编码），可以</span>
+                  <span v-if="videoElementError">
+                    浏览器无法直接解码这条流（多为 HLS/m3u8 或特殊编码）。
+                  </span>
+                  <span v-else>4 秒内没有出画面，可能是自动播放被拦、网络不通或流本身有问题。</span>
                   <a :href="currentActiveProbe.videoUrl" target="_blank" rel="noreferrer">在新窗口打开</a>
-                  <span>或用播放器验证。</span>
+                  <span class="video-playback-state">{{ videoState }}</span>
                 </div>
               </template>
               <template v-else>
@@ -1574,6 +1621,14 @@ onMounted(async () => {
 .video-playback-hint a {
   color: #7ab8ff;
   text-decoration: underline;
+}
+
+.video-playback-state {
+  width: 100%;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-all;
 }
 
 .video-placeholder {
