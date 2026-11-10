@@ -5,6 +5,7 @@
 """
 
 import json
+import time
 
 import pytest
 
@@ -297,6 +298,133 @@ def test_search_uses_search_page_not_suggest():
 
     assert [book["book_id"] for book in books] == ["ns_1", "db_4200"]
     assert client.urls() == ["https://twistytv.com/search?q=love"]
+
+
+# --------------------------------------------------------------- 集数补齐
+#
+# 上游的 NetShort(`ns_`) 卡片不渲染集数：hover meta 只有题材，`show-card-meta` 只有
+# 播放量/厂牌，也没有 `poster-tag-episodes` 角标。列表页拿不到，只能翻 `/watch/{id}`。
+
+NO_COUNT_CARD_HTML = """
+<section class="row" aria-labelledby="trending">
+  <ul><li><a class="show-card" href="/watch/ns_2106"><span class="card-media">
+    <img src="https://cdn.example/a.webp" alt="Daddy"/>
+    <span class="poster-tag poster-tag-provider" aria-hidden="true">NS</span>
+    <span class="show-card-hover"><span class="show-card-hover-meta">Revenge · Hidden Identity</span></span>
+    </span><span class="show-card-title">Daddy, Save the Queen</span>
+    <span class="show-card-meta">132K</span></a></li></ul>
+</section>
+"""
+
+
+def _watch_html(book_id: str, episode_count: int) -> str:
+    payload = {
+        "show": _show(id=book_id, episodeCount=episode_count),
+        "episodes": [_episode(number) for number in range(1, min(episode_count, 3) + 1)],
+    }
+    return _flight_html(payload)
+
+
+def _wait_for_warm(client, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with client._warm_lock:
+            if not client._warm_pending:
+                return
+        time.sleep(0.02)
+    raise AssertionError("集数预热队列没有在限定时间内清空")
+
+
+def test_parse_cards_reads_episode_badge_when_hover_meta_only_has_genres():
+    html = """
+    <a class="show-card" href="/watch/rs_46abc"><img src="https://cdn.example/c.webp"/>
+      <span class="poster-tag poster-tag-episodes" aria-hidden="true">46<!-- --> EP</span>
+      <span class="show-card-hover-meta">Revenge · Hidden Identity</span>
+      <span class="show-card-title">Tag Only</span>
+      <span class="show-card-meta">ReelShort</span></a>
+    """
+
+    books = twistytv._parse_cards(html)
+
+    assert books[0]["chapter_count"] == 46
+
+
+def test_shelf_backfills_missing_episode_counts_from_the_watch_page():
+    client = RecordingFetcher(
+        {
+            "/genre/dubbed": FakeResponse(200, NO_COUNT_CARD_HTML),
+            "/watch/ns_2106": FakeResponse(200, _watch_html("ns_2106", 33)),
+        }
+    )
+
+    books = client.shelf("dramadub")
+
+    assert books[0]["chapter_count"] == 33
+    assert sum(1 for url in client.urls() if "/watch/ns_2106" in url) == 1
+    # 第二次刷新走集数缓存，不再翻详情页。
+    assert client.shelf("dramadub")[0]["chapter_count"] == 33
+    assert sum(1 for url in client.urls() if "/watch/ns_2106" in url) == 1
+
+
+def test_shelf_backfill_failure_keeps_zero_and_records_diagnostic():
+    client = RecordingFetcher(
+        {
+            "/genre/dubbed": FakeResponse(200, NO_COUNT_CARD_HTML),
+            "/watch/ns_2106": FakeResponse(500, ""),
+        }
+    )
+
+    books = client.shelf("dramadub")
+
+    assert books[0]["chapter_count"] == 0
+    assert client.diagnostics.snapshot()["counters"]["twistytv_episode_count_failed"] == 1
+
+
+def test_search_queues_missing_episode_counts_instead_of_probing_inline():
+    client = RecordingFetcher(
+        {
+            "/search?q=queen": FakeResponse(200, NO_COUNT_CARD_HTML),
+            "/watch/ns_2106": FakeResponse(200, _watch_html("ns_2106", 33)),
+        }
+    )
+    queued: list[str] = []
+    client._queue_warm_counts = lambda book_ids: queued.extend(book_ids)
+
+    books = client.search("queen")
+
+    assert books[0]["chapter_count"] == 0
+    assert queued == ["ns_2106"]
+    assert not any("/watch/" in url for url in client.urls())
+
+
+def test_search_get_counts_back_after_the_warm_thread_finishes():
+    client = RecordingFetcher(
+        {
+            "/search?q=queen": FakeResponse(200, NO_COUNT_CARD_HTML),
+            "/watch/ns_2106": FakeResponse(200, _watch_html("ns_2106", 33)),
+        }
+    )
+
+    assert client.search("queen")[0]["chapter_count"] == 0
+
+    _wait_for_warm(client)
+
+    assert client.search("queen")[0]["chapter_count"] == 33
+
+
+def test_episodes_seeds_the_episode_count_cache_for_later_listings():
+    client = RecordingFetcher(
+        {
+            "/search?q=queen": FakeResponse(200, NO_COUNT_CARD_HTML),
+            "/watch/ns_2106": FakeResponse(200, _watch_html("ns_2106", 33)),
+        }
+    )
+
+    assert client.episodes("ns_2106", "daddy-save-the-queen")["book"]["chapter_count"] == 33
+    calls_after_detail = len(client.urls())
+
+    assert client.search("queen")[0]["chapter_count"] == 33
+    assert len(client.urls()) == calls_after_detail + 1
 
 
 # --------------------------------------------------------------- 路由与时长解析

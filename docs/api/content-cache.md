@@ -25,6 +25,7 @@
 - 切换后后端立即清空 `content_shelf_cache`（货架行）并在后台线程按 `REELSHORT_CONTENT_REFRESH_SHELVES` 重抓；不清的话用户会继续看到旧上游片单，直到 6 小时后的定时刷新。
 - `content_book_cache` / `content_episode_cache` / `content_video_cache` **不清**：两套上游的 `bookId` 形态天然不同（TwistyTV 为 `ns_`/`rs_`/`db_` 前缀，ReelShort 为纯数字），键空间不重叠，切回去历史数据仍然有效。
 - `vip.free-episodes` 门禁与上游无关：切到 TwistyTV 后非 VIP 仍只能看前 N 集，奖励规则同样按服务端时长计算。
+- **集数（`chapterCount`）**：TwistyTV 的 ReelShort / DramaBox 卡片自带集数，NetShort(`ns_`) 卡片上游不给，内容源在货架刷新时按本翻 `/watch/{id}` 补抓（结果缓存 7 天，见 `content-provider/README.md`），落库进 `content_book_cache` 与货架 JSON。搜索接口只填已缓存的集数，其余由内容源后台线程预热，因此同一关键词第二次搜索会返回完整集数。
 
 ## App API
 

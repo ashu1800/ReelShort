@@ -4,7 +4,9 @@ TwistyTV 是 Next.js App Router 聚合站，索引三家片源：NetShort(`ns_`)
 / DramaBox(`db_`)，书目 ID 形如 `ns_2105841747766697985`。它没有公开 JSON API，数据分两处：
 
 * **列表**（首页 / browse / genre / search）：SSR 出来的 `<a class="show-card" href="/watch/ID">`
-  卡片，里面就有标题、海报、简介、类型和 "N episodes"。
+  卡片，里面就有标题、海报、简介和类型。**集数只有 ReelShort / DramaBox 的卡片有**
+  （hover meta 的 "N episodes" 或角标 "46 EP"）；NetShort(`ns_`) 卡片三者皆无，
+  只能翻详情页的 `show.episodeCount` 补——见 `_fill_counts`。
 * **详情与分集**：`/watch/ID` 页里 RSC flight payload（`self.__next_f.push([1,"..."])`）的
   `{"show":{...},"providerId":...,"episodes":[...]}` 对象。
 * **播放地址**：DramaBox / ReelShort 的 `streamUrl` 在 flight payload 里就是直链；
@@ -20,10 +22,12 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import threading
 import time
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 from urllib.parse import quote, urljoin
 
@@ -52,6 +56,13 @@ DEFAULT_DURATION_CACHE_SECONDS = 6 * 3600.0
 # 探针失败（CDN 不支持 Range、拿到 m3u8 却没分段等）的冷却时间。
 DURATION_ERROR_CACHE_SECONDS = 120.0
 DEFAULT_MAX_SHELF_PAGES = 3
+# NetShort 卡片不给集数，补一次要翻 120 KB 的详情页：一本只补一次，按 7 天缓存。
+EPISODE_COUNT_CACHE_SECONDS_ENV = "TWISTYTV_EPISODE_COUNT_CACHE_SECONDS"
+DEFAULT_EPISODE_COUNT_CACHE_SECONDS = 7 * 24 * 3600.0
+# 货架刷新在后台跑，6 路并发实测上游能吃下；搜索只读缓存，不在请求里现抓。
+EPISODE_COUNT_PROBE_CONCURRENCY = 6
+# 后台预热队列上限：搜索一次最多塞几十个 ID，这里是防止长期运行无限长。
+EPISODE_COUNT_WARM_QUEUE_MAX = 2000
 
 # 上游 provider 白名单：未知值一律拒绝，避免把任意字符串拼进上游 URL。
 KNOWN_PROVIDERS = {"netshort", "reelshort", "dramabox"}
@@ -72,6 +83,8 @@ _META_RE = re.compile(r'<span class="show-card-hover-meta">(.*?)</span>', re.S)
 _CARD_META_RE = re.compile(r'<span class="show-card-meta">(.*?)</span>', re.S)
 _IMG_RE = re.compile(r'<img[^>]*\ssrc="([^"]+)"')
 _EPISODE_COUNT_RE = re.compile(r"(\d+)\s+episodes?", re.I)
+# 海报角标：`<span class="poster-tag poster-tag-episodes" …>46<!-- --> EP</span>`。
+_EPISODE_TAG_RE = re.compile(r'poster-tag-episodes"[^>]*>\s*(\d+)', re.I)
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -158,6 +171,10 @@ def _parse_cards(chunk: str) -> list[dict]:
         meta_match = _META_RE.search(body) or _CARD_META_RE.search(body)
         meta = _text(meta_match.group(1)) if meta_match else ""
         count_match = _EPISODE_COUNT_RE.search(meta)
+        tag_match = _EPISODE_TAG_RE.search(body)
+        chapter_count = _as_int(count_match.group(1)) if count_match else 0
+        if not chapter_count and tag_match:
+            chapter_count = _as_int(tag_match.group(1))
         books.append(
             {
                 "book_id": book_id,
@@ -165,7 +182,7 @@ def _parse_cards(chunk: str) -> list[dict]:
                 "filtered_title": _slugify(title),
                 "book_pic": unescape(poster.group(1)) if poster else "",
                 "description": _text(_DESC_RE.search(body).group(1)) if _DESC_RE.search(body) else "",
-                "chapter_count": _as_int(count_match.group(1)) if count_match else 0,
+                "chapter_count": chapter_count,
             }
         )
     return books
@@ -238,6 +255,7 @@ class TwistytvClient(HardenedFetcher):
         diagnostics: ProviderDiagnostics | None = None,
         page_cache_seconds: float = DEFAULT_PAGE_CACHE_SECONDS,
         duration_cache_seconds: float = DEFAULT_DURATION_CACHE_SECONDS,
+        episode_count_cache_seconds: float = DEFAULT_EPISODE_COUNT_CACHE_SECONDS,
         max_shelf_pages: int = DEFAULT_MAX_SHELF_PAGES,
         resolver=None,
         monotonic=None,
@@ -258,6 +276,15 @@ class TwistytvClient(HardenedFetcher):
         self._duration_error_cache = _TtlCache(
             min(duration_cache_seconds, DURATION_ERROR_CACHE_SECONDS), capacity=4096, monotonic=self.monotonic
         )
+        # 集数：NetShort 卡片没有这个字段，只能按本翻详情页，结果长期缓存。
+        self._episode_counts = _TtlCache(
+            episode_count_cache_seconds, capacity=8192, monotonic=self.monotonic
+        )
+        # 搜索不在请求里现抓，缺的 ID 交给单个守护线程按序补，补完下次搜索就正确。
+        self._warm_lock = threading.Lock()
+        self._warm_queue: queue.Queue[str] = queue.Queue()
+        self._warm_pending: set[str] = set()
+        self._warm_thread: threading.Thread | None = None
 
     @classmethod
     def from_env(cls):
@@ -269,6 +296,9 @@ class TwistytvClient(HardenedFetcher):
             ),
             page_cache_seconds=_bounded_float_env(
                 "TWISTYTV_PAGE_CACHE_SECONDS", DEFAULT_PAGE_CACHE_SECONDS, 86400.0
+            ),
+            episode_count_cache_seconds=_bounded_float_env(
+                EPISODE_COUNT_CACHE_SECONDS_ENV, DEFAULT_EPISODE_COUNT_CACHE_SECONDS, 30 * 24 * 3600.0
             ),
             max_shelf_pages=_bounded_int_env("TWISTYTV_MAX_SHELF_PAGES", DEFAULT_MAX_SHELF_PAGES, 20),
         )
@@ -317,6 +347,7 @@ class TwistytvClient(HardenedFetcher):
         books = _parse_cards(html)
         if not books:
             self.diagnostics.record("twistytv_search_empty", keywords=keywords)
+        self._fill_counts(books, wait=False)
         return books
 
     def shelf(self, shelf_name: str, locale: str = DEFAULT_LOCALE):
@@ -345,7 +376,10 @@ class TwistytvClient(HardenedFetcher):
                 books.extend(_parse_cards(html))
             elif source == "browse":
                 books.extend(self._browse_books())
-        return self._dedupe(books)
+        unique = self._dedupe(books)
+        # 货架走的是后台定时刷新，允许在这里把 NetShort 缺的集数补齐。
+        self._fill_counts(unique, wait=True)
+        return unique
 
     def _browse_books(self) -> list[dict]:
         books = []
@@ -373,6 +407,87 @@ class TwistytvClient(HardenedFetcher):
             seen.add(book_id)
             unique.append(book)
         return unique
+
+    # ------------------------------------------------------------- 集数补齐
+
+    def _fill_counts(self, books: list[dict], *, wait: bool) -> None:
+        """给缺集数的书目补 `chapter_count`（NetShort 卡片上本来就没有这个数字）。
+
+        `wait=True` 用于货架刷新：调用方是后台定时任务，多花二十来秒无所谓，但结果要正确。
+        `wait=False` 用于搜索：一次搜索几十本、每本 120 KB 详情页，现抓会把搜索拖到十几秒，
+        所以只填缓存里已有的，其余丢给后台线程按序预热，下次搜索自然正确。
+        """
+        missing: list[str] = []
+        for book in books:
+            if _as_int(book.get("chapter_count")) > 0:
+                continue
+            book_id = str(book.get("book_id") or "")
+            if not book_id:
+                continue
+            cached = _as_int(self._episode_counts.get(book_id))
+            if cached > 0:
+                book["chapter_count"] = cached
+            else:
+                missing.append(book_id)
+        if not missing:
+            return
+        if not wait:
+            self._queue_warm_counts(missing)
+            return
+        with ThreadPoolExecutor(max_workers=min(EPISODE_COUNT_PROBE_CONCURRENCY, len(missing))) as executor:
+            counts = dict(zip(missing, executor.map(self._probe_count, missing)))
+        for book in books:
+            if _as_int(book.get("chapter_count")) > 0:
+                continue
+            count = counts.get(str(book.get("book_id") or ""), 0)
+            if count > 0:
+                book["chapter_count"] = count
+
+    def _probe_count(self, book_id: str) -> int:
+        """翻详情页取 `show.episodeCount`；失败返回 0，不写缓存以免把抖动钉死一周。"""
+        try:
+            payload = self._watch_payload(book_id)
+        except UpstreamError:
+            self.diagnostics.record("twistytv_episode_count_failed", book_id=book_id)
+            return 0
+        show = _as_dict(payload.get("show"))
+        count = _as_int(show.get("episodeCount")) or len(_as_list(payload.get("episodes")))
+        if count > 0:
+            self._episode_counts.put(book_id, count)
+        return count
+
+    def _remember_count(self, book_id: str, count: int) -> None:
+        """详情/播放路径本来就拿到了整页数据，顺手把集数记进缓存。"""
+        if book_id and count > 0:
+            self._episode_counts.put(book_id, count)
+
+    def _queue_warm_counts(self, book_ids: list[str]) -> None:
+        with self._warm_lock:
+            for book_id in book_ids:
+                if book_id in self._warm_pending or _as_int(self._episode_counts.get(book_id)) > 0:
+                    continue
+                if self._warm_queue.qsize() >= EPISODE_COUNT_WARM_QUEUE_MAX:
+                    break
+                self._warm_pending.add(book_id)
+                self._warm_queue.put(book_id)
+            if self._warm_thread is None or not self._warm_thread.is_alive():
+                self._warm_thread = threading.Thread(
+                    target=self._warm_loop, name="twistytv-episode-counts", daemon=True
+                )
+                self._warm_thread.start()
+
+    def _warm_loop(self) -> None:
+        # 单线程按序补，既不会和货架刷新抢上游，也不会把 16 个 gunicorn 线程用满。
+        while True:
+            book_id = self._warm_queue.get()
+            try:
+                self._probe_count(book_id)
+            except Exception:  # 单本失败不能把常驻线程带走
+                self.diagnostics.record("twistytv_episode_count_failed", book_id=book_id)
+            finally:
+                with self._warm_lock:
+                    self._warm_pending.discard(book_id)
+                self._warm_queue.task_done()
 
     # ------------------------------------------------------------- 详情/播放
 
@@ -426,6 +541,8 @@ class TwistytvClient(HardenedFetcher):
             "description": str(show.get("description") or ""),
             "chapter_count": _as_int(show.get("episodeCount")) or len(items),
         }
+        # 这里已经把整页拿下来了，顺手喂给集数缓存，省掉列表页的补抓。
+        self._remember_count(book["book_id"], book["chapter_count"])
         return {
             "book": book,
             "episodes": [self._map_episode(item) for item in items if _as_int(item.get("number")) > 0],
@@ -452,6 +569,9 @@ class TwistytvClient(HardenedFetcher):
     ):
         payload = self._watch_payload(book_id)
         episodes = [_as_dict(item) for item in payload["episodes"]]
+        # 播放路径同样已经拿到整页，顺手把集数记下（下一轮货架刷新就不用再翻详情页）。
+        show = _as_dict(payload.get("show"))
+        self._remember_count(book_id, _as_int(show.get("episodeCount")) or len(episodes))
         position = next(
             (index for index, item in enumerate(episodes) if _as_int(item.get("number")) == episode_num),
             None,
