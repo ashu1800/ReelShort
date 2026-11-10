@@ -26,6 +26,7 @@
 - `content_book_cache` / `content_episode_cache` / `content_video_cache` **不清**：两套上游的 `bookId` 形态天然不同（TwistyTV 为 `ns_`/`rs_`/`db_` 前缀，ReelShort 为纯数字），键空间不重叠，切回去历史数据仍然有效。
 - `vip.free-episodes` 门禁与上游无关：切到 TwistyTV 后非 VIP 仍只能看前 N 集，奖励规则同样按服务端时长计算。
 - **集数（`chapterCount`）**：TwistyTV 的 ReelShort / DramaBox 卡片自带集数，NetShort(`ns_`) 卡片上游不给，内容源在货架刷新时按本翻 `/watch/{id}` 补抓（结果缓存 7 天，见 `content-provider/README.md`），落库进 `content_book_cache` 与货架 JSON。搜索接口只填已缓存的集数，其余由内容源后台线程预热，因此同一关键词第二次搜索会返回完整集数。
+- **片库大小与风控**：`recommend` = 首页全部 row（含 Top 10 / hero）+ `/browse` 前 `TWISTYTV_MAX_SHELF_PAGES` 页（默认 12 ≈ 700 本，上限为上游总页数 175），`drama-dub` = `/genre/dubbed` 前 `TWISTYTV_MAX_GENRE_PAGES` 页（默认 3 ≈ 180 本）。一次刷新会连打十几页，内容源按 `TWISTYTV_REQUEST_INTERVAL_SECONDS`（默认 0.3s ≈ 上限 3.3 req/s）串行排队；集数补抓按轮给预算（`TWISTYTV_EPISODE_COUNT_BACKFILL`，默认 100 本/轮，余下的下一轮继续）。**上游 200 但没有卡片、或整轮零结果时内容源返回 502**（而不是空数组），后端据此保留旧货架并标记 `ERROR`，不会把首页刷成空白。
 
 ## App API
 

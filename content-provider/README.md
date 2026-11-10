@@ -22,8 +22,11 @@ Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProv
 - 站点是 Next.js App Router：列表走 SSR HTML（`<a class="show-card" href="/watch/ID">`），详情与分集在 `/watch/ID` 的 RSC flight payload（`self.__next_f.push([1,"…"])`）里，解析时先拼分片再 `json.raw_decode`。
 - 播放地址：DramaBox / ReelShort 的 `streamUrl` 在 payload 里就是直链；**NetShort 恒为空**，要再请求 `GET /api/stream?series=&episode=&provider=`，且必须带 `Origin: https://twistytv.com`（缺了返回 400）。
 - **时长**上游不给，自己探：MP4 读 Range 里的 `moov/mvhd`（DramaBox/NetShort 实测 faststart，头 128 KB 内就有）；ReelShort 的 `streamUrl` 其实是 **m3u8**（URL 无扩展名，只能按内容嗅探），改为解析主播放列表的首个变体并累加 `#EXTINF` 分段。拿不到时返回 0 并记 `twistytv_duration_unknown`，播放不阻断，但那一集不产生奖励。
-- 货架映射：`recommend` ← 首页全部 row + `/browse` 前 N 页；`new-release` ← 首页 “New releases” 行；`drama-dub` ← `/genre/dubbed`。
-- **集数**：ReelShort(`rs_`) / DramaBox(`db_`) 的卡片自带（hover meta 的 `N episodes` 或角标 `46 EP`）；**NetShort(`ns_`) 卡片三个位置都没有集数**（hover meta 只有题材，`show-card-meta` 只有播放量/厂牌），只能翻 `/watch/{id}` 取 `show.episodeCount`。因此货架刷新（后台定时任务）会按本补抓，结果按 `TWISTYTV_EPISODE_COUNT_CACHE_SECONDS`（默认 7 天）缓存；搜索不在请求里现抓（一次搜索几十本、每本约 120 KB），只填已缓存的，其余丢给单个后台线程预热，下次搜索就是对的。`episodes()` / `video()` 本来就要翻详情页，会把集数顺手写进缓存。
+- 货架映射：`recommend` ← 首页全部 row（含 Top 10 / hero 区）+ `/browse` 前 `TWISTYTV_MAX_SHELF_PAGES` 页；`new-release` ← 首页 “New releases” 行；`drama-dub` ← `/genre/dubbed` 前 `TWISTYTV_MAX_GENRE_PAGES` 页。**上游没有 `row` 时不再拿 browse 兜底**——那会让 `new-release` 变成第二个 recommend，用户看不到新剧、后台还显示 HEALTHY；现在直接 502，让后端保留旧缓存。
+- **翻页**：`/browse` 线上共 175 页（每页 60 本），`/genre/*` 同样分页（`?page=2` 与第 1 页零重合）。翻页在「空页 / 与已抓集合零重合 / 到达页数上限」三处停，既能把片库抓厚，又不会无限打上游。
+- **风控**：一次刷新会连打十几页，`TWISTYTV_REQUEST_INTERVAL_SECONDS`（默认 0.3s）在进程内串行排队，间隔只在生成列表时生效（用户点开的详情/播放不排队）。
+- **软失败**：上游改版、人机校验页、维护页都是 HTTP 200 + 一张卡都没有。这类响应**必须报 502**（`twistytv_*_unparsable` / `twistytv_shelf_empty`），不能返回空数组——空数组会被后端当成"这个货架现在就是空的"写进缓存，线上首页直接变白。
+- **集数**：ReelShort(`rs_`) / DramaBox(`db_`) 的卡片自带（hover meta 的 `N episodes` 或角标 `46 EP`）；**NetShort(`ns_`) 卡片三个位置都没有集数**，只能翻 `/watch/{id}` 取 `show.episodeCount`。补抓是 **每本书多打一次上游**，所以按轮给预算：`TWISTYTV_EPISODE_COUNT_BACKFILL`（默认 100 本/轮，`0` 关闭），超出的留给下一轮刷新（6h 一轮，几天填满后只做 7 天 TTL 的增量）。`episodes()` / `video()` 本来就要翻详情页，会把集数顺手写进缓存，所以**用户看过的剧自然就有集数**，不需要等补抓。
 - 进程内缓存：watch 页解析结果（默认 600s）、每集时长（6h）与集数（7d）。因此**仍然必须单 worker**（`gunicorn -w 1`）。
 
 ## 环境变量
@@ -44,8 +47,12 @@ Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProv
 - `TWISTYTV_REQUEST_TIMEOUT_SECONDS`：TwistyTV 请求超时，默认 `15`。
 - `TWISTYTV_MAX_RESPONSE_BYTES`：TwistyTV 单次响应上限，默认 `4194304`（4 MiB）；列表页本身有 200-330 KB。
 - `TWISTYTV_PAGE_CACHE_SECONDS`：watch 页解析结果缓存时长，默认 `600`。
-- `TWISTYTV_MAX_SHELF_PAGES`：`recommend` 货架合并 `/browse` 的页数上限，默认 `3`。
-- `TWISTYTV_EPISODE_COUNT_CACHE_SECONDS`：NetShort 卡片缺集数时按本翻详情页补到的结果缓存时长，默认 `604800`（7 天），上限 30 天。
+- `TWISTYTV_MAX_SHELF_PAGES`：`recommend` 货架合并 `/browse` 的页数上限，默认 `12`（约 700 本），硬上限 175（上游总页数）。
+- `TWISTYTV_MAX_GENRE_PAGES`：`drama-dub` 货架 `/genre/dubbed` 的页数上限，默认 `3`，硬上限 60。
+- `TWISTYTV_EPISODE_COUNT_CACHE_SECONDS`：NetShort 卡片缺集数时按本翻详情页补到的结果缓存时长，默认 `604800`（7 天），上限 30 天。补抓失败另有 120s 负缓存，避免坏 ID 每轮搜索都重新打上游。
+- `TWISTYTV_EPISODE_COUNT_BACKFILL`：每轮刷新最多翻多少本书的详情页补集数，默认 `100`，`0` 关闭。一轮 100 本约 30 秒（6 路并发 + 0.3s 排队 ≈ 上限 3.3 req/s），超出预算的下一轮继续；`twistytv_episode_count_backfill_capped` 记剩余量。
+- `TWISTYTV_DURATION_PROBE_ENABLED`：是否为每集播放地址发一次 Range 探针取时长，默认 `true`。探针打的是视频 CDN（NetShort/DramaBox/ReelShort 三个不同域名），一集只探一次并缓存 6h；关掉它 `duration` 恒为 0，**所有观看都不产生积分**（积分按权威时长发放）。
+- `TWISTYTV_REQUEST_INTERVAL_SECONDS`：列表类上游请求之间的最小间隔，默认 `0.3`，`0` 表示不节流。
 - `REELSHORT_ACCOUNT_FILE`：可选。后台下发账号的落盘位置，默认 `/srv/reelshort/content-provider/.account.json`（权限 `0600`）；容器镜像里是 `/app/data/.account.json`，由 Compose 卷 `content-provider-account` 承载。
 
 ## 上游登录态（解锁锁集）

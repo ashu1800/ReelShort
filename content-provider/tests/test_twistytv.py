@@ -5,6 +5,7 @@
 """
 
 import json
+import threading
 import time
 
 import pytest
@@ -63,11 +64,20 @@ class FakeResponse:
         return self.status_code < 400
 
 
+BACKFILL_ON = {"episode_count_backfill": 10000, "duration_probe_enabled": True}
+
+
 class RecordingFetcher(twistytv.TwistytvClient):
-    """按 URL 片段路由的假传输层，顺带把调用记录留给断言。"""
+    """按 URL 片段路由的假传输层，顺带把调用记录留给断言。
+
+    两个上游密集行为默认在生产是关的（见 `TwistytvClient`），测试里显式打开；
+    节流也关掉，否则每个用例都要按 `TWISTYTV_REQUEST_INTERVAL_SECONDS` 真等一下。
+    """
 
     def __init__(self, routes: dict, **kwargs):
-        super().__init__("https://twistytv.com", 5.0, **kwargs)
+        options = {"request_interval_seconds": 0.0, **BACKFILL_ON}
+        options.update(kwargs)
+        super().__init__("https://twistytv.com", 5.0, **options)
         self.routes = routes
         self.calls = []
 
@@ -94,7 +104,7 @@ CARD_HTML = """
     <span class="show-card-meta"><span class="heat">1K</span>Revenge</span></a></li></ul>
 </section>
 <section class="row" aria-labelledby="new">
-  <ul><li><a class="show-card" href="/watch/db_4200"><img src="https://cdn.example/b.webp"/>
+  <ul><li><a class="show-card" href="/watch/db_4200"><img src="https://cdn.example/b.webp"/><span class="poster-tag poster-tag-provider">DB</span>
     <span class="show-card-title">Fresh One</span>
     <span class="show-card-meta">12 episodes</span></a></li></ul>
 </section>
@@ -308,7 +318,7 @@ def test_search_uses_search_page_not_suggest():
 NO_COUNT_CARD_HTML = """
 <section class="row" aria-labelledby="trending">
   <ul><li><a class="show-card" href="/watch/ns_2106"><span class="card-media">
-    <img src="https://cdn.example/a.webp" alt="Daddy"/>
+    <img src="https://cdn.example/a.webp" alt="Daddy"/><span class="poster-tag poster-tag-provider">NS</span>
     <span class="poster-tag poster-tag-provider" aria-hidden="true">NS</span>
     <span class="show-card-hover"><span class="show-card-hover-meta">Revenge · Hidden Identity</span></span>
     </span><span class="show-card-title">Daddy, Save the Queen</span>
@@ -337,7 +347,7 @@ def _wait_for_warm(client, timeout: float = 5.0) -> None:
 
 def test_parse_cards_reads_episode_badge_when_hover_meta_only_has_genres():
     html = """
-    <a class="show-card" href="/watch/rs_46abc"><img src="https://cdn.example/c.webp"/>
+    <a class="show-card" href="/watch/rs_46abc"><img src="https://cdn.example/c.webp"/><span class="poster-tag poster-tag-provider">RS</span>
       <span class="poster-tag poster-tag-episodes" aria-hidden="true">46<!-- --> EP</span>
       <span class="show-card-hover-meta">Revenge · Hidden Identity</span>
       <span class="show-card-title">Tag Only</span>
@@ -513,20 +523,23 @@ def test_diagnostics_follow_the_active_upstream():
     ]["counters"] == {}
 
 
-def test_new_release_records_a_diagnostic_when_the_home_row_is_gone():
+def test_new_release_fails_instead_of_falling_back_to_browse_when_the_home_row_is_gone():
     home = CARD_HTML.replace('aria-labelledby="new"', 'aria-labelledby="fresh"')
     client = RecordingFetcher(
         {
             "/browse?page=1": FakeResponse(200, CARD_HTML),
-            "/browse?page=2": FakeResponse(200, ""),
             "https://twistytv.com/": FakeResponse(200, home),
         }
     )
 
-    books = client.shelf("newrelease")
+    # 旧行为是拿 /browse 兜底，等于把 `new-release` 变成第二个 recommend：
+    # 用户看不到新剧，后台还显示货架 HEALTHY。现在直接失败，让后端保留旧缓存。
+    with pytest.raises(UpstreamError) as error:
+        client.shelf("newrelease")
 
-    assert [book["book_id"] for book in books] == ["ns_1", "db_4200"]
+    assert error.value.status_code == 502
     assert client.diagnostics.snapshot()["counters"]["twistytv_home_row_missing"] == 1
+    assert not any("/browse" in url for url in client.urls())
 
 
 def test_duration_probe_failure_is_not_retried_for_each_play():
@@ -540,6 +553,195 @@ def test_duration_probe_failure_is_not_retried_for_each_play():
     assert client.video(BOOK_ID, 1, "title", "ep1")["duration"] == 0
     # 负缓存：同一次抖动不该让每次播放都去重试探针（每次都可能拖回 MB 级响应）。
     assert client.urls().count("https://cdn.example/broken.mp4") == 1
+
+
+# --------------------------------------------------------------- 风控与软失败
+#
+# 上游改版/反爬/维护页都是 HTTP 200 + 一张卡都没有：当成"没有内容"返回空数组，
+# 后端就会把空货架写进缓存（线上首页直接变白）。这里锁住三件事：软失败要报错、
+# 空货架要报错、翻页要能翻到底但不能无限打上游。
+
+def test_search_without_any_card_is_an_error_not_an_empty_result():
+    client = RecordingFetcher({"/search?q=love": FakeResponse(200, "<html>Just a moment...</html>")})
+
+    with pytest.raises(UpstreamError) as error:
+        client.search("love")
+
+    assert error.value.status_code == 502
+    counters = client.diagnostics.snapshot()["counters"]
+    assert counters["twistytv_search_unparsable"] == 1
+    assert client.diagnostics.snapshot()["recent_events"][0]["context"]["soft_failure"] is True
+
+
+def test_shelf_returns_nothing_when_every_page_is_unparsable():
+    client = RecordingFetcher(
+        {
+            "/genre/dubbed?page=1": FakeResponse(200, "<html>maintenance</html>"),
+        }
+    )
+
+    with pytest.raises(UpstreamError) as error:
+        client.shelf("dramadub")
+
+    assert error.value.status_code == 502
+    assert client.diagnostics.snapshot()["counters"]["twistytv_genre_unparsable"] == 1
+
+
+def test_shelf_pages_through_the_whole_catalogue():
+    pages = {
+        "/genre/dubbed?page=1": FakeResponse(200, CARD_HTML),
+        "/genre/dubbed?page=2": FakeResponse(
+            200, '<a class="show-card" href="/watch/ns_77"><span class="play-badge"></span>'
+                 '<span class="show-card-title">Later One</span></a>'
+        ),
+        "/genre/dubbed?page=3": FakeResponse(200, CARD_HTML),  # 与第 1 页重合
+    }
+    client = RecordingFetcher(pages, max_genre_pages=5)
+
+    books = client.shelf("dramadub")
+
+    # 旧实现只取第一页 60 本；上游第 2 页是全新一批（线上实测零重合）。
+    assert [book["book_id"] for book in books] == ["ns_1", "db_4200", "ns_77"]
+    assert client.diagnostics.snapshot()["counters"]["twistytv_genre_page_repeated"] == 1
+
+
+def _card_html(book_id: str) -> str:
+    return (
+        f'<a class="show-card" href="/watch/{book_id}">'
+        f'<span class="show-card-title">{book_id}</span></a>'
+    )
+
+
+def test_browse_stops_at_the_configured_page_cap():
+    client = RecordingFetcher(
+        {
+            "/browse?page=1": FakeResponse(200, _card_html("ns_1")),
+            "/browse?page=2": FakeResponse(200, _card_html("ns_2")),
+            "/browse?page=3": FakeResponse(200, _card_html("ns_3")),
+            "/browse?page=4": FakeResponse(200, _card_html("ns_4")),
+            "https://twistytv.com/": FakeResponse(200, CARD_HTML),
+        },
+        max_shelf_pages=3,
+    )
+
+    client.shelf("recommend")
+
+    browse_calls = [url for url in client.urls() if "/browse?page=" in url]
+    assert len(browse_calls) == 3
+
+
+def test_request_pacing_spaces_out_catalogue_requests():
+    clock = {"now": 0.0}
+    slept: list[float] = []
+    pages = {(1): "ns_a", (2): "ns_b", (3): "ns_c"}
+    client = RecordingFetcher(
+        {f"/genre/dubbed?page={page}": FakeResponse(200, _card_html(book_id)) for page, book_id in pages.items()},
+        max_genre_pages=3,
+        request_interval_seconds=0.4,
+        episode_count_backfill=0,
+        monotonic=lambda: clock["now"],
+    )
+    original_sleep = twistytv.time.sleep
+    twistytv.time.sleep = lambda seconds: (slept.append(seconds), clock.__setitem__("now", clock["now"] + seconds))
+    try:
+        client.shelf("dramadub")
+    finally:
+        twistytv.time.sleep = original_sleep
+
+    # 三页按 0.4s 的间隔排队：第 1 页立即发，第 2/3 页各等 0.4s。
+    assert [round(value, 3) for value in slept] == [0.4, 0.4]
+
+
+def test_episode_count_backfill_can_be_turned_off():
+    client = twistytv.TwistytvClient("https://twistytv.com", 5.0, episode_count_backfill=0)
+    books = [{"book_id": "ns_2106", "chapter_count": 0}]
+
+    client._fill_counts(books, wait=True)
+
+    assert books[0]["chapter_count"] == 0
+    assert client.diagnostics.snapshot()["counters"]["twistytv_episode_count_backfill_disabled"] == 1
+
+
+def test_episode_count_backfill_is_budgeted_per_round():
+    # 700 本书一次补完 = 700 次详情页请求，裸 IP 上必被拦；每轮只补预算内的几本。
+    client = RecordingFetcher(
+        {"/watch/": FakeResponse(200, _watch_html("ns_2106", 33))},
+        episode_count_backfill=2,
+        request_interval_seconds=0.0,
+    )
+    books = [{"book_id": f"ns_{index}", "chapter_count": 0} for index in range(5)]
+
+    client._fill_counts(books, wait=True)
+
+    assert sum(1 for url in client.urls() if "/watch/" in url) == 2
+    counters = client.diagnostics.snapshot()["counters"]
+    assert counters["twistytv_episode_count_backfill_capped"] == 1
+
+
+def test_duration_probe_can_be_turned_off():
+    # 时长探针打的是 CDN（不是站点），且关掉它等于所有观看都没有积分——默认开。
+    client = twistytv.TwistytvClient("https://twistytv.com", 5.0, duration_probe_enabled=False)
+
+    assert client._duration(BOOK_ID, 1, "https://cdn.example/1.mp4") == 0
+    counters = client.diagnostics.snapshot()["counters"]
+    assert counters["twistytv_duration_probe_disabled"] == 1
+
+
+def test_warm_queue_does_not_requeue_an_id_that_is_still_being_probed():
+    client = RecordingFetcher(
+        {"/search?q=queen": FakeResponse(200, NO_COUNT_CARD_HTML), "/watch/ns_2106": FakeResponse(200, "")},
+    )
+    # 让探针一直卡在里面，模拟"详情页很慢"，期间用户又搜了两次同一个词。
+    gate = threading.Event()
+    client._probe_count = lambda book_id: gate.wait(5) or 0
+
+    client.search("queen")
+    client.search("queen")
+    client.search("queen")
+
+    with client._warm_lock:
+        assert client._warm_pending == {"ns_2106"}
+    gate.set()
+    _wait_for_warm(client)
+
+
+def test_failed_episode_count_probe_is_not_refetched_on_every_search():
+    client = RecordingFetcher(
+        {"/search?q=queen": FakeResponse(200, NO_COUNT_CARD_HTML), "/watch/ns_2106": FakeResponse(500, "")},
+    )
+
+    for _ in range(3):
+        client.search("queen")
+        _wait_for_warm(client)
+
+    # 不上负缓存的话，同一批解析不动的 ID 每次搜索都会重新排一遍、重新打一次详情页。
+    assert sum(1 for url in client.urls() if "/watch/" in url) == 1
+
+
+def test_home_top10_and_hero_links_are_part_of_the_shelf():
+    html = """
+    <section class="row" aria-labelledby="top-10"><ol class="row-track top10-track">
+      <li class="top10-item"><a class="top10-link" aria-label="1. Surf God&#x27;s Revenge"
+        href="/watch/rs_6ad4"><span class="top10-rank">1</span><img src="https://cdn.example/t.webp"/></a></li>
+    </ol></section>
+    """
+
+    assert [book["book_id"] for book in twistytv._parse_home_links(html)] == ["rs_6ad4"]
+    assert twistytv._parse_home_links(html)[0]["book_title"] == "Surf God's Revenge"
+
+
+def test_search_results_are_capped():
+    cards = "".join(
+        f'<a class="show-card" href="/watch/ns_{index}">'
+        f'<span class="show-card-title">T{index}</span></a>'
+        for index in range(205)
+    )
+    client = RecordingFetcher({"/search?q=love": FakeResponse(200, cards)}, episode_count_backfill=0)
+
+    books = client.search("love")
+
+    assert len(books) == twistytv.SEARCH_RESULT_LIMIT
+    assert client.diagnostics.snapshot()["counters"]["twistytv_search_truncated"] == 1
 
 
 def _mvhd_payload(timescale: int, duration: int, version: int = 0) -> bytes:
