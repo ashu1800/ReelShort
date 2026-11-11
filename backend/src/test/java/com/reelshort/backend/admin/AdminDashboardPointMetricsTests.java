@@ -18,7 +18,7 @@ import org.mockito.ArgumentCaptor;
 
 import com.reelshort.backend.content.ContentBookCacheRepository;
 import com.reelshort.backend.content.ContentEpisodeCacheRepository;
-import com.reelshort.backend.content.ContentShelfCacheRepository;
+import com.reelshort.backend.content.ContentLibraryCrawlStateRepository;
 import com.reelshort.backend.order.VipOrderRepository;
 import com.reelshort.backend.points.PointTransactionRepository;
 import com.reelshort.backend.user.UserAccountRepository;
@@ -31,7 +31,7 @@ class AdminDashboardPointMetricsTests {
 		VipOrderRepository vipOrderRepository = mock(VipOrderRepository.class);
 		ContentBookCacheRepository contentBookCacheRepository = mock(ContentBookCacheRepository.class);
 		ContentEpisodeCacheRepository contentEpisodeCacheRepository = mock(ContentEpisodeCacheRepository.class);
-		ContentShelfCacheRepository contentShelfCacheRepository = mock(ContentShelfCacheRepository.class);
+		ContentLibraryCrawlStateRepository contentLibraryCrawlStateRepository = mock(ContentLibraryCrawlStateRepository.class);
 		AdminAuditLogRepository adminAuditLogRepository = mock(AdminAuditLogRepository.class);
 		PointTransactionRepository pointTransactionRepository = mock(PointTransactionRepository.class);
 		when(userAccountRepository.count()).thenReturn(4L);
@@ -40,7 +40,7 @@ class AdminDashboardPointMetricsTests {
 		when(pointTransactionRepository.sumWatchRewardAmountByCreatedAtBetween(any(), any())).thenReturn(1_200L);
 		Clock clock = Clock.fixed(Instant.parse("2026-11-06T05:00:00Z"), ZoneOffset.UTC);
 		AdminDashboardService service = new AdminDashboardService(userAccountRepository, vipOrderRepository,
-				contentBookCacheRepository, contentEpisodeCacheRepository, contentShelfCacheRepository,
+				contentBookCacheRepository, contentEpisodeCacheRepository, contentLibraryCrawlStateRepository,
 				adminAuditLogRepository, pointTransactionRepository, clock);
 
 		var metrics = service.summary().points();
@@ -63,7 +63,7 @@ class AdminDashboardPointMetricsTests {
 		VipOrderRepository vipOrderRepository = mock(VipOrderRepository.class);
 		ContentBookCacheRepository contentBookCacheRepository = mock(ContentBookCacheRepository.class);
 		ContentEpisodeCacheRepository contentEpisodeCacheRepository = mock(ContentEpisodeCacheRepository.class);
-		ContentShelfCacheRepository contentShelfCacheRepository = mock(ContentShelfCacheRepository.class);
+		ContentLibraryCrawlStateRepository contentLibraryCrawlStateRepository = mock(ContentLibraryCrawlStateRepository.class);
 		AdminAuditLogRepository adminAuditLogRepository = mock(AdminAuditLogRepository.class);
 		PointTransactionRepository pointTransactionRepository = mock(PointTransactionRepository.class);
 		when(userAccountRepository.count()).thenReturn(0L);
@@ -71,7 +71,7 @@ class AdminDashboardPointMetricsTests {
 		when(adminAuditLogRepository.findTop5ByOrderByCreatedAtDesc()).thenReturn(List.of());
 		when(pointTransactionRepository.sumWatchRewardAmountByCreatedAtBetween(any(), any())).thenReturn(0L);
 		AdminDashboardService service = new AdminDashboardService(userAccountRepository, vipOrderRepository,
-				contentBookCacheRepository, contentEpisodeCacheRepository, contentShelfCacheRepository,
+				contentBookCacheRepository, contentEpisodeCacheRepository, contentLibraryCrawlStateRepository,
 				adminAuditLogRepository, pointTransactionRepository,
 				Clock.fixed(Instant.parse("2026-11-06T05:00:00Z"), ZoneOffset.UTC));
 

@@ -189,7 +189,7 @@ async function confirmUpstreamSwitch(config: SystemConfig, newValue: string): Pr
     UPSTREAM_OPTIONS.find((option) => option.value === candidate)?.label ?? candidate
   try {
     await ElMessageBox.confirm(
-      `切换后立即清空货架缓存并在后台重新抓取，App 首页、搜索和货架会换成新上游的内容。\n当前：${label(config.value)} → 切换为：${label(newValue)}`,
+      `切换后立即清空视频库并在后台重新抓取（旧上游书目在新上游下无法播放），App 首页与搜索会换成新上游的内容。\n当前：${label(config.value)} → 切换为：${label(newValue)}`,
       '确认切换内容上游',
       { confirmButtonText: '确认切换', cancelButtonText: '取消', type: 'warning' },
     )
@@ -215,7 +215,7 @@ async function saveConfig(config: SystemConfig) {
   if (isFundSensitiveConfig(config.key) && !(await confirmFundSensitiveChange(config, value))) {
     return
   }
-  // 切上游会立刻清空货架缓存并重抓，App 首页/搜索整批换内容——必须让管理员确认一次。
+  // 切上游会立刻清空视频库并重抓，App 首页/搜索整批换内容——必须让管理员确认一次。
   if (isUpstreamConfig(config.key) && !(await confirmUpstreamSwitch(config, value))) {
     return
   }

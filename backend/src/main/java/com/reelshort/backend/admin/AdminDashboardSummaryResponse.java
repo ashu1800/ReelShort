@@ -15,7 +15,10 @@ public record AdminDashboardSummaryResponse(
 	public record VipMetrics(long total, String totalUsdt) {
 	}
 
-	public record ContentMetrics(long bookCount, long episodeCacheCount, long shelfCount) {
+	/**
+	 * 内容指标改用视频库：bookCount/episodeCacheCount 是库存，crawlPage/totalPages 是抓取进度。
+	 */
+	public record ContentMetrics(long bookCount, long episodeCacheCount, int crawlPage, int totalPages) {
 	}
 
 	public record PointMetrics(long totalWatchRewardPoints, int periodDays, String averagePointsPerUserPerDay,

@@ -19,22 +19,25 @@ test('content management view includes episode heatmap matrix and batch audit co
   assert.match(viewSource, /specs-capsule-panel/)
 })
 
-test('shelf asset grid paginates instead of rendering the whole shelf', () => {
-  // 735 部短剧一次性挂到 DOM 会卡顿；两个视图都必须吃当前页切片，
-  // 分页总数基于筛选后的全量结果。
-  assert.match(viewSource, /v-for="book in pagedBooks"/)
-  assert.match(viewSource, /:data="pagedBooks"/)
+test('video library grid uses server-side pagination', () => {
+  // 库里可能有上万部：两个视图都只吃后端返回的当前页，总数由后端给。
+  assert.match(viewSource, /v-for="book in books"/)
+  assert.match(viewSource, /:data="books"/)
   assert.match(viewSource, /<el-pagination/)
-  assert.match(viewSource, /:total="filteredBooks\.length"/)
+  assert.match(viewSource, /:total="libraryTotal"/)
+  assert.match(viewSource, /@current-change="handlePageChange"/)
 })
 
-test('monitoring tab formats ISO timestamps instead of rendering them raw', () => {
-  assert.match(viewSource, /formatDateTime\(row\.refreshedAt\)/)
-  assert.match(viewSource, /formatDateTime\(row\.startedAt\)/)
+test('monitoring tab renders the library status with formatted timestamps', () => {
+  assert.match(viewSource, /libraryStats/)
+  assert.match(viewSource, /formatDateTime\(status\.value\.lastCrawledAt\)/)
+  assert.match(viewSource, /抓取一轮新书/)
 })
 
-test('adminApi exposes shelf books, episodes, and video probe endpoints', () => {
-  assert.match(apiSource, /export async function fetchShelfBooks/)
+test('adminApi exposes library books, episodes, and video probe endpoints', () => {
+  assert.match(apiSource, /export async function fetchContentLibraryBooks/)
+  assert.match(apiSource, /export async function fetchContentLibraryStatus/)
+  assert.match(apiSource, /export async function crawlContentLibrary/)
   assert.match(apiSource, /export async function fetchBookEpisodes/)
   assert.match(apiSource, /export async function probeEpisodeVideo/)
 })

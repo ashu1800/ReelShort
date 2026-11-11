@@ -2,6 +2,8 @@ package com.reelshort.backend.content;
 
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -50,6 +52,9 @@ class AdminContentCacheControllerTests {
 	@Autowired
 	private ContentRefreshRunRepository contentRefreshRunRepository;
 
+	@Autowired
+	private ContentLibraryCrawlStateRepository contentLibraryCrawlStateRepository;
+
 	@MockitoBean
 	private ContentProvider contentProvider;
 
@@ -60,6 +65,7 @@ class AdminContentCacheControllerTests {
 		contentBookCacheRepository.deleteAll();
 		contentEpisodeCacheRepository.deleteAll();
 		contentVideoCacheRepository.deleteAll();
+		contentLibraryCrawlStateRepository.deleteAll();
 	}
 
 	@Test
@@ -212,6 +218,102 @@ class AdminContentCacheControllerTests {
 				.andExpect(jsonPath("$.code").value(0))
 				.andExpect(jsonPath("$.data.videoUrl").value("https://example.com/video.mp4"))
 				.andExpect(jsonPath("$.data.duration").value(120));
+	}
+
+	@Test
+	void adminCanReadContentLibraryStatus() throws Exception {
+		String adminToken = adminLogin();
+
+		mockMvc.perform(get("/api/admin/content/library")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data.bookCount").value(0))
+				.andExpect(jsonPath("$.data.episodeCacheCount").value(0))
+				.andExpect(jsonPath("$.data.videoCacheCount").value(0))
+				.andExpect(jsonPath("$.data.nextPage").value(1))
+				.andExpect(jsonPath("$.data.totalPages").value(176))
+				.andExpect(jsonPath("$.data.lastAdded").value(0))
+				.andExpect(jsonPath("$.data.active").value(false));
+	}
+
+	@Test
+	void adminCanBrowseContentLibraryWithPagingAndSearch() throws Exception {
+		String adminToken = adminLogin();
+		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(
+				new ContentBook("lib-love", "Love Story", "love-story", "https://example.com/love.jpg",
+						"A romantic drama.", 12)));
+		contentBookCacheRepository.saveAndFlush(ContentBookCache.from(
+				new ContentBook("lib-revenge", "Revenge", "revenge", "https://example.com/revenge.jpg",
+						"Dark secrets.", 8)));
+
+		mockMvc.perform(get("/api/admin/content/library/books")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.param("page", "0")
+				.param("size", "1"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data.total").value(2))
+				.andExpect(jsonPath("$.data.page").value(0))
+				.andExpect(jsonPath("$.data.size").value(1))
+				.andExpect(jsonPath("$.data.books", hasSize(1)));
+
+		mockMvc.perform(get("/api/admin/content/library/books")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.param("query", "LOVE"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.total").value(1))
+				.andExpect(jsonPath("$.data.books[0].bookId").value("lib-love"));
+
+		mockMvc.perform(get("/api/admin/content/library/books")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.param("size", "500"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.size").value(100));
+	}
+
+	@Test
+	void adminCanCrawlTheContentLibraryAndAuditIsRecorded() throws Exception {
+		String adminToken = adminLogin();
+		when(contentProvider.getCatalogPage(anyInt(), any(ContentLocale.class))).thenAnswer(invocation -> {
+			int page = invocation.getArgument(0);
+			return new ContentProvider.ContentCatalogPage(List.of(
+					new ContentBook("lib-" + page, "Library " + page, "library-" + page,
+							"https://example.com/library.jpg", "", 5)),
+					true);
+		});
+
+		mockMvc.perform(post("/api/admin/content/library/crawl")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.code").value(0))
+				.andExpect(jsonPath("$.data.fetchedPages").value(13))
+				.andExpect(jsonPath("$.data.added").value(13))
+				.andExpect(jsonPath("$.data.total").value(13))
+				.andExpect(jsonPath("$.data.nextPage").value(13))
+				.andExpect(jsonPath("$.data.hasMore").value(true));
+
+		mockMvc.perform(get("/api/admin/content/library")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.bookCount").value(13))
+				.andExpect(jsonPath("$.data.nextPage").value(13))
+				.andExpect(jsonPath("$.data.lastAdded").value(13));
+
+		mockMvc.perform(get("/api/admin/audit-logs")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[*].action", hasItem("CONTENT_LIBRARY_CRAWLED")));
+	}
+
+	@Test
+	void appTokenCannotAccessContentLibrary() throws Exception {
+		String appToken = registerAndExtractAppToken("library-boundary-user");
+
+		mockMvc.perform(get("/api/admin/content/library")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + appToken))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value(401));
 	}
 
 	private String adminLogin() throws Exception {

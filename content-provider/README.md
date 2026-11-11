@@ -22,7 +22,8 @@ Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProv
 - 站点是 Next.js App Router：列表走 SSR HTML（`<a class="show-card" href="/watch/ID">`），详情与分集在 `/watch/ID` 的 RSC flight payload（`self.__next_f.push([1,"…"])`）里，解析时先拼分片再 `json.raw_decode`。
 - 播放地址：DramaBox / ReelShort 的 `streamUrl` 在 payload 里就是直链；**NetShort 恒为空**，要再请求 `GET /api/stream?series=&episode=&provider=`，且必须带 `Origin: https://twistytv.com`（缺了返回 400）。
 - **时长**上游不给，自己探：MP4 读 Range 里的 `moov/mvhd`（DramaBox/NetShort 实测 faststart，头 128 KB 内就有）；ReelShort 的 `streamUrl` 其实是 **m3u8**（URL 无扩展名，只能按内容嗅探），改为解析主播放列表的首个变体并累加 `#EXTINF` 分段。拿不到时返回 0 并记 `twistytv_duration_unknown`，播放不阻断，但那一集不产生奖励。
-- 货架映射：`recommend` ← 首页全部 row（含 Top 10 / hero 区）+ `/browse` 前 `TWISTYTV_MAX_SHELF_PAGES` 页；`new-release` ← 首页 “New releases” 行；`drama-dub` ← `/genre/dubbed` 前 `TWISTYTV_MAX_GENRE_PAGES` 页。**上游没有 `row` 时不再拿 browse 兜底**——那会让 `new-release` 变成第二个 recommend，用户看不到新剧、后台还显示 HEALTHY；现在直接 502，让后端保留旧缓存。
+- 视频库目录：`catalog(page)` 是后端定时入库的来源。`page=0` ← 首页全部 row（含 Top 10 / hero 区）；`page>=1` ← `/browse?page=N`（线上共 175 页、每页 60 本，上限 `TWISTYTV_MAX_CATALOG_PAGES`）。返回 `(books, has_more)`，库由后端按 `book_id` 幂等累积，重复书不会重复入库。第 1 页是软 404 探针：200 但零卡片必须报 502，不能当成"抓完了"。
+- 旧货架端点（`/recommend`、`/newrelease`、`/dramadub`）仍保留兼容，但后端首页与后台已改用 `catalog`，不再调用它们。
 - **翻页**：`/browse` 线上共 175 页（每页 60 本），`/genre/*` 同样分页（`?page=2` 与第 1 页零重合）。翻页在「空页 / 与已抓集合零重合 / 到达页数上限」三处停，既能把片库抓厚，又不会无限打上游。
 - **风控**：一次刷新会连打十几页，`TWISTYTV_REQUEST_INTERVAL_SECONDS`（默认 0.3s）在进程内串行排队，间隔只在生成列表时生效（用户点开的详情/播放不排队）。
 - **软失败**：上游改版、人机校验页、维护页都是 HTTP 200 + 一张卡都没有。这类响应**必须报 502**（`twistytv_*_unparsable` / `twistytv_shelf_empty`），不能返回空数组——空数组会被后端当成"这个货架现在就是空的"写进缓存，线上首页直接变白。
@@ -48,7 +49,8 @@ Flask 内容源适配服务。同机部署后由 Spring Boot 通过 `ContentProv
 - `TWISTYTV_MAX_RESPONSE_BYTES`：TwistyTV 单次响应上限，默认 `4194304`（4 MiB）；列表页本身有 200-330 KB。
 - `TWISTYTV_PAGE_CACHE_SECONDS`：watch 页解析结果缓存时长，默认 `600`。
 - `TWISTYTV_MAX_SHELF_PAGES`：`recommend` 货架合并 `/browse` 的页数上限，默认 `12`（约 700 本），硬上限 175（上游总页数）。
-- `TWISTYTV_MAX_GENRE_PAGES`：`drama-dub` 货架 `/genre/dubbed` 的页数上限，默认 `3`，硬上限 60。
+- `TWISTYTV_MAX_GENRE_PAGES`：`drama-dub` 货架 `/genre/dubbed` 的页数上限，默认 `3`，硬上限 60（旧货架兼容，后端已不再调用）。
+- `TWISTYTV_MAX_CATALOG_PAGES`：视频库 `/browse` 目录的页数上限，默认 `175`（上游总页数，约 1 万本），硬上限 175。
 - `TWISTYTV_EPISODE_COUNT_CACHE_SECONDS`：NetShort 卡片缺集数时按本翻详情页补到的结果缓存时长，默认 `604800`（7 天），上限 30 天。补抓失败另有 120s 负缓存，避免坏 ID 每轮搜索都重新打上游。
 - `TWISTYTV_EPISODE_COUNT_BACKFILL`：每轮刷新最多翻多少本书的详情页补集数，默认 `100`，`0` 关闭。一轮 100 本约 30 秒（6 路并发 + 0.3s 排队 ≈ 上限 3.3 req/s），超出预算的下一轮继续；`twistytv_episode_count_backfill_capped` 记剩余量。
 - `TWISTYTV_DURATION_PROBE_ENABLED`：是否为每集播放地址发一次 Range 探针取时长，默认 `true`。探针打的是视频 CDN（NetShort/DramaBox/ReelShort 三个不同域名），一集只探一次并缓存 6h；关掉它 `duration` 恒为 0，**所有观看都不产生积分**（积分按权威时长发放）。
@@ -164,6 +166,7 @@ GET /diagnostics
 GET /api/v1/reelshort/search?keywords=love&locale=en
 GET /api/v1/reelshort/episodes/{book_id}?filtered_title=love-story&locale=en
 GET /api/v1/reelshort/video/{book_id}/{episode_num}?filtered_title=love-story&chapter_id=chapter-1&locale=en
+GET /api/v1/reelshort/catalog?page=0&locale=en
 GET /api/v1/reelshort/recommend?locale=en
 GET /api/v1/reelshort/newrelease
 GET /api/v1/reelshort/dramadub
@@ -174,7 +177,8 @@ GET /api/v1/reelshort/dramadub
 返回结构会被规整为 Spring Boot `FlaskContentProvider` 期望的 JSON：
 
 - 搜索：`{"results": [...]}`
-- 货架：`{"books": [...]}`
+- 视频库目录：`{"page": 0, "has_more": true, "books": [...]}`
+- 货架（旧）：`{"books": [...]}`
 - 分集：`{"episodes": [...]}`
 - 播放：`{"video_url": "...", "episode": 1, "duration": 120, "next_episode": {...}}`
 

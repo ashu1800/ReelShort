@@ -65,6 +65,12 @@ class ContentCacheServiceTransactionTests {
 		}
 
 		@Override
+		public ContentCatalogPage getCatalogPage(int page, ContentLocale locale) {
+			record("getCatalogPage");
+			return new ContentCatalogPage(List.of(book("book-catalog")), false);
+		}
+
+		@Override
 		public ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId,
 				ContentLocale locale) {
 			record("getVideoUrl");

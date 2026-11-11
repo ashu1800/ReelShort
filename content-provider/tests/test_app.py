@@ -88,6 +88,10 @@ class FakeReelShortClient:
         self.calls.append(("shelf", shelf_name, locale))
         return [BOOK | {"book_title": shelf_name, "description": locale}]
 
+    def catalog(self, page, locale="en"):
+        self.calls.append(("catalog", page, locale))
+        return [BOOK | {"book_title": f"Page {page}", "description": locale}], page < 2
+
     def episodes(self, book_id, filtered_title, locale="en"):
         self.calls.append(("episodes", book_id, filtered_title, locale))
         return {
@@ -258,6 +262,24 @@ def test_shelf_endpoints_return_books(client, path, shelf_name):
     assert response.get_json() == {
         "books": [BOOK | {"book_title": shelf_name, "description": "en"}],
     }
+
+
+def test_catalog_returns_page_books_and_has_more(client):
+    response = client.get("/api/v1/reelshort/catalog?page=1")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "page": 1,
+        "has_more": True,
+        "books": [BOOK | {"book_title": "Page 1", "description": "en"}],
+    }
+
+
+def test_catalog_rejects_invalid_page(client):
+    for page in ("-1", "abc"):
+        response = client.get(f"/api/v1/reelshort/catalog?page={page}")
+
+        assert response.status_code == 400
 
 
 def test_episodes_return_spring_boot_contract(client):

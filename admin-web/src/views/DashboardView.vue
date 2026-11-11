@@ -89,7 +89,7 @@ function getActionLabel(action: string) {
     POINTS_ADJUSTED: '积分调整',
     USER_VIP_SET: 'VIP 授权',
     USER_VIP_CANCELLED: 'VIP 取消',
-    CONTENT_CACHE_REFRESHED: '货架刷新',
+    CONTENT_CACHE_REFRESHED: '内容抓取',
     CONTENT_CACHE_REFRESHED_LOCALES: '全语言刷新',
     USER_STATUS_UPDATED: '状态变更',
     WITHDRAWAL_CONFIRMED: '提现确认',
@@ -252,8 +252,10 @@ onMounted(loadDashboard)
           </div>
           <div class="kpi-divider"></div>
           <div class="kpi-sub-item">
-            <span class="sub-label">覆盖货架:</span>
-            <span class="sub-val mono">{{ summary?.content.shelfCount ?? 3 }} 个</span>
+            <span class="sub-label">抓取进度:</span>
+            <span class="sub-val mono">
+              {{ summary?.content.crawlPage ?? 0 }} / {{ summary?.content.totalPages ?? 0 }} 页
+            </span>
           </div>
         </div>
       </div>
@@ -338,7 +340,7 @@ onMounted(loadDashboard)
           <div class="quick-item" @click="navigateTo('/content-cache')">
             <div class="quick-icon-wrap icon-film"><el-icon><Film /></el-icon></div>
             <div class="quick-text">
-              <div class="quick-title">视频与货架管理</div>
+              <div class="quick-title">视频库管理</div>
               <div class="quick-desc">海报资产 · 分集探针 · 全季巡检</div>
             </div>
             <el-icon class="quick-arrow"><ArrowRight /></el-icon>

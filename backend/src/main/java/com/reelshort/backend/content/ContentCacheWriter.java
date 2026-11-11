@@ -2,6 +2,7 @@ package com.reelshort.backend.content;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.OffsetDateTime;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -25,18 +26,21 @@ public class ContentCacheWriter {
 	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 	private final ContentVideoCacheRepository contentVideoCacheRepository;
 	private final ContentEpisodeRuntimeCacheRepository contentEpisodeRuntimeCacheRepository;
+	private final ContentLibraryCrawlStateRepository contentLibraryCrawlStateRepository;
 	private final ObjectMapper objectMapper;
 
 	public ContentCacheWriter(ContentShelfCacheRepository contentShelfCacheRepository,
 			ContentBookCacheRepository contentBookCacheRepository,
 			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
 			ContentVideoCacheRepository contentVideoCacheRepository,
-			ContentEpisodeRuntimeCacheRepository contentEpisodeRuntimeCacheRepository, ObjectMapper objectMapper) {
+			ContentEpisodeRuntimeCacheRepository contentEpisodeRuntimeCacheRepository,
+			ContentLibraryCrawlStateRepository contentLibraryCrawlStateRepository, ObjectMapper objectMapper) {
 		this.contentShelfCacheRepository = contentShelfCacheRepository;
 		this.contentBookCacheRepository = contentBookCacheRepository;
 		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
 		this.contentVideoCacheRepository = contentVideoCacheRepository;
 		this.contentEpisodeRuntimeCacheRepository = contentEpisodeRuntimeCacheRepository;
+		this.contentLibraryCrawlStateRepository = contentLibraryCrawlStateRepository;
 		this.objectMapper = objectMapper;
 	}
 
@@ -125,6 +129,48 @@ public class ContentCacheWriter {
 				.orElseGet(() -> ContentEpisodeRuntimeCache.create(bookId, episodeNum, chapterId, durationSeconds));
 		runtime.update(durationSeconds);
 		contentEpisodeRuntimeCacheRepository.save(runtime);
+	}
+
+	/**
+	 * 切换内容上游时作废整个视频库并把抓取游标重置到第 1 页。
+	 *
+	 * <p>视频库“只增不减”的唯一例外：旧上游的 bookId 在新上游不可播，留着会变成死链，
+	 * 所以换上游后必须整库重抓。必须 REQUIRES_NEW：调用点是配置变更事件的 afterCommit
+	 * 回调，那里原事务已经提交，用默认的 REQUIRED 会加入一个“再也不会提交”的事务，
+	 * deleteAll() 的删除会被静默丢弃（与 {@link ContentCacheService#clearShelves()} 同因）。
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void clearLibraryForUpstreamSwitch() {
+		contentBookCacheRepository.deleteAll();
+		ContentLibraryCrawlState state = contentLibraryCrawlStateRepository
+				.findById(ContentLibraryCrawlState.SINGLETON_ID)
+				.orElseGet(ContentLibraryCrawlState::initial);
+		state.resetForUpstreamSwitch();
+		contentLibraryCrawlStateRepository.save(state);
+	}
+
+	/**
+	 * 视频库抓取成功后推进进度：nextPage、本轮新增数、抓取时刻，并清空 lastError。
+	 */
+	@Transactional
+	public void recordLibraryCrawlSuccess(int nextPage, int added) {
+		ContentLibraryCrawlState state = contentLibraryCrawlStateRepository
+				.findById(ContentLibraryCrawlState.SINGLETON_ID)
+				.orElseGet(ContentLibraryCrawlState::initial);
+		state.recordCrawlSuccess(nextPage, added, OffsetDateTime.now());
+		contentLibraryCrawlStateRepository.save(state);
+	}
+
+	/**
+	 * 记录视频库抓取失败。REQUIRES_NEW 独立提交，抓取本身的异常不会带走这条错误状态。
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void markLibraryCrawlFailure(String errorMessage) {
+		ContentLibraryCrawlState state = contentLibraryCrawlStateRepository
+				.findById(ContentLibraryCrawlState.SINGLETON_ID)
+				.orElseGet(ContentLibraryCrawlState::initial);
+		state.markFailure(errorMessage);
+		contentLibraryCrawlStateRepository.save(state);
 	}
 
 	/**

@@ -1,14 +1,18 @@
 # Content Cache API
 
-当前文档记录内容货架和缓存管理接口。App 和后台仍只访问 Spring Boot，不直接访问 Flask 内容源。
+当前文档记录视频库、内容缓存与后台管理接口。App 和后台仍只访问 Spring Boot，不直接访问 Flask 内容源。
 
-## 支持的货架类型
+## 视频库（取代货架）
 
-| API 值 | 内容源端点 | 说明 |
-| --- | --- | --- |
-| `recommend` | `/api/v1/reelshort/recommend` | 首页推荐。 |
-| `new-release` | `/api/v1/reelshort/newrelease` | 新剧。 |
-| `drama-dub` | `/api/v1/reelshort/dramadub` | 配音分类。 |
+货架（`recommend` / `new-release` / `drama-dub` 三份快照）已被**视频库**取代：
+
+- `content_book_cache` 就是库，按 `book_id` 幂等累积，只增不减（切换上游是唯一例外）。
+- 后端定时任务每 30 分钟从内容源目录抓一页新书入库：每轮先抓 `catalog?page=0`（首页入口，持续发现新书），再按游标推进 `/browse` 的下一页；抓完 175 页后只抓首页入口。
+- 首次建库（`nextPage=1` 且库里不足 600 部）会一次性补齐前 12 页（约 700 部），之后每轮 1 页。
+- App 首页 `GET /api/app/home/recommend` 每次从库中随机抽 300 部返回。
+- 抓取游标与最近一次结果存在 `content_library_crawl_state`（单行 `library`）。
+
+旧货架 API（`/api/app/content/shelves/{shelfType}`、`/api/admin/content/cache/shelves/...`、`content_shelf_cache`）暂时保留兼容，但首页与后台新界面已不再使用，后续清理。
 
 ## 内容上游与切换
 
@@ -22,11 +26,11 @@
 
 - 内容源按 `X-Content-Upstream` 路由；未知值返回 `400 unknown upstream`，**不做静默回退**。缺省（无该头）等同 `reelshort`，只为兼容旧客户端。
 - `GET /diagnostics` 返回 `upstreams.{twistytv,reelshort}` 各自快照；顶层 `diagnostics` 跟随 `X-Content-Upstream` 指向**当前上游**（后端诊断页与告警只读该字段），并回显 `active_upstream`。后端 `ContentProviderRuntimeDependencyChecker` 会带上当前上游头。
-- 切换后后端立即清空 `content_shelf_cache`（货架行）并在后台线程按 `REELSHORT_CONTENT_REFRESH_SHELVES` 重抓；不清的话用户会继续看到旧上游片单，直到 6 小时后的定时刷新。
-- `content_book_cache` / `content_episode_cache` / `content_video_cache` **不清**：两套上游的 `bookId` 形态天然不同（TwistyTV 为 `ns_`/`rs_`/`db_` 前缀，ReelShort 为纯数字），键空间不重叠，切回去历史数据仍然有效。
+- 切换上游后后端**清空视频库并重置抓取游标**（`content_book_cache` 全删、`content_library_crawl_state` 回到 `next_page=1`），随后后台线程立刻重新抓种子页；不清的话旧的 `bookId` 在新上游下无法播放，首页会出现死链。
+- `content_episode_cache` / `content_video_cache` **不清**：两套上游的 `bookId` 形态天然不同（TwistyTV 为 `ns_`/`rs_`/`db_` 前缀，ReelShort 为纯数字），键空间不重叠，切回去历史数据仍然有效；未被新库引用的行不影响读取。
 - `vip.free-episodes` 门禁与上游无关：切到 TwistyTV 后非 VIP 仍只能看前 N 集，奖励规则同样按服务端时长计算。
-- **集数（`chapterCount`）**：TwistyTV 的 ReelShort / DramaBox 卡片自带集数，NetShort(`ns_`) 卡片上游不给，内容源在货架刷新时按本翻 `/watch/{id}` 补抓（结果缓存 7 天，见 `content-provider/README.md`），落库进 `content_book_cache` 与货架 JSON。搜索接口只填已缓存的集数，其余由内容源后台线程预热，因此同一关键词第二次搜索会返回完整集数。
-- **片库大小与风控**：`recommend` = 首页全部 row（含 Top 10 / hero）+ `/browse` 前 `TWISTYTV_MAX_SHELF_PAGES` 页（默认 12 ≈ 700 本，上限为上游总页数 175），`drama-dub` = `/genre/dubbed` 前 `TWISTYTV_MAX_GENRE_PAGES` 页（默认 3 ≈ 180 本）。一次刷新会连打十几页，内容源按 `TWISTYTV_REQUEST_INTERVAL_SECONDS`（默认 0.3s ≈ 上限 3.3 req/s）串行排队；集数补抓按轮给预算（`TWISTYTV_EPISODE_COUNT_BACKFILL`，默认 100 本/轮，余下的下一轮继续）。**上游 200 但没有卡片、或整轮零结果时内容源返回 502**（而不是空数组），后端据此保留旧货架并标记 `ERROR`，不会把首页刷成空白。
+- **集数（`chapterCount`）**：TwistyTV 的 ReelShort / DramaBox 卡片自带集数，NetShort(`ns_`) 卡片上游不给，内容源在抓取时按本翻 `/watch/{id}` 补抓（结果缓存 7 天，见 `content-provider/README.md`），落库进 `content_book_cache`。`/browse` 目录页的卡片没有集数，由内容源后台线程按轮预热，因此新入库的书集数可能短暂为 0。
+- **片库大小与风控**：每轮目录抓取只打 1-2 次上游（首页入口 + 一页 `/browse`），按 `TWISTYTV_REQUEST_INTERVAL_SECONDS`（默认 0.3s）串行排队；建库种子轮一次 12 页。**上游 200 但没有卡片时内容源返回 502**（而不是空数组），后端只记 `lastError`、保留已有片库，不会把库清空。
 
 ## App API
 
@@ -38,11 +42,11 @@
 
 ### `GET /api/app/home/recommend?locale={locale}`
 
-返回推荐货架内容。后端优先读取 PostgreSQL 货架缓存；缓存不存在时才调用 Flask 内容源并写入 `content_shelf_cache` 和 `content_book_cache`。后台刷新接口负责主动更新片库元数据。每次请求返回前都会随机打乱货架顺序，管理端查看货架时仍保持缓存原始顺序。
+返回视频库中的随机 300 部短剧（路径保持 `recommend` 以免 App 发版）。库为空时先触发一轮抓取再返回；仍为空则返回空数组。每次请求从库里随机抽样，库涨到上万部也不会放大首页响应体。
 
-### `GET /api/app/content/shelves/{shelfType}?locale={locale}`
+### `GET /api/app/content/shelves/{shelfType}?locale={locale}`（旧货架接口，兼容保留）
 
-返回指定货架内容。`shelfType` 必须是 `recommend`、`new-release` 或 `drama-dub`。读取策略与首页推荐一致：缓存优先，缺失时才拉取内容源；与首页不同，此接口保持缓存原始顺序。
+返回旧货架快照内容，`shelfType` 为 `recommend`、`new-release` 或 `drama-dub`。首页与后台新界面已不再调用；后端会在后续版本清理该接口与 `content_shelf_cache` 表。
 
 ### `GET /api/app/content/books/{bookId}?locale={locale}`
 
@@ -62,13 +66,14 @@
 
 ## 元数据刷新策略
 
-首页、货架、剧集详情和分集列表等元数据以 PostgreSQL 自有缓存为主。上游新增短剧时，不依赖 App 首页实时拉上游，而是通过两条路径进入自有库：
+视频库以 PostgreSQL 自有缓存为准。上游新增短剧通过定时抓取进入库，不依赖 App 首页实时拉上游：
 
-- 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh` 强制刷新指定货架。
-- 后台 `POST /api/admin/content/cache/shelves/{shelfType}/refresh-locales` 按 `ContentLocale` 枚举逐个刷新；当前枚举只有 `en`，因此等价于刷新一次英文货架。
-- 后端定时任务默认每 6 小时刷新 `recommend` 货架的 `en` 元数据，可通过 `REELSHORT_CONTENT_REFRESH_ENABLED`、`REELSHORT_CONTENT_REFRESH_INTERVAL`、`REELSHORT_CONTENT_REFRESH_SHELVES` 和 `REELSHORT_CONTENT_REFRESH_LOCALES` 调整。
-- 面向 App 的读路径只读缓存；缓存缺失时的上游调用发生在数据库事务之外，同一 `(shelfType, locale)` 的并发 miss 由 single-flight 去重，只有一次真正打到上游。
-- 后台手动刷新和后端定时刷新都会写入 `content_refresh_runs`，用于后台查看最近刷新来源、locale、状态、耗时、返回数量和失败原因。
+- 后端定时任务每 30 分钟一轮（`reelshort.content.library.interval`，可用 `REELSHORT_CONTENT_LIBRARY_INTERVAL` 覆盖）：先抓 `catalog?page=0`（首页入口），再按游标抓一页 `/browse`；每本书由 `saveBooks` 按 `book_id` 幂等 upsert，已有简介/集数不会被覆盖成空。
+- 种子轮：`next_page=1` 且库里不足 600 部时，一轮抓 12 页（约 700 部），让首页第一时间有内容。
+- 抓取完成/失败写入 `content_library_crawl_state`（`next_page`、`last_crawled_at`、`last_added`、`last_error`）；失败不清空库。
+- 后台 `POST /api/admin/content/library/crawl` 手动触发一轮，写审计日志 `CONTENT_CACHE_REFRESHED`。
+- 关闭定时抓取：`reelshort.content.library.enabled=false`。旧货架的 `REELSHORT_CONTENT_REFRESH_*` 只在兼容路径中使用。
+- 面向 App 的读路径只读库；库为空时才同步抓一轮。
 - Flask 内容源提供 `/diagnostics` 内部诊断端点，记录搜索空结果、Next data 404、播放页 HTML 解析失败、播放地址缺失等最近事件；后端运行诊断页会展示结构化事件总数、类型计数和最近事件上下文，方便定位上游结构变化。
 
 视频文件和播放流不存放在自有服务器；只有播放页请求单集播放地址时才按需调用内容源。
@@ -82,7 +87,28 @@
 
 ## Admin API
 
-### `GET /api/admin/content/cache`
+### `GET /api/admin/content/library`
+
+返回视频库状态（`ContentLibraryStatusResponse`）：
+
+- `bookCount` / `episodeCacheCount` / `videoCacheCount`：库内书目、分集缓存、播放缓存数量。
+- `nextPage` / `totalPages`：抓取进度；`totalPages` 固定 176（0 = 首页入口 + 175 页目录）。
+- `lastCrawledAt` / `lastAdded` / `lastError`：最近一轮抓取时间、新增数量与错误。
+- `active`：定时抓取是否启用。
+
+### `GET /api/admin/content/library/books?page=0&size=24&query=`
+
+服务端分页列出视频库书目。`query` 对 `title` / `book_id` / `filtered_title` / `description` 做子串匹配；`size` 上限 100。响应 `{"books": [...], "total": 735, "page": 0, "size": 24}`。
+
+### `POST /api/admin/content/library/crawl`
+
+手动触发一轮入库抓取，返回 `{"added": 58, "fetchedPages": 1, "total": 793, "nextPage": 14, "hasMore": true}`，并写审计日志 `CONTENT_LIBRARY_CRAWLED`。失败返回内容源错误，已有片库不受影响。
+
+### 旧货架接口（兼容保留）
+
+以下接口仍可用，但后台新界面已改用视频库接口，后续版本清理。
+
+#### `GET /api/admin/content/cache`
 
 返回内容缓存状态。
 

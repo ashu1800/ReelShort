@@ -1,16 +1,11 @@
 package com.reelshort.backend.content;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-
-import com.reelshort.backend.system.config.SystemConfigChangedEvent;
-import com.reelshort.backend.system.config.SystemConfigRegistry;
 
 @Service
 public class ContentMetadataRefreshService {
@@ -26,8 +21,8 @@ public class ContentMetadataRefreshService {
 	}
 
 	/**
-	 * 简介补抓：TwistyTV 的 `/browse` 卡片没有简介，货架里那些书只能按本翻详情页补。
-	 * 每次跑一小批并留间隔，跑完一轮就停（队列为空时是空查询，成本可忽略）。
+	 * 简介补抓：TwistyTV 的 `/browse` 卡片没有简介，视频库（content_book_cache）里那些书
+	 * 只能按本翻详情页补。每次跑一小批并留间隔，跑完一轮就停（队列为空时是空查询，成本可忽略）。
 	 */
 	@Scheduled(
 			initialDelayString = "${reelshort.content.description-backfill.initial-delay:2m}",
@@ -44,34 +39,17 @@ public class ContentMetadataRefreshService {
 		}
 	}
 
-	@Scheduled(
-			initialDelayString = "${reelshort.content.refresh.initial-delay:5m}",
-			fixedDelayString = "${reelshort.content.refresh.interval:6h}")
+	/**
+	 * 旧货架刷新入口。首页与后台已改用视频库（{@link ContentLibraryRefreshService}），
+	 * 这里不再挂 {@code @Scheduled}；上游切换只由 {@link ContentLibraryService#onConfigChanged}
+	 * 负责清库 + 重置游标 + 重抓，旧货架不再被清空或重新填充。
+	 * 方法保留给既有测试与人工调用。
+	 */
 	public void refreshConfiguredShelves() {
 		if (!properties.isEnabled()) {
 			return;
 		}
 		refreshShelves(properties.getShelves());
-	}
-
-	/**
-	 * 上游切换后立刻作废旧货架并重抓：不清缓存的话，用户首页会继续显示旧上游的片单，
-	 * 直到 6 小时后的定时刷新——"后台切了但 App 没变"是最容易误判成故障的那种状态。
-	 *
-	 * 刷新在本线程之外跑：抓一轮上游要几秒到几十秒，不能让管理员的保存请求等着。
-	 */
-	@EventListener
-	public void onConfigChanged(SystemConfigChangedEvent event) {
-		if (!SystemConfigRegistry.CONTENT_UPSTREAM.equals(event.key())) {
-			return;
-		}
-		contentCacheService.clearShelves();
-		List<String> shelves = List.copyOf(properties.getShelves());
-		CompletableFuture.runAsync(() -> refreshShelves(shelves))
-				.exceptionally(exception -> {
-					log.warn("Content shelves were not refreshed after upstream switch: {}", exception.getMessage());
-					return null;
-				});
 	}
 
 	int refreshShelves(List<String> shelfValues) {

@@ -43,6 +43,10 @@ public class ContentBookCache {
 	@Column(name = "chapter_count", nullable = false)
 	private int chapterCount;
 
+	/** 首次入库时间：视频库后台分页按它倒序，update() 不改（见 V36 迁移）。 */
+	@Column(name = "created_at", nullable = false)
+	private OffsetDateTime createdAt;
+
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
@@ -62,6 +66,7 @@ public class ContentBookCache {
 		this.coverUrl = book.coverUrl();
 		this.description = book.description();
 		this.chapterCount = book.chapterCount();
+		this.createdAt = OffsetDateTime.now();
 		this.updatedAt = updatedAt;
 	}
 
@@ -123,6 +128,10 @@ public class ContentBookCache {
 
 	public int chapterCount() {
 		return chapterCount;
+	}
+
+	public OffsetDateTime createdAt() {
+		return createdAt;
 	}
 
 	public OffsetDateTime updatedAt() {

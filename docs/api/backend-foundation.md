@@ -51,15 +51,15 @@
 
 ### `GET /api/app/home/recommend?locale={locale}`
 
-通过内容缓存服务获取推荐货架。内容源调用成功后写入 PostgreSQL 缓存；内容源不可用且缓存存在时返回最后一次可用缓存。每次请求返回前都会随机打乱货架顺序。
+从视频库（`content_book_cache`，持续抓取累积）随机抽 300 部返回。库为空时先触发一轮抓取；路径与响应结构保持不变，App 无需发版。
 
-### `GET /api/app/content/shelves/{shelfType}?locale={locale}`
+### `GET /api/app/content/shelves/{shelfType}?locale={locale}`（旧货架接口，兼容保留）
 
-通过内容缓存服务获取指定货架。支持 `recommend`、`new-release`、`drama-dub`。
+通过旧货架缓存获取指定货架（`recommend`、`new-release`、`drama-dub`）。首页与后台已改用视频库接口，后续版本清理。
 
 ### `GET /api/app/content/books/{bookId}?locale={locale}`
 
-从 PostgreSQL 内容书缓存返回剧集详情。客户端应先通过搜索、推荐或货架发现剧集；如果剧集尚未缓存，返回 `404`。
+从 PostgreSQL 内容书缓存返回剧集详情。客户端应先通过搜索或首页视频库发现剧集；如果剧集尚未缓存，返回 `404`。
 
 ### `GET /api/app/content/books/{bookId}/episodes?filteredTitle={filteredTitle}&locale={locale}`
 
@@ -74,7 +74,8 @@
 `ContentProvider` 当前定义：
 
 - `search(String keywords, ContentLocale locale)`
-- `getShelf(ContentShelfType shelfType, ContentLocale locale)`
+- `getCatalogPage(int page, ContentLocale locale)`（视频库抓取：page 0 首页入口，page>=1 `/browse` 页）
+- `getShelf(ContentShelfType shelfType, ContentLocale locale)`（旧货架，兼容保留）
 - `getEpisodesDetail(String bookId, String filteredTitle, ContentLocale locale)`
 - `getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId, ContentLocale locale)`
 

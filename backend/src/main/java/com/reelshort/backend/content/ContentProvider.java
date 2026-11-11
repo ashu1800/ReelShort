@@ -9,6 +9,11 @@ public interface ContentProvider {
 
 	List<ContentBook> getShelf(ContentShelfType shelfType, ContentLocale locale);
 
+	/**
+	 * 视频库目录的一页：page=0 是首页入口，page>=1 是 `/browse` 的第 page 页。
+	 */
+	ContentCatalogPage getCatalogPage(int page, ContentLocale locale);
+
 	ContentEpisodesDetail getEpisodesDetail(String bookId, String filteredTitle, ContentLocale locale);
 
 	ContentVideo getVideoUrl(String bookId, int episodeNum, String filteredTitle, String chapterId,
@@ -40,6 +45,9 @@ public interface ContentProvider {
 	@SuppressWarnings("unused")
 	default Optional<ContentBook> getBookByEpisodes(String bookId, String filteredTitle) {
 		return getEpisodesDetail(bookId, filteredTitle).book();
+	}
+
+	record ContentCatalogPage(List<ContentBook> books, boolean hasMore) {
 	}
 }
 

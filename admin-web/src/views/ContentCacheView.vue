@@ -21,17 +21,17 @@ import {
   Connection,
 } from '@element-plus/icons-vue'
 import {
-  fetchContentCacheStatus,
-  fetchShelfBooks,
+  crawlContentLibrary,
   fetchBookEpisodes,
+  fetchContentLibraryBooks,
+  fetchContentLibraryStatus,
   fetchPublicBookDetail,
   probeEpisodeVideo,
-  refreshContentShelf,
 } from '../services/adminApi'
 import type {
-  ContentCacheStatus,
   ContentBook,
   ContentEpisode,
+  ContentLibraryStatus,
   ContentVideoProbe,
 } from '../services/adminApi'
 
@@ -50,50 +50,62 @@ const loading = ref(false)
 const booksLoading = ref(false)
 const refreshing = ref(false)
 const error = ref('')
-const status = ref<ContentCacheStatus | null>(null)
+const status = ref<ContentLibraryStatus | null>(null)
 
-// 货架选择
-const shelfType = ref('recommend')
-const shelfOptions = [
-  { label: '首页推荐 (recommend)', value: 'recommend' },
-  { label: '新剧上市 (new-release)', value: 'new-release' },
-  { label: '热播配音 (drama-dub)', value: 'drama-dub' },
-]
-
-// 短剧片库与视图切换
+// 视频库：服务端分页，搜索也走服务端（库里可能有上万部）
 const books = ref<ContentBook[]>([])
+const libraryTotal = ref(0)
 const searchQuery = ref('')
 const viewMode = ref<'grid' | 'table'>('grid')
 
-// 过滤后的短剧列表
-const filteredBooks = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
-  if (!query) {
-    return books.value
-  }
-  return books.value.filter(
-    (b) =>
-      b.title.toLowerCase().includes(query) ||
-      b.bookId.toLowerCase().includes(query) ||
-      b.filteredTitle.toLowerCase().includes(query) ||
-      (b.description && b.description.toLowerCase().includes(query)),
-  )
-})
-
-// 货架分页：700+ 部短剧一次性挂到 DOM 会明显卡顿，只渲染当前页；
-// 搜索与计数仍作用在全量结果上，翻页不会丢数据。
 const pageSize = ref(24)
 const currentPage = ref(1)
-const pagedBooks = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredBooks.value.slice(start, start + pageSize.value)
-})
+
+// 搜索防抖：输入停下 300ms 才打接口，避免每个字符都发一次请求
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 watch(searchQuery, () => {
-  currentPage.value = 1
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+  }
+  searchTimer = setTimeout(() => {
+    currentPage.value = 1
+    loadBooks()
+  }, 300)
 })
-watch(pageSize, () => {
-  currentPage.value = 1
+
+// 视频库健康：优先报错，其次看抓取新鲜度（定时任务每 30 分钟一轮）
+const libraryHealth = computed(() => {
+  if (!status.value) {
+    return { level: 'MISSING' as const, message: '尚未加载' }
+  }
+  if (status.value.lastError) {
+    return { level: 'ERROR' as const, message: status.value.lastError }
+  }
+  if (!status.value.lastCrawledAt) {
+    return { level: 'MISSING' as const, message: '尚未抓取，等待首轮入库' }
+  }
+  const ageMinutes = (Date.now() - new Date(status.value.lastCrawledAt).getTime()) / 60000
+  if (ageMinutes > 120) {
+    return { level: 'STALE' as const, message: '超过 2 小时未抓取' }
+  }
+  return { level: 'HEALTHY' as const, message: '抓取正常，库只增不减' }
 })
+
+const libraryStats = computed(() => [
+  { label: '视频库总量', value: `${status.value?.bookCount ?? 0} 部` },
+  {
+    label: '抓取进度',
+    value: `${status.value?.nextPage ?? 0} / ${status.value?.totalPages ?? 0} 页`,
+  },
+  {
+    label: '最近抓取时间',
+    value: status.value?.lastCrawledAt ? formatDateTime(status.value.lastCrawledAt) : '尚未抓取',
+  },
+  { label: '上轮新增', value: `${status.value?.lastAdded ?? 0} 部` },
+  { label: '健康状态', value: libraryHealth.value.level },
+  { label: '健康说明', value: libraryHealth.value.message },
+  { label: '最近错误', value: status.value?.lastError || '-' },
+])
 
 // 分集与审片监看台
 const drawerVisible = ref(false)
@@ -198,17 +210,6 @@ watch(
   },
 )
 
-// 错误详情弹窗
-const errorDetailVisible = ref(false)
-const currentErrorText = ref('')
-const currentErrorTitle = ref('')
-
-function openErrorDetail(title: string, text: string) {
-  currentErrorTitle.value = title
-  currentErrorText.value = text
-  errorDetailVisible.value = true
-}
-
 async function copyText(text: string, label = '内容') {
   try {
     await navigator.clipboard.writeText(text)
@@ -222,42 +223,49 @@ async function loadStatus() {
   loading.value = true
   error.value = ''
   try {
-    status.value = await fetchContentCacheStatus()
+    status.value = await fetchContentLibraryStatus()
   } catch {
-    error.value = '内容缓存状态加载失败'
+    error.value = '视频库状态加载失败'
   } finally {
     loading.value = false
   }
 }
 
-async function loadShelfBooks(type: string) {
+/** 服务端分页：每页由后端裁剪，搜索也在库里查，前端只渲染当前页。 */
+async function loadBooks() {
   booksLoading.value = true
   try {
-    const list = await fetchShelfBooks(type)
-    books.value = list
+    const page = await fetchContentLibraryBooks(
+      currentPage.value - 1,
+      pageSize.value,
+      searchQuery.value.trim(),
+    )
+    books.value = page.books
+    libraryTotal.value = page.total
   } catch {
-    ElMessage.error(`获取【${type}】货架片库失败`)
+    ElMessage.error('获取视频库片单失败')
     books.value = []
   } finally {
-    // A new shelf always starts at page 1, including after a failed load.
-    currentPage.value = 1
     booksLoading.value = false
   }
 }
 
-async function handleShelfChange(newType: string) {
-  searchQuery.value = ''
-  await loadShelfBooks(newType)
+function handlePageChange() {
+  loadBooks()
 }
 
-async function handleRefreshShelf() {
-  const shelfName = shelfOptions.find((o) => o.value === shelfType.value)?.label ?? shelfType.value
+function handleSizeChange() {
+  currentPage.value = 1
+  loadBooks()
+}
+
+async function handleCrawl() {
   try {
     await ElMessageBox.confirm(
-      `确定强制从内容源拉取并更新【${shelfName}】片库缓存吗？此操作将耗时数秒至数十秒。`,
-      '确认刷新货架',
+      '立即从内容源抓取一轮新书入库？定时任务每 30 分钟自动跑一次，库只增不减。',
+      '确认抓取一轮',
       {
-        confirmButtonText: '立即刷新',
+        confirmButtonText: '立即抓取',
         cancelButtonText: '取消',
         type: 'warning',
       },
@@ -268,11 +276,13 @@ async function handleRefreshShelf() {
 
   refreshing.value = true
   try {
-    const result = await refreshContentShelf(shelfType.value, 'en')
-    ElMessage.success(`货架【${shelfName}】刷新成功，已同步 ${(result as unknown[])?.length || 0} 部短剧`)
-    await Promise.all([loadStatus(), loadShelfBooks(shelfType.value)])
+    const result = await crawlContentLibrary()
+    ElMessage.success(
+      `抓取完成：${result.fetchedPages} 页，新增 ${result.added} 部，库中共 ${result.total} 部`,
+    )
+    await Promise.all([loadStatus(), loadBooks()])
   } catch {
-    ElMessage.error('货架刷新失败，请检查上游数据源连通性')
+    ElMessage.error('抓取失败，请检查内容源连通性与上游状态')
   } finally {
     refreshing.value = false
   }
@@ -297,8 +307,8 @@ async function openBookDetail(book: ContentBook) {
   try {
     const epList = await fetchBookEpisodes(book.bookId, book.filteredTitle)
     episodes.value = epList.sort((a, b) => a.episode - b.episode)
-    // 货架快照里的简介经常为空（/browse 卡片不带简介）。刚拉分集时后端已把详情页的
-    // 简介补进缓存，这里补读一次就能立刻显示，不必等下一轮货架刷新。
+    // 视频库里的简介经常为空（/browse 卡片不带简介）。刚拉分集时后端已把详情页的
+    // 简介补进缓存，这里补读一次就能立刻显示，不必等下一轮补抓。
     if (!selectedBook.value.description?.trim()) {
       fetchPublicBookDetail(book.bookId)
         .then((detail) => {
@@ -416,9 +426,9 @@ function formatDuration(seconds?: number) {
   return `${m} 分 ${s > 0 ? `${s} 秒` : ''} (${seconds}s)`
 }
 
-function shelfHealthType(health: string) {
-  if (health === 'HEALTHY') return 'success'
-  if (health === 'ERROR') return 'danger'
+function healthType(level: string) {
+  if (level === 'HEALTHY') return 'success'
+  if (level === 'ERROR') return 'danger'
   return 'warning'
 }
 
@@ -441,12 +451,8 @@ function formatDateTime(val: string | null) {
   }
 }
 
-watch(shelfType, (newType) => {
-  handleShelfChange(newType)
-})
-
 onMounted(async () => {
-  await Promise.all([loadStatus(), loadShelfBooks(shelfType.value)])
+  await Promise.all([loadStatus(), loadBooks()])
 })
 </script>
 
@@ -461,27 +467,19 @@ onMounted(async () => {
             <span class="pulse-dot"></span> 运行正常
           </el-tag>
         </div>
-        <p>短剧资产查看、货架编排流转、分集试看探针与缓存健康监控</p>
+        <p>视频库入库抓取、分集试看探针与缓存健康监控</p>
       </div>
       <div class="toolbar-actions">
-        <el-select v-model="shelfType" class="shelf-select" placeholder="选择货架">
-          <el-option
-            v-for="option in shelfOptions"
-            :key="option.value"
-            :label="option.label"
-            :value="option.value"
-          />
-        </el-select>
         <el-button
           :loading="refreshing"
           type="primary"
           :icon="Refresh"
-          @click="handleRefreshShelf"
+          @click="handleCrawl"
         >
-          刷新当前货架
+          抓取一轮新书
         </el-button>
-        <el-button :icon="Refresh" @click="() => { loadStatus(); loadShelfBooks(shelfType); }">
-          刷新大盘
+        <el-button :icon="Refresh" @click="() => { loadStatus(); loadBooks(); }">
+          刷新
         </el-button>
       </div>
     </div>
@@ -519,8 +517,8 @@ onMounted(async () => {
     <!-- 核心视图标签页 -->
     <el-card shadow="never" class="workbench-card">
       <el-tabs v-model="activeTab" class="custom-tabs">
-        <!-- Tab 1: 货架短剧资产 -->
-        <el-tab-pane label="货架短剧资产" name="dramas">
+        <!-- Tab 1: 视频库 -->
+        <el-tab-pane label="视频库" name="dramas">
           <div class="dramas-toolbar">
             <div class="dramas-filter">
               <el-input
@@ -531,10 +529,8 @@ onMounted(async () => {
                 class="search-input"
               />
               <span class="count-badge">
-                当前货架：<b>{{ books.length }}</b> 部短剧
-                <template v-if="searchQuery">
-                  （筛选出 <b>{{ filteredBooks.length }}</b> 部）
-                </template>
+                视频库：<b>{{ libraryTotal }}</b> 部短剧
+                <template v-if="searchQuery"> （匹配 {{ libraryTotal }} 部） </template>
               </span>
             </div>
             <div class="view-switch">
@@ -552,12 +548,12 @@ onMounted(async () => {
           <!-- 海报网格视图 -->
           <div v-if="viewMode === 'grid'" v-loading="booksLoading" class="poster-grid-container">
             <el-empty
-              v-if="!booksLoading && filteredBooks.length === 0"
-              description="当前货架暂无短剧数据或未匹配到关键词"
+              v-if="!booksLoading && books.length === 0"
+              description="视频库暂无短剧数据或未匹配到关键词"
             />
             <div v-else class="poster-grid">
               <div
-                v-for="book in pagedBooks"
+                v-for="book in books"
                 :key="book.bookId"
                 class="poster-card"
                 @click="openBookDetail(book)"
@@ -605,7 +601,7 @@ onMounted(async () => {
 
           <!-- 表格视图 -->
           <div v-else v-loading="booksLoading" class="table-container">
-            <el-table :data="pagedBooks" border stripe style="width: 100%">
+            <el-table :data="books" border stripe style="width: 100%">
               <el-table-column label="海报" width="90" align="center">
                 <template #default="{ row }">
                   <el-image
@@ -665,117 +661,41 @@ onMounted(async () => {
             </el-table>
           </div>
 
-          <!-- 分页：只把当前页挂到 DOM，避免 700+ 部短剧同时渲染 -->
-          <div v-if="filteredBooks.length > pageSize" class="shelf-pagination">
+          <!-- 服务端分页：后端只返回当前页，库涨到上万部也不影响渲染 -->
+          <div v-if="libraryTotal > 0" class="library-pagination">
             <el-pagination
               v-model:current-page="currentPage"
               v-model:page-size="pageSize"
               :page-sizes="[24, 48, 96]"
-              :total="filteredBooks.length"
+              :total="libraryTotal"
               layout="total, sizes, prev, pager, next, jumper"
               background
+              @current-change="handlePageChange"
+              @size-change="handleSizeChange"
             />
           </div>
         </el-tab-pane>
 
-        <!-- Tab 2: 货架与任务监控 -->
-        <el-tab-pane label="货架健康与任务监控" name="monitoring">
+        <!-- Tab 2: 库状态与抓取监控 -->
+        <el-tab-pane label="库状态与抓取监控" name="monitoring">
           <div class="sub-section">
-            <h3 class="section-heading">货架缓存健康状态</h3>
-            <el-table :data="status?.shelves ?? []" border class="status-table">
-              <el-table-column label="货架名称" prop="shelfType" width="160">
+            <h3 class="section-heading">视频库状态</h3>
+            <el-table :data="libraryStats" border class="status-table">
+              <el-table-column label="指标" prop="label" width="180" />
+              <el-table-column label="值" prop="value" min-width="240">
                 <template #default="{ row }">
-                  <span class="shelf-pill mono">{{ row.shelfType }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="语言" prop="locale" width="90" align="center">
-                <template #default="{ row }">
-                  <el-tag size="small" effect="plain">{{ row.locale }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="健康状态" width="130" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="shelfHealthType(row.health)">{{ row.health }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column align="right" label="已收录部数" prop="itemCount" width="120">
-                <template #default="{ row }">
-                  <b>{{ row.itemCount }}</b>
-                </template>
-              </el-table-column>
-              <el-table-column label="最近刷新时间" width="200" prop="refreshedAt">
-                <template #default="{ row }">
-                  <span class="mono">{{ row.refreshedAt ? formatDateTime(row.refreshedAt) : '尚未刷新' }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="健康说明" min-width="200" prop="healthMessage" />
-              <el-table-column label="最近错误" min-width="240" prop="lastError">
-                <template #default="{ row }">
-                  <div v-if="row.lastError" class="error-cell">
-                    <span class="error-text mono">{{ row.lastError }}</span>
-                    <el-button
-                      type="danger"
-                      link
-                      size="small"
-                      @click="openErrorDetail('货架最近错误', row.lastError)"
-                    >
-                      详情
-                    </el-button>
-                  </div>
-                  <span v-else class="text-muted">-</span>
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-
-          <div class="sub-section" style="margin-top: 24px;">
-            <h3 class="section-heading">最近刷新任务运行记录</h3>
-            <el-table :data="status?.recentRefreshRuns ?? []" border class="status-table">
-              <el-table-column label="触发来源" prop="triggerSource" width="120" align="center">
-                <template #default="{ row }">
-                  <el-tag size="small" :type="row.triggerSource === 'ADMIN' ? 'warning' : 'info'">
-                    {{ row.triggerSource }}
+                  <el-tag v-if="row.label === '健康状态'" :type="healthType(row.value)">
+                    {{ row.value }}
                   </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="货架" prop="shelfType" width="140">
-                <template #default="{ row }">
-                  <span class="mono">{{ row.shelfType }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="状态" width="110" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'">{{ row.status }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column align="right" label="拉取条数" prop="itemCount" width="100" />
-              <el-table-column align="right" label="耗时 (ms)" prop="durationMillis" width="120">
-                <template #default="{ row }">
-                  <span class="mono">{{ row.durationMillis }} ms</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="开始时间" width="200" prop="startedAt">
-                <template #default="{ row }">
-                  <span class="mono">{{ formatDateTime(row.startedAt) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="错误说明" min-width="220" prop="errorMessage">
-                <template #default="{ row }">
-                  <div v-if="row.errorMessage" class="error-cell">
-                    <span class="error-text mono">{{ row.errorMessage }}</span>
-                    <el-button
-                      type="danger"
-                      link
-                      size="small"
-                      @click="openErrorDetail('任务运行报错', row.errorMessage)"
-                    >
-                      详情
-                    </el-button>
-                  </div>
-                  <span v-else class="text-muted">-</span>
+                  <span v-else class="mono">{{ row.value }}</span>
                 </template>
               </el-table-column>
             </el-table>
+            <p class="library-note">
+              定时任务每 30 分钟从内容源抓取一页新书入库，库只增不减；首页每次从库中随机取 300 部返回。
+              首次建库会一次性补齐前 12 页，之后每 30 分钟推进 1 页，抓完 175 页后只靠首页入口发现新书。
+              也可点右上角「抓取一轮新书」手动触发，失败不会清空已有片库。
+            </p>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -1151,26 +1071,6 @@ onMounted(async () => {
         </div>
       </div>
     </el-drawer>
-
-    <!-- 错误详情弹窗 -->
-    <el-dialog v-model="errorDetailVisible" :title="currentErrorTitle" width="560px">
-      <div class="error-dialog-body">
-        <el-alert
-          title="错误上下文与系统排查信息"
-          type="error"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 12px;"
-        />
-        <div class="code-box mono">{{ currentErrorText }}</div>
-      </div>
-      <template #footer>
-        <el-button @click="errorDetailVisible = false">关闭</el-button>
-        <el-button type="primary" :icon="CopyDocument" @click="copyText(currentErrorText, '错误日志')">
-          一键复制
-        </el-button>
-      </template>
-    </el-dialog>
   </section>
 </template>
 
@@ -1303,11 +1203,19 @@ onMounted(async () => {
   min-height: 300px;
 }
 
-/* 货架分页位于网格/表格下方，右对齐以对齐 Element Plus 的操作区习惯 */
-.shelf-pagination {
+/* 视频库分页位于网格/表格下方，右对齐以对齐 Element Plus 的操作区习惯 */
+.library-pagination {
   display: flex;
   justify-content: flex-end;
   padding-top: 16px;
+}
+
+/* 视频库抓取规则的说明文字 */
+.library-note {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.7;
 }
 
 .poster-grid {

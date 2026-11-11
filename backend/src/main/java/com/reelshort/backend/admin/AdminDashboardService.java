@@ -17,7 +17,9 @@ import com.reelshort.backend.admin.AdminDashboardSummaryResponse.UserMetrics;
 import com.reelshort.backend.admin.AdminDashboardSummaryResponse.VipMetrics;
 import com.reelshort.backend.content.ContentBookCacheRepository;
 import com.reelshort.backend.content.ContentEpisodeCacheRepository;
-import com.reelshort.backend.content.ContentShelfCacheRepository;
+import com.reelshort.backend.content.ContentLibraryCrawlState;
+import com.reelshort.backend.content.ContentLibraryCrawlStateRepository;
+import com.reelshort.backend.content.ContentLibraryService;
 import com.reelshort.backend.order.VipOrderRepository;
 import com.reelshort.backend.points.PointTransactionRepository;
 import com.reelshort.backend.user.UserAccountRepository;
@@ -33,7 +35,7 @@ public class AdminDashboardService {
 	private final VipOrderRepository vipOrderRepository;
 	private final ContentBookCacheRepository contentBookCacheRepository;
 	private final ContentEpisodeCacheRepository contentEpisodeCacheRepository;
-	private final ContentShelfCacheRepository contentShelfCacheRepository;
+	private final ContentLibraryCrawlStateRepository contentLibraryCrawlStateRepository;
 	private final AdminAuditLogRepository adminAuditLogRepository;
 	private final PointTransactionRepository pointTransactionRepository;
 	private final Clock clock;
@@ -41,13 +43,14 @@ public class AdminDashboardService {
 	public AdminDashboardService(UserAccountRepository userAccountRepository,
 			VipOrderRepository vipOrderRepository, ContentBookCacheRepository contentBookCacheRepository,
 			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
-			ContentShelfCacheRepository contentShelfCacheRepository, AdminAuditLogRepository adminAuditLogRepository,
+			ContentLibraryCrawlStateRepository contentLibraryCrawlStateRepository,
+			AdminAuditLogRepository adminAuditLogRepository,
 			PointTransactionRepository pointTransactionRepository, Clock clock) {
 		this.userAccountRepository = userAccountRepository;
 		this.vipOrderRepository = vipOrderRepository;
 		this.contentBookCacheRepository = contentBookCacheRepository;
 		this.contentEpisodeCacheRepository = contentEpisodeCacheRepository;
-		this.contentShelfCacheRepository = contentShelfCacheRepository;
+		this.contentLibraryCrawlStateRepository = contentLibraryCrawlStateRepository;
 		this.adminAuditLogRepository = adminAuditLogRepository;
 		this.pointTransactionRepository = pointTransactionRepository;
 		this.clock = clock;
@@ -61,10 +64,14 @@ public class AdminDashboardService {
 		long totalVip = vipOrderRepository.countByStatus("CONFIRMED");
 		String totalUsdt = vipOrderRepository.sumConfirmedPayableUsdtAmount().stripTrailingZeros().toPlainString();
 		VipMetrics vipMetrics = new VipMetrics(totalVip, totalUsdt);
+		ContentLibraryCrawlState crawlState = contentLibraryCrawlStateRepository
+				.findById(ContentLibraryCrawlState.SINGLETON_ID)
+				.orElse(null);
 		ContentMetrics contentMetrics = new ContentMetrics(
 				contentBookCacheRepository.count(),
 				contentEpisodeCacheRepository.count(),
-				contentShelfCacheRepository.count());
+				crawlState == null ? 1 : crawlState.nextPage(),
+				ContentLibraryService.TOTAL_PAGES);
 		PointMetrics pointMetrics = pointMetrics(userMetrics.total());
 		AuditLogMetrics auditLogMetrics = new AuditLogMetrics(adminAuditLogRepository.findTop5ByOrderByCreatedAtDesc()
 				.stream()

@@ -14,9 +14,7 @@ import com.reelshort.backend.content.ContentBookCache;
 import com.reelshort.backend.content.ContentBookCacheRepository;
 import com.reelshort.backend.content.ContentEpisodeCache;
 import com.reelshort.backend.content.ContentEpisodeCacheRepository;
-import com.reelshort.backend.content.ContentShelfCache;
-import com.reelshort.backend.content.ContentShelfCacheRepository;
-import com.reelshort.backend.content.ContentShelfType;
+import com.reelshort.backend.content.ContentLibraryCrawlStateRepository;
 import com.reelshort.backend.order.VipOrder;
 import com.reelshort.backend.order.VipOrderRepository;
 import com.reelshort.backend.user.UserAccount;
@@ -42,13 +40,15 @@ class AdminDashboardServiceTests {
 	private ContentEpisodeCacheRepository contentEpisodeCacheRepository;
 
 	@Autowired
-	private ContentShelfCacheRepository contentShelfCacheRepository;
+	private ContentLibraryCrawlStateRepository contentLibraryCrawlStateRepository;
 
 	@Autowired
 	private AdminAuditService adminAuditService;
 
 	@Test
 	void summaryAggregatesUsersVipOrdersContentAndLatestAuditLogs() {
+		// 抓取状态可能被同上下文的其它用例写过；先清掉，验证“没有状态时默认第 1 页”。
+		contentLibraryCrawlStateRepository.deleteAll();
 		userAccountRepository.save(UserAccount.create("dashboard-active", "hash", UserStatus.ACTIVE));
 		userAccountRepository.save(UserAccount.create("dashboard-disabled", "hash", UserStatus.DISABLED));
 		UUID firstVipUserId = UUID.randomUUID();
@@ -58,7 +58,6 @@ class AdminDashboardServiceTests {
 		contentBookCacheRepository.save(ContentBookCache.from(
 				new ContentBook("dashboard-book", "Dashboard", "dashboard", "https://example.com/cover.jpg", "", 2)));
 		contentEpisodeCacheRepository.save(ContentEpisodeCache.create("dashboard-book", "dashboard", "[]", 2));
-		contentShelfCacheRepository.save(ContentShelfCache.create(ContentShelfType.RECOMMEND, "[]", 1));
 		for (int index = 0; index < 6; index++) {
 			adminAuditService.record("admin", "DASHBOARD_ACTION_" + index, "DASHBOARD", UUID.randomUUID(),
 					"summary " + index);
@@ -72,7 +71,8 @@ class AdminDashboardServiceTests {
 		assertThat(new BigDecimal(summary.vipOrders().totalUsdt())).isGreaterThanOrEqualTo(new BigDecimal("30.00"));
 		assertThat(summary.content().bookCount()).isGreaterThanOrEqualTo(1);
 		assertThat(summary.content().episodeCacheCount()).isGreaterThanOrEqualTo(1);
-		assertThat(summary.content().shelfCount()).isGreaterThanOrEqualTo(1);
+		assertThat(summary.content().crawlPage()).isEqualTo(1);
+		assertThat(summary.content().totalPages()).isEqualTo(176);
 		assertThat(summary.auditLogs().latest()).hasSize(5);
 		assertThat(summary.auditLogs().latest().get(0).action()).isEqualTo("DASHBOARD_ACTION_5");
 	}

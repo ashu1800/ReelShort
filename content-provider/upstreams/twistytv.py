@@ -60,6 +60,9 @@ DURATION_ERROR_CACHE_SECONDS = 120.0
 DEFAULT_MAX_SHELF_PAGES = 12
 # genre 页同样分页（`/genre/dubbed?page=2` 与第 1 页零重合），但货架上只留前几页当天花板。
 DEFAULT_MAX_GENRE_PAGES = 3
+# 视频库按页抓取：线上 `/browse` 共 175 页（每页 60 本），全量约 1 万本。
+# 后端每 30 分钟推进 1 页，抓完即止（`has_more=false`），之后只靠首页入口发现新书。
+DEFAULT_MAX_CATALOG_PAGES = 175
 # 集数补抓是"每本书多打一次上游"：一轮最多补这么多本（0 = 关），余下的留给下一轮刷新。
 # 700 本书一次全补 = 700 次详情页请求，裸 IP 上必被拦；分轮补则两天就把缓存填满。
 # 真正的保护是 `request_interval_seconds`（0.3s ≈ 上限 3.3 req/s），预算只决定单轮时长。
@@ -322,6 +325,7 @@ class TwistytvClient(HardenedFetcher):
         episode_count_cache_seconds: float = DEFAULT_EPISODE_COUNT_CACHE_SECONDS,
         max_shelf_pages: int = DEFAULT_MAX_SHELF_PAGES,
         max_genre_pages: int = DEFAULT_MAX_GENRE_PAGES,
+        max_catalog_pages: int = DEFAULT_MAX_CATALOG_PAGES,
         episode_count_backfill: int = DEFAULT_EPISODE_COUNT_BACKFILL,
         duration_probe_enabled: bool = DEFAULT_DURATION_PROBE_ENABLED,
         request_interval_seconds: float = DEFAULT_REQUEST_INTERVAL_SECONDS,
@@ -339,6 +343,7 @@ class TwistytvClient(HardenedFetcher):
         self.site_url = (site_url or DEFAULT_SITE_URL).rstrip("/")
         self.max_shelf_pages = max(1, max_shelf_pages)
         self.max_genre_pages = max(1, max_genre_pages)
+        self.max_catalog_pages = max(1, max_catalog_pages)
         self.episode_count_backfill = max(0, int(episode_count_backfill or 0))
         self.duration_probe_enabled = bool(duration_probe_enabled)
         # 风控：只在生成列表时（货架/集数补抓）节流；用户点开的详情/播放是一次性请求，不排。
@@ -389,6 +394,7 @@ class TwistytvClient(HardenedFetcher):
             ),
             max_shelf_pages=_bounded_int_env("TWISTYTV_MAX_SHELF_PAGES", DEFAULT_MAX_SHELF_PAGES, 175),
             max_genre_pages=_bounded_int_env("TWISTYTV_MAX_GENRE_PAGES", DEFAULT_MAX_GENRE_PAGES, 60),
+            max_catalog_pages=_bounded_int_env("TWISTYTV_MAX_CATALOG_PAGES", DEFAULT_MAX_CATALOG_PAGES, 175),
             episode_count_backfill=_bounded_int_env(
                 "TWISTYTV_EPISODE_COUNT_BACKFILL", DEFAULT_EPISODE_COUNT_BACKFILL, 100000
             ),
@@ -513,6 +519,38 @@ class TwistytvClient(HardenedFetcher):
         # 货架走后台定时刷新：允许在这里按轮预算补齐 NetShort 缺的集数（见 _fill_counts）。
         self._fill_counts(unique, wait=True)
         return unique
+
+    def catalog(self, page: int, locale: str = DEFAULT_LOCALE):
+        """视频库抓取的一页。
+
+        `page=0` 抓首页入口（Top 10 / hero / New releases 等全部 row），用来持续发现新书；
+        `page>=1` 抓 `/browse` 的第 page 页（每页约 60 本，共 `max_catalog_pages` 页）。
+        返回 `(books, has_more)`：库由后端按 book_id 幂等累积，重复书不会重复入库。
+        """
+        if page < 0:
+            raise UpstreamError(400, "invalid catalog page")
+        if page == 0:
+            html = self._get_text("/", "twistytv_home_failed", paced=True)
+            rows = _parse_home_rows(html)
+            home_books = [card for cards in rows.values() for card in cards]
+            home_books += _parse_home_links(html)
+            books = self._expect_cards(html, "twistytv_home_unparsable", home_books, page=0)
+            unique = self._dedupe(books)
+            self._fill_counts(unique, wait=True)
+            return unique, True
+        if page > self.max_catalog_pages:
+            return [], False
+        html = self._get_text(f"/browse?page={page}", "twistytv_browse_failed", paced=True)
+        books = _parse_cards(html)
+        if page == 1:
+            # 第 1 页是"这张列表还在不在"的探针：软 404 必须报错，不能把空页当成抓完了。
+            self._expect_cards(html, "twistytv_browse_unparsable", books, page=page)
+        unique = self._dedupe(books)
+        if not unique:
+            return [], False
+        # `/browse` 卡片没有集数：交给后台预热按轮补，不阻塞这一轮抓取。
+        self._fill_counts(unique, wait=False)
+        return unique, page < self.max_catalog_pages
 
     def _paged_books(self, path: str, max_pages: int, label: str) -> list[dict]:
         """把 `?page=N` 翻到底：下游货架缓存越大越好，但每页都是一次真实上游请求。

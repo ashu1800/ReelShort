@@ -1,9 +1,6 @@
 package com.reelshort.backend.content;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,20 +17,23 @@ import jakarta.servlet.http.HttpServletRequest;
 @RequestMapping("/api/app/home")
 public class HomeController {
 
-	private final ContentCacheService contentCacheService;
+	private final ContentLibraryService contentLibraryService;
+	private final ContentLibraryProperties contentLibraryProperties;
 
-	public HomeController(ContentCacheService contentCacheService) {
-		this.contentCacheService = contentCacheService;
+	public HomeController(ContentLibraryService contentLibraryService,
+			ContentLibraryProperties contentLibraryProperties) {
+		this.contentLibraryService = contentLibraryService;
+		this.contentLibraryProperties = contentLibraryProperties;
 	}
 
 	@GetMapping("/recommend")
 	public ApiResponse<List<ContentBook>> recommend(@RequestParam(required = false) String locale,
 			CurrentUser currentUser, HttpServletRequest request) {
 		String requestId = (String) request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
-		// 首页每次刷新都从同一份货架缓存中取数，但返回顺序随机，避免用户长期看到固定排序。
-		List<ContentBook> books = new ArrayList<>(
-				contentCacheService.getShelf(ContentShelfType.RECOMMEND, parseLocale(locale)));
-		Collections.shuffle(books, ThreadLocalRandom.current());
+		// 片库只有英文数据；locale 参数保留原有校验语义（非法值仍返回 400）。
+		parseLocale(locale);
+		// 路径与响应结构保持不变，App 不需要发版：从片库随机抽一批（默认 300 部）。
+		List<ContentBook> books = contentLibraryService.homeBooks(contentLibraryProperties.getSampleLimit());
 		return ApiResponse.success(books, requestId);
 	}
 

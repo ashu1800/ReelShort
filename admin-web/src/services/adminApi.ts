@@ -131,38 +131,31 @@ export type ContentVideoProbe = {
   nextEpisode: ContentEpisode | null
 }
 
-export type ContentCacheStatus = {
+export type ContentLibraryStatus = {
   bookCount: number
   episodeCacheCount: number
   videoCacheCount: number
-  shelves: Array<{
-    shelfType: string
-    locale: string
-    itemCount: number
-    refreshedAt: string | null
-    lastError: string | null
-    health: 'HEALTHY' | 'STALE' | 'EMPTY' | 'ERROR' | 'MISSING'
-    healthMessage: string
-  }>
-  recentRefreshRuns: Array<{
-    triggerSource: 'ADMIN' | 'SCHEDULED'
-    shelfType: string
-    locale: string
-    status: 'SUCCESS' | 'FAILED'
-    startedAt: string
-    finishedAt: string
-    durationMillis: number
-    itemCount: number
-    errorMessage: string | null
-  }>
+  nextPage: number
+  totalPages: number
+  lastCrawledAt: string | null
+  lastError: string | null
+  lastAdded: number
+  active: boolean
 }
 
-export type ContentShelfRefreshResult = {
-  shelfType: string
-  locale: string
-  status: 'SUCCESS' | 'FAILED'
-  itemCount: number
-  errorMessage: string | null
+export type ContentBookPage = {
+  books: ContentBook[]
+  total: number
+  page: number
+  size: number
+}
+
+export type ContentLibraryCrawlResult = {
+  added: number
+  fetchedPages: number
+  total: number
+  nextPage: number
+  hasMore: boolean
 }
 
 export type AdminAuditLog = {
@@ -235,7 +228,8 @@ export type AdminDashboardSummary = {
   content: {
     bookCount: number
     episodeCacheCount: number
-    shelfCount: number
+    crawlPage: number
+    totalPages: number
   }
   points: {
     totalWatchRewardPoints: number
@@ -379,20 +373,27 @@ export async function fetchUserWithdrawals(userId: string) {
   return response.data.data
 }
 
-export async function fetchContentCacheStatus() {
-  const response = await http.get<ApiResponse<ContentCacheStatus>>('/content/cache')
+export async function fetchContentLibraryStatus() {
+  const response = await http.get<ApiResponse<ContentLibraryStatus>>('/content/library')
   return response.data.data
 }
 
-export async function fetchShelfBooks(shelfType: string) {
-  const response = await http.get<ApiResponse<ContentBook[]>>(`/content/cache/shelves/${shelfType}/books`)
+export async function fetchContentLibraryBooks(page: number, size: number, query = '') {
+  const response = await http.get<ApiResponse<ContentBookPage>>('/content/library/books', {
+    params: { page, size, ...(query ? { query } : {}) },
+  })
+  return response.data.data
+}
+
+export async function crawlContentLibrary() {
+  const response = await http.post<ApiResponse<ContentLibraryCrawlResult>>('/content/library/crawl')
   return response.data.data
 }
 
 /**
  * 单本书的公开详情（同源 `/api/app/content/books/{id}`）。
  *
- * 内容管理页里书目来自货架快照，简介经常为空（TwistyTV 的 /browse 卡片本来就没有）；
+ * 内容管理页里书目来自视频库列表，简介经常为空（TwistyTV 的 /browse 卡片本来就没有）；
  * 打开审片抽屉时后端会把详情页的简介补进缓存，这里再读一次拿到最新值。
  */
 export async function fetchPublicBookDetail(bookId: string) {
@@ -423,20 +424,6 @@ export async function probeEpisodeVideo(
         ...(chapterId ? { chapterId } : {}),
       },
     },
-  )
-  return response.data.data
-}
-
-export async function refreshContentShelf(shelfType: string, locale = 'en') {
-  const response = await http.post<ApiResponse<unknown[]>>(`/content/cache/shelves/${shelfType}/refresh`, null, {
-    params: { locale },
-  })
-  return response.data.data
-}
-
-export async function refreshContentShelfLocales(shelfType: string) {
-  const response = await http.post<ApiResponse<ContentShelfRefreshResult[]>>(
-    `/content/cache/shelves/${shelfType}/refresh-locales`,
   )
   return response.data.data
 }

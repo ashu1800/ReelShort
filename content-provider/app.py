@@ -646,6 +646,14 @@ class ReelShortClient(HardenedFetcher):
             books = self._expanded_recommend_books(books, locale)
         return [self._map_book(book) for book in books]
 
+    def catalog(self, page: int, locale: str = DEFAULT_LOCALE):
+        """备选上游没有可翻页的目录：page=0 用它的推荐货架当入口，之后没有更多页。"""
+        if page < 0:
+            raise UpstreamError(400, "invalid catalog page")
+        if page != 0:
+            return [], False
+        return self.shelf("recommend", locale), False
+
     def episodes(self, book_id: str, filtered_title: str, locale: str = DEFAULT_LOCALE):
         try:
             page_props = _as_dict(self._movie_payload(book_id, filtered_title, locale).get("pageProps"))
@@ -1274,6 +1282,22 @@ def create_app(client=None, internal_token=None, clients=None) -> Flask:
     @app.get("/api/v1/reelshort/dramadub")
     def dramadub():
         return shelf_response("dramadub")
+
+    @app.get("/api/v1/reelshort/catalog")
+    def catalog():
+        """视频库分页抓取：page=0 首页入口，page>=1 为 `/browse` 第 page 页。"""
+        locale = request_locale()
+        if locale is None:
+            return locale_error()
+        raw_page = (request.args.get("page") or "0").strip() or "0"
+        try:
+            page = int(raw_page)
+        except ValueError:
+            return jsonify({"error": "page must be an integer"}), 400
+        if page < 0:
+            return jsonify({"error": "page must be >= 0"}), 400
+        books, has_more = active_client().catalog(page, locale)
+        return jsonify({"page": page, "has_more": has_more, "books": books})
 
     @app.get("/api/v1/reelshort/episodes/<book_id>")
     def episodes(book_id: str):

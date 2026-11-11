@@ -838,3 +838,75 @@ def test_parse_mp4_duration_rejects_garbage():
     assert twistytv._parse_mp4_duration(b"no boxes here") == 0
     # timescale 为 0 时不能做除法
     assert twistytv._parse_mp4_duration(_mvhd_payload(0, 1000)) == 0
+
+
+# ---------------------------------------------------------------- 视频库目录（catalog）
+
+
+def test_catalog_page_zero_reads_home_rows_only():
+    client = RecordingFetcher(
+        {
+            "/browse": FakeResponse(200, ""),
+            "https://twistytv.com/": FakeResponse(200, CARD_HTML),
+        }
+    )
+
+    books, has_more = client.catalog(0)
+
+    assert [book["book_id"] for book in books] == ["ns_1", "db_4200"]
+    assert has_more is True
+    # 首页入口页不能顺手把 12 页 browse 拉一遍（那是 700+ 本的旧货架行为）。
+    assert not any("/browse" in url for url in client.urls())
+
+
+def test_catalog_browse_page_reads_only_the_requested_page():
+    client = RecordingFetcher(
+        {
+            "/browse?page=2": FakeResponse(200, _card_html("ns_2")),
+            "https://twistytv.com/": FakeResponse(200, CARD_HTML),
+        }
+    )
+
+    books, has_more = client.catalog(2)
+
+    assert [book["book_id"] for book in books] == ["ns_2"]
+    assert has_more is True
+    assert any("/browse?page=2" in url for url in client.urls())
+
+
+def test_catalog_last_page_reports_no_more_and_beyond_cap_is_empty():
+    client = RecordingFetcher(
+        {
+            "/browse?page=3": FakeResponse(200, _card_html("ns_3")),
+            "https://twistytv.com/": FakeResponse(200, CARD_HTML),
+        },
+        max_catalog_pages=3,
+    )
+
+    books, has_more = client.catalog(3)
+
+    assert [book["book_id"] for book in books] == ["ns_3"]
+    assert has_more is False
+    assert client.catalog(4) == ([], False)
+
+
+def test_catalog_rejects_negative_page():
+    client = RecordingFetcher({"https://twistytv.com/": FakeResponse(200, CARD_HTML)})
+
+    with pytest.raises(UpstreamError) as error:
+        client.catalog(-1)
+
+    assert error.value.status_code == 400
+
+
+def test_catalog_first_browse_page_soft_404_is_an_error():
+    # 第 1 页是"列表还在不在"的探针：200 + 零卡片不能当成抓完了。
+    client = RecordingFetcher(
+        {"https://twistytv.com/browse?page=1": FakeResponse(200, "<html>Just a moment...</html>")}
+    )
+
+    with pytest.raises(UpstreamError) as error:
+        client.catalog(1)
+
+    assert error.value.status_code == 502
+    assert client.diagnostics.snapshot()["counters"]["twistytv_browse_unparsable"] == 1

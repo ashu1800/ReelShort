@@ -1,33 +1,28 @@
 package com.reelshort.backend.content;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reelshort.backend.auth.AccessTokenRepository;
 import com.reelshort.backend.auth.AppUserPrincipal;
 import com.reelshort.backend.auth.TokenHasher;
@@ -41,6 +36,7 @@ import com.reelshort.backend.user.UserStatus;
 
 @WebMvcTest(controllers = {ContentController.class, HomeController.class})
 @AutoConfigureMockMvc(addFilters = false)
+@EnableConfigurationProperties(ContentLibraryProperties.class)
 class ContentControllerTests {
 
 	@Autowired
@@ -48,6 +44,9 @@ class ContentControllerTests {
 
 	@MockitoBean
 	private ContentCacheService contentCacheService;
+
+	@MockitoBean
+	private ContentLibraryService contentLibraryService;
 
 	@MockitoBean
 	private VipGateService vipGateService;
@@ -103,7 +102,7 @@ class ContentControllerTests {
 	@Test
 	void contentEndpointsResolveAnyLocaleToEnglish() throws Exception {
 		// The app is English-only; any incoming locale resolves to ENGLISH.
-		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(
+		when(contentLibraryService.homeBooks(300)).thenReturn(List.of(
 				new ContentBook("book-en", "English Drama", "book-en", "https://example.com/en.jpg", "desc.", 4)));
 
 		mockMvc.perform(get("/api/app/home/recommend").param("locale", "zh-CN"))
@@ -213,8 +212,8 @@ class ContentControllerTests {
 	}
 
 	@Test
-	void homeRecommendReturnsRecommendShelf() throws Exception {
-		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(
+	void homeRecommendReturnsLibraryBooks() throws Exception {
+		when(contentLibraryService.homeBooks(300)).thenReturn(List.of(
 				new ContentBook("book-home", "Home Pick", "home-pick", "https://example.com/home.jpg",
 						"Home shelf description.", 6)));
 
@@ -228,7 +227,7 @@ class ContentControllerTests {
 
 	@Test
 	void homeRecommendPassesRequestedLocale() throws Exception {
-		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(List.of(
+		when(contentLibraryService.homeBooks(300)).thenReturn(List.of(
 				new ContentBook("book-home", "Home Pick", "book-home", "https://example.com/home.jpg",
 						"Home shelf description.", 6)));
 
@@ -238,28 +237,17 @@ class ContentControllerTests {
 	}
 
 	@Test
-	void homeRecommendShufflesShelfOrderAcrossRequests() throws Exception {
-		List<ContentBook> books = IntStream.range(0, 8)
+	void homeRecommendAsksTheLibraryForTheConfiguredSampleLimit() throws Exception {
+		List<ContentBook> books = java.util.stream.IntStream.range(0, 8)
 				.mapToObj(index -> new ContentBook("book-" + index, "Book " + index, "book-" + index,
 						"https://example.com/" + index + ".jpg", "description", 1))
 				.toList();
-		when(contentCacheService.getShelf(ContentShelfType.RECOMMEND, ContentLocale.ENGLISH)).thenReturn(books);
+		when(contentLibraryService.homeBooks(300)).thenReturn(books);
 
-		Set<List<String>> orders = new HashSet<>();
-		ObjectMapper objectMapper = new ObjectMapper();
-		for (int request = 0; request < 6; request++) {
-			String body = mockMvc.perform(get("/api/app/home/recommend"))
-					.andExpect(status().isOk())
-					.andExpect(jsonPath("$.data", hasSize(8)))
-					.andReturn().getResponse().getContentAsString();
-			List<String> bookIds = new ArrayList<>();
-			for (JsonNode book : objectMapper.readTree(body).path("data")) {
-				bookIds.add(book.path("bookId").asText());
-			}
-			orders.add(bookIds);
-		}
-
-		assertThat(orders).hasSizeGreaterThan(1);
+		mockMvc.perform(get("/api/app/home/recommend"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data", hasSize(8)));
+		verify(contentLibraryService).homeBooks(300);
 	}
 
 	@Test

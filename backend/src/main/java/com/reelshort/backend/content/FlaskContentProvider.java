@@ -123,6 +123,20 @@ public class FlaskContentProvider implements ContentProvider, ReelshortAccountGa
 	}
 
 	@Override
+	public ContentCatalogPage getCatalogPage(int page, ContentLocale locale) {
+		CatalogResponse response = get(CatalogResponse.class,
+				uri("/api/v1/reelshort/catalog")
+						.queryParam("page", page)
+						.queryParam("locale", locale.apiValue())
+						.toUriString());
+		return new ContentCatalogPage(
+				response.books() == null
+						? List.of()
+						: response.books().stream().map(FlaskBook::toContentBook).toList(),
+				response.hasMore());
+	}
+
+	@Override
 	public ContentEpisodesDetail getEpisodesDetail(String bookId, String filteredTitle, ContentLocale locale) {
 		EpisodesResponse response = get(EpisodesResponse.class,
 				uri("/api/v1/reelshort/episodes/{bookId}")
@@ -258,6 +272,9 @@ public class FlaskContentProvider implements ContentProvider, ReelshortAccountGa
 	}
 
 	private record ShelfResponse(List<FlaskBook> books) {
+	}
+
+	private record CatalogResponse(int page, @JsonProperty("has_more") boolean hasMore, List<FlaskBook> books) {
 	}
 
 	private record EpisodesResponse(FlaskBook book, List<FlaskEpisode> episodes) {

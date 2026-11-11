@@ -20,10 +20,11 @@ public class ContentCacheWriterConfiguration {
 			ContentBookCacheRepository contentBookCacheRepository,
 			ContentEpisodeCacheRepository contentEpisodeCacheRepository,
 			ContentVideoCacheRepository contentVideoCacheRepository,
-			ContentEpisodeRuntimeCacheRepository contentEpisodeRuntimeCacheRepository, ObjectMapper objectMapper) {
+			ContentEpisodeRuntimeCacheRepository contentEpisodeRuntimeCacheRepository,
+			ContentLibraryCrawlStateRepository contentLibraryCrawlStateRepository, ObjectMapper objectMapper) {
 		return new ContentCacheWriter(contentShelfCacheRepository, contentBookCacheRepository,
 				contentEpisodeCacheRepository, contentVideoCacheRepository, contentEpisodeRuntimeCacheRepository,
-				objectMapper);
+				contentLibraryCrawlStateRepository, objectMapper);
 	}
 
 	@Bean

@@ -21,6 +21,61 @@ import org.springframework.test.web.client.MockRestServiceServer;
 class FlaskContentProviderTests {
 
 	@Test
+	void getCatalogPageMapsFlaskCatalogResults() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/catalog?page=3&locale=en"))
+				.andExpect(method(GET))
+				.andRespond(withSuccess("""
+						{
+						  "page": 3,
+						  "has_more": true,
+						  "books": [
+						    {
+						      "book_id": "book-3",
+						      "book_title": "Browse Page Three",
+						      "filtered_title": "browse-page-three",
+						      "book_pic": "https://example.com/page3.jpg",
+						      "description": "From the browse list.",
+						      "chapter_count": 21
+						    }
+						  ]
+						}
+						""", MediaType.APPLICATION_JSON));
+
+		ContentProvider.ContentCatalogPage page = provider.getCatalogPage(3, ContentLocale.ENGLISH);
+
+		assertThat(page.hasMore()).isTrue();
+		assertThat(page.books()).containsExactly(new ContentBook(
+				"book-3",
+				"Browse Page Three",
+				"browse-page-three",
+				"https://example.com/page3.jpg",
+				"From the browse list.",
+				21));
+		server.verify();
+	}
+
+	@Test
+	void getCatalogPageTreatsMissingBooksAsEmptyList() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		ContentProvider provider = FlaskContentProvider.fromRestClient(builder.build(), "http://content-provider:5000");
+
+		server.expect(once(), requestTo("http://content-provider:5000/api/v1/reelshort/catalog?page=0&locale=en"))
+				.andExpect(method(GET))
+				.andRespond(withSuccess("{\"page\":0,\"has_more\":false}", MediaType.APPLICATION_JSON));
+
+		ContentProvider.ContentCatalogPage page = provider.getCatalogPage(0, ContentLocale.ENGLISH);
+
+		assertThat(page.books()).isEmpty();
+		assertThat(page.hasMore()).isFalse();
+		server.verify();
+	}
+
+	@Test
 	void searchMapsFlaskResultsToProviderBooks() {
 		RestClient.Builder builder = RestClient.builder();
 		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
