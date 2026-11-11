@@ -97,6 +97,8 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 客�
 
 ## 变更历史
 
+[2026-11-11] admin-web - 后台导航与页面标题「视频内容管理」改名「视频管理」。改动：`App.vue` 侧边栏菜单文案、`ContentCacheView.vue` 的 `<h1>` 标题同时改为「视频管理」（路由 `/content-cache` 不变），`tests/content-management.test.mjs` 两条断言同步改为 `/视频管理/`（旧串「视频内容管理」不再匹配）。`npm run build` 通过、`npm run test:contracts` 20 条全绿。**未部署**：生产后台前端仍是旧 dist。
+
 [2026-11-11] admin-web - 内容管理「货架健康与任务监控」的时间改为格式化显示。此前「最近刷新时间」（`refreshedAt`）与「最近刷新任务运行记录 → 开始时间」（`startedAt`）直接渲染清单里的 ISO 时刻（`2026-11-10T22:29:01.855880Z`），列宽被微秒和 `Z` 撑到换行。现补 `ContentCacheView` 的 `formatDateTime`（与后台其它页同一实现）：按浏览器本地时区输出 `YYYY-MM-DD HH:mm:ss`，空值显示 `-`、`refreshedAt` 为空仍显示「尚未刷新」、解析失败回退原文。测试：`admin-web/tests/content-management.test.mjs` 加 1 条契约；`npm run build` 通过、`npm run test:contracts` 20 条全绿。**未部署**：生产后台前端仍是旧 dist。
 
 [2026-11-11] admin-web - 内容管理「货架短剧资产」加分页。此前 `ContentCacheView` 把接口返回的整个货架（recommend 735 部）一次性 `v-for` 到海报网格 / `el-table`，页面又长又卡。现在前端按页切片（每页 24，可选 24/48/96）：海报网格与数据列表共用同一个 `pagedBooks`，分页器在两个视图下方展示 `total/sizes/pager/jumper`；搜索与「当前货架 N 部」计数仍作用在全量结果上，翻页不丢数据；切换货架、改搜索词、改每页条数、刷新货架都会回到第 1 页（加载失败也重置）。后端接口与返回结构未变（仍是全量数组，735 条约 200 KB，一次拉取可接受）。测试：`admin-web/tests/content-management.test.mjs` 加 1 条契约（两个视图都必须吃 `pagedBooks`、分页总数取筛选后全量）；`npm run build` 通过、`npm run test:contracts` 19 条全绿。**未部署**：生产后台前端仍是旧 dist，需按部署流程替换。

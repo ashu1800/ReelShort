@@ -9,7 +9,7 @@ const appSource = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8
 test('content management view removes redundant locale selector and refresh-locales', () => {
   assert.doesNotMatch(viewSource, /refreshContentShelfLocales/)
   assert.doesNotMatch(viewSource, /localeOptions/)
-  assert.match(viewSource, /视频内容管理/)
+  assert.match(viewSource, /视频管理/)
 })
 
 test('content management view includes episode heatmap matrix and batch audit controls', () => {
@@ -40,6 +40,6 @@ test('adminApi exposes shelf books, episodes, and video probe endpoints', () => 
 })
 
 test('app navigation exposes video content management entry', () => {
-  assert.match(appSource, /视频内容管理/)
+  assert.match(appSource, /视频管理/)
   assert.match(appSource, /index="\/content-cache"/)
 })

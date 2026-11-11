@@ -456,7 +456,7 @@ onMounted(async () => {
     <div class="page-header">
       <div>
         <div class="title-with-badge">
-          <h1>视频内容管理</h1>
+          <h1>视频管理</h1>
           <el-tag effect="plain" type="success" size="small" class="live-pill">
             <span class="pulse-dot"></span> 运行正常
           </el-tag>

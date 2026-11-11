@@ -59,7 +59,7 @@ async function logout() {
         </el-menu-item>
         <el-menu-item index="/content-cache">
           <el-icon><Film /></el-icon>
-          <span>视频内容管理</span>
+          <span>视频管理</span>
         </el-menu-item>
         <el-menu-item index="/system-configs">
           <el-icon><Setting /></el-icon>
