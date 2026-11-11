@@ -28,6 +28,11 @@ test('shelf asset grid paginates instead of rendering the whole shelf', () => {
   assert.match(viewSource, /:total="filteredBooks\.length"/)
 })
 
+test('monitoring tab formats ISO timestamps instead of rendering them raw', () => {
+  assert.match(viewSource, /formatDateTime\(row\.refreshedAt\)/)
+  assert.match(viewSource, /formatDateTime\(row\.startedAt\)/)
+})
+
 test('adminApi exposes shelf books, episodes, and video probe endpoints', () => {
   assert.match(apiSource, /export async function fetchShelfBooks/)
   assert.match(apiSource, /export async function fetchBookEpisodes/)

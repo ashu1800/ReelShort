@@ -422,6 +422,25 @@ function shelfHealthType(health: string) {
   return 'warning'
 }
 
+// 与后台其它页保持一致：ISO 时间按浏览器本地时区显示为 YYYY-MM-DD HH:mm:ss；
+// 解析失败时回退原文，避免把有效数据吞成 '-'。
+function formatDateTime(val: string | null) {
+  if (!val) return '-'
+  try {
+    const d = new Date(val)
+    if (isNaN(d.getTime())) return val
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const h = String(d.getHours()).padStart(2, '0')
+    const min = String(d.getMinutes()).padStart(2, '0')
+    const s = String(d.getSeconds()).padStart(2, '0')
+    return `${y}-${m}-${day} ${h}:${min}:${s}`
+  } catch {
+    return val
+  }
+}
+
 watch(shelfType, (newType) => {
   handleShelfChange(newType)
 })
@@ -686,7 +705,7 @@ onMounted(async () => {
               </el-table-column>
               <el-table-column label="最近刷新时间" width="200" prop="refreshedAt">
                 <template #default="{ row }">
-                  <span class="mono">{{ row.refreshedAt || '尚未刷新' }}</span>
+                  <span class="mono">{{ row.refreshedAt ? formatDateTime(row.refreshedAt) : '尚未刷新' }}</span>
                 </template>
               </el-table-column>
               <el-table-column label="健康说明" min-width="200" prop="healthMessage" />
@@ -737,7 +756,7 @@ onMounted(async () => {
               </el-table-column>
               <el-table-column label="开始时间" width="200" prop="startedAt">
                 <template #default="{ row }">
-                  <span class="mono">{{ row.startedAt }}</span>
+                  <span class="mono">{{ formatDateTime(row.startedAt) }}</span>
                 </template>
               </el-table-column>
               <el-table-column label="错误说明" min-width="220" prop="errorMessage">
