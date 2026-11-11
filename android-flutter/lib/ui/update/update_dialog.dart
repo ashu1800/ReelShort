@@ -300,7 +300,7 @@ class _UpdateDialogBody extends StatelessWidget {
                 spacing: _contentGap,
                 children: <Widget>[
                   Text(
-                    '${release.title} · ${release.tagName}',
+                    formatUpdateReleaseHeadline(release),
                     style: textTheme.titleMedium?.copyWith(
                       color: colors.accentPrimary,
                     ),

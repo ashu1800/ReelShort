@@ -984,6 +984,27 @@ void main() {
       );
     });
 
+    test('the release headline never repeats the version tag', () {
+      // The backend title already carries the version.
+      expect(formatUpdateReleaseHeadline(release), 'ShortLink v0.2.0');
+      // A bare title still names the tag.
+      expect(
+        formatUpdateReleaseHeadline(
+          ReleaseInfo(
+            tagName: 'v0.2.0',
+            version: release.version,
+            versionCode: release.versionCode,
+            title: 'ShortLink',
+            body: '',
+            publishedAt: '',
+            apkAsset: apkAsset,
+            sha256Asset: checksumAsset,
+          ),
+        ),
+        'ShortLink · v0.2.0',
+      );
+    });
+
     test('computes progress percent', () {
       expect(updateProgressPercent(const DownloadProgress(25, 100)), 25);
       expect(updateProgressPercent(const DownloadProgress(25, null)), isNull);

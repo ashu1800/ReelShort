@@ -150,6 +150,24 @@ String formatUpdateDateTime(DateTime time) {
       '${two(time.day)} ${two(time.hour)}:${two(time.minute)}';
 }
 
+/// Headline of the release block.
+///
+/// The backend publishes `title = "ShortLink v0.9.15"` while the tag is
+/// `v0.9.15`; appending the tag unconditionally rendered
+/// `ShortLink v0.9.15 · v0.9.15`. The tag is only appended when the title does
+/// not already end with it, so both manifest shapes read correctly.
+String formatUpdateReleaseHeadline(ReleaseInfo release) {
+  final String title = release.title.trim();
+  final String tag = release.tagName.trim();
+  if (title.isEmpty) {
+    return tag;
+  }
+  if (tag.isEmpty || title.toLowerCase().endsWith(tag.toLowerCase())) {
+    return title;
+  }
+  return '$title · $tag';
+}
+
 /// Whole-percent progress, or `null` when the total is unknown (`updateProgressPercent`).
 int? updateProgressPercent(DownloadProgress progress) {
   final int? total = progress.totalBytes;
