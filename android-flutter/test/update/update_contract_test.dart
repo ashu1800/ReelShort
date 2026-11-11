@@ -956,6 +956,34 @@ void main() {
       expect(formatUpdateBytes(maxApkBytesLimit), '250.0 MB');
     });
 
+    test('formats the published timestamp for display', () {
+      // The manifest instant loses its `T`, microseconds and `Z`; the exact
+      // hour depends on the machine zone, so only the shape is pinned here.
+      expect(
+        formatUpdatePublishedAt('2026-11-11T02:02:59.146902Z'),
+        matches(RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$')),
+      );
+      // A zone-less value formats in place, padding every field.
+      expect(
+        formatUpdatePublishedAt('2026-01-05T03:07:00'),
+        '2026-01-05 03:07',
+      );
+      // Unparsable input is passed through instead of blanking the line.
+      expect(formatUpdatePublishedAt(''), '');
+      expect(formatUpdatePublishedAt('not a timestamp'), 'not a timestamp');
+    });
+
+    test('pads every date and time field', () {
+      expect(
+        formatUpdateDateTime(DateTime(2026, 1, 5, 3, 7)),
+        '2026-01-05 03:07',
+      );
+      expect(
+        formatUpdateDateTime(DateTime(2026, 12, 31, 23, 59)),
+        '2026-12-31 23:59',
+      );
+    });
+
     test('computes progress percent', () {
       expect(updateProgressPercent(const DownloadProgress(25, 100)), 25);
       expect(updateProgressPercent(const DownloadProgress(25, null)), isNull);

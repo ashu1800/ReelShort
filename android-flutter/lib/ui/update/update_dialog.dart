@@ -340,7 +340,12 @@ class _UpdateDialogBody extends StatelessWidget {
     ReleaseInfo release,
   ) => switch (state) {
     Available() => <Widget>[
-      _metaLine(copy.publishedLabel, release.publishedAt, colors, textTheme),
+      _metaLine(
+        copy.publishedLabel,
+        formatUpdatePublishedAt(release.publishedAt),
+        colors,
+        textTheme,
+      ),
       _metaLine(
         copy.sizeLabel,
         formatUpdateBytes(release.apkAsset.sizeBytes),

@@ -125,6 +125,31 @@ String formatUpdateBytes(int bytes) {
   return '$value B';
 }
 
+/// Published timestamp as a device-local `yyyy-MM-dd HH:mm` label.
+///
+/// The manifest carries an ISO-8601 instant (`2026-11-11T02:02:59.146902Z`);
+/// rendering it raw puts microseconds and the `Z` in the dialog. A value that
+/// does not parse is passed through unchanged, so a future manifest shape can
+/// never blank the line.
+String formatUpdatePublishedAt(String raw) {
+  final String value = raw.trim();
+  final DateTime? published = DateTime.tryParse(value);
+  if (published == null) {
+    return value;
+  }
+  return formatUpdateDateTime(published.toLocal());
+}
+
+/// `yyyy-MM-dd HH:mm` in [time]'s own zone.
+///
+/// Split from [formatUpdatePublishedAt] so the padding rule is testable without
+/// depending on the test machine's time zone.
+String formatUpdateDateTime(DateTime time) {
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${time.year.toString().padLeft(4, '0')}-${two(time.month)}-'
+      '${two(time.day)} ${two(time.hour)}:${two(time.minute)}';
+}
+
 /// Whole-percent progress, or `null` when the total is unknown (`updateProgressPercent`).
 int? updateProgressPercent(DownloadProgress progress) {
   final int? total = progress.totalBytes;
