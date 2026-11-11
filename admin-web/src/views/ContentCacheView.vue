@@ -80,6 +80,21 @@ const filteredBooks = computed(() => {
   )
 })
 
+// 货架分页：700+ 部短剧一次性挂到 DOM 会明显卡顿，只渲染当前页；
+// 搜索与计数仍作用在全量结果上，翻页不会丢数据。
+const pageSize = ref(24)
+const currentPage = ref(1)
+const pagedBooks = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredBooks.value.slice(start, start + pageSize.value)
+})
+watch(searchQuery, () => {
+  currentPage.value = 1
+})
+watch(pageSize, () => {
+  currentPage.value = 1
+})
+
 // 分集与审片监看台
 const drawerVisible = ref(false)
 const drawerLoading = ref(false)
@@ -224,6 +239,8 @@ async function loadShelfBooks(type: string) {
     ElMessage.error(`获取【${type}】货架片库失败`)
     books.value = []
   } finally {
+    // A new shelf always starts at page 1, including after a failed load.
+    currentPage.value = 1
     booksLoading.value = false
   }
 }
@@ -521,7 +538,7 @@ onMounted(async () => {
             />
             <div v-else class="poster-grid">
               <div
-                v-for="book in filteredBooks"
+                v-for="book in pagedBooks"
                 :key="book.bookId"
                 class="poster-card"
                 @click="openBookDetail(book)"
@@ -569,7 +586,7 @@ onMounted(async () => {
 
           <!-- 表格视图 -->
           <div v-else v-loading="booksLoading" class="table-container">
-            <el-table :data="filteredBooks" border stripe style="width: 100%">
+            <el-table :data="pagedBooks" border stripe style="width: 100%">
               <el-table-column label="海报" width="90" align="center">
                 <template #default="{ row }">
                   <el-image
@@ -627,6 +644,18 @@ onMounted(async () => {
                 </template>
               </el-table-column>
             </el-table>
+          </div>
+
+          <!-- 分页：只把当前页挂到 DOM，避免 700+ 部短剧同时渲染 -->
+          <div v-if="filteredBooks.length > pageSize" class="shelf-pagination">
+            <el-pagination
+              v-model:current-page="currentPage"
+              v-model:page-size="pageSize"
+              :page-sizes="[24, 48, 96]"
+              :total="filteredBooks.length"
+              layout="total, sizes, prev, pager, next, jumper"
+              background
+            />
           </div>
         </el-tab-pane>
 
@@ -1253,6 +1282,13 @@ onMounted(async () => {
 
 .poster-grid-container {
   min-height: 300px;
+}
+
+/* 货架分页位于网格/表格下方，右对齐以对齐 Element Plus 的操作区习惯 */
+.shelf-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
 }
 
 .poster-grid {

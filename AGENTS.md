@@ -97,6 +97,8 @@ ReelShort 是一个长期单机部署的聚合播放平台，包含 Android 客�
 
 ## 变更历史
 
+[2026-11-11] admin-web - 内容管理「货架短剧资产」加分页。此前 `ContentCacheView` 把接口返回的整个货架（recommend 735 部）一次性 `v-for` 到海报网格 / `el-table`，页面又长又卡。现在前端按页切片（每页 24，可选 24/48/96）：海报网格与数据列表共用同一个 `pagedBooks`，分页器在两个视图下方展示 `total/sizes/pager/jumper`；搜索与「当前货架 N 部」计数仍作用在全量结果上，翻页不丢数据；切换货架、改搜索词、改每页条数、刷新货架都会回到第 1 页（加载失败也重置）。后端接口与返回结构未变（仍是全量数组，735 条约 200 KB，一次拉取可接受）。测试：`admin-web/tests/content-management.test.mjs` 加 1 条契约（两个视图都必须吃 `pagedBooks`、分页总数取筛选后全量）；`npm run build` 通过、`npm run test:contracts` 19 条全绿。**未部署**：生产后台前端仍是旧 dist，需按部署流程替换。
+
 [2026-11-11] release - 发布 App **0.9.16 (58)**：更新弹窗发布时间本地格式化 + 标题去重（见下面两条功能记录）。`python scripts/publish-android.py --version 0.9.16 --version-code 58 --notes "Update dialog: readable publish date and no repeated version label."`；APK 56,931,520 bytes / SHA-256 `91897507568e07e84d47315ccde0e03c92802053cc6b5a1a4be159d927fbac1b`（`.sha256` 边车 104 bytes），COS 对象大小回核一致，后端接受发布记录。线上校验：`/api/app/release/latest` 返回 `0.9.16/58`、`sizeBytes=56931520`、`apkSha256` 与本地一致、release notes 已写入；官网稳定入口 `https://hjj888.cc/download/app.apk` 实测 206（1 KiB Range）。`pubspec.yaml` 同步为 `0.9.16+58`。**滚坑**：首次查询清单时 `shortlink.hjj888.cc` 返回 Cloudflare `525`（TLS 握手失败，瞬时），3 秒后重试正常；同时间官网稳定入口与后端均可用，判为边缘层瞬时问题。本轮只改客户端，后端、内容源与后台前端未部署。
 
 [2026-11-11] android-flutter - 更新弹窗的发布时间改为格式化显示。`publishedAt` 是清单里的 ISO-8601 时刻（如 `2026-11-11T02:02:59.146902Z`），弹窗此前原样渲染，出现微秒与 `Z` 且换行难看。新增 `formatUpdatePublishedAt` / `formatUpdateDateTime`（`lib/core/formatting/update_ui_format.dart`）：解析后转设备本地时区，输出 `yyyy-MM-dd HH:mm`；解析失败回退原文，不清空该行。`lib/ui/update/update_dialog.dart` 的 Published 行接入。测试：`test/update/update_contract_test.dart` 加 2 条（ISO 形状、补零、非法值回退）；`flutter analyze` 0 issue、`flutter test test/update/` 80 条全绿。

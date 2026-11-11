@@ -19,6 +19,15 @@ test('content management view includes episode heatmap matrix and batch audit co
   assert.match(viewSource, /specs-capsule-panel/)
 })
 
+test('shelf asset grid paginates instead of rendering the whole shelf', () => {
+  // 735 部短剧一次性挂到 DOM 会卡顿；两个视图都必须吃当前页切片，
+  // 分页总数基于筛选后的全量结果。
+  assert.match(viewSource, /v-for="book in pagedBooks"/)
+  assert.match(viewSource, /:data="pagedBooks"/)
+  assert.match(viewSource, /<el-pagination/)
+  assert.match(viewSource, /:total="filteredBooks\.length"/)
+})
+
 test('adminApi exposes shelf books, episodes, and video probe endpoints', () => {
   assert.match(apiSource, /export async function fetchShelfBooks/)
   assert.match(apiSource, /export async function fetchBookEpisodes/)
