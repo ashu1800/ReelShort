@@ -380,6 +380,22 @@ Phase 4 才是**外观真正变化**的阶段：前四个阶段（令牌/组件/
      分支）、奖励失败横幅文字色的运行时证据、圆环 `onMediaSecondary` 静默分支（本轮输入都落在
      `accentReward`）。
 
+### 7.7.1 切集翻页动画（2026-11-11，后续追加）
+
+§7.6 第 8 条的中间竖滑原本只换播放 URL，唯一可见反馈是全局 `AppTopProgressBar`。本轮补上翻页
+动画，阈值、区域划分、VIP 门禁、奖励与进度逻辑一行未改：
+
+- **跟手**：中间竖滑时视频面按手指位移平移（`ValueNotifier` + `ValueListenableBuilder`，每帧只
+  重建变换层）；亮度/音量胶囊、顶栏、右侧动作栏与底部信息属于固定 chrome，不参与位移。
+- **两段式**：松手后用 `AppMotion.reelChange`（220ms）先让当前页按滑动方向滑出，在画面外完成
+  换集，新页从反向边缘以同一时长滑入；入画段渲染目标集的加载封面（`_CoverOverlay` 接收目标
+  集号），避免旧画面回跳。`disableAnimations` 下直接换集、不做位移。
+- **边界**：首集下滑 / 末集上滑只做 25% 橡皮筋并在松手后回位，不整页滑走。
+- **契约与验证**：阈值与拖拽偏移抽到 `lib/core/formatting/player_swipe.dart`
+  （`episodeSwipeDirection` / `episodeSwipeDragOffset`），`test/core/player_swipe_test.dart`
+  逐条锁定；`test/player_screen_test.dart` 新增两条真手势用例（`FakeVideoPlayerPlatform` 让测试
+  环境报告可解码视频），验证跟手位移、短滑回弹不换集、长滑出画后换集并归位。
+
 ### 7.8 Search / Discover（发现页）重设计规格（Phase 4-4，冻结 2026-10-17）
 
 现状问题：**没有页标题**（直接以搜索框开场）；搜索区是两个整宽控件竖排、间距与水平内边距用裸值

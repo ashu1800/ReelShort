@@ -67,6 +67,10 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # Installed by the player tests, which run a fake platform so the video layer
+  # reports one ready decoder; the placeholder platform throws instead.
+  video_player_platform_interface: ^6.9.0
+
 dependency_overrides:
   path_provider_foundation: 2.4.0
 

@@ -20,6 +20,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../core/formatting/app_strings.dart';
 import '../../core/formatting/app_ui_copy.dart';
+import '../../core/formatting/player_swipe.dart';
 import '../../core/formatting/reward_badge_state.dart';
 import '../../core/formatting/ui_formats.dart';
 import '../../data/models/app_models.dart';
@@ -29,6 +30,7 @@ import '../../state/playback_state.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/app_media.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_shapes.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
@@ -70,9 +72,6 @@ const Duration _gestureFeedbackFade = Duration(milliseconds: 700);
 /// middle of the surface swipes to the previous/next episode.
 enum _PlayerDragZone { none, brightness, volume, episode }
 
-/// Minimum travel before an episode swipe fires.
-const double _episodeSwipeDistance = 80;
-
 /// Pixels of drag travel per 1.0 step of brightness/volume.
 const double _gesturePixelsPerUnit = 300;
 
@@ -101,7 +100,7 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   late final AppStateController _controller;
   late AppUiState _state;
   VideoPlayerController? _video;
@@ -138,6 +137,35 @@ class _PlayerScreenState extends State<PlayerScreen>
   double? _dragStartVolume;
   double _episodeDragDy = 0;
 
+  /// Whether a neighbouring episode exists in each direction, captured when a
+  /// middle drag starts so the rubber band at the list edges is decided once.
+  bool _episodeHasNext = false;
+  bool _episodeHasPrevious = false;
+
+  /// Vertical travel of the reel surface, in logical pixels. A notifier keeps
+  /// the per-frame transform rebuild local to the media layer instead of
+  /// rebuilding the whole player chrome.
+  final ValueNotifier<double> _reelOffset = ValueNotifier<double>(0);
+
+  /// Drives the two legs of a reel change: the current page leaves, the next
+  /// one settles in from the opposite edge.
+  late final AnimationController _reelController;
+
+  /// Endpoints of the current animation leg, in logical pixels.
+  double _reelFrom = 0;
+  double _reelTo = 0;
+
+  /// True while the reel-change animation owns [_reelOffset]; new drags are
+  /// ignored until it settles so the finger and the animation never fight.
+  bool _reelTransitioning = false;
+
+  /// True during the arriving leg: the page shows the loading cover of the
+  /// target episode instead of the outgoing video frame.
+  bool _reelEntering = false;
+
+  /// Episode the reel is travelling towards, for the loading cover label.
+  int? _reelTargetEpisodeNumber;
+
   /// Center-pill feedback for brightness/volume drags.
   Timer? _gestureHideTimer;
   IconData? _gestureIcon;
@@ -153,6 +181,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _reelController = AnimationController(vsync: this, duration: Duration.zero)
+      ..addListener(_onReelTick);
     // Captured once: dispose() runs after the element is deactivated, where an
     // inherited lookup would be unsafe.
     _controller = context.read<AppStateController>();
@@ -169,6 +199,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _tick?.cancel();
     _rewardToastTimer?.cancel();
     _gestureHideTimer?.cancel();
+    _reelController.dispose();
+    _reelOffset.dispose();
     // The brightness drag only altered this window's brightness; hand the
     // system value back so leaving the player never leaves a dim screen.
     if (_dragStartBrightness != null) {
@@ -391,7 +423,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _onVerticalDragStart(DragStartDetails details) {
     _dragZone = _PlayerDragZone.none;
-    if (!_surfaceInteractive) {
+    // The reel-change animation owns the surface while it runs; a second drag
+    // would fight it for the offset.
+    if (!_surfaceInteractive || _reelTransitioning) {
       return;
     }
     final double width = MediaQuery.sizeOf(context).width;
@@ -411,6 +445,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     } else {
       _dragZone = _PlayerDragZone.episode;
       _episodeDragDy = 0;
+      _episodeHasNext = _episodeNeighbourIndex(1) != null;
+      _episodeHasPrevious = _episodeNeighbourIndex(-1) != null;
     }
   }
 
@@ -441,6 +477,12 @@ class _PlayerScreenState extends State<PlayerScreen>
         _showGestureFeedback(Icons.volume_up_outlined, 'Volume', value);
       case _PlayerDragZone.episode:
         _episodeDragDy += details.delta.dy;
+        _reelOffset.value = episodeSwipeDragOffset(
+          travel: _episodeDragDy,
+          limit: MediaQuery.sizeOf(context).height,
+          hasNext: _episodeHasNext,
+          hasPrevious: _episodeHasPrevious,
+        );
       case _PlayerDragZone.none:
         break;
     }
@@ -449,11 +491,14 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _onVerticalDragEnd(DragEndDetails details) {
     switch (_dragZone) {
       case _PlayerDragZone.episode:
-        final double velocity = details.primaryVelocity ?? 0;
-        if (velocity < -400 || _episodeDragDy < -_episodeSwipeDistance) {
-          _swipeEpisode(1);
-        } else if (velocity > 400 || _episodeDragDy > _episodeSwipeDistance) {
-          _swipeEpisode(-1);
+        final int direction = episodeSwipeDirection(
+          travel: _episodeDragDy,
+          velocity: details.primaryVelocity ?? 0,
+        );
+        if (direction == 0) {
+          unawaited(_settleReel());
+        } else {
+          unawaited(_swipeEpisodeWithTransition(direction));
         }
       case _PlayerDragZone.brightness ||
       _PlayerDragZone.volume:
@@ -473,13 +518,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     _dragZone = _PlayerDragZone.none;
   }
 
-  /// `direction` 1 = next, -1 = previous, in list order — the same ordering
-  /// `playerErrorNextEpisode` uses for the error-overlay shortcut.
-  void _swipeEpisode(int direction) {
+  /// Index of the neighbouring episode in [direction] (`1` = next, `-1` =
+  /// previous), or null when the current episode is unknown or the list edge
+  /// is reached.
+  int? _episodeNeighbourIndex(int direction) {
     final AppUiState state = _state;
     final EpisodeSummary? current = state.playback.episode;
     if (state.episodes.isEmpty || current == null) {
-      return;
+      return null;
     }
     final int index = state.episodes.indexWhere(
       (EpisodeSummary episode) =>
@@ -487,13 +533,123 @@ class _PlayerScreenState extends State<PlayerScreen>
           episode.chapterId == current.chapterId,
     );
     if (index < 0) {
-      return;
+      return null;
     }
     final int target = index + direction;
     if (target < 0 || target >= state.episodes.length) {
+      return null;
+    }
+    return target;
+  }
+
+  /// `direction` 1 = next, -1 = previous, in list order — the same ordering
+  /// `playerErrorNextEpisode` uses for the error-overlay shortcut.
+  void _swipeEpisode(int direction) {
+    final int? index = _episodeNeighbourIndex(direction);
+    if (index == null) {
       return;
     }
-    unawaited(_controller.openPlayer(state.episodes[target]));
+    unawaited(_controller.openPlayer(_state.episodes[index]));
+  }
+
+  /// The reel change: the current page leaves in the swipe direction, the next
+  /// episode takes its place off-stage and settles in from the opposite edge.
+  ///
+  /// Thresholds, ordering and the load itself are the ported behaviour
+  /// (`episodeSwipeDirection`, `openPlayer`); only the presentation is new. A
+  /// blocked direction (first/last episode) and reduced motion fall back to the
+  /// instant swap/return, and the fixed chrome never travels: only the media
+  /// surface is a page.
+  Future<void> _swipeEpisodeWithTransition(int direction) async {
+    if (_reelTransitioning) {
+      return;
+    }
+    final int? target = _episodeNeighbourIndex(direction);
+    final AppMotion motion = appMotionOf(context);
+    final Duration leg = resolveAppMotion(context, motion.reelChange);
+    if (target == null || leg == Duration.zero) {
+      _reelOffset.value = 0;
+      if (target != null) {
+        _swipeEpisode(direction);
+      }
+      return;
+    }
+
+    _reelTransitioning = true;
+    final double height = MediaQuery.sizeOf(context).height;
+    final int targetNumber = _state.episodes[target].number;
+    try {
+      // The outgoing frame leaves the stage ...
+      await _runReelLeg(
+        direction > 0 ? -height : height,
+        duration: leg,
+        curve: motion.reelChangeCurve.flipped,
+      );
+      if (!mounted) {
+        return;
+      }
+      // ... the next episode replaces it while the surface is off-stage ...
+      _swipeEpisode(direction);
+      setState(() {
+        _reelEntering = true;
+        _reelTargetEpisodeNumber = targetNumber;
+      });
+      _reelOffset.value = direction > 0 ? height : -height;
+      // ... and the loading cover settles in from the opposite edge.
+      await _runReelLeg(0, duration: leg, curve: motion.reelChangeCurve);
+    } finally {
+      _reelTransitioning = false;
+      if (mounted) {
+        _reelOffset.value = 0;
+        setState(() {
+          _reelEntering = false;
+          _reelTargetEpisodeNumber = null;
+        });
+      }
+    }
+  }
+
+  /// Runs one animation leg of the reel surface from its current position.
+  Future<void> _runReelLeg(
+    double to, {
+    required Duration duration,
+    required Curve curve,
+  }) async {
+    _reelFrom = _reelOffset.value;
+    _reelTo = to;
+    _reelController
+      ..duration = duration
+      ..reset();
+    await _reelController.animateTo(1, curve: curve);
+  }
+
+  void _onReelTick() {
+    _reelOffset.value =
+        _reelFrom + (_reelTo - _reelFrom) * _reelController.value;
+  }
+
+  /// Returns the reel surface to the current episode after a drag that did not
+  /// fire a swipe, or after a swipe blocked by the first/last episode.
+  Future<void> _settleReel({Duration? duration}) async {
+    if (_reelTransitioning) {
+      return;
+    }
+    final AppMotion motion = appMotionOf(context);
+    final Duration leg =
+        duration ?? resolveAppMotion(context, motion.reelChange);
+    if (leg == Duration.zero || _reelOffset.value == 0) {
+      _reelOffset.value = 0;
+      return;
+    }
+    _reelTransitioning = true;
+    try {
+      await _runReelLeg(0, duration: leg, curve: motion.reelChangeCurve);
+    } finally {
+      _reelTransitioning = false;
+      if (mounted) {
+        _reelOffset.value = 0;
+      }
+    }
   }
 
   void _showGestureFeedback(IconData icon, String label, double value) {
@@ -568,52 +724,100 @@ class _PlayerScreenState extends State<PlayerScreen>
               child: Stack(
                 fit: StackFit.expand,
                 children: <Widget>[
-                  if (videoReady)
-                    ClipRect(
-                      // RESIZE_MODE_ZOOM: fill the surface and crop, no letterbox.
-                      child: FittedBox(
-                        fit: BoxFit.cover,
-                        child: SizedBox(
-                          width: video.value.size.width.toDouble(),
-                          height: video.value.size.height.toDouble(),
-                          child: VideoPlayer(video),
-                        ),
-                      ),
-                    )
-                  else
-                    _CoverOverlay(state: state),
-                  // Paused state: a smooth translucent play affordance.
-                  Center(
-                    child: ExcludeSemantics(
-                      child: AnimatedScale(
-                        scale: (videoReady && !_wasPlaying) ? 1.0 : 0.65,
-                        duration: const Duration(milliseconds: 180),
-                        curve: Curves.easeOutBack,
-                        child: AnimatedOpacity(
-                          opacity: (videoReady && !_wasPlaying) ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 160),
-                          child: Container(
-                            width: 72,
-                            height: 72,
-                            decoration: BoxDecoration(
-                              color: media.scrim.withValues(alpha: 0.65),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: media.divider.withValues(alpha: 0.35),
-                                width: 1,
+                  // The reel surface: the video/cover and the load overlays
+                  // travel as one page during a swipe, while the fixed chrome
+                  // above it (top bar, rail, copy) stays put. The value
+                  // notifier keeps the per-frame rebuild inside this layer.
+                  ValueListenableBuilder<double>(
+                    valueListenable: _reelOffset,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        if (videoReady && !_reelEntering)
+                          ClipRect(
+                            // RESIZE_MODE_ZOOM: fill the surface and crop, no letterbox.
+                            child: FittedBox(
+                              fit: BoxFit.cover,
+                              child: SizedBox(
+                                width: video.value.size.width.toDouble(),
+                                height: video.value.size.height.toDouble(),
+                                child: VideoPlayer(video),
                               ),
                             ),
-                            child: Icon(
-                              Icons.play_arrow_rounded,
-                              color: media.onMedia,
-                              size: 48,
+                          )
+                        else
+                          _CoverOverlay(
+                            state: state,
+                            episodeNumber: _reelEntering
+                                ? _reelTargetEpisodeNumber
+                                : null,
+                          ),
+                        // Paused state: a smooth translucent play affordance.
+                        Center(
+                          child: ExcludeSemantics(
+                            child: AnimatedScale(
+                              scale: (videoReady && !_wasPlaying)
+                                  ? 1.0
+                                  : 0.65,
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOutBack,
+                              child: AnimatedOpacity(
+                                opacity: (videoReady &&
+                                        !_wasPlaying &&
+                                        !_reelEntering)
+                                    ? 1.0
+                                    : 0.0,
+                                duration: const Duration(milliseconds: 160),
+                                child: Container(
+                                  width: 72,
+                                  height: 72,
+                                  decoration: BoxDecoration(
+                                    color: media.scrim.withValues(alpha: 0.65),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: media.divider.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.play_arrow_rounded,
+                                    color: media.onMedia,
+                                    size: 48,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                        switch (overlay) {
+                          PlayerOverlayMode.error => _ErrorOverlay(
+                            onRetry: _retryPlayback,
+                            onNext: errorNextEpisode == null
+                                ? null
+                                : () => _controller.openPlayer(errorNextEpisode),
+                            onBack: _handleBack,
+                          ),
+                          PlayerOverlayMode.buffering => _BufferingOverlay(
+                            state: state,
+                          ),
+                          PlayerOverlayMode.coverLoading ||
+                          PlayerOverlayMode.none => const SizedBox.shrink(),
+                        },
+                      ],
                     ),
+                    builder:
+                        (BuildContext context, double offset, Widget? child) =>
+                            Transform.translate(
+                              key: const ValueKey<String>(
+                                'playerReelSurface',
+                              ),
+                              offset: Offset(0, offset),
+                              child: child,
+                            ),
                   ),
-                  // Brightness/volume drag feedback pill.
+                  // Brightness/volume feedback is chrome, not part of the reel.
                   if (_gestureLabel != null)
                     Center(
                       child: _GestureFeedbackPill(
@@ -622,20 +826,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                         value: _gestureValue!,
                       ),
                     ),
-                  switch (overlay) {
-                    PlayerOverlayMode.error => _ErrorOverlay(
-                      onRetry: _retryPlayback,
-                      onNext: errorNextEpisode == null
-                          ? null
-                          : () => _controller.openPlayer(errorNextEpisode),
-                      onBack: _handleBack,
-                    ),
-                    PlayerOverlayMode.buffering => _BufferingOverlay(
-                      state: state,
-                    ),
-                    PlayerOverlayMode.coverLoading ||
-                    PlayerOverlayMode.none => const SizedBox.shrink(),
-                  },
                 ],
               ),
             ),
@@ -739,9 +929,13 @@ class _PlayerScreenState extends State<PlayerScreen>
 
 /// Cover plus scrim shown while the first frame is not ready.
 class _CoverOverlay extends StatelessWidget {
-  const _CoverOverlay({required this.state});
+  const _CoverOverlay({required this.state, this.episodeNumber});
 
   final AppUiState state;
+
+  /// Episode the loading label names; defaults to the playing episode. Set
+  /// while the reel travels so the cover already announces the target.
+  final int? episodeNumber;
 
   @override
   Widget build(BuildContext context) {
@@ -749,7 +943,8 @@ class _CoverOverlay extends StatelessWidget {
     final AppSpacing spacing = appSpacingOf(context);
     final AppTypography roles = Theme.of(context).extension<AppTypography>()!;
     final String? coverUrl = state.playback.book?.coverUrl.coverUrlOrNull();
-    final int episodeNumber = state.playback.episode?.number ?? 1;
+    final int loadedEpisodeNumber =
+        episodeNumber ?? state.playback.episode?.number ?? 1;
 
     return Stack(
       fit: StackFit.expand,
@@ -780,7 +975,7 @@ class _CoverOverlay extends StatelessWidget {
               ),
               SizedBox(height: spacing.space3),
               Text(
-                playerLoadingLabel(episodeNumber, state.language),
+                playerLoadingLabel(loadedEpisodeNumber, state.language),
                 style: roles.onMediaBody.copyWith(
                   color: media.onMediaSecondary,
                 ),

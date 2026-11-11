@@ -15,6 +15,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 import 'package:shortlink/core/formatting/app_strings.dart';
 import 'package:shortlink/data/models/app_language.dart';
@@ -34,6 +35,7 @@ import 'package:shortlink/ui/components/episode_tile.dart';
 import 'package:shortlink/ui/screens/player_screen.dart';
 
 import 'support/fake_app_data_source.dart';
+import 'support/fake_video_player_platform.dart';
 
 /// A data source whose health probe never answers, used to hold the controller
 /// in its loading state without leaving a pending timer.
@@ -203,6 +205,13 @@ Color _buttonLabelColor(WidgetTester tester, String label) => tester
 
 /// The English copy the player renders in these tests.
 final AppStrings _copy = strings(AppLanguage.defaultLanguage);
+
+/// Vertical translation of the reel surface during an episode swipe.
+double _reelTranslation(WidgetTester tester) => tester
+    .widget<Transform>(find.byKey(const ValueKey<String>('playerReelSurface')))
+    .transform
+    .getTranslation()
+    .y;
 
 void main() {
   testWidgets('the top bar keeps a 44px back target with the shared label', (
@@ -770,5 +779,85 @@ void main() {
       isFalse,
       reason: 'no raw colour literals outside the token files',
     );
+  });
+
+  group('episode swipe', () {
+    late VideoPlayerPlatform previousPlatform;
+
+    setUp(() {
+      // The placeholder platform throws, which leaves the screen on its error
+      // overlay and disables every surface gesture. The fake reports one ready
+      // video so the drag lands on the real path.
+      previousPlatform = VideoPlayerPlatform.instance;
+      VideoPlayerPlatform.instance = FakeVideoPlayerPlatform();
+    });
+
+    tearDown(() {
+      VideoPlayerPlatform.instance = previousPlatform;
+    });
+
+    testWidgets('a short drag lifts the reel then settles without switching', (
+      WidgetTester tester,
+    ) async {
+      final AppStateController controller = await _pumpPlayer(tester);
+      expect(
+        find.byKey(const ValueKey<String>('playerReelSurface')),
+        findsOneWidget,
+      );
+
+      final Offset center = tester.getCenter(find.byType(PlayerScreen));
+      final TestGesture gesture = await tester.startGesture(center);
+      // Paced moves keep the release velocity under the 400 px/s flick
+      // threshold, so this drag is decided by travel alone (40 px < 80 px).
+      for (int step = 0; step < 2; step++) {
+        await gesture.moveBy(const Offset(0, -20));
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+      expect(
+        _reelTranslation(tester),
+        lessThan(0),
+        reason: 'the page follows the finger',
+      );
+      expect(controller.state.playback.episode?.number, 1);
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+
+      expect(controller.state.playback.episode?.number, 1);
+      expect(_reelTranslation(tester), 0);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('a full swipe leaves through the top and brings the next '
+        'episode in', (WidgetTester tester) async {
+      final AppStateController controller = await _pumpPlayer(tester);
+
+      final Offset center = tester.getCenter(find.byType(PlayerScreen));
+      final TestGesture gesture = await tester.startGesture(center);
+      for (int step = 0; step < 4; step++) {
+        await gesture.moveBy(const Offset(0, -40));
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // The outgoing page is already travelling out through the top edge while
+      // the episode has not changed yet: the swap happens off-stage.
+      expect(_reelTranslation(tester), lessThan(-80));
+      expect(controller.state.playback.episode?.number, 1);
+
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+
+      expect(controller.state.playback.episode?.number, 2);
+      expect(_reelTranslation(tester), 0);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
   });
 }

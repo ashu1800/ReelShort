@@ -2,8 +2,8 @@
 ///
 /// The app has three signature animations, and everything else is chrome:
 ///  * the **reel change** - a 220 ms fade with a slight vertical travel, used
-///    for screen and sub-page transitions (the film-reel metaphor: one frame
-///    settles away and the next settles in);
+///    for screen and sub-page transitions and for the player's episode swipe
+///    (the film-reel metaphor: one frame settles away and the next settles in);
 ///  * the **spring-filled reward ring** - the deterministic progress ring that
 ///    fills to the settled point total;
 ///  * the **rising `+N pt` reward toast** - a short upward slide with a fade.
