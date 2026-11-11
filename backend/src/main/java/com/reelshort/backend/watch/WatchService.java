@@ -27,7 +27,12 @@ public class WatchService {
 	}
 
 	public WatchRecordResponse reportProgress(UUID userId, WatchProgressRequest request) {
-		return userActionLocks.withUserLock(userId, () -> watchProgressTransaction.reportProgress(userId, request));
+		return reportProgress(userId, request, WatchSource.APP);
+	}
+
+	public WatchRecordResponse reportProgress(UUID userId, WatchProgressRequest request, WatchSource source) {
+		return userActionLocks.withUserLock(userId,
+				() -> watchProgressTransaction.reportProgress(userId, request, source));
 	}
 
 	@Transactional(readOnly = true)

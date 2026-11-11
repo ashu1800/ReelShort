@@ -1,5 +1,6 @@
 package com.reelshort.backend.watch;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,4 +16,8 @@ public interface WatchRecordRepository extends JpaRepository<WatchRecord, UUID> 
 	Optional<WatchRecord> findFirstByUserIdOrderByUpdatedAtDesc(UUID userId);
 
 	long countByUserId(UUID userId);
+
+	long countBySource(WatchSource source);
+
+	long countBySourceAndUpdatedAtGreaterThanEqual(WatchSource source, OffsetDateTime updatedAt);
 }

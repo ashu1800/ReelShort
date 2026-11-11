@@ -10,6 +10,7 @@ import {
   Warning,
   Setting,
   SwitchButton,
+  TrendCharts,
   User,
 } from '@element-plus/icons-vue'
 import { computed } from 'vue'
@@ -44,6 +45,10 @@ async function logout() {
         <el-menu-item index="/">
           <el-icon><DataAnalysis /></el-icon>
           <span>控制台</span>
+        </el-menu-item>
+        <el-menu-item index="/statistics">
+          <el-icon><TrendCharts /></el-icon>
+          <span>数据统计</span>
         </el-menu-item>
         <el-menu-item index="/users">
           <el-icon><User /></el-icon>

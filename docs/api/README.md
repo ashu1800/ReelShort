@@ -16,6 +16,7 @@
 - `rate-limit.md`：后端限流规则与可信代理白名单。
 - `system-config.md`：后台系统配置。
 - `watch.md`：观看进度和观看记录。
+- `statistics.md`：后台数据统计（App 观看/互动、运营观看任务与全站积分快照）。
 - `admin.md`：后台管理接口。
 - `internal-operations.md`：内部运营接口。
 

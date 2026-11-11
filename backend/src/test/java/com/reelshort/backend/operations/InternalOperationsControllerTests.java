@@ -34,7 +34,10 @@ import com.reelshort.backend.user.UserAccount;
 import com.reelshort.backend.user.UserAccountRepository;
 import com.reelshort.backend.user.UserStatus;
 import com.reelshort.backend.watch.WatchProgressRequest;
+import com.reelshort.backend.watch.WatchRecord;
+import com.reelshort.backend.watch.WatchRecordRepository;
 import com.reelshort.backend.watch.WatchService;
+import com.reelshort.backend.watch.WatchSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -67,6 +70,9 @@ class InternalOperationsControllerTests {
 
 	@Autowired
 	private WatchService watchService;
+
+	@Autowired
+	private WatchRecordRepository watchRecordRepository;
 
 	@Autowired
 	private ContentBookCacheRepository contentBookCacheRepository;
@@ -654,6 +660,12 @@ class InternalOperationsControllerTests {
 				.andExpect(jsonPath("$.data.awardedPoints").value(0))
 				.andExpect(jsonPath("$.data.rewardStatus").value("ALREADY_CLAIMED"))
 				.andExpect(jsonPath("$.data.balance").value(5));
+
+		// 运营刷积分必须落 OPERATIONS 来源，否则后台统计会把它算成 App 自然观看。
+		WatchRecord record = watchRecordRepository
+			.findByUserIdAndBookIdAndEpisodeNum(user.userId(), "book-sim", 1)
+			.orElseThrow();
+		assertThat(record.source()).isEqualTo(WatchSource.OPERATIONS);
 	}
 
 	@Test

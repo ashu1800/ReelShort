@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
@@ -50,11 +52,15 @@ public class WatchRecord {
 	@Column(name = "updated_at", nullable = false)
 	private OffsetDateTime updatedAt;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "source", nullable = false, length = 16)
+	private WatchSource source;
+
 	protected WatchRecord() {
 	}
 
 	private WatchRecord(UUID id, UUID userId, String bookId, String bookTitle, String filteredTitle, int episodeNum,
-			String chapterId) {
+			String chapterId, WatchSource source) {
 		this.id = id;
 		this.userId = userId;
 		this.bookId = bookId;
@@ -62,11 +68,18 @@ public class WatchRecord {
 		this.filteredTitle = filteredTitle;
 		this.episodeNum = episodeNum;
 		this.chapterId = chapterId;
+		this.source = source;
 	}
 
 	public static WatchRecord create(UUID userId, String bookId, String bookTitle, String filteredTitle, int episodeNum,
 			String chapterId) {
-		return new WatchRecord(UUID.randomUUID(), userId, bookId, bookTitle, filteredTitle, episodeNum, chapterId);
+		return create(userId, bookId, bookTitle, filteredTitle, episodeNum, chapterId, WatchSource.APP);
+	}
+
+	public static WatchRecord create(UUID userId, String bookId, String bookTitle, String filteredTitle, int episodeNum,
+			String chapterId, WatchSource source) {
+		return new WatchRecord(UUID.randomUUID(), userId, bookId, bookTitle, filteredTitle, episodeNum, chapterId,
+				source);
 	}
 
 	public void update(String bookTitle, String filteredTitle, String chapterId, int positionSeconds, int durationSeconds,
@@ -122,5 +135,9 @@ public class WatchRecord {
 
 	public OffsetDateTime updatedAt() {
 		return updatedAt;
+	}
+
+	public WatchSource source() {
+		return source;
 	}
 }

@@ -28,10 +28,15 @@ class WatchProgressTransaction {
 
 	@Transactional
 	public WatchRecordResponse reportProgress(UUID userId, WatchProgressRequest request) {
+		return reportProgress(userId, request, WatchSource.APP);
+	}
+
+	@Transactional
+	public WatchRecordResponse reportProgress(UUID userId, WatchProgressRequest request, WatchSource source) {
 		WatchRecord record = watchRecordRepository
 				.findByUserIdAndBookIdAndEpisodeNum(userId, request.bookId(), request.episodeNum())
 				.orElseGet(() -> WatchRecord.create(userId, request.bookId(), request.bookTitle(),
-						request.filteredTitle(), request.episodeNum(), request.chapterId()));
+						request.filteredTitle(), request.episodeNum(), request.chapterId(), source));
 		int authoritativeDuration = runtimeCacheRepository
 				.findByBookIdAndEpisodeNumAndChapterId(request.bookId(), request.episodeNum(), request.chapterId())
 				.map(cache -> cache.durationSeconds())

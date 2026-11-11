@@ -242,6 +242,29 @@ export type AdminDashboardSummary = {
   }
 }
 
+/** 数据统计的时间范围：今日 / 近 7 天 / 近 30 天 / 累计。 */
+export type StatisticsRange = 'today' | '7d' | '30d' | 'all'
+
+export type AdminStatistics = {
+  range: StatisticsRange
+  /** 时间窗起点（带 +08:00 偏移）；累计为 null。 */
+  since: string | null
+  app: {
+    /** 完成上报的分集数（每用户每集一行，重看不重复计）。 */
+    plays: number
+    likes: number
+    favorites: number
+    comments: number
+  }
+  watchTask: {
+    plays: number
+    points: number
+    averagePoints: string
+  }
+  /** 全站用户当前积分余额合计，与所选时间范围无关。 */
+  totalPoints: string
+}
+
 export type RuntimeDependencyStatus = {
   name: string
   status: 'UP' | 'DOWN'
@@ -324,6 +347,11 @@ export async function fetchUsers() {
 
 export async function fetchDashboardSummary() {
   const response = await http.get<ApiResponse<AdminDashboardSummary>>('/dashboard/summary')
+  return response.data.data
+}
+
+export async function fetchAdminStatistics(range: StatisticsRange = 'all') {
+  const response = await http.get<ApiResponse<AdminStatistics>>('/statistics', { params: { range } })
   return response.data.data
 }
 

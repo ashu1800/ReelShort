@@ -1,5 +1,6 @@
 package com.reelshort.backend.social;
 
+import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,4 +15,6 @@ public interface LikeRepository extends JpaRepository<Like, UUID> {
 	long deleteByUserIdAndBookId(UUID userId, String bookId);
 
 	long countByBookId(String bookId);
+
+	long countByCreatedAtGreaterThanEqual(OffsetDateTime createdAt);
 }

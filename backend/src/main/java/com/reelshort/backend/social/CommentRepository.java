@@ -1,5 +1,6 @@
 package com.reelshort.backend.social;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,4 +14,6 @@ public interface CommentRepository extends JpaRepository<Comment, UUID> {
 	List<Comment> findByBookIdOrderByCreatedAtDesc(String bookId, Pageable pageable);
 
 	long countByBookId(String bookId);
+
+	long countByCreatedAtGreaterThanEqual(OffsetDateTime createdAt);
 }

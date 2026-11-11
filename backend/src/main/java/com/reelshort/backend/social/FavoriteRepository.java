@@ -1,5 +1,6 @@
 package com.reelshort.backend.social;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,4 +18,6 @@ public interface FavoriteRepository extends JpaRepository<Favorite, UUID> {
 	long countByBookId(String bookId);
 
 	List<Favorite> findByUserIdOrderByCreatedAtDesc(UUID userId);
+
+	long countByCreatedAtGreaterThanEqual(OffsetDateTime createdAt);
 }

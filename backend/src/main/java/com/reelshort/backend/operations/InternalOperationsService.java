@@ -31,6 +31,7 @@ import com.reelshort.backend.watch.WatchRecord;
 import com.reelshort.backend.watch.WatchRecordRepository;
 import com.reelshort.backend.watch.WatchRecordResponse;
 import com.reelshort.backend.watch.WatchService;
+import com.reelshort.backend.watch.WatchSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -117,7 +118,7 @@ public class InternalOperationsService {
 				.orElseThrow(() -> new AuthException(409, "video duration unavailable"));
 		WatchRecordResponse watchRecord = watchService.reportProgress(user.id(), new WatchProgressRequest(
 				request.bookId(), request.bookTitle(), request.filteredTitle(), request.episodeNum(), request.chapterId(),
-				duration, duration));
+				duration, duration), WatchSource.OPERATIONS);
 		PointAccountResponse account = pointsService.account(user.id());
 		adminAuditService.record("internal-operations", "SIMULATE_WATCH_REWARD", "USER", user.id(),
 				"Simulated completed watch reward userId=%s bookId=%s episode=%d duration=%d awardedPoints=%d status=%s reason=%s"
