@@ -18,7 +18,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:shortlink/core/formatting/app_ui_copy.dart';
+import 'package:shortlink/data/models/app_language.dart';
 import 'package:shortlink/data/models/app_models.dart';
+import 'package:shortlink/data/network/api_client_exception.dart';
 import 'package:shortlink/main.dart';
 import 'package:shortlink/state/app_state_controller.dart';
 import 'package:shortlink/state/app_ui_state.dart';
@@ -620,5 +622,93 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNothing);
     expect(controller.state.screen, AppScreen.account);
+  });
+
+  testWidgets('a 401 on a signed-in home refresh says sign-in again and opens the panel', (
+    WidgetTester tester,
+  ) async {
+    // Regression guard: the home shelf is guest-reachable, but the backend
+    // answers 401 once the stored token is expired or revoked. That used to
+    // be flattened to the generic content-failure copy with no auth panel,
+    // leaving the user stuck with "try refreshing later".
+    final FakeAppDataSource dataSource = FakeAppDataSource()
+      ..homeShelf = <BookSummary>[FakeAppDataSource.book0]
+      ..cachedHomeShelf = <BookSummary>[FakeAppDataSource.book0];
+    final AppStateController controller = AppStateController(
+      dataSource: dataSource,
+    );
+    await _pumpApp(tester, controller);
+    // The app started signed in; the token dies afterwards.
+    expect(controller.state.session, isNotNull);
+    expect(controller.state.authPromptVisible, isFalse);
+    dataSource
+      ..reset()
+      ..failWith(
+        'loadHomeShelf',
+        const ApiClientException(401, null, 'token expired'),
+      );
+
+    await controller.refreshHomeWithPull();
+    await _settleMessage(tester);
+    expect(
+      controller.state.errorMessage,
+      'Your session has expired. Sign in again.',
+    );
+    expect(controller.state.session, isNull, reason: 'the dead token is dropped');
+    expect(dataSource.lastCallTo('clearSession'), isNotNull);
+    expect(controller.state.authPromptVisible, isTrue);
+    expect(find.byType(AuthSheet), findsOneWidget);
+    // The cached shelf stays on screen behind the panel.
+    expect(controller.state.homeShelf, isNotEmpty);
+  });
+
+  testWidgets('a true guest is never pushed to sign in by a content 401', (
+    WidgetTester tester,
+  ) async {
+    final FakeAppDataSource dataSource = FakeAppDataSource()
+      ..session = null
+      ..failWith(
+        'loadHomeShelf',
+        const ApiClientException(401, null, 'token expired'),
+      );
+    final AppStateController controller = AppStateController(
+      dataSource: dataSource,
+    );
+    await _pumpApp(tester, controller);
+
+    await controller.refreshHomeWithPull();
+    await _settleMessage(tester);
+    expect(controller.state.errorMessage, 'Your session has expired. Sign in again.');
+    expect(controller.state.authPromptVisible, isFalse);
+    expect(find.byType(AuthSheet), findsNothing);
+  });
+
+  testWidgets('a 401 on a language switch opens the panel and clears the flag', (
+    WidgetTester tester,
+  ) async {
+    // The language switch reloads the shelf outside `_runWithLoading`; its
+    // catch must route a 401 through the shared dispatcher too.
+    final FakeAppDataSource dataSource = FakeAppDataSource()
+      ..homeShelf = <BookSummary>[FakeAppDataSource.book0]
+      ..cachedHomeShelf = <BookSummary>[FakeAppDataSource.book0];
+    final AppStateController controller = AppStateController(
+      dataSource: dataSource,
+    );
+    await _pumpApp(tester, controller);
+    dataSource
+      ..reset()
+      ..failWith(
+        'loadHomeShelf',
+        const ApiClientException(401, null, 'token expired'),
+      );
+
+    await controller.setLanguage(AppLanguage.english);
+    await _settleMessage(tester);
+    expect(controller.state.isLoading, isFalse);
+    expect(controller.state.errorMessage, 'Your session has expired. Sign in again.');
+    expect(controller.state.session, isNull);
+    expect(dataSource.lastCallTo('clearSession'), isNotNull);
+    expect(controller.state.authPromptVisible, isTrue);
+    expect(find.byType(AuthSheet), findsOneWidget);
   });
 }

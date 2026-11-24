@@ -185,9 +185,11 @@ class AppStateController extends ChangeNotifier {
         ),
       );
       await _dataSource.saveCachedHomeShelf(homeShelf);
-    } on Object catch (_) {
+    } on Object catch (error) {
       // Kotlin rethrows CancellationException here and reports every other
       // failure; Dart has no cancellation, so all failures take this path.
+      // The session and credentials land in state first so the shared
+      // dispatcher sees them when it decides whether a 401 is an expired one.
       _set(
         _state.copyWith(
           language: language,
@@ -197,10 +199,9 @@ class AppStateController extends ChangeNotifier {
               : savedCredentials,
           homeShelf: const <BookSummary>[],
           isLoading: false,
-          errorMessage: _copy.contentLoadFailed,
-          messageType: UiMessageType.error,
         ),
       );
+      await _handleRequestError(error, _ErrorContext.content);
     }
   });
 
@@ -443,14 +444,12 @@ class AppStateController extends ChangeNotifier {
       await _dataSource.saveCachedHomeShelf(homeShelf);
     } on Object catch (error) {
       // Kotlin rethrows CancellationException after clearing the indicator;
-      // Dart has no cancellation, so this is the reported failure path.
-      _set(
-        _state.copyWith(
-          isHomeRefreshing: false,
-          errorMessage: _userFacingErrorMessage(error, _ErrorContext.content),
-          messageType: UiMessageType.error,
-        ),
-      );
+      // Dart has no cancellation, so this is the reported failure path. The
+      // shared dispatcher owns the 401 handling (dead token dropped, auth
+      // panel); the refresh indicator is cleared here first because the
+      // dispatcher does not know about it.
+      _set(_state.copyWith(isHomeRefreshing: false));
+      await _handleRequestError(error, _ErrorContext.content);
     }
   }
 
@@ -598,14 +597,10 @@ class AppStateController extends ChangeNotifier {
       await _dataSource.saveCachedHomeShelf(homeShelf);
     } on Object catch (error) {
       // Kotlin rethrows CancellationException after clearing the loading flag;
-      // Dart has no cancellation, so every failure is reported here.
-      _set(
-        _state.copyWith(
-          isLoading: false,
-          errorMessage: _userFacingErrorMessage(error, _ErrorContext.content),
-          messageType: UiMessageType.error,
-        ),
-      );
+      // Dart has no cancellation, so every failure is reported through the
+      // shared dispatcher, which also handles a 401 on the stored token.
+      _set(_state.copyWith(isLoading: false));
+      await _handleRequestError(error, _ErrorContext.content);
     }
   }
 
@@ -2217,12 +2212,18 @@ class AppStateController extends ChangeNotifier {
   }
 
   /// Whether a failure should open the auth panel.
+  ///
+  /// Content reads are guest-reachable, so their 401 only means the *stored*
+  /// token is gone; a true guest keeps browsing and must not be interrupted.
   bool _shouldPromptForLogin(Object error, _ErrorContext context) =>
       error is ApiClientException &&
       error.statusCode == 401 &&
       (context == _ErrorContext.account ||
           context == _ErrorContext.playback ||
-          context == _ErrorContext.social);
+          context == _ErrorContext.social ||
+          (context == _ErrorContext.content &&
+              _isExpiredSessionError(error, context) &&
+              _state.session != null));
 
   /// A wallet/withdrawal "current password" failure is not an expired session.
   bool _isInvalidCurrentPasswordError(Object error) =>
@@ -2264,6 +2265,13 @@ class AppStateController extends ChangeNotifier {
     final String normalizedMessage = rawMessage.toLowerCase();
     if (_isBlockedAccountError(error)) {
       return _copy.accountBlocked;
+    }
+    // A 401 is reported before the content fallback: the guest-reachable
+    // content endpoints (home shelf, search, episodes) answer 401 when the
+    // stored token is expired or revoked, and that must read as "sign in
+    // again" plus the auth panel, never as a generic content failure.
+    if (_isExpiredSessionError(error, context)) {
+      return _copy.sessionExpired;
     }
     if (context == _ErrorContext.content) {
       return _copy.contentLoadFailed;
