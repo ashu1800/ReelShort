@@ -1,5 +1,6 @@
 package com.reelshort.backend.content;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -55,6 +56,16 @@ public interface ContentBookCacheRepository extends JpaRepository<ContentBookCac
 	 */
 	List<ContentBookCache> findByLocaleAndDescriptionAndDescriptionCheckedAtIsNull(ContentLocale locale,
 			String description, Pageable pageable);
+
+	/**
+	 * 集数补抓队列：`/browse` 卡片没有集数，入库时 chapter_count 是 0；视频库每页只抓一次，
+	 * 游标不会回头，所以必须由定时任务按本翻详情页补。按 updatedAt 升序轮转，失败的行
+	 * 由 `touchBook` 推到队尾，避免一小批坏数据每轮卡住整条队列。
+	 */
+	@Query("select b from ContentBookCache b where b.locale = :locale and b.chapterCount = 0 "
+			+ "and b.updatedAt < :before order by b.updatedAt asc")
+	List<ContentBookCache> findMissingChapterCount(@Param("locale") ContentLocale locale,
+			@Param("before") OffsetDateTime before, Pageable pageable);
 
 	/**
 	 * 运营观看任务的候选池：该用户**没有任何观看记录**的英文短剧。

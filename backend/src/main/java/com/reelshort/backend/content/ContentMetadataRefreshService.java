@@ -21,21 +21,25 @@ public class ContentMetadataRefreshService {
 	}
 
 	/**
-	 * 简介补抓：TwistyTV 的 `/browse` 卡片没有简介，视频库（content_book_cache）里那些书
-	 * 只能按本翻详情页补。每次跑一小批并留间隔，跑完一轮就停（队列为空时是空查询，成本可忽略）。
+	 * 元数据补抓：TwistyTV 的 `/browse` 卡片既没有简介也没有集数，视频库
+	 * （content_book_cache）里那些书只能按本翻详情页补。每次跑一小批并留间隔，跑完一轮
+	 * 就停（队列为空时是空查询，成本可忽略）。
 	 */
 	@Scheduled(
 			initialDelayString = "${reelshort.content.description-backfill.initial-delay:2m}",
 			fixedDelayString = "${reelshort.content.description-backfill.interval:10m}")
-	public void backfillMissingDescriptions() {
+	public void backfillMissingMetadata() {
 		if (!properties.isDescriptionBackfillEnabled()) {
 			return;
 		}
 		int limit = properties.getDescriptionBackfillLimit();
-		int filled = contentCacheService.backfillMissingDescriptions(
+		int descriptions = contentCacheService.backfillMissingDescriptions(
 				ContentLocale.ENGLISH, limit, properties.getDescriptionBackfillPause());
-		if (filled > 0) {
-			log.info("Backfilled {} book descriptions (limit {})", filled, limit);
+		int chapterCounts = contentCacheService.backfillMissingChapterCounts(
+				ContentLocale.ENGLISH, limit, properties.getDescriptionBackfillPause());
+		if (descriptions > 0 || chapterCounts > 0) {
+			log.info("Backfilled {} book descriptions and {} episode counts (limit {})",
+					descriptions, chapterCounts, limit);
 		}
 	}
 

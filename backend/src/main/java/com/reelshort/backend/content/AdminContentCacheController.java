@@ -62,9 +62,9 @@ public class AdminContentCacheController {
 			titleToUse = book.filteredTitle();
 		}
 		List<ContentEpisode> episodes = contentCacheService.getEpisodes(bookId, titleToUse, resolvedLocale);
-		// 打开审片抽屉时顺手把简介补上：TwistyTV 的 /browse 卡片本来就不带简介，
-		// 详情页才有；一本书只补一次（补完非空即命中缓存）。
-		contentCacheService.refreshBookIfDescriptionMissing(bookId, titleToUse, resolvedLocale);
+		// 打开审片抽屉时顺手补简介和集数：TwistyTV 的 /browse 卡片两者都不带，
+		// 详情页才有；两项齐全后即命中缓存，不再打上游。
+		contentCacheService.refreshBookIfMetadataMissing(bookId, titleToUse, resolvedLocale);
 		return ApiResponse.success(episodes, requestId(request));
 	}
 

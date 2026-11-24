@@ -142,6 +142,11 @@ public class ContentBookCache {
 		this.descriptionCheckedAt = OffsetDateTime.now();
 	}
 
+	/** 记录一次补抓尝试：只移动 updatedAt，让失败的行走不到下一轮队首。 */
+	public void touch() {
+		this.updatedAt = OffsetDateTime.now();
+	}
+
 	public OffsetDateTime descriptionCheckedAt() {
 		return descriptionCheckedAt;
 	}

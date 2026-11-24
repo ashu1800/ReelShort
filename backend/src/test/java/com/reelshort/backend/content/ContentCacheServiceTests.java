@@ -676,7 +676,7 @@ class ContentCacheServiceTests {
 	}
 
 	@Test
-	void refreshBookIfDescriptionMissingFetchesAndPersistsTheRealDescription() {
+	void refreshBookIfMetadataMissingFetchesAndPersistsTheRealDescription() {
 		ContentBook stale = new ContentBook("book-blurb", "Blurb", "blurb", "", "", 0);
 		ContentBook fresh = new ContentBook("book-blurb", "Blurb", "blurb", "", "Real blurb.", 20);
 		contentCacheWriter.saveBook(stale, ContentLocale.ENGLISH);
@@ -684,14 +684,40 @@ class ContentCacheServiceTests {
 				.thenReturn(new ContentEpisodesDetail(Optional.of(fresh),
 						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
 
-		ContentBook refreshed = contentCacheService.refreshBookIfDescriptionMissing("book-blurb", "blurb",
+		ContentBook refreshed = contentCacheService.refreshBookIfMetadataMissing("book-blurb", "blurb",
 				ContentLocale.ENGLISH);
 
 		assertThat(refreshed.description()).isEqualTo("Real blurb.");
 		assertThat(contentCacheService.getBook("book-blurb").description()).isEqualTo("Real blurb.");
 		// 已有简介时不再打上游。
-		contentCacheService.refreshBookIfDescriptionMissing("book-blurb", "blurb", ContentLocale.ENGLISH);
+		contentCacheService.refreshBookIfMetadataMissing("book-blurb", "blurb", ContentLocale.ENGLISH);
 		verify(contentProvider, times(1)).getEpisodesDetail("book-blurb", "blurb", ContentLocale.ENGLISH);
+	}
+
+	@Test
+	void backfillMissingChapterCountsFetchesCountForBooksThatAlreadyHaveDescription() {
+		// /browse 的 ns_ 书目经常已有简介但没有集数；旧的简介补抓不会碰它，
+		// 这里必须按 chapter_count=0 单独补一次详情页。
+		ContentBook stale = new ContentBook("book-count", "Count", "count",
+				"https://example.com/count.jpg", "Already there.", 0);
+		ContentBook fresh = new ContentBook("book-count", "Count", "count",
+				"https://example.com/count.jpg", "Already there.", 36);
+		contentCacheWriter.saveBook(stale, ContentLocale.ENGLISH);
+		ContentBookCache row = contentBookCacheRepository
+				.findByBookIdAndLocale("book-count", ContentLocale.ENGLISH).orElseThrow();
+		ReflectionTestUtils.setField(row, "updatedAt", OffsetDateTime.now().minusDays(1));
+		contentBookCacheRepository.save(row);
+		when(contentProvider.getEpisodesDetail("book-count", "count", ContentLocale.ENGLISH))
+				.thenReturn(new ContentEpisodesDetail(Optional.of(fresh),
+						List.of(new ContentEpisode(1, "chapter-1", "", ""))));
+
+		int filled = contentCacheService.backfillMissingChapterCounts(
+				ContentLocale.ENGLISH, 10, Duration.ZERO);
+
+		assertThat(filled).isEqualTo(1);
+		assertThat(contentCacheService.getBook("book-count").chapterCount()).isEqualTo(36);
+		contentCacheService.backfillMissingChapterCounts(ContentLocale.ENGLISH, 10, Duration.ZERO);
+		verify(contentProvider, times(1)).getEpisodesDetail("book-count", "count", ContentLocale.ENGLISH);
 	}
 
 	@Test
@@ -745,7 +771,7 @@ class ContentCacheServiceTests {
 		contentCacheService.refreshShelf(ContentShelfType.RECOMMEND);
 
 		// 货架快照写的是空简介；补抓写的是书目缓存。后台读货架要合并两者。
-		contentCacheService.refreshBookIfDescriptionMissing("book-shelf", "shelf", ContentLocale.ENGLISH);
+		contentCacheService.refreshBookIfMetadataMissing("book-shelf", "shelf", ContentLocale.ENGLISH);
 
 		List<ContentBook> merged = contentCacheService.getShelfWithCachedDescriptions(ContentShelfType.RECOMMEND,
 				ContentLocale.ENGLISH);

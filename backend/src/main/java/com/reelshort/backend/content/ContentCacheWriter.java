@@ -86,6 +86,15 @@ public class ContentCacheWriter {
 		});
 	}
 
+	/** 补集数失败时只推进 updatedAt，作为重试退避标记（见 ContentBookCacheRepository#findMissingChapterCount）。 */
+	@Transactional
+	public void touchBook(String bookId, ContentLocale locale) {
+		contentBookCacheRepository.findByBookIdAndLocale(bookId, locale).ifPresent(cache -> {
+			cache.touch();
+			contentBookCacheRepository.save(cache);
+		});
+	}
+
 	@Transactional
 	public void saveShelf(ContentShelfType shelfType, ContentLocale locale, List<ContentBook> books) {
 		String booksJson = writeBooks(books);

@@ -248,7 +248,7 @@ public class ContentCacheService {
 		int filled = 0;
 		for (ContentBookCache candidate : candidates) {
 			try {
-				ContentBook refreshed = refreshBookIfDescriptionMissing(candidate.bookId(), candidate.filteredTitle(),
+				ContentBook refreshed = refreshBookIfMetadataMissing(candidate.bookId(), candidate.filteredTitle(),
 						locale);
 				if (refreshed != null && refreshed.description() != null && !refreshed.description().isBlank()) {
 					filled++;
@@ -270,27 +270,73 @@ public class ContentCacheService {
 	}
 
 	/**
-	 * 分集已有缓存、但书目行的简介还是空的时候，回内容源补一次简介。
+	 * 给集数为 0 的书目补 `chapter_count`。
 	 *
-	 * <p>TwistyTV 的 `/browse` 列表卡片不带简介（`/genre`、`/search`、详情页才有），而货架
-	 * 大部分来自 `/browse`，所以缓存行天然是空简介。用户点开一部剧时详情页本来就会拉到
-	 * `description`，这里把它落库：一本书只补一次（补完非空，后续命中缓存直接返回）。
+	 * <p>`/browse` 卡片没有集数，视频库页每页只抓一次、游标不会回头，所以只在入库时
+	 * 拿到 0 的书必须靠这个队列补。每轮按 `updatedAt` 最旧的一批处理；失败的行走
+	 * {@link ContentCacheWriter#touchBook} 推到队尾并退避 6 小时，不会卡住后面的书。
+	 *
+	 * @return 本次实际补到集数的数量（失败的单本跳过，不影响整批）
 	 */
-	public ContentBook refreshBookIfDescriptionMissing(String bookId, String filteredTitle, ContentLocale locale) {
+	public int backfillMissingChapterCounts(ContentLocale locale, int limit, Duration interval) {
+		if (limit <= 0) {
+			return 0;
+		}
+		List<ContentBookCache> candidates = contentBookCacheRepository.findMissingChapterCount(
+				locale, OffsetDateTime.now().minusHours(6), PageRequest.of(0, limit));
+		int filled = 0;
+		for (ContentBookCache candidate : candidates) {
+			try {
+				ContentBook refreshed = refreshBookIfMetadataMissing(candidate.bookId(), candidate.filteredTitle(),
+						locale);
+				if (refreshed != null && refreshed.chapterCount() > 0) {
+					filled++;
+				}
+				else {
+					writer().touchBook(candidate.bookId(), locale);
+				}
+			}
+			catch (RuntimeException exception) {
+				// 单本失败不影响后面的书；touch 让它在 6 小时后再试，避免死书占住队首。
+				LOG.debug("Chapter count backfill skipped {}: {}", candidate.bookId(), exception.getMessage());
+				writer().touchBook(candidate.bookId(), locale);
+			}
+			try {
+				Thread.sleep(interval.toMillis());
+			}
+			catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				break;
+			}
+		}
+		return filled;
+	}
+
+	/**
+	 * 书目行的简介为空**或集数为 0** 时，回内容源补一次详情元数据。
+	 *
+	 * <p>TwistyTV 的 `/browse` 列表卡片既没有简介也没有集数，视频库大部分书来自
+	 * `/browse`，所以缓存行天然缺这两项；详情页一次就能同时拿到 `description` 与
+	 * `episodeCount`，这里把它落库。两项都齐时不再打上游。
+	 */
+	public ContentBook refreshBookIfMetadataMissing(String bookId, String filteredTitle, ContentLocale locale) {
 		ContentBook cached = contentBookCacheRepository.findByBookIdAndLocale(bookId, locale)
 				.map(ContentBookCache::toContentBook)
 				.orElse(null);
-		if (cached != null && cached.description() != null && !cached.description().isBlank()) {
+		boolean hasDescription = cached != null && cached.description() != null
+				&& !cached.description().isBlank();
+		boolean hasChapterCount = cached != null && cached.chapterCount() > 0;
+		if (hasDescription && hasChapterCount) {
 			return cached;
 		}
 		ContentEpisodesDetail detail = contentProvider.getEpisodesDetail(bookId, filteredTitle, locale);
 		ContentBook fetched = detail.book().orElse(null);
-		boolean hasDescription = fetched != null && fetched.description() != null
+		boolean fetchedDescription = fetched != null && fetched.description() != null
 				&& !fetched.description().isBlank();
 		if (fetched != null) {
 			writer().saveBook(fetched, locale);
 		}
-		if (!hasDescription) {
+		if (!fetchedDescription && fetched != null) {
 			// 上游确实没有简介（NetShort 的书目就是这样）：记下来，别每轮重翻同一批。
 			writer().markDescriptionChecked(bookId, locale);
 		}
